@@ -36,7 +36,7 @@ int send_fully(int sock, const char *buf, int len) {
         int ret = zsock_send(sock, buf + bytes_sent,
                              len - bytes_sent, 0);
         if (ret < 0) {
-            LOG_ERR("Unexpected error while sending response: err %d", ret);
+            LOG_ERR("Unexpected error while sending response to sock %d: err %d", sock, ret);
             return ret;
         }
         bytes_sent += ret;
@@ -213,7 +213,7 @@ static void handle_client(void *p1_client_socket, void *, void *) {
             float value = 0;
             bool bias_is_negative = false;
             bool in_label_segment = true;
-            for (int i = 12; i < std::ssize(command) - 1; ++i) {
+            for (int i = 13; i < std::ssize(command) - 1; ++i) {
                 if (command[i] != ',') {
                     if (in_label_segment) {
                         pt_name += command[i];
@@ -254,8 +254,11 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                 LOG_ERR("Failed to set PT bias: err %d", err);
                 continue;
             }
-
-            send_string_fully(client_guard.socket, "Set PT bias.");
+            if (config_bias_not_range) {
+                send_string_fully(client_guard.socket, "Set PT bias.\n");
+            } else {
+                send_string_fully(client_guard.socket, "Set PT range.\n");
+            }
         } else if (command == "getptconfigs#") {
             std::string payload;
             std::array<std::string, 4> index_to_pt{
@@ -265,8 +268,8 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                     "ptf401"
             };
             for (int i = 1; i < 4; ++i) {
-                payload += index_to_pt[i] + ": bias=" + std::to_string(pt_configs[i].bias) + "psig, range=" +
-                           std::to_string(pt_configs[i].range) + "psig\n";
+                payload += index_to_pt[i] + ": bias=" + std::to_string(pt_configs[i].bias) + " psig, range=" +
+                           std::to_string(pt_configs[i].range) + " psig\n";
             }
             send_string_fully(client_guard.socket, payload);
         } else {
@@ -314,24 +317,19 @@ K_THREAD_DEFINE(server_reaper, 1024, reap_dead_connections, nullptr, nullptr, nu
 /// Opens a TCP server, listens for incoming clients, and spawns new threads to serve these connections. This function
 /// blocks indefinitely.
 void serve_connections() {
-    LOG_INF("Opening socket");
-    k_sleep(K_MSEC(500));
-    LOG_INF("Opening socket");
-    k_sleep(K_MSEC(500));
+    LOG_INF("Opening server socket");
     int server_socket = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server_socket < 0) {
         LOG_ERR("Failed to create TCP socket: %d", errno);
         return;
     }
-    LOG_INF("HEY!");
-    k_sleep(K_MSEC(500));
 
     sockaddr_in bind_addr = {};
     bind_addr.sin_family = AF_INET;
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     bind_addr.sin_port = htons(19690);
 
-    LOG_INF("Binding socket to address");
+    LOG_INF("Binding server socket to address");
     int err = zsock_bind(server_socket, reinterpret_cast<sockaddr *>(&bind_addr), sizeof(bind_addr));
     if (err) {
         LOG_ERR("Failed to bind to socket `%d`: %d", server_socket, err);
