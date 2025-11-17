@@ -16,7 +16,7 @@
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
-#define MAX_OPEN_CLIENTS 4
+#define MAX_OPEN_CLIENTS 3
 
 /// Main server thread must acquire one of these before accepting a connection. It must then scan through the thread
 /// array to find an open slot.
@@ -61,20 +61,24 @@ static void handle_client(void *p1_client_socket, void *, void *) {
         int next_command_byte = 0;
         while (true) {
             ssize_t bytes_read = zsock_recv(client_guard.socket, command_buf + next_command_byte, 1, 0);
-            if (bytes_read < 0) {
+
+            if (bytes_read == 0) {
+                LOG_INF("Client at sock %d has closed their connection.", client_guard.socket);
+                return;
+            } else if (bytes_read < 0) {
                 LOG_WRN("Failed to read bytes: errno %d", errno);
                 return;
             }
-            if (bytes_read) {
-                // Ignore whitespace
-                if (std::isspace(command_buf[next_command_byte])) {
-                    continue;
-                }
-                if (command_buf[next_command_byte] == '#') {
-                    command_buf[next_command_byte + 1] = '\0';
-                    break;
-                }
+
+            // Ignore whitespace
+            if (std::isspace(command_buf[next_command_byte])) {
+                continue;
             }
+            if (command_buf[next_command_byte] == '#') {
+                command_buf[next_command_byte + 1] = '\0';
+                break;
+            }
+
             next_command_byte += bytes_read;
             if (next_command_byte == MAX_COMMAND_LEN) {
                 LOG_WRN("Didn't find command terminator `#` after %d bytes", MAX_COMMAND_LEN);
