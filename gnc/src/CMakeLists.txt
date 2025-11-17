@@ -1,8 +1,10 @@
 add_subdirectory(guards)
+add_subdirectory(util)
 
 target_sources(app PRIVATE main.cpp)
 target_sources(app PRIVATE server.cpp)
 target_sources(app PRIVATE pts.cpp)
 target_sources(app PRIVATE throttle_valve.cpp)
 target_sources(app PRIVATE sequencer.cpp)
-target_sources(app PRIVATE servotesting.cpp)
+target_sources(app PRIVATE hornet_tvc.cpp)
+target_sources(app PRIVATE flightcontrol.cpp)

@@ -269,7 +269,11 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                            std::to_string(pt_configs[i].range) + "psig\n";
             }
             send_string_fully(client_guard.socket, payload);
-        } else {
+        } else if (command == "fly#"){
+
+        }
+
+         else {
             LOG_WRN("Unknown command.");
         }
     }

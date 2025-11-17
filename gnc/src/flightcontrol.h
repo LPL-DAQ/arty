@@ -1,0 +1,8 @@
+//
+// Created by lpl on 11/17/25.
+//
+
+#ifndef CLOVER_FLIGHTCONTROL_H
+#define CLOVER_FLIGHTCONTROL_H
+
+#endif //CLOVER_FLIGHTCONTROL_H

@@ -10,7 +10,7 @@
 #include "server.h"
 #include "throttle_valve.h"
 #include "pts.h"
-#include "servotesting.h"
+#include "hornet_tvc.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -55,14 +55,12 @@ int main(void) {
         return 0;
     }
 
-    LOG_INF("Initializing SERVOS");
-
-    err = servos_init();
+    LOG_INF("Initializing Flight");
+    err = flight_init();
     if (err) {
-        LOG_ERR("Failed to initialize servos");
+        LOG_ERR("Failed to initialize flight");
         return 0;
     }
-    servotesting_demo();
 
     LOG_INF("Starting server");
     serve_connections();

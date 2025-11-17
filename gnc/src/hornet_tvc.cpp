@@ -1,4 +1,5 @@
-#include "servotesting.h"
+#include "hornet_tvc.h"
+#include <util/math.h>
 
 #include <zephyr/logging/log.h>
 #include <zephyr/device.h>
@@ -8,15 +9,15 @@
 
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 
-LOG_MODULE_REGISTER(servotesting, CONFIG_LOG_DEFAULT_LEVEL);
+LOG_MODULE_REGISTER(hornet_tvc, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 // start with 1000-2000 us PWM signal, test to go up to 500-2500
 static const pwm_dt_spec SERVO_X =
     PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), tvc_x);
-
 static const pwm_dt_spec SERVO_Y =
     PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), tvc_y);
+
 static const pwm_dt_spec ESC_1 =
     PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), esc_1);
 static const pwm_dt_spec ESC_2 =
@@ -30,7 +31,7 @@ static inline bool pwm_ready(const pwm_dt_spec& s) {
 
 /* Initialize: verify all PWM endpoints are present & ready */
 int servos_init() {
-    if (!pwm_ready(ESC_1) || !pwm_ready(ESC_2) ||
+    if (
         !pwm_ready(SERVO_X) || !pwm_ready(SERVO_Y)) {
         return -ENODEV;
     }
@@ -40,6 +41,22 @@ int servos_init() {
     pwm_set_pulse_dt(&ESC_1,  PWM_USEC(1000));
     pwm_set_pulse_dt(&ESC_2,  PWM_USEC(1000));
     return 0;
+}
+
+int esc_init() {
+    if (
+        !pwm_ready(ESC_1) || !pwm_ready(ESC_2) ){
+        return -ENODEV;
+    }
+    pwm_set_pulse_dt(&ESC_1,  PWM_USEC(1000));
+    pwm_set_pulse_dt(&ESC_2,  PWM_USEC(1000));
+    return 0;
+}
+
+// To be set later with 4-bar geometry and imu transformations, look at old drone code for reference
+int set_desired_thrust_deg(double thrust_deg_x, double thrust_deg_y) {
+
+      return 0;
 }
 
 /* Generic servo: degrees → microseconds → pwm_set_pulse_dt
@@ -57,6 +74,16 @@ int servo_write_deg(const pwm_dt_spec& servo,
     return pwm_set_pulse_dt(&servo, PWM_USEC(us));
 }
 
+int set_desired_thrust_newtons(double thrust_a_n, double thrust_b_n, double max_thrust_n){
+    // 1000-2000 us PWM signal, double check range later
+    double esc_1_us = util::mapFloat(thrust_a_n, 0, max_thrust_n, 1000, 2000);
+    esc_write_us(ESC_1, esc_1_us);
+    double esc_2_us = util::mapFloat(thrust_b_n, 0, max_thrust_n, 1000, 2000);
+
+    esc_write_us(ESC_2, esc_2_us);
+
+}
+
 /* ESC helper: write a raw microsecond pulse (e.g., 1000–2000 µs) */
 int esc_write_us(const pwm_dt_spec& esc, uint16_t us) {
     if (!pwm_ready(esc)) return -ENODEV;
@@ -66,80 +93,13 @@ int esc_write_us(const pwm_dt_spec& esc, uint16_t us) {
     return pwm_set_pulse_dt(&esc, PWM_USEC(us));
 }
 
-/* Simple demo: sweep servos and blip ESCs */
-int servotesting_demo() {
-    printk("Servotesting demo\n");
-    int err = servos_init();
-    if (err) return err;
-
-    printk("arm esc\n");
-
-    /* Example: arm ESCs (typical: 1000 µs for a couple seconds) */
-    esc_write_us(ESC_1, 1000);
-    esc_write_us(ESC_2, 1000);
-    k_msleep(1000);
-
-    printk("small throttle\n");
-    printk("servo 0 -> 180 \n");
-    /* servos 90 */
-    while (true){
-
-        for (int d = 0; d <= 180; d += 2) {
-
-            int err = 0;
-            err = servo_write_deg(SERVO_X, d);
-            if (err) {
-                LOG_ERR("Failed to write servo X");
-                return 0;
-            }
-
-            err = servo_write_deg(SERVO_Y, d);
-            if (err) {
-                LOG_ERR("Failed to write servo Y");
-                return 0;
-            }
-            esc_write_us(ESC_1, 1200);
-            esc_write_us(ESC_2, 1200);
-            k_msleep(20);
-        }
-    printk("servo 180 -> 0 \n");
-
-        /* servos 90 */
-        for (int d = 0; d <= 180; d += 2) {
-
-            int err = 0;
-            err = servo_write_deg(SERVO_X, 180-d);
-            err = servo_write_deg(SERVO_Y, 180-d);
-            if (err) {
-                LOG_ERR("Failed to write servo X");
-                return 0;
-            }
-
-            if (err) {
-                LOG_ERR("Failed to write servo Y");
-                return 0;
-            }
-            esc_write_us(ESC_1, 1000);
-            esc_write_us(ESC_2, 1000);
-            k_msleep(20);
-        }
-    }
-
-    printk("demo over: idle all\n");
-
-    /* Idle ESCs again */
-    esc_idle();
-    servo_neutral();
-    return 0;
-}
-
-void servo_neutral() {
+int servo_neutral() {
     servo_write_deg(SERVO_X, 90);
-    servo_write_deg(SERVO_Y, 90);
+    return servo_write_deg(SERVO_Y, 90);
 }
 
-void esc_idle() {
+int esc_idle() {
     esc_write_us(ESC_1, 1000);
-    esc_write_us(ESC_2, 1000);
+    return esc_write_us(ESC_2, 1000);
 
 }
