@@ -17,7 +17,8 @@ static const pwm_dt_spec SERVO_X =
 
 static const pwm_dt_spec SERVO_Y =
     PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), tvc_y);
-
+static const pwm_dt_spec ESC_1 =
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), esc_1);
 static const pwm_dt_spec ESC_2 =
     PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), esc_2);
 
@@ -29,13 +30,14 @@ static inline bool pwm_ready(const pwm_dt_spec& s) {
 
 /* Initialize: verify all PWM endpoints are present & ready */
 int servos_init() {
-    if (!pwm_ready(ESC_2) ||
+    if (!pwm_ready(ESC_1) || !pwm_ready(ESC_2) ||
         !pwm_ready(SERVO_X) || !pwm_ready(SERVO_Y)) {
         return -ENODEV;
     }
     /* Optional: park outputs at neutral pulses if your PCA9685 default is 0 */
     pwm_set_pulse_dt(&SERVO_X, PWM_USEC(1500));
     pwm_set_pulse_dt(&SERVO_Y, PWM_USEC(1500));
+    pwm_set_pulse_dt(&ESC_1,  PWM_USEC(1000));
     pwm_set_pulse_dt(&ESC_2,  PWM_USEC(1000));
     return 0;
 }
@@ -73,52 +75,54 @@ int servotesting_demo() {
     printk("arm esc\n");
 
     /* Example: arm ESCs (typical: 1000 µs for a couple seconds) */
+    esc_write_us(ESC_1, 1000);
     esc_write_us(ESC_2, 1000);
     k_msleep(1000);
 
-    printk("middle throttle\n");
-    esc_write_us(ESC_2, 1500);
-    k_msleep(1500);
-
+    printk("small throttle\n");
     printk("servo 0 -> 180 \n");
     /* servos 90 */
     while (true){
 
-    for (int d = 0; d <= 180; d += 2) {
+        for (int d = 0; d <= 180; d += 2) {
 
-        int err = 0;
-        err = servo_write_deg(SERVO_X, d);
-        if (err) {
-            LOG_ERR("Failed to write servo X");
-            return 0;
-        }
+            int err = 0;
+            err = servo_write_deg(SERVO_X, d);
+            if (err) {
+                LOG_ERR("Failed to write servo X");
+                return 0;
+            }
 
-        err = servo_write_deg(SERVO_Y, d);
-        if (err) {
-            LOG_ERR("Failed to write servo Y");
-            return 0;
+            err = servo_write_deg(SERVO_Y, d);
+            if (err) {
+                LOG_ERR("Failed to write servo Y");
+                return 0;
+            }
+            esc_write_us(ESC_1, 1200);
+            esc_write_us(ESC_2, 1200);
+            k_msleep(20);
         }
-        k_msleep(20);
-    }
     printk("servo 180 -> 0 \n");
 
-    /* servos 90 */
-    for (int d = 0; d <= 180; d += 2) {
+        /* servos 90 */
+        for (int d = 0; d <= 180; d += 2) {
 
-        int err = 0;
-        err = servo_write_deg(SERVO_X, 180-d);
-        err = servo_write_deg(SERVO_Y, 180-d);
-        if (err) {
-            LOG_ERR("Failed to write servo X");
-            return 0;
-        }
+            int err = 0;
+            err = servo_write_deg(SERVO_X, 180-d);
+            err = servo_write_deg(SERVO_Y, 180-d);
+            if (err) {
+                LOG_ERR("Failed to write servo X");
+                return 0;
+            }
 
-        if (err) {
-            LOG_ERR("Failed to write servo Y");
-            return 0;
+            if (err) {
+                LOG_ERR("Failed to write servo Y");
+                return 0;
+            }
+            esc_write_us(ESC_1, 1000);
+            esc_write_us(ESC_2, 1000);
+            k_msleep(20);
         }
-        k_msleep(20);
-    }
     }
 
     printk("demo over: idle all\n");
@@ -135,6 +139,7 @@ void servo_neutral() {
 }
 
 void esc_idle() {
+    esc_write_us(ESC_1, 1000);
     esc_write_us(ESC_2, 1000);
 
 }
