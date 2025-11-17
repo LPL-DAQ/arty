@@ -268,8 +268,8 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                     "ptf401"
             };
             for (int i = 1; i < 4; ++i) {
-                payload += index_to_pt[i] + ": bias=" + std::to_string(pt_configs[i].bias) + "psig, range=" +
-                           std::to_string(pt_configs[i].range) + "psig\n";
+                payload += index_to_pt[i] + ": bias=" + std::to_string(pt_configs[i].bias) + " psig, range=" +
+                           std::to_string(pt_configs[i].range) + " psig\n";
             }
             send_string_fully(client_guard.socket, payload);
         } else {
