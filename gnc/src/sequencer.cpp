@@ -191,7 +191,7 @@ int sequencer_start_trace() {
         int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
         err = send_fully(data_sock, buf, actually_written);
         if (err) {
-            LOG_WRN("Failed to send data");
+            LOG_WRN("Failed to send data: err %d", err);
         }
     }
 
@@ -217,4 +217,6 @@ void sequencer_set_data_recipient(int sock) {
     k_mutex_lock(&sequence_lock, K_FOREVER);
     data_sock = sock;
     k_mutex_unlock(&sequence_lock);
+
+    LOG_INF("Registered data recipient with socket %d", sock);
 }
