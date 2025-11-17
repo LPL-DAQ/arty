@@ -4,6 +4,7 @@
 #include <zephyr/drivers/adc.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
+#include <array>
 
 #define USER_NODE DT_PATH(zephyr_user)
 
@@ -23,7 +24,6 @@
 #define CONFIG_PT_SAMPLES 1
 
 
-constexpr int NUM_PTS = DT_PROP_LEN(USER_NODE, io_channels);
 // Trailing comma needed as we are using preprocessor to instantiate each element of an array.
 #define CLOVER_PTS_DT_SPEC_AND_COMMA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
 static constexpr struct adc_dt_spec adc_channels[NUM_PTS] = {
@@ -37,31 +37,38 @@ static adc_sequence_options sequence_options = {
 static adc_sequence sequence;
 uint16_t raw_readings[CONFIG_PT_SAMPLES][NUM_PTS];
 
-struct pt_config {
-    float scale; // psig per analog reading unit. For teensy, resolution = 12, so for a 1k PT this would be (1000.0 / 4096.0)
-    float bias;
-};
-
-pt_config configs[NUM_PTS] = {
-        {
-                .scale = 1000.0 / 4096.0,
-                .bias = 0
-        },
-        {
-                .scale = 1000.0 / 4096.0,
-                .bias = 0
-        },
-        {
-                .scale = 1000.0 / 4096.0,
-                .bias = 0
-        },
-        {
-                .scale = 1000.0 / 4096.0,
-                .bias = 0
-        },
-};
-
 LOG_MODULE_REGISTER(pts, CONFIG_LOG_DEFAULT_LEVEL);
+
+constexpr std::array<float, NUM_PTS> pts_adc_ranges() {
+    std::array<float, NUM_PTS> ranges;
+    for (int i = 0; i < NUM_PTS; ++i) {
+        ranges[i] = static_cast<float>(1 << static_cast<uint32_t>(adc_channels[i].resolution));
+    }
+    return ranges;
+}
+
+pt_config pt_configs[NUM_PTS] = {
+        {
+                .scale = 1000.0f / pts_adc_ranges()[0],
+                .bias = 0.0f,
+                .range = 1000.0f
+        },
+        {
+                .scale = 1000.0f / pts_adc_ranges()[1],
+                .bias = 0.0f,
+                .range = 1000.0f
+        },
+        {
+                .scale = 1000.0f / pts_adc_ranges()[2],
+                .bias = 0.0f,
+                .range = 1000.0f
+        },
+        {
+                .scale = 1000.0f / pts_adc_ranges()[3],
+                .bias = 0.0f,
+                .range = 1000.0f
+        },
+};
 
 /// Initialize PT sensors by initializing the ADC they're all connected to.
 int pts_init() {
@@ -113,7 +120,7 @@ pt_readings pts_sample() {
         for (int j = 0; j < CONFIG_PT_SAMPLES; ++j) {
             readings_by_idx[i] += static_cast<float>(raw_readings[j][i]);
         }
-        readings_by_idx[i] = readings_by_idx[i] / CONFIG_PT_SAMPLES * configs[i].scale + configs[i].bias;
+        readings_by_idx[i] = readings_by_idx[i] / CONFIG_PT_SAMPLES * pt_configs[i].scale + pt_configs[i].bias;
     }
 
     // Assign each PT name as fields to initialize pt_readings
@@ -127,4 +134,27 @@ pt_readings pts_sample() {
 void pts_log_readings(const pt_readings &readings) {
 #define CLOVER_PTS_DT_TO_LOG(node_id, prop, idx) LOG_INF(DT_PROP_BY_IDX(node_id, prop, idx) ": %f psig", static_cast<double>(readings.DT_STRING_TOKEN_BY_IDX(node_id, prop, idx)));
     DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, CLOVER_PTS_DT_TO_LOG)
+}
+
+int pts_set_bias(int index, float bias) {
+    if (index < 0 || index >= NUM_PTS) {
+        LOG_ERR("Invalid PT index: %d", index);
+        return 1;
+    }
+
+    pt_configs[index].bias = bias;
+
+    return 0;
+}
+
+int pts_set_range(int index, float range) {
+    if (index < 0 || index >= NUM_PTS) {
+        LOG_ERR("Invalid PT index: %d", index);
+        return 1;
+    }
+
+    pt_configs[index].range = range;
+    pt_configs[index].scale = range / pts_adc_ranges()[index];
+
+    return 0;
 }

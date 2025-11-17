@@ -5,6 +5,7 @@
 #include <zephyr/net/net_pkt.h>
 #include <sstream>
 #include <string>
+#include <array>
 
 #include "throttle_valve.h"
 #include "server.h"
@@ -160,7 +161,7 @@ static void handle_client(void *p1_client_socket, void *, void *) {
         } else if (command == "getpts#") {
             pt_readings readings = pts_sample();
             std::string payload =
-                    "pt203: " + std::to_string(readings.pt203) + ", pt204: " + std::to_string(readings.pt204) +
+                    "pt203: " + std::to_string(readings.pt203) + ", pt202: " + std::to_string(readings.pt203) +
                     ", ptf401: " + std::to_string(readings.ptf401) + ", pt102: " + std::to_string(readings.pt102) +
                     "\n";
             int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
@@ -191,6 +192,83 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                 continue;
             }
             send_string_fully(client_guard.socket, "Done sequence.\n");
+        } else if (command.starts_with("configpt")) {
+            // Configure the pt bias as such:
+            // configptbias,pt203,-5#
+            // Or set the PT range (e.g., 1k PT) as such:
+            // configptrang,pt203,2000#
+
+            bool config_bias_not_range = false;
+            std::string config_what = command.substr(8, 4);
+            if (config_what == "bias") {
+                config_bias_not_range = true;
+            } else if (config_what == "rang") {
+                config_bias_not_range = false;
+            } else {
+                LOG_ERR("Invalid config option for PT");
+                continue;
+            }
+
+            std::string pt_name;
+            float value = 0;
+            bool bias_is_negative = false;
+            bool in_label_segment = true;
+            for (int i = 12; i < std::ssize(command) - 1; ++i) {
+                if (command[i] != ',') {
+                    if (in_label_segment) {
+                        pt_name += command[i];
+                    } else {
+                        if (command[i] == '-') {
+                            bias_is_negative = true;
+                        } else {
+                            value = value * 10.0f + static_cast<float>(command[i] - '0');
+                        }
+                    }
+                } else {
+                    in_label_segment = false;
+                }
+            }
+            if (bias_is_negative) {
+                value *= -1;
+            }
+
+            int pt_index = -1;
+            if (pt_name == "pt202") {
+                pt_index = 1;
+            } else if (pt_name == "pt203") {
+                pt_index = 2;
+            } else if (pt_name == "ptf401") {
+                pt_index = 3;
+            } else {
+                LOG_ERR("Invalid pt name: %s", pt_name.c_str());
+                continue;
+            }
+
+            int err = 0;
+            if (config_bias_not_range) {
+                err = pts_set_bias(pt_index, value);
+            } else {
+                err = pts_set_range(pt_index, value);
+            }
+            if (err) {
+                LOG_ERR("Failed to set PT bias: err %d", err);
+                continue;
+            }
+
+            send_string_fully(client_guard.socket, "Set PT bias.");
+        } else if (command == "getptconfigs#") {
+            std::string payload;
+            std::array<std::string, 4> index_to_pt{
+                    "UNUSED",
+                    "pt202",
+                    "pt203",
+                    "ptf401"
+            };
+            for (int i = 1; i < 4; ++i) {
+                payload += index_to_pt[i] + ": bias=" + std::to_string(pt_configs[i].bias) + "psig, range=" +
+                           std::to_string(pt_configs[i].range) + "psig\n";
+            }
+            send_string_fully(client_guard.socket, payload);
         } else {
             LOG_WRN("Unknown command.");
         }

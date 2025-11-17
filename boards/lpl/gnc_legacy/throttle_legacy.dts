@@ -64,7 +64,7 @@ To the find devicetree ADC channel for a teensy ADC pin:
 		// HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
 		// corresponding to the sorted ascending order of ADC1 channels. The following corresonds to pins A0, A1, A3,
 		// and A2. We really ought investigate further.
-		pt-names = "pt102", "pt203", "pt204", "ptf401";
+		pt-names = "pt102", "pt202", "pt203", "ptf401";
 		io-channels = <&adc1 7>, <&adc1 8>, <&adc1 11>, <&adc1 12>;
 	};
 

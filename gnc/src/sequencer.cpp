@@ -39,8 +39,8 @@ struct control_iter_data {
     float motor_velocity;
     float motor_acceleration;
     uint64_t motor_nsec_per_pulse;
+    float pt202;
     float pt203;
-    float pt204;
     float ptf401;
 };
 
@@ -94,8 +94,8 @@ static void step_control_loop(k_work *) {
             .motor_velocity = throttle_valve_get_velocity(),
             .motor_acceleration = throttle_valve_get_acceleration(),
             .motor_nsec_per_pulse = throttle_valve_get_nsec_per_pulse(),
+            .pt202 = readings.pt202,
             .pt203 = readings.pt203,
-            .pt204 = readings.pt204,
             .ptf401 = readings.ptf401
     };
     int err = k_msgq_put(&control_data_msgq, &iter_data, K_NO_WAIT);
@@ -162,7 +162,7 @@ int sequencer_start_trace() {
     // Print header
     send_string_fully(data_sock, ">>>>SEQ START<<<<\n");
     send_string_fully(data_sock,
-                      "time,queue_size,motor_target,motor_pos,motor_velocity,motor_acceleration,motor_nsec_per_pulse,pt203,pt204,ptf401\n");
+                      "time,queue_size,motor_target,motor_pos,motor_velocity,motor_acceleration,motor_nsec_per_pulse,pt202,pt203,ptf401\n");
 
     // Dump data as we get it. Connection client is preemptible while control sequence is in system workqueue
     // (cooperative) so sending data should never block processing of control iter.
@@ -185,8 +185,8 @@ int sequencer_start_trace() {
                                      static_cast<double>(data.motor_velocity),
                                      static_cast<double>(data.motor_acceleration),
                                      data.motor_nsec_per_pulse,
-                                     static_cast<double>(data.pt203),
-                                     static_cast<double>(data.pt204), static_cast<double>(data.ptf401));
+                                     static_cast<double>(data.pt202),
+                                     static_cast<double>(data.pt203), static_cast<double>(data.ptf401));
         // snprintfcb's would_write excludes null byte, but max via MAX_DATA_LEN would include null byte.
         int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
         err = send_fully(data_sock, buf, actually_written);
