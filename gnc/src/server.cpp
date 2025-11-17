@@ -165,7 +165,7 @@ static void handle_client(void *p1_client_socket, void *, void *) {
         } else if (command == "getpts#") {
             pt_readings readings = pts_sample();
             std::string payload =
-                    "pt203: " + std::to_string(readings.pt203) + ", pt202: " + std::to_string(readings.pt203) +
+                    "pt202: " + std::to_string(readings.pt202) + ", pt203: " + std::to_string(readings.pt203) +
                     ", ptf401: " + std::to_string(readings.ptf401) + ", pt102: " + std::to_string(readings.pt102) +
                     "\n";
             int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
