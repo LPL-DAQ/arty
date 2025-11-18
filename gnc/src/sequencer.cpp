@@ -40,11 +40,8 @@ struct control_iter_data {
     float motor_velocity;
     float motor_acceleration;
     uint64_t motor_nsec_per_pulse;
-
-    // NEW: encoder feedback for plotting vs motor model
     float encoder_deg;
     int32_t encoder_ticks;
-
     float pt202;
     float pt203;
     float ptf401;
@@ -92,7 +89,7 @@ static void step_control_loop(k_work *) {
     // PTs
     pt_readings readings = pts_sample();
 
-    // NEW: encoder feedback (ticks + deg)
+    // encoder feedback (ticks + deg)
     int32_t enc_ticks = encoder_get_position();
     float enc_deg = encoder_get_degrees();
 
@@ -105,10 +102,8 @@ static void step_control_loop(k_work *) {
             .motor_velocity = throttle_valve_get_velocity(),
             .motor_acceleration = throttle_valve_get_acceleration(),
             .motor_nsec_per_pulse = throttle_valve_get_nsec_per_pulse(),
-
             .encoder_deg = enc_deg,
             .encoder_ticks = enc_ticks,
-
             .pt202 = readings.pt202,
             .pt203 = readings.pt203,
             .ptf401 = readings.ptf401
