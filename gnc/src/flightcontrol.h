@@ -6,6 +6,10 @@
 #define CLOVER_FLIGHTCONTROL_H
 
 #include <array>
+#include <zephyr/logging/log.h>
+#include "util/math.h"
+#include "util/pid.h"
+#include "hornet_tvc.h"
 
 void centerTVC();
 

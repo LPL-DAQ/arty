@@ -61,6 +61,7 @@ K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), 100, 1);
 
 /// Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
 /// interactions with peripherals should be asynchronous.
+// Throttle Variant
 static void step_control_loop(k_work *) {
     // Last iter of control loop, execute cleanup tasks. step_count is [1, count_to] for normal iterations,
     // and step_count == count_to+1 for the last cleanup iteration.
@@ -116,7 +117,25 @@ static void step_control_loop(k_work *) {
         LOG_ERR("Control data queue is full! Data is being lost!!!");
     }
 }
+K_WORK_DEFINE(control_loop, step_control_loop);
 
+
+/// ISR that schedules a control iteration in the work queue.
+static void control_loop_schedule(k_timer *timer) {
+    // step_count is [0, count_to) during a normal iteration. step_count == count_to
+    // schedules the final iteration.
+    if (step_count > count_to) {
+        k_msgq_purge(&control_data_msgq);
+        k_timer_stop(timer);
+        return;
+    }
+    k_work_submit(&control_loop);
+    step_count += 1;
+}
+
+K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
+
+// Throttle Variant
 int sequencer_start_trace() {
     if (breakpoints.size() < 2) {
         LOG_ERR("No breakpoints specified.");
@@ -197,9 +216,7 @@ int sequencer_start_trace() {
     k_mutex_unlock(&sequence_lock);
     return 0;
 }
-
-
-
+// Throttle Only
 int sequencer_prepare(int gap, std::vector<float> bps) {
     if (gap <= 0 || bps.empty()) {
         return 1;
@@ -236,6 +253,7 @@ K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), 100, 1);
 
 /// Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
 /// interactions with peripherals should be asynchronous.
+// Flight Variant
 static void step_control_loop(k_work *) {
     // Last iter of control loop, execute cleanup tasks. step_count is [1, count_to] for normal iterations,
     // and step_count == count_to+1 for the last cleanup iteration.
@@ -267,8 +285,28 @@ static void step_control_loop(k_work *) {
         LOG_ERR("Control data queue is full! Data is being lost!!!");
     }
 }
+K_WORK_DEFINE(control_loop, step_control_loop);
 
 
+/// ISR that schedules a control iteration in the work queue.
+static void control_loop_schedule(k_timer *timer) {
+    // step_count is [0, count_to) during a normal iteration. step_count == count_to
+    // schedules the final iteration.
+    if (step_count > count_to) {
+        k_msgq_purge(&control_data_msgq);
+        k_timer_stop(timer);
+        return;
+    }
+    k_work_submit(&control_loop);
+    step_count += 1;
+}
+
+K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
+
+
+
+
+// Flight Variant
 int sequencer_start_trace() {
 
     if (gap_millis < 1) {
@@ -330,30 +368,14 @@ int sequencer_start_trace() {
     return 0;
 }
 
-
+// Only for throttle variant
+int sequencer_prepare(int gap, std::vector<float> bps) {
+    return 0;
+}
 
 #endif
 
 
-
-
-
-K_WORK_DEFINE(control_loop, step_control_loop);
-
-/// ISR that schedules a control iteration in the work queue.
-static void control_loop_schedule(k_timer *timer) {
-    // step_count is [0, count_to) during a normal iteration. step_count == count_to
-    // schedules the final iteration.
-    if (step_count > count_to) {
-        k_msgq_purge(&control_data_msgq);
-        k_timer_stop(timer);
-        return;
-    }
-    k_work_submit(&control_loop);
-    step_count += 1;
-}
-
-K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 
 

@@ -1,11 +1,5 @@
 #include "hornet_tvc.h"
-#include <util/math.h>
 
-#include <zephyr/logging/log.h>
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include <zephyr/kernel.h>
-#include <zephyr/drivers/pwm.h>
 
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 
@@ -81,7 +75,7 @@ int set_desired_thrust_newtons(double thrust_a_n, double thrust_b_n, double max_
     double esc_2_us = util::mapFloat(thrust_b_n, 0, max_thrust_n, 1000, 2000);
 
     esc_write_us(ESC_2, esc_2_us);
-
+    return 0;
 }
 
 /* ESC helper: write a raw microsecond pulse (e.g., 1000–2000 µs) */

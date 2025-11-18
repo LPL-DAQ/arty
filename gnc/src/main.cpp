@@ -10,7 +10,7 @@
 #include "server.h"
 #include "throttle_valve.h"
 #include "pts.h"
-#include "hornet_tvc.h"
+#include "flightcontrol.h"
 
 extern "C" {
 #include <app/drivers/blink.h>

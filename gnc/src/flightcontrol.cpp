@@ -1,13 +1,5 @@
 #include "flightcontrol.h"
 
-#include <zephyr/logging/log.h>
-#include "util/math.h"
-#include "util/pid.h"
-#include "hornet_tvc.h"
-
-
-
-
 LOG_MODULE_REGISTER(flightcontrol, CONFIG_LOG_DEFAULT_LEVEL);
 
 // ---------- Constants ----------
@@ -84,7 +76,7 @@ int flight_init()
     // Bring servos to neutral
     centerTVC();
 
-    int err = esc_init();
+    err = esc_init();
     if (err){
         LOG_ERR("Failed to initialize esc's");
         return 1;
@@ -96,7 +88,7 @@ int flight_init()
     pidRoll.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
     pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
 
-
+    return 0;
 }
 
 // returns {xOutput, yOutput} for thrust angles
@@ -180,11 +172,15 @@ void updateState()
 
 int flight_control_loop_step(double dt)
 {
+    LOG_INF("Got delta time: ");
+    LOG_INF(dt);
+
+
     if (stopped)
     {
-        esc_idle()
+        esc_idle();
         centerTVC();
-        return;
+        return 1;
     }
 
     //imu.update();
@@ -209,6 +205,10 @@ int flight_control_loop_step(double dt)
     set_desired_thrust_newtons(throttle01a * maxThrottleN,throttle01b * maxThrottleN, maxThrottleN);
 
     loopCount++;
+    LOG_INF("loop count completed: ");
+    LOG_INF(loopCount);
+    LOG_INF("\n");
+
     return 0;
 }
 

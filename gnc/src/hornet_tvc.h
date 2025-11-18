@@ -1,6 +1,11 @@
 #ifndef CLOVER_HORNET_TVC_H
 #define CLOVER_HORNET_TVC_H
 
+#include "util/math.h"
+#include <zephyr/logging/log.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/pwm.h>
 /* Simple arming/idle step for the ESCs (e.g., hold ~1000 µs). */
 int servos_init();
