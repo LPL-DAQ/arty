@@ -3,20 +3,14 @@
 
 #include <cstdint>
 
-/**
-    * Initialize the quadrature encoder GPIO/interrupts
-    * Returns 0 on success ... negative error code on fail
-*/
+// Initialize quadrature encoder GPIO + interrupts
+// Returns 0 on success, negative error code on failure
 int encoder_init();
 
-/**
-    Get current encoder position in counts [relative/signed]
-*/
+// Get current encoder position in ticks (signed, relative to boot)
 int32_t encoder_get_position();
 
-/**
-    Get raw "velocity" quantity [counts per last measurement interval, 0 if idle]
-*/
-int32_t encoder_get_velocity_raw();
+// Get corresponding output-shaft angle in degrees
+float encoder_get_degrees();
 
 #endif // CLOVER_ENCODER_H

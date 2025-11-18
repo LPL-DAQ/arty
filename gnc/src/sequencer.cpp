@@ -1,6 +1,8 @@
 #include "sequencer.h"
 #include "throttle_valve.h"
 #include "pts.h"
+#include "encoder.h"   // NEW: for encoder feedback
+
 #include <vector>
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
@@ -29,8 +31,7 @@ volatile int step_count = 0;
 volatile int count_to = 0;
 uint64_t start_clock = 0;
 
-
-/// Data that ought be logged for each control loop iteration.
+// Data that ought be logged for each control loop iteration.
 struct control_iter_data {
     float time;
     uint32_t queue_size;
@@ -39,16 +40,20 @@ struct control_iter_data {
     float motor_velocity;
     float motor_acceleration;
     uint64_t motor_nsec_per_pulse;
+
+    // NEW: encoder feedback for plotting vs motor model
+    float encoder_deg;
+    int32_t encoder_ticks;
+
     float pt202;
     float pt203;
     float ptf401;
 };
 
-/// Control loop iteration will enqueue data for broadcasting over ethernet by another thread.
 K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), 100, 1);
 
-/// Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
-/// interactions with peripherals should be asynchronous.
+// Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
+// interactions with peripherals should be asynchronous.
 static void step_control_loop(k_work *) {
     // Last iter of control loop, execute cleanup tasks. step_count is [1, count_to] for normal iterations,
     // and step_count == count_to+1 for the last cleanup iteration.
@@ -77,15 +82,21 @@ static void step_control_loop(k_work *) {
         target = breakpoints[low_bp_index] + (breakpoints[high_bp_index] - breakpoints[low_bp_index]) * tween;
     }
 
-
     // move to target
     throttle_valve_move(target);
 
-    // Log current data
-    // TODO - this copies :/ can we put the message in place?
+    // Timestamp
     uint64_t since_start = k_cycle_get_64() - start_clock;
     uint64_t ns_since_start = k_cyc_to_ns_floor64(since_start);
+
+    // PTs
     pt_readings readings = pts_sample();
+
+    // NEW: encoder feedback (ticks + deg)
+    int32_t enc_ticks = encoder_get_position();
+    float enc_deg = encoder_get_degrees();
+
+    // Log current data
     control_iter_data iter_data = {
             .time = static_cast<float>(ns_since_start) / 1e9f,
             .queue_size = k_msgq_num_used_get(&control_data_msgq),
@@ -94,6 +105,10 @@ static void step_control_loop(k_work *) {
             .motor_velocity = throttle_valve_get_velocity(),
             .motor_acceleration = throttle_valve_get_acceleration(),
             .motor_nsec_per_pulse = throttle_valve_get_nsec_per_pulse(),
+
+            .encoder_deg = enc_deg,
+            .encoder_ticks = enc_ticks,
+
             .pt202 = readings.pt202,
             .pt203 = readings.pt203,
             .ptf401 = readings.ptf401
@@ -107,7 +122,7 @@ static void step_control_loop(k_work *) {
 
 K_WORK_DEFINE(control_loop, step_control_loop);
 
-/// ISR that schedules a control iteration in the work queue.
+// ISR that schedules a control iteration in the work queue.
 static void control_loop_schedule(k_timer *timer) {
     // step_count is [0, count_to) during a normal iteration. step_count == count_to
     // schedules the final iteration.
@@ -143,7 +158,6 @@ int sequencer_start_trace() {
         return 1;
     }
 
-
     // Replace first breakpoint with current position
     breakpoints.front() = throttle_valve_get_pos();
     LOG_INF("Got breakpoints:");
@@ -162,15 +176,15 @@ int sequencer_start_trace() {
     // Print header
     send_string_fully(data_sock, ">>>>SEQ START<<<<\n");
     send_string_fully(data_sock,
-                      "time,queue_size,motor_target,motor_pos,motor_velocity,motor_acceleration,motor_nsec_per_pulse,pt202,pt203,ptf401\n");
+                      "time,queue_size,motor_target,motor_pos,motor_velocity,"
+                      "motor_acceleration,motor_nsec_per_pulse,"
+                      "encoder_deg,encoder_ticks,"
+                      "pt202,pt203,ptf401\n");
 
-    // Dump data as we get it. Connection client is preemptible while control sequence is in system workqueue
-    // (cooperative) so sending data should never block processing of control iter.
+    // Dump data as we get it.
     control_iter_data data = {0};
     while (true) {
         int err = k_msgq_get(&control_data_msgq, &data, K_FOREVER);
-        // -ENOMSG is sent when queue is purged to signal end of control seq. No other possible
-        // error as we are waiting forever.
         if (err) {
             break;
         }
@@ -178,16 +192,21 @@ int sequencer_start_trace() {
         constexpr int MAX_DATA_LEN = 512;
         char buf[MAX_DATA_LEN];
 
-        int would_write = snprintfcb(buf, MAX_DATA_LEN, "%.8f,%d,%.8f,%.8f,%.8f,%.8f,%llu,%.8f,%.8f,%.8f\n",
-                                     static_cast<double>(data.time),
-                                     data.queue_size,
-                                     static_cast<double>(data.motor_target), static_cast<double>(data.motor_pos),
-                                     static_cast<double>(data.motor_velocity),
-                                     static_cast<double>(data.motor_acceleration),
-                                     data.motor_nsec_per_pulse,
-                                     static_cast<double>(data.pt202),
-                                     static_cast<double>(data.pt203), static_cast<double>(data.ptf401));
-        // snprintfcb's would_write excludes null byte, but max via MAX_DATA_LEN would include null byte.
+        int would_write = snprintfcb(
+                buf, MAX_DATA_LEN,
+                "%.8f,%d,%.8f,%.8f,%.8f,%.8f,%llu,%.8f,%d,%.8f,%.8f,%.8f\n",
+                static_cast<double>(data.time),
+                data.queue_size,
+                static_cast<double>(data.motor_target),
+                static_cast<double>(data.motor_pos),
+                static_cast<double>(data.motor_velocity),
+                static_cast<double>(data.motor_acceleration),
+                data.motor_nsec_per_pulse,
+                static_cast<double>(data.encoder_deg),
+                data.encoder_ticks,
+                static_cast<double>(data.pt202),
+                static_cast<double>(data.pt203),
+                static_cast<double>(data.ptf401));
         int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
         err = send_fully(data_sock, buf, actually_written);
         if (err) {
@@ -197,7 +216,6 @@ int sequencer_start_trace() {
 
     send_string_fully(data_sock, ">>>>SEQ END<<<<\n");
 
-    // Next data recipient should be explicitly re-set.
     data_sock = -1;
     k_mutex_unlock(&sequence_lock);
     return 0;
