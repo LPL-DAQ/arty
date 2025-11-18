@@ -1,4 +1,5 @@
-#include <array>
+#include "flightcontrol.h"
+
 #include <zephyr/logging/log.h>
 #include "util/math.h"
 #include "util/pid.h"
@@ -176,7 +177,8 @@ void updateState()
     // state.zAcc = la.z;
 }
 // dt = milliseconds since last loop
-int flight_control_loop(double dt)
+
+int flight_control_loop_step(double dt)
 {
     if (stopped)
     {
@@ -209,6 +211,7 @@ int flight_control_loop(double dt)
     loopCount++;
     return 0;
 }
+
 
 void flight_stop(){
     stopped = true;

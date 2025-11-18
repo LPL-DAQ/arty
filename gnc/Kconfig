@@ -6,8 +6,25 @@
 # You can browse these options using the west targets menuconfig (terminal) or
 # guiconfig (GUI).
 
+
 menu "Zephyr"
 source "Kconfig.zephyr"
+endmenu
+
+menu "Application options"
+
+choice APP_CONTROL_LOOP
+    prompt "Control loop mode"
+    default APP_CONTROL_LOOP_THROTTLE
+
+config APP_CONTROL_LOOP_THROTTLE
+    bool "Throttle control loop"
+
+config APP_CONTROL_LOOP_FLIGHT
+    bool "Flight control loop"
+
+endchoice
+
 endmenu
 
 module = THROTTLE

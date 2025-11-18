@@ -1,6 +1,5 @@
 #include "sequencer.h"
-#include "throttle_valve.h"
-#include "pts.h"
+
 #include <vector>
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
@@ -13,22 +12,34 @@
 #include <cstdint>
 #include "server.h"
 
+
+// Expressions regardless of build variant.
+
 LOG_MODULE_REGISTER(sequencer, CONFIG_LOG_DEFAULT_LEVEL);
-
-constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
-
-static constexpr int MAX_BREAKPOINTS = 20;
 
 K_MUTEX_DEFINE(sequence_lock);
 
 static int gap_millis;
-static std::vector<float> breakpoints;
 static int data_sock = -1;
 
 volatile int step_count = 0;
 volatile int count_to = 0;
 uint64_t start_clock = 0;
 
+
+
+
+
+// Throttle vs Hornet setups
+
+#if defined(CONFIG_APP_CONTROL_LOOP_THROTTLE)
+#include "throttle_valve.h"
+#include "pts.h"
+
+
+constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
+static constexpr int MAX_BREAKPOINTS = 20;
+static std::vector<float> breakpoints;
 
 /// Data that ought be logged for each control loop iteration.
 struct control_iter_data {
@@ -43,9 +54,10 @@ struct control_iter_data {
     float pt203;
     float ptf401;
 };
-
 /// Control loop iteration will enqueue data for broadcasting over ethernet by another thread.
 K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), 100, 1);
+
+
 
 /// Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
 /// interactions with peripherals should be asynchronous.
@@ -104,23 +116,6 @@ static void step_control_loop(k_work *) {
         LOG_ERR("Control data queue is full! Data is being lost!!!");
     }
 }
-
-K_WORK_DEFINE(control_loop, step_control_loop);
-
-/// ISR that schedules a control iteration in the work queue.
-static void control_loop_schedule(k_timer *timer) {
-    // step_count is [0, count_to) during a normal iteration. step_count == count_to
-    // schedules the final iteration.
-    if (step_count > count_to) {
-        k_msgq_purge(&control_data_msgq);
-        k_timer_stop(timer);
-        return;
-    }
-    k_work_submit(&control_loop);
-    step_count += 1;
-}
-
-K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 int sequencer_start_trace() {
     if (breakpoints.size() < 2) {
@@ -203,6 +198,8 @@ int sequencer_start_trace() {
     return 0;
 }
 
+
+
 int sequencer_prepare(int gap, std::vector<float> bps) {
     if (gap <= 0 || bps.empty()) {
         return 1;
@@ -212,6 +209,153 @@ int sequencer_prepare(int gap, std::vector<float> bps) {
     breakpoints = bps;
     return 0;
 }
+
+
+#endif
+
+
+
+
+
+
+#if defined(CONFIG_APP_CONTROL_LOOP_FLIGHT)
+#include "flightcontrol.h"
+
+constexpr uint64_t NSEC_PER_CONTROL_TICK = 50'000'000; // 50 ms
+
+/// Data that ought be logged for each control loop iteration.
+struct control_iter_data {
+    float time;
+    uint32_t queue_size;
+    float pos_x;
+};
+
+/// Control loop iteration will enqueue data for broadcasting over ethernet by another thread.
+K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), 100, 1);
+
+
+/// Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
+/// interactions with peripherals should be asynchronous.
+static void step_control_loop(k_work *) {
+    // Last iter of control loop, execute cleanup tasks. step_count is [1, count_to] for normal iterations,
+    // and step_count == count_to+1 for the last cleanup iteration.
+    if (step_count > count_to) {
+        flight_stop();
+        // HACK: relinquish control for a little bit to allow client connection to flush data.
+        // There really ought to be a cleaner way to do this.
+        k_sleep(K_MSEC(100));
+        k_msgq_purge(&control_data_msgq); // Signals client connection that no more
+        return;
+    }
+
+    // move to target
+    flight_control_loop_step(NSEC_PER_CONTROL_TICK/1'000'000);
+
+    // Log current data
+    // TODO - this copies :/ can we put the message in place?
+    uint64_t since_start = k_cycle_get_64() - start_clock;
+    uint64_t ns_since_start = k_cyc_to_ns_floor64(since_start);
+
+    control_iter_data iter_data = {
+            .time = static_cast<float>(ns_since_start) / 1e9f,
+            .queue_size = k_msgq_num_used_get(&control_data_msgq),
+            .pos_x = 0 // Will fill in later
+    };
+    int err = k_msgq_put(&control_data_msgq, &iter_data, K_NO_WAIT);
+    if (err) {
+        // Adding to msgq can only fail with -ENOMSG.
+        LOG_ERR("Control data queue is full! Data is being lost!!!");
+    }
+}
+
+
+int sequencer_start_trace() {
+
+    if (gap_millis < 1) {
+        LOG_ERR("gap_millis is too short: %d ms", gap_millis);
+        return 1;
+    }
+
+    k_mutex_lock(&sequence_lock, K_FOREVER);
+    if (data_sock == -1) {
+        LOG_ERR("Data socket is not set");
+        k_mutex_unlock(&sequence_lock);
+        return 1;
+    }
+
+
+    step_count = 0;
+    count_to = (5000 / (NSEC_PER_CONTROL_TICK / 1'000'000)); // 5000 ms
+    start_clock = k_cycle_get_64();
+
+    // Start control iterations
+    k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
+
+    // Print header
+    send_string_fully(data_sock, ">>>>FLIGHT START<<<<\n");
+    send_string_fully(data_sock,
+                      "time,queue_size,pos_x\n");
+
+    // Dump data as we get it. Connection client is preemptible while control sequence is in system workqueue
+    // (cooperative) so sending data should never block processing of control iter.
+    control_iter_data data = {0};
+    while (true) {
+        int err = k_msgq_get(&control_data_msgq, &data, K_FOREVER);
+        // -ENOMSG is sent when queue is purged to signal end of control seq. No other possible
+        // error as we are waiting forever.
+        if (err) {
+            break;
+        }
+
+        constexpr int MAX_DATA_LEN = 512;
+        char buf[MAX_DATA_LEN];
+
+        int would_write = snprintfcb(buf, MAX_DATA_LEN, "%.8f,%d,%.8f\n",
+                                     static_cast<double>(data.time),
+                                     data.queue_size,
+                                     static_cast<double>(data.pos_x));
+        // snprintfcb's would_write excludes null byte, but max via MAX_DATA_LEN would include null byte.
+        int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
+        err = send_fully(data_sock, buf, actually_written);
+        if (err) {
+            LOG_WRN("Failed to send data");
+        }
+    }
+
+    send_string_fully(data_sock, ">>>>FLIGHT END<<<<\n");
+
+    // Next data recipient should be explicitly re-set.
+    data_sock = -1;
+    k_mutex_unlock(&sequence_lock);
+    return 0;
+}
+
+
+
+#endif
+
+
+
+
+
+K_WORK_DEFINE(control_loop, step_control_loop);
+
+/// ISR that schedules a control iteration in the work queue.
+static void control_loop_schedule(k_timer *timer) {
+    // step_count is [0, count_to) during a normal iteration. step_count == count_to
+    // schedules the final iteration.
+    if (step_count > count_to) {
+        k_msgq_purge(&control_data_msgq);
+        k_timer_stop(timer);
+        return;
+    }
+    k_work_submit(&control_loop);
+    step_count += 1;
+}
+
+K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
+
+
 
 void sequencer_set_data_recipient(int sock) {
     k_mutex_lock(&sequence_lock, K_FOREVER);
