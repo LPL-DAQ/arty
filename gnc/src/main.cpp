@@ -10,6 +10,7 @@
 #include "server.h"
 #include "throttle_valve.h"
 #include "pts.h"
+#include "encoder.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -51,6 +52,13 @@ int main(void) {
     err = pts_init();
     if (err) {
         LOG_ERR("Failed to initialize PTs");
+        return 0;
+    }
+
+    LOG_INF("Initializing encoder");
+    err = encoder_init();
+    if (err) {
+        LOG_ERR("Failed to initialize encoder");
         return 0;
     }
 
