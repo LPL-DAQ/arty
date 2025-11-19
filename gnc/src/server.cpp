@@ -270,7 +270,14 @@ static void handle_client(void *p1_client_socket, void *, void *) {
             }
             send_string_fully(client_guard.socket, payload);
         } else if (command == "fly#"){
-
+            sequencer_set_data_recipient(client_guard.socket);
+            int err = sequencer_start_trace();
+            if (err) {
+                LOG_ERR("Failed to run flight sequence: err %d", err);
+                send_string_fully(client_guard.socket, "Failed to run flight sequence\n");
+                continue;
+            }
+            send_string_fully(client_guard.socket, "flight sequence complete.\n");
         }
 
          else {

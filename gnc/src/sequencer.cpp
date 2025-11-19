@@ -309,10 +309,6 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 // Flight Variant
 int sequencer_start_trace() {
 
-    if (gap_millis < 1) {
-        LOG_ERR("gap_millis is too short: %d ms", gap_millis);
-        return 1;
-    }
 
     k_mutex_lock(&sequence_lock, K_FOREVER);
     if (data_sock == -1) {
