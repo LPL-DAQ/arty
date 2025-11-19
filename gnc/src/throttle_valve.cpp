@@ -21,12 +21,12 @@ volatile uint32_t pulse_counter_ticks = 0;
 LOG_MODULE_REGISTER(throttle_valve, CONFIG_LOG_DEFAULT_LEVEL);
 
 constexpr float MICROSTEPS = 8.0f;
-constexpr float GEARBOX_RATIO = 20.0f;
+constexpr float GEARBOX_RATIO = 5.0f;
 constexpr float STEPS_PER_REVOLUTION = 200.0f;
 constexpr float DEG_PER_STEP = 360.0f / STEPS_PER_REVOLUTION / GEARBOX_RATIO / MICROSTEPS;
 
-constexpr float MAX_VELOCITY = 225.0f; // In deg/s
-constexpr float MAX_ACCELERATION = 12000.0f; // In deg/s^2
+constexpr float MAX_VELOCITY = 225.0f * 4; // In deg/s
+constexpr float MAX_ACCELERATION = 12000.0f * 40; // In deg/s^2
 
 
 enum MotorState {

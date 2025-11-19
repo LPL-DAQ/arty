@@ -13,4 +13,7 @@ int32_t encoder_get_position();
 // Get corresponding output-shaft angle in degrees
 float encoder_get_degrees();
 
+// Set the current encoder position without moving anything. In degrees.
+void encoder_reset_pos(float pos);
+
 #endif // CLOVER_ENCODER_H

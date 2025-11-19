@@ -4,6 +4,8 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <cmath>
+#include <algorithm>
 
 LOG_MODULE_REGISTER(encoder, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -14,20 +16,19 @@ static const struct gpio_dt_spec encA = GPIO_DT_SPEC_GET(USER_NODE, encoder_a_gp
 static const struct gpio_dt_spec encB = GPIO_DT_SPEC_GET(USER_NODE, encoder_b_gpios);
 
 // Mechanical parameters (motor side)
-static constexpr float ENCODER_CPR  = 4000.0f; // counts per motor revolution (quadrature)
-static constexpr float GEAR_RATIO   = 20.0f;   // gearbox ratio
+static constexpr float ENCODER_CPR = 4000.0f; // counts per motor revolution (quadrature)
+static constexpr float GEAR_RATIO = 5.0f;   // gearbox ratio
 static constexpr float DEG_PER_TICK = 360.0f / (ENCODER_CPR * GEAR_RATIO);
 
 // Quad state + position tracking
 static volatile uint8_t s_prev_state = 0;
-static volatile int32_t s_position   = 0;
+static volatile int32_t s_position = 0;
 
 static struct gpio_callback encA_cb;
 static struct gpio_callback encB_cb;
 
 // Read current 2-bit state: bit0 = A, bit1 = B
-static inline uint8_t read_state()
-{
+static inline uint8_t read_state() {
     uint8_t a = gpio_pin_get_dt(&encA);
     uint8_t b = gpio_pin_get_dt(&encB);
     return (b << 1) | a;
@@ -38,16 +39,18 @@ static inline uint8_t read_state()
 // forward: 00 → 01 → 11 → 10 → 00
 // reverse: 00 → 10 → 11 → 01 → 00 (need this tested as param)
 static constexpr int8_t Q_TABLE[4][4] = {
-    /*new: 00, 01, 11, 10*/
-    /*00*/ {  0, +1,  0, -1 },
-    /*01*/ { -1,  0, +1,  0 },
-    /*11*/ {  0, -1,  0, +1 },
-    /*10*/ { +1,  0, -1,  0 },
+        /*new: 00, 01, 11, 10*/
+        /*00*/ {0,  +1, -1, 0},
+        /*01*/
+               {-1, 0,  0,  +1},
+        /*11*/
+               {+1, 0,  0,  -1},
+        /*10*/
+               {0,  -1, +1, 0},
 };
 
 // ISR on any edge
-static void encoder_gpio_isr(const struct device*, struct gpio_callback*, gpio_port_pins_t)
-{
+static void encoder_gpio_isr(const struct device *, struct gpio_callback *, gpio_port_pins_t) {
     uint8_t new_state = read_state();
     int8_t delta = Q_TABLE[s_prev_state][new_state];
 
@@ -55,8 +58,7 @@ static void encoder_gpio_isr(const struct device*, struct gpio_callback*, gpio_p
     s_prev_state = new_state;
 }
 
-int encoder_init()
-{
+int encoder_init() {
     if (!device_is_ready(encA.port) || !device_is_ready(encB.port)) {
         LOG_ERR("Encoder GPIO not ready");
         return -ENODEV;
@@ -89,12 +91,14 @@ int encoder_init()
     return 0;
 }
 
-int32_t encoder_get_position()
-{
+int32_t encoder_get_position() {
     return s_position;
 }
 
-float encoder_get_degrees()
-{
+float encoder_get_degrees() {
     return static_cast<float>(s_position) * DEG_PER_TICK;
+}
+
+void encoder_reset_pos(float pos) {
+    s_position = static_cast<float>(std::round(pos / DEG_PER_TICK));
 }

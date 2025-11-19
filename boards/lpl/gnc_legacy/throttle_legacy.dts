@@ -50,8 +50,8 @@ To the find devicetree ADC channel for a teensy ADC pin:
         stepper-dir-gpios = <&gpio3 18 GPIO_ACTIVE_HIGH>; // Pin 28
         stepper-ena-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 4
 
-        encoder-a-gpios = <&gpio2 3 GPIO_ACTIVE_HIGH>; // Pin 2
-        encoder-b-gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>; // Pin 3
+        encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
+        encoder-b-gpios = <&gpio4 5 GPIO_ACTIVE_HIGH>; // Pin 3
 
         // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
         // corresponding to the sorted ascending order of ADC1 channels. The following corresonds to pins A0, A1, A3,

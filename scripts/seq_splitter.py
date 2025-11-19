@@ -35,6 +35,7 @@ for line in sys.stdin:
         log_path = f'{LOGS_DIR}/seq_{start_stamp}_ver_{SEQ_FORMAT_VERSION}.csv'
         with open(log_path, 'w') as log_file:
             log_file.write(log_text)
+        log_text = ''
 
         print(f'Wrote sequence data to: {log_path}')
 
@@ -50,7 +51,7 @@ for line in sys.stdin:
             {
                 'row': 2,
                 'col': 1,
-                'sensors': ['motor_pos']
+                'sensors': ['motor_pos', 'encoder_deg', 'motor_target']
                 # 'sensors': ['motor_pos', 'motor_target', 'motor_velocity', 'motor_acceleration']
             },
         ]
