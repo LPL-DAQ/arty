@@ -1,0 +1,11 @@
+identifier: Throttle Legacy Board
+name: Throttle-Legacy
+vendor: LPL
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio

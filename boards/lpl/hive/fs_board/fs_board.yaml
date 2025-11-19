@@ -1,0 +1,14 @@
+identifier: FS-Board
+name: FS-Board
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+ram: 1024
+flash: 128
+supported:
+  - gpio
+  - uart
+  - qspi
+vendor: vcc-gnd

@@ -1,0 +1,2 @@
+board_set_flasher_ifnset(stm32cubeprogrammer_flasherd)
+board_finalize_runner_args(stm32cubeprogrammer_flasherd)

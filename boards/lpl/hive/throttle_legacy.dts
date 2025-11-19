@@ -1,0 +1,171 @@
+/*
+LPL throttle dev 2.5 PCB, from spring/summer 2025.
+
+To find the devicetree equivalent of a teensy GPIO pin:
+    1) Find the SOC pin mapped to the teensy pin using the schematic: https://www.pjrc.com/teensy/schematic.html. For
+       example, teensy pin 12 -> B0_01
+    2) Examine the devicetree for the teensy SOC and find the gpio bank + index corresopnding to the SOC pin:
+       https://sourcegraph.com/github.com/zephyrproject-rtos/zephyr/-/blob/dts/arm/nxp/nxp_rt1060.dtsi?L90-94.
+       For example:
+       B0_01 ->
+       ...
+         GPIO bank: &gpio2
+         vvvvv
+       &gpio2 {
+           pinmux = <&iomuxc_gpio_b0_00_gpio2_io00>,
+                <&iomuxc_gpio_b0_01_gpio2_io01>,
+                              ^^^^^         ^^
+                              Matching pin  Index 1
+       ...
+       Be careful, as some pins may have very similar names. Note how we selected `iomuxc_gpio_b0_01_gpio2_io01` rather
+       than `iomuxc_gpio_sd_b0_01_gpio3_io13` due to the erroneous `sd_` prefix in that other pin name.
+    3) Convert this to the device tree phandle.
+       For example: <&gpio2 1 GPIO_ACTIVE_HIGH>
+                      ^^^   ^ ^^^^^^^^^^^^^^^^
+                      Bank  |   Other GPIO config flags
+                            Index
+
+To the find devicetree ADC channel for a teensy ADC pin:
+    1) Check the teensy API for how they map teensy pins to ADC channels: https://sourcegraph.com/github.com/PaulStoffregen/cores/-/blob/teensy4/analog.c?L41-86.
+       Note the channel number and ADC number. Numbers less than 128 are the channel number on ADC1 while numbers that
+       are `128+XYZ` use channel number XYZ on ADC2.
+    2)
+
+*/
+
+/dts-v1/;
+
+#include <../boards/pjrc/teensy4/teensy41.dts>
+
+/ {
+    model = "Throttle Legacy Board";
+
+    aliases {
+        pt-adc = &adc1;
+        stepper-pulse-counter = &qtmr1_timer0;
+    };
+
+    zephyr,user {
+        stepper-pul-gpios = <&gpio4 31 GPIO_ACTIVE_HIGH>; // Pin 29
+        stepper-dir-gpios = <&gpio3 18 GPIO_ACTIVE_HIGH>; // Pin 28
+        stepper-ena-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 4
+
+        // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
+        // corresponding to the sorted ascending order of ADC1 channels. The following corresonds to pins A0, A1, A3,
+        // and A2. We really ought investigate further.
+        pt-names = "pt102", "pt203", "pt204", "ptf401";
+        io-channels = <&adc1 7>, <&adc1 8>, <&adc1 11>, <&adc1 12>;
+    };
+
+    chosen {
+        zephyr,console = &cdc_acm_uart0;
+    };
+
+    example_sensor: example-sensor {
+        compatible = "zephyr,example-sensor";
+        input-gpios = <&gpio6 18 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+    };
+
+    blink_led: blink-led {
+        compatible = "blink-gpio-led";
+        led-gpios = <&gpio2 3 GPIO_ACTIVE_HIGH>;
+        blink-period-ms = <1000>;
+    };
+};
+
+// Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
+&pinctrl {
+    pinmux_adc1: pinmux_adc1 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_02_gpio1_io18>,
+                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>,
+                     <&iomuxc_gpio_ad_b1_06_gpio1_io22>,
+                     <&iomuxc_gpio_ad_b1_07_gpio1_io23>;
+            bias-disable; // These should be pulled down by voltage divider
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+};
+
+// Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/adc/nxp%2Cmcux-12b1msps-sar.html
+pt_adc: &adc1 {
+    // She's broken, he's...
+    status = "okay";
+    pinctrl-0 = <&pinmux_adc1>;
+    pinctrl-names = "default";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    // PT1 (top-left), pin A0 / 14, AD_B1_02
+    channel@7 {
+        reg = <0x7>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    // PT2 (bottom-left), pin A1 / 15, AD_B1_03
+    channel@8 {
+        reg = <0x8>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    // PT4 (top-right), pin A3 / 17, AD_B1_07
+    channel@b {
+        reg = <0xb>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    // PT3 (bottom-right), pin A2 / 16, AD_B1_06
+    channel@c {
+        reg = <0xc>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    // TODO - add add'l analog-ins.
+};
+
+// Timer for stepper pulses.
+// Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/counter/nxp%2Cimx-tmr.html
+// Teensyduino equivalent: https://sourcegraph.com/github.com/PaulStoffregen/cores/-/blob/teensy4/IntervalTimer.cpp
+&qtmr1_timer0 {
+    status = "okay";
+    mode = "kQTMR_PriSrcRiseEdge"; // Rising edge of primary clock source
+    // Use instruction pointer clock, which is 600 MHz: https://sourcegraph.com/github.com/zephyrproject-rtos/zephyr/-/blob/dts/arm/nxp/nxp_rt10xx.dtsi?L75-79
+    // These are 16-bit counters, so picking 32x clock division gets us a minimum width of ~53 ns and a maximum width of
+    // ~3.5 ms. This more than covers our driver's minimum width of 2.5 us and our control loop's rough maximum interval
+    // of 1 ms.
+    primary-source = "kQTMR_ClockDivide_32";
+};
+
+&zephyr_udc0 {
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+        label = "CDC_ACM_0";
+    };
+};
+
+&lpuart6 {
+    status = "disabled";
+};
+
+&lpuart4 {
+    status = "okay";
+    current-speed = <115200>;
+};

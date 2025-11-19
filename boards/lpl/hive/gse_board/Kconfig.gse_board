@@ -1,0 +1,2 @@
+config BOARD_GSE_BOARD
+	select SOC_STM32H750XX
