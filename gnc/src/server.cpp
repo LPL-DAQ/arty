@@ -11,6 +11,7 @@
 #include "server.h"
 #include "guards/SocketGuard.h"
 #include "pts.h"
+#include "encoder.h"
 #include "sequencer.h"
 
 
@@ -95,10 +96,12 @@ static void handle_client(void *p1_client_socket, void *, void *) {
         } else if (command == "resetopen#") {
             // Sets the current position as 90 deg WITHOUT moving the valve.
             throttle_valve_set_open();
+            encoder_reset_pos(90.0f);
             send_string_fully(client_guard.socket, "Done reset open\n");
         } else if (command == "resetclose#") {
             // Sets the current position as 0 deg WITHOUT moving the valve.
             throttle_valve_set_closed();
+            encoder_reset_pos(0.0f);
             send_string_fully(client_guard.socket, "Done reset close\n");
         } else if (command.starts_with("seq")) {
             // Example: seq500;75.5,52.0,70,90, where 500 -> 500ms between each breakpoint and
