@@ -47,7 +47,8 @@ struct control_iter_data {
     float ptf401;
 };
 
-K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), 100, 1);
+static constexpr int MAX_CONTROL_DATA_QUEUE_SIZE = 250;
+K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), MAX_CONTROL_DATA_QUEUE_SIZE, 1);
 
 // Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
 // interactions with peripherals should be asynchronous.
