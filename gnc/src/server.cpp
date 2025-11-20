@@ -104,7 +104,7 @@ static void handle_client(void *p1_client_socket, void *, void *) {
             encoder_reset_pos(0.0f);
             send_string_fully(client_guard.socket, "Done reset close\n");
         } else if (command.starts_with("seq")) {
-            // Example: seq500;75.5,52.0,70,90, where 500 -> 500ms between each breakpoint and
+            // Example: seq500;75,52,70,90, where 500 -> 500ms between each breakpoint and
             // the commas-seperated values are the breakpoints in degrees.
             // NOTE: An initial breakpoint, representing the valve current starting position,
             // is implicitly added. Thus, the example shown will run for 2s as we actually start
