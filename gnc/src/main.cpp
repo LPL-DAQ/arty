@@ -6,6 +6,7 @@
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/net_pkt.h>
+#include <Adafruit_BNO08x.h>
 
 #include "server.h"
 #include "throttle_valve.h"

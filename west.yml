@@ -12,3 +12,7 @@ manifest:
           - cmsis_6
           - hal_nxp
           - hal_stm32
+    - name: Arduino-Core-Zephyr
+      path: modules/lib/Arduino-Zephyr-API
+      revision: main
+      url: https://github.com/zephyrproject-rtos/gsoc-2022-arduino-core
