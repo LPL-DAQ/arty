@@ -15,7 +15,6 @@ static const struct gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user
 
 /// Timer for delivering pulses to driver
 static const struct device *stepper_pulse_counter_dev = DEVICE_DT_GET(DT_ALIAS(stepper_pulse_counter));
-constexpr int COUNTER_CHANNEL = 0;
 volatile uint32_t pulse_counter_ticks = 0;
 
 LOG_MODULE_REGISTER(throttle_valve, CONFIG_LOG_DEFAULT_LEVEL);
@@ -38,32 +37,17 @@ static MotorState state = STOPPED;
 volatile static int steps = 0;
 static float velocity = 0;
 static float acceleration = 0;
-static volatile uint64_t last_time = 0;
-static volatile uint64_t true_interval = 0;
+static volatile uint64_t last_pulse_cycle = 0;
+static volatile uint64_t pulse_interval_cycles = 0;
 K_MUTEX_DEFINE(motor_lock);
 
 
 /// Directly controls signal to controller, each rising edge on PUL is one step.
-static void pulse(const struct device *, uint8_t, uint32_t, void *) {
-    // Schedule next pulse
-    int err = counter_cancel_channel_alarm(stepper_pulse_counter_dev, COUNTER_CHANNEL);
-    if (err) {
-        LOG_ERR("Failed to cancel current stepper pulse counter channel alarm: err %d", err);
-    }
-    const counter_alarm_cfg pulse_counter_cfg = {
-            .callback = pulse,
-            .ticks = pulse_counter_ticks,
-            .user_data = nullptr,
-            .flags = 0
-    };
-    err = counter_set_channel_alarm(stepper_pulse_counter_dev, COUNTER_CHANNEL, &pulse_counter_cfg);
-    if (err) {
-        LOG_ERR("Failed to set counter top: err %d", err);
-    }
-
-    uint64_t now = k_cycle_get_64();
-    true_interval = now - last_time;
-    last_time = now;
+static void pulse(const struct device *, void *) {
+    // Time cycles since last pulse
+    uint64_t now_cycles = k_cycle_get_64();
+    pulse_interval_cycles = now_cycles - last_pulse_cycle;
+    last_pulse_cycle = now_cycles;
 
     // Switch direction, if we must.
     // gpio high -> flipped by converter to low -> more open.
@@ -108,7 +92,7 @@ int throttle_valve_init() {
 
 int throttle_valve_start_calibrate() {
     LOG_INF("Beginning calibration.");
-//
+
 //    int err = throttle_valve_move(105.0f, 30.0f);
 //    if (err) {
 //        LOG_ERR("Move failed during calibration: err %d", err);
@@ -150,30 +134,21 @@ void throttle_valve_move(float target_deg) {
     acceleration = (target_velocity - velocity) / CONTROL_TIME;
     velocity = target_velocity;
 
-    // Ensure timer is running
-    counter_start(stepper_pulse_counter_dev);
-
-    // Halt current pulse counter.
-    int err = counter_cancel_channel_alarm(stepper_pulse_counter_dev, COUNTER_CHANNEL);
-    if (err) {
-        LOG_ERR("Failed to cancel current stepper pulse counter channel alarm: err %d", err);
-    }
-
-    // Set new ticks between each alarm
-    pulse_counter_ticks = std::min(counter_us_to_ticks(stepper_pulse_counter_dev, usec_per_pulse),
-                                   counter_get_top_value(stepper_pulse_counter_dev));
-
-    // Kick off new counter
-    static counter_alarm_cfg pulse_counter_cfg = {
+    uint32_t ticks = std::min(counter_us_to_ticks(stepper_pulse_counter_dev, usec_per_pulse),
+                              counter_get_max_top_value(stepper_pulse_counter_dev));
+    counter_top_cfg pulse_counter_config{
+            .ticks = ticks,
             .callback = pulse,
-            .ticks = pulse_counter_ticks,
             .user_data = nullptr,
             .flags = 0
     };
-    err = counter_set_channel_alarm(stepper_pulse_counter_dev, COUNTER_CHANNEL, &pulse_counter_cfg);
+    int err = counter_set_top_value(stepper_pulse_counter_dev, &pulse_counter_config);
     if (err) {
-        LOG_ERR("Failed to set counter top: err %d", err);
+        LOG_ERR("Failed to set pulse counter top value: errno %d", err);
     }
+
+    // Ensure timer is running
+    counter_start(stepper_pulse_counter_dev);
 
     state = RUNNING;
 }
@@ -206,7 +181,7 @@ float throttle_valve_get_pos() {
 
 /// Get interval between each call to pulse counter.
 uint64_t throttle_valve_get_nsec_per_pulse() {
-    return k_cyc_to_ns_near64(true_interval);
+    return k_cyc_to_ns_near64(pulse_interval_cycles);
 }
 
 int throttle_valve_set_open() {

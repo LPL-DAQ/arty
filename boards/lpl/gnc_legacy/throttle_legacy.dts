@@ -42,7 +42,7 @@ To the find devicetree ADC channel for a teensy ADC pin:
 
     aliases {
         pt-adc = &adc1;
-        stepper-pulse-counter = &qtmr1_timer0;
+        stepper-pulse-counter = &pit0_channel0;
     };
 
     zephyr,user {
@@ -145,16 +145,14 @@ pt_adc: &adc1 {
 };
 
 // Timer for stepper pulses.
-// Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/counter/nxp%2Cimx-tmr.html
+// Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/counter/nxp%2Cpit.html
 // Teensyduino equivalent: https://sourcegraph.com/github.com/PaulStoffregen/cores/-/blob/teensy4/IntervalTimer.cpp
-&qtmr1_timer0 {
+&pit0 {
     status = "okay";
-    mode = "kQTMR_PriSrcRiseEdge"; // Rising edge of primary clock source
-    // Use instruction pointer clock, which is 600 MHz: https://sourcegraph.com/github.com/zephyrproject-rtos/zephyr/-/blob/dts/arm/nxp/nxp_rt10xx.dtsi?L75-79
-    // These are 16-bit counters, so picking 32x clock division gets us a minimum width of ~53 ns and a maximum width of
-    // ~3.5 ms. This more than covers our driver's minimum width of 2.5 us and our control loop's rough maximum interval
-    // of 1 ms.
-    primary-source = "kQTMR_ClockDivide_32";
+};
+
+&pit0_channel0 {
+    status = "okay";
 };
 
 &zephyr_udc0 {
