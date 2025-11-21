@@ -51,7 +51,7 @@ To the find devicetree ADC channel for a teensy ADC pin:
 		// arduino-i2c = &lpi2c1
 	};
 
-	zephyr,user {
+	zephyr_user: zephyr,user {
 		stepper-pul-gpios = <&gpio4 31 GPIO_ACTIVE_HIGH>; // Pin 29
 		stepper-dir-gpios = <&gpio3 18 GPIO_ACTIVE_HIGH>; // Pin 28
 		stepper-ena-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 4
@@ -74,6 +74,29 @@ To the find devicetree ADC channel for a teensy ADC pin:
 		/* GY-BNO08X IMU config */
 		i2cs = <&lpi2c1>;
 		imu_i2c_addr = <0x4a>;     /* default BNO08x I2C address */
+
+
+		/* Minimal stub just so Arduino.h sees *something* */
+
+		// 4 "Arduino digital pins" – for now just use 0..3 on gpio1 as placeholders.
+		digital-pin-gpios = <&gpio1 0 GPIO_ACTIVE_HIGH>,
+							<&gpio1 1 GPIO_ACTIVE_HIGH>,
+							<&gpio1 2 GPIO_ACTIVE_HIGH>,
+							<&gpio1 3 GPIO_ACTIVE_HIGH>;
+
+		// 4 "Arduino analog pins" – one per ADC channel listed in io-channels.
+		// These are just placeholders
+		adc-pin-gpios     = <&gpio1 0 GPIO_ACTIVE_HIGH>,
+							<&gpio1 1 GPIO_ACTIVE_HIGH>,
+							<&gpio1 2 GPIO_ACTIVE_HIGH>,
+							<&gpio1 3 GPIO_ACTIVE_HIGH>;
+
+		// 4 PWM-capable "Arduino pins" - Just placeholders.
+		pwm-pin-gpios     = <&gpio1 0 GPIO_ACTIVE_HIGH>,
+							<&gpio1 1 GPIO_ACTIVE_HIGH>,
+							<&gpio1 2 GPIO_ACTIVE_HIGH>,
+							<&gpio1 3 GPIO_ACTIVE_HIGH>;
+
 	};
 
 	chosen {
