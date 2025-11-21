@@ -20,5 +20,13 @@ message(STATUS "C++ compiler: ${CMAKE_CPP_COMPILER}")
 
 
 project(app)
+
+# Make Adafruit libraries' headers visible to main.cpp
+target_include_directories(app PRIVATE
+        $ENV{ZEPHYR_BASE}/../modules/lib/Arduino-Zephyr-API/libraries/Adafruit_BNO08x/src
+        $ENV{ZEPHYR_BASE}/../modules/lib/Arduino-Zephyr-API/libraries/Adafruit_BusIO
+        $ENV{ZEPHYR_BASE}/../modules/lib/Arduino-Zephyr-API/libraries/Adafruit_Sensor
+        $ENV{ZEPHYR_BASE}/../modules/lib/Arduino-Zephyr-API/libraries/SPI
+)
 add_subdirectory(src)
 
