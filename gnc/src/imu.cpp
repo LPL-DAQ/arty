@@ -1,74 +1,96 @@
-#pragma once
+// imu.cpp - BNO08x IMU wrapper using Arduino-Core-Zephyr
 
+#include "imu.h"
+
+// Zephyr logging
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(imu, CONFIG_LOG_DEFAULT_LEVEL);
+
+// Arduino core + Adafruit BNO08x
+#include <Arduino.h>
+#include <Adafruit_BNO08x.h>
+#include <sh2.h>      // sh2_SensorValue_t, sh2_saveDcdNow, SH2_ROTATION_VECTOR, SH2_OK
+
+#include <math.h>     // atan2f, asinf, acosf, cosf, sinf, sqrtf
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_BNO08x.h>
-#include <sh2.h>
-#include <sh2_err.h>
 
-struct LinearAccel
+
+// ----- Euler ctor -----------------------------------------------------------
+
+Euler::Euler(float yawDeg, float pitchDeg, float rollDeg)
+    : yaw(yawDeg), pitch(pitchDeg), roll(rollDeg) {}
+
+// ----- IMU public API -------------------------------------------------------
+
+bool IMU::imu_init()
 {
-  float x{0}, y{0}, z{0}; // m/s^2
-};
+    LOG_INF("Initializing IMU");
 
-struct Euler
-{
-  float yaw{0}, pitch{0}, roll{0}; // degrees
-  Euler() = default;
-  Euler(float yawDeg, float pitchDeg, float rollDeg)
-      : yaw(yawDeg), pitch(pitchDeg), roll(rollDeg) {}
-};
+    if (!_bno) {
+        _bno = new Adafruit_BNO08x();
+        if (!_bno) {
+            LOG_ERR("Failed to allocate Adafruit_BNO08x");
+            return false;
+        }
+    }
 
-struct QuaternionF
-{
-  float w{1}, x{0}, y{0}, z{0}; // unit quaternion
-};
-
-struct BodyAxesF
-{
-  float forwardX{1}, forwardY{0}, forwardZ{0};
-  float rightX{0}, rightY{1}, rightZ{0};
-  float upX{0}, upY{0}, upZ{1};
-};
-
-struct ProjectedAngles
-{
-  float tiltAboutX{0}; // deg, rotation about body X (roll)
-  float tiltAboutY{0}; // deg, rotation about body Y (pitch)
-  float totalTilt{0};  // deg from vertical
-  float heading{0};    // deg, yaw derived from forward vector projection
-};
-
-class IMU
-{
-public:
-
-  bool imu_init()
-  {
     uint8_t i2cAddr = 0x4B;
+    LOG_INF("Before Wire begin");
+
     Wire.begin();
-    if (!_bno.begin_I2C(i2cAddr, &Wire))
-      return false;
+    Wire.setClock(100000);
+    LOG_INF("Before begin_I2C");
+
+    // --- I2C SCAN --- //
+    LOG_INF("Starting I2C scan");
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        uint8_t err = Wire.endTransmission();
+        if (err == 0) {
+            LOG_INF("Found I2C device at 0x%02X", addr);
+        }
+    }
+    LOG_INF("I2C scan complete");
+    // --- END SCAN --- //
+
+
+    if (!_bno->begin_I2C(i2cAddr, &Wire)) {
+        LOG_ERR("BNO08x begin_I2C failed");
+        return false;
+    }
+
+    LOG_INF("IMU Wire allocated");
+    LOG_INF("before enableReport");
 
     // Enable the reports this application consumes
-    _bno.enableReport(SH2_ROTATION_VECTOR, 10000);
-    return true;
-  }
+    _bno->enableReport(SH2_ROTATION_VECTOR, 10000);
+    LOG_INF("IMU report enabled");
 
-  void imu_update()
-  {
-    if (_bno.wasReset())
+    LOG_INF("Finished IMU init");
+
+    return true;
+}
+
+void IMU::imu_update()
+{
+    if (!_bno) {
+        return;
+    }
+
+    if (_bno->wasReset())
     {
       Serial.println(F("[fly] IMU was reset."));
-      _calibrationSaved = false;
-      _calibrationHighSinceMs = 0;
-      _lastCalSaveAttemptMs = 0;
-      _rvAccuracy = 0;
-      _rvAccuracyRad = 0.0f;
+      _calibrationSaved        = false;
+      _calibrationHighSinceMs  = 0;
+      _lastCalSaveAttemptMs    = 0;
+      _rvAccuracy              = 0;
+      _rvAccuracyRad           = 0.0f;
     }
 
     sh2_SensorValue_t val;
-    while (_bno.getSensorEvent(&val))
+    while (_bno->getSensorEvent(&val))
     {
       switch (val.sensorId)
       {
@@ -77,14 +99,16 @@ public:
         _quat.x = val.un.rotationVector.i;
         _quat.y = val.un.rotationVector.j;
         _quat.z = val.un.rotationVector.k;
-        _quat = normalize(_quat);
-        _bodyQuat = applyMountingCorrection(_quat);
-        _bodyAxes = quatToBodyAxes(_bodyQuat);
+
+        _quat       = normalize(_quat);
+        _bodyQuat   = applyMountingCorrection(_quat);
+        _bodyAxes   = quatToBodyAxes(_bodyQuat);
         _projectedAngles = computeProjectedAngles(_bodyAxes);
-        _euler = quatToEulerDeg(_bodyQuat);
+        _euler      = quatToEulerDeg(_bodyQuat);
+
         _rvAccuracyRad = val.un.rotationVector.accuracy;
-        _rvAccuracy = val.status & 0x03;
-        _hasData = true;
+        _rvAccuracy    = val.status & 0x03;
+        _hasData       = true;
         break;
 
       default:
@@ -94,23 +118,26 @@ public:
 
     if (_rvAccuracy >= 3)
     {
-      if (_calibrationHighSinceMs == 0)
+      if (_calibrationHighSinceMs == 0) {
         _calibrationHighSinceMs = millis();
+      }
     }
     else
     {
       _calibrationHighSinceMs = 0;
-      if (_rvAccuracy <= 1)
+      if (_rvAccuracy <= 1) {
         _calibrationSaved = false;
+      }
     }
 
-    const uint32_t now = millis();
+    const std::uint32_t now = millis();
     if (!_calibrationSaved && _calibrationHighSinceMs != 0)
     {
-      constexpr uint32_t kMinStableMs = 3000;
-      constexpr uint32_t kRetryMs = 1000;
+      constexpr std::uint32_t kMinStableMs = 3000;
+      constexpr std::uint32_t kRetryMs     = 1000;
       bool stableLongEnough = (now - _calibrationHighSinceMs) >= kMinStableMs;
-      bool retryElapsed = (now - _lastCalSaveAttemptMs) >= kRetryMs;
+      bool retryElapsed     = (now - _lastCalSaveAttemptMs) >= kRetryMs;
+
       if (stableLongEnough && retryElapsed)
       {
         if (saveCalibration())
@@ -125,34 +152,37 @@ public:
         }
       }
     }
-  }
+}
 
-  bool hasData() const { return _hasData; }
-  QuaternionF quat() const { return _quat; }
-  QuaternionF bodyQuat() const { return _bodyQuat; }
-  Euler euler() const { return _euler; }
-  LinearAccel accelerometer() const { return _accelWorld; }
-  LinearAccel accelerometerWorld() const { return _accelWorld; }
-  LinearAccel accelerometerBody() const { return _accelBody; }
-  LinearAccel accelerometerSensor() const { return _rawAccel; }
-  uint8_t rotationAccuracy() const { return _rvAccuracy; }
-  float rotationAccuracyRad() const { return _rvAccuracyRad; }
-  bool isFullyCalibrated() const { return _rvAccuracy >= 3; }
-  BodyAxesF bodyAxes() const { return _bodyAxes; }
-  ProjectedAngles projectedAngles() const { return _projectedAngles; }
+bool IMU::hasData() const { return _hasData; }
+QuaternionF IMU::quat() const { return _quat; }
+QuaternionF IMU::bodyQuat() const { return _bodyQuat; }
+Euler IMU::euler() const { return _euler; }
 
-  void setSensorToBodyEuler(float yawDeg, float pitchDeg, float rollDeg)
-  {
+LinearAccel IMU::accelerometer() const { return _accelWorld; }
+LinearAccel IMU::accelerometerWorld() const { return _accelWorld; }
+LinearAccel IMU::accelerometerBody() const { return _accelBody; }
+LinearAccel IMU::accelerometerSensor() const { return _rawAccel; }
+
+std::uint8_t IMU::rotationAccuracy() const { return _rvAccuracy; }
+float IMU::rotationAccuracyRad() const { return _rvAccuracyRad; }
+bool IMU::isFullyCalibrated() const { return _rvAccuracy >= 3; }
+
+BodyAxesF IMU::bodyAxes() const { return _bodyAxes; }
+ProjectedAngles IMU::projectedAngles() const { return _projectedAngles; }
+
+void IMU::setSensorToBodyEuler(float yawDeg, float pitchDeg, float rollDeg)
+{
     _sensorToBody = normalize(quatFromEulerDeg(yawDeg, pitchDeg, rollDeg));
-  }
+}
 
-  void setSensorToBodyQuat(const QuaternionF &q)
-  {
+void IMU::setSensorToBodyQuat(const QuaternionF &q)
+{
     _sensorToBody = normalize(q);
-  }
+}
 
-  bool saveCalibration()
-  {
+bool IMU::saveCalibration()
+{
     const int rc = sh2_saveDcdNow();
     _lastCalSaveAttemptMs = millis();
     if (rc == SH2_OK)
@@ -161,18 +191,16 @@ public:
       return true;
     }
     return false;
-  }
+}
 
-  float yawDeg() const { return _euler.yaw; }
-  float pitchDeg() const { return _euler.pitch; }
-  float rollDeg() const { return _euler.roll; }
+float IMU::yawDeg() const { return _euler.yaw; }
+float IMU::pitchDeg() const { return _euler.pitch; }
+float IMU::rollDeg() const { return _euler.roll; }
 
-private:
-  static constexpr float RAD2DEG = 57.2957795f;
-  static constexpr float DEG2RAD = 0.0174532925f;
+// ----- Static helpers -------------------------------------------------------
 
-  static Euler quatToEulerDeg(const QuaternionF &q)
-  {
+Euler IMU::quatToEulerDeg(const QuaternionF &q)
+{
     const float ysqr = q.y * q.y;
 
     float t0 = +2.0f * (q.w * q.x + q.y * q.z);
@@ -188,33 +216,33 @@ private:
     float yaw = atan2f(t3, t4);
 
     return Euler{yaw * RAD2DEG, pitch * RAD2DEG, roll * RAD2DEG};
-  }
+}
 
-  static QuaternionF normalize(const QuaternionF &q)
-  {
+QuaternionF IMU::normalize(const QuaternionF &q)
+{
     const float norm = sqrtf(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
     if (norm <= 0.0f)
       return QuaternionF{};
     const float inv = 1.0f / norm;
     return QuaternionF{q.w * inv, q.x * inv, q.y * inv, q.z * inv};
-  }
+}
 
-  static QuaternionF conjugate(const QuaternionF &q)
-  {
+QuaternionF IMU::conjugate(const QuaternionF &q)
+{
     return QuaternionF{q.w, -q.x, -q.y, -q.z};
-  }
+}
 
-  static QuaternionF multiply(const QuaternionF &a, const QuaternionF &b)
-  {
+QuaternionF IMU::multiply(const QuaternionF &a, const QuaternionF &b)
+{
     return QuaternionF{
         a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
         a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
         a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
         a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
-  }
+}
 
-  static QuaternionF quatFromEulerDeg(float yawDeg, float pitchDeg, float rollDeg)
-  {
+QuaternionF IMU::quatFromEulerDeg(float yawDeg, float pitchDeg, float rollDeg)
+{
     const float cy = cosf(0.5f * yawDeg * DEG2RAD);
     const float sy = sinf(0.5f * yawDeg * DEG2RAD);
     const float cp = cosf(0.5f * pitchDeg * DEG2RAD);
@@ -228,64 +256,48 @@ private:
         sy * cp * sr + cy * sp * cr,
         sy * cp * cr - cy * sp * sr};
     return normalize(q);
-  }
+}
 
-  static void rotateVector(const QuaternionF &q, float x, float y, float z, float &ox, float &oy, float &oz)
-  {
+void IMU::rotateVector(const QuaternionF &q,
+                       float x, float y, float z,
+                       float &ox, float &oy, float &oz)
+{
     const QuaternionF vec{0.0f, x, y, z};
-    const QuaternionF qc = conjugate(q);
+    const QuaternionF qc  = conjugate(q);
     const QuaternionF tmp = multiply(q, vec);
     const QuaternionF res = multiply(tmp, qc);
     ox = res.x;
     oy = res.y;
     oz = res.z;
-  }
+}
 
-  static float clampf(float v, float lo, float hi)
-  {
+float IMU::clampf(float v, float lo, float hi)
+{
     return v < lo ? lo : (v > hi ? hi : v);
-  }
+}
 
-  static BodyAxesF quatToBodyAxes(const QuaternionF &q)
-  {
+BodyAxesF IMU::quatToBodyAxes(const QuaternionF &q)
+{
     BodyAxesF axes{};
     rotateVector(q, 1.0f, 0.0f, 0.0f, axes.forwardX, axes.forwardY, axes.forwardZ);
-    rotateVector(q, 0.0f, 1.0f, 0.0f, axes.rightX, axes.rightY, axes.rightZ);
-    rotateVector(q, 0.0f, 0.0f, 1.0f, axes.upX, axes.upY, axes.upZ);
+    rotateVector(q, 0.0f, 1.0f, 0.0f, axes.rightX,  axes.rightY,  axes.rightZ);
+    rotateVector(q, 0.0f, 0.0f, 1.0f, axes.upX,     axes.upY,     axes.upZ);
     return axes;
-  }
+}
 
-  static ProjectedAngles computeProjectedAngles(const BodyAxesF &axes)
-  {
+ProjectedAngles IMU::computeProjectedAngles(const BodyAxesF &axes)
+{
     ProjectedAngles proj{};
     proj.tiltAboutX = atan2f(-axes.upY, axes.upZ) * RAD2DEG;
-    proj.tiltAboutY = atan2f(axes.upX, axes.upZ) * RAD2DEG;
-    proj.totalTilt = acosf(clampf(axes.upZ, -1.0f, 1.0f)) * RAD2DEG;
+    proj.tiltAboutY = atan2f(axes.upX,  axes.upZ) * RAD2DEG;
+    proj.totalTilt  = acosf(clampf(axes.upZ, -1.0f, 1.0f)) * RAD2DEG;
 
     const float heading = atan2f(axes.forwardY, axes.forwardX);
     proj.heading = heading * RAD2DEG;
     return proj;
-  }
+}
 
-  QuaternionF applyMountingCorrection(const QuaternionF &sensorQuat) const
-  {
+QuaternionF IMU::applyMountingCorrection(const QuaternionF &sensorQuat) const
+{
     return normalize(multiply(sensorQuat, conjugate(_sensorToBody)));
-  }
-
-  Adafruit_BNO08x _bno;
-  QuaternionF _quat{};
-  QuaternionF _bodyQuat{};
-  Euler _euler{};
-  LinearAccel _rawAccel{};
-  LinearAccel _accelBody{};
-  LinearAccel _accelWorld{};
-  bool _hasData{false};
-  uint8_t _rvAccuracy{0};
-  float _rvAccuracyRad{0.0f};
-  bool _calibrationSaved{false};
-  uint32_t _calibrationHighSinceMs{0};
-  uint32_t _lastCalSaveAttemptMs{0};
-  QuaternionF _sensorToBody{};
-  BodyAxesF _bodyAxes{};
-  ProjectedAngles _projectedAngles{};
-};
+}

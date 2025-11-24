@@ -7,10 +7,6 @@
 #include <zephyr/net/socket.h>
 #include <zephyr/net/net_pkt.h>
 
-#include <Arduino.h>
-#include <Wire.h>
-#include <Adafruit_BNO08x.h>
-
 #include "server.h"
 #include "throttle_valve.h"
 #include "pts.h"

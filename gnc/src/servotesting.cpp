@@ -1,4 +1,5 @@
 #include "servotesting.h"
+#include "imu.h"
 
 #include <zephyr/logging/log.h>
 #include <zephyr/device.h>
@@ -9,7 +10,7 @@
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 
 LOG_MODULE_REGISTER(servotesting, CONFIG_LOG_DEFAULT_LEVEL);
-
+static IMU g_imu;
 
 // start with 1000-2000 us PWM signal, test to go up to 500-2500
 static const pwm_dt_spec SERVO_X =
@@ -39,6 +40,13 @@ int servos_init() {
     pwm_set_pulse_dt(&SERVO_Y, PWM_USEC(1500));
     pwm_set_pulse_dt(&ESC_1,  PWM_USEC(1000));
     pwm_set_pulse_dt(&ESC_2,  PWM_USEC(1000));
+
+    LOG_INF("Initializing IMU");
+    if (!g_imu.imu_init()) {
+        LOG_ERR("Failed to initialize IMU");
+        return 0;              // or: while (1) { /* error */ }
+    }
+
     return 0;
 }
 

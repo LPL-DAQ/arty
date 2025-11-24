@@ -47,6 +47,7 @@ To the find devicetree ADC channel for a teensy ADC pin:
 		stepper-pulse-counter = &qtmr1_timer0;
 		/* Make this bus the default Arduino I2C bus for Wire */
 		arduino-i2c = &lpi2c1;
+		arduino_spi = &lpspi4;
 		// might be this:
 		// arduino-i2c = &lpi2c1
 	};
@@ -73,7 +74,7 @@ To the find devicetree ADC channel for a teensy ADC pin:
 
 		/* GY-BNO08X IMU config */
 		i2cs = <&lpi2c1>;
-		imu_i2c_addr = <0x4a>;     /* default BNO08x I2C address */
+		imu_i2c_addr = <0x4b>;     /* default BNO08x I2C address */
 
 
 		/* Minimal stub just so Arduino.h sees *something* */
@@ -156,6 +157,13 @@ To the find devicetree ADC channel for a teensy ADC pin:
 	status = "okay";
 };
 
+/* Enable the SPI controller used for Arduino SPI */
+&lpspi4 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&lpspi4_default>;
+};
+
 // Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
 &pinctrl {
 	pinmux_adc1: pinmux_adc1 {
@@ -183,6 +191,20 @@ To the find devicetree ADC channel for a teensy ADC pin:
 			nxp,speed = "100-mhz";
 		};
 	};
+
+	/* SPI on Teensy 4.1 pins 10–13: LPSPI4 */
+	lpspi4_default: lpspi4_default {
+		group0 {
+			pinmux = <&iomuxc_gpio_b0_03_lpspi4_sck>,   /* Pin 13: SCK  */
+					 <&iomuxc_gpio_b0_02_lpspi4_sdo>,   /* Pin 11: MOSI */
+					 <&iomuxc_gpio_b0_01_lpspi4_sdi>,   /* Pin 12: MISO */
+					 <&iomuxc_gpio_b0_00_lpspi4_pcs0>;  /* Pin 10: CS   */
+		bias-disable;
+		drive-strength = "r0-6";
+		nxp,speed = "100-mhz";
+		slew-rate = "slow";
+	};
+};
 
 	/* Teensy 4.1 pin 6 -> GPIO_B0_10 -> FLEXPWM2_PWMA02 */
 	pwm2_2_a_b0_10: pwm2_2_a_b0_10 {
