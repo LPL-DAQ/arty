@@ -46,9 +46,9 @@ To the find devicetree ADC channel for a teensy ADC pin:
     };
 
     zephyr,user {
-        stepper-pul-gpios = <&gpio4 31 GPIO_ACTIVE_HIGH>; // Pin 29
-        stepper-dir-gpios = <&gpio3 18 GPIO_ACTIVE_HIGH>; // Pin 28
-        stepper-ena-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 4
+        stepper-pul-gpios = <iomuxc_gpio_b0_00_gpio2_io00 31 GPIO_ACTIVE_HIGH>; // Pin 10
+        stepper-dir-gpios = <&iomuxc_gpio_b0_01_gpio2_io01 18 GPIO_ACTIVE_HIGH>; // Pin 12
+        stepper-ena-gpios = <&iomuxc_gpio_b0_02_gpio2_io02 2 GPIO_ACTIVE_HIGH>; // Pin 11
 
         encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
         encoder-b-gpios = <&gpio4 5 GPIO_ACTIVE_HIGH>; // Pin 3
