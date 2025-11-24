@@ -6,15 +6,11 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(imu, CONFIG_LOG_DEFAULT_LEVEL);
 
-// Arduino core + Adafruit BNO08x
-#include <Arduino.h>
-#include <Adafruit_BNO08x.h>
-#include <sh2.h>      // sh2_SensorValue_t, sh2_saveDcdNow, SH2_ROTATION_VECTOR, SH2_OK
-
 #include <math.h>     // atan2f, asinf, acosf, cosf, sinf, sqrtf
 #include <Arduino.h>
-#include <Wire.h>
+#include <SPI.h>
 #include <Adafruit_BNO08x.h>
+#include <sh2.h>      // sh2_SensorValue_t, sh2_saveDcdNow, SH2_ROTATION_VECTOR, SH2_OK
 
 
 // ----- Euler ctor -----------------------------------------------------------
@@ -23,46 +19,34 @@ Euler::Euler(float yawDeg, float pitchDeg, float rollDeg)
     : yaw(yawDeg), pitch(pitchDeg), roll(rollDeg) {}
 
 // ----- IMU public API -------------------------------------------------------
+static constexpr uint8_t BNO_CS_PIN  = 10;  // Teensy CS
+static constexpr uint8_t BNO_INT_PIN = 9;   // Your chosen INT pin
+static constexpr uint8_t BNO_RST_PIN = 8;   // Your chosen RST pin
 
 bool IMU::imu_init()
 {
     LOG_INF("Initializing IMU");
 
     if (!_bno) {
-        _bno = new Adafruit_BNO08x();
+        _bno = new Adafruit_BNO08x(BNO_RST_PIN);
         if (!_bno) {
             LOG_ERR("Failed to allocate Adafruit_BNO08x");
             return false;
         }
     }
 
-    uint8_t i2cAddr = 0x4B;
-    LOG_INF("Before Wire begin");
-
-    Wire.begin();
-    Wire.setClock(100000);
-    LOG_INF("Before begin_I2C");
-
-    // --- I2C SCAN --- //
-    LOG_INF("Starting I2C scan");
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        uint8_t err = Wire.endTransmission();
-        if (err == 0) {
-            LOG_INF("Found I2C device at 0x%02X", addr);
-        }
-    }
-    LOG_INF("I2C scan complete");
-    // --- END SCAN --- //
 
 
-    if (!_bno->begin_I2C(i2cAddr, &Wire)) {
-        LOG_ERR("BNO08x begin_I2C failed");
+    // Init SPI on the Arduino SPI bus (pins 10/11/12/13 on Teensy 4.1)
+    SPI.begin();
+
+    // Use the SPI begin instead of I2C
+    if (!_bno->begin_SPI(BNO_CS_PIN, BNO_INT_PIN, &SPI)) {
+        LOG_ERR("BNO08x begin_SPI failed");
         return false;
     }
 
-    LOG_INF("IMU Wire allocated");
-    LOG_INF("before enableReport");
+    LOG_INF("BNO08x SPI init ok, enabling reports");
 
     // Enable the reports this application consumes
     _bno->enableReport(SH2_ROTATION_VECTOR, 10000);
