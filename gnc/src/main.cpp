@@ -36,10 +36,10 @@ int main(void) {
     }
     const struct device *usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
     uint32_t dtr = 0;
-//    while (!dtr) {
-//        uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
-//        k_sleep(K_MSEC(100));
-//    }
+   while (!dtr) {
+       uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
+       k_sleep(K_MSEC(100));
+   }
 
     LOG_INF("Initializing throttle valve");
     int err = throttle_valve_init();

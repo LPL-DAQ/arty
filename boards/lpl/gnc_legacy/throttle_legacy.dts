@@ -46,18 +46,18 @@ To the find devicetree ADC channel for a teensy ADC pin:
     };
 
     zephyr,user {
-        stepper-pul-gpios = <&gpio4 31 GPIO_ACTIVE_HIGH>; // Pin 29
-        stepper-dir-gpios = <&gpio3 18 GPIO_ACTIVE_HIGH>; // Pin 28
-        stepper-ena-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 4
+        stepper-pul-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>; // Pin 10
+        stepper-dir-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>; // Pin 12
+        stepper-ena-gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>; // Pin 11
 
-        encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
-        encoder-b-gpios = <&gpio4 5 GPIO_ACTIVE_HIGH>; // Pin 3
+        encoder-a-gpios = <&gpio4 6 GPIO_ACTIVE_HIGH>; // Pin 4
+        encoder-b-gpios = <&gpio4 8 GPIO_ACTIVE_HIGH>; // Pin 5
 
         // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
         // corresponding to the sorted ascending order of ADC1 channels. The following corresonds to pins A0, A1, A3,
         // and A2. We really ought investigate further.
-        pt-names = "pt102", "pt202", "pt203", "ptf401";
-        io-channels = <&adc1 7>, <&adc1 8>, <&adc1 11>, <&adc1 12>;
+        pt-names = "pt202", "pt203", "pt102", "ptf401";
+        io-channels = <&adc1 5>, <&adc1 6>, <&adc1 7>, <&adc1 8>;
     };
 
     chosen {
@@ -80,10 +80,10 @@ To the find devicetree ADC channel for a teensy ADC pin:
 &pinctrl {
     pinmux_adc1: pinmux_adc1 {
         group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_02_gpio1_io18>,
-                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>,
-                     <&iomuxc_gpio_ad_b1_06_gpio1_io22>,
-                     <&iomuxc_gpio_ad_b1_07_gpio1_io23>;
+            pinmux = <&iomuxc_gpio_ad_b1_00_gpio1_io16>,
+                     <&iomuxc_gpio_ad_b1_00_gpio1_io16>,
+                     <&iomuxc_gpio_ad_b1_01_gpio1_io17>,
+                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>;
             bias-disable; // These should be pulled down by voltage divider
             drive-strength = "r0-6";
             slew-rate = "slow";
@@ -102,6 +102,26 @@ pt_adc: &adc1 {
     #size-cells = <0>;
 
     // PT1 (top-left), pin A0 / 14, AD_B1_02
+    channel@5 {
+        reg = <0x5>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    // PT2 (bottom-left), pin A5 / 19, AD_B1_00
+    channel@6 {
+        reg = <0x6>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    // PT4 (top-right), pin A1 / 15, AD_B1_03
     channel@7 {
         reg = <0x7>;
         zephyr,gain = "ADC_GAIN_1";
@@ -111,29 +131,9 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    // PT2 (bottom-left), pin A1 / 15, AD_B1_03
+    // PT3 (bottom-right), pin A4 / 18, AD_B1_01
     channel@8 {
         reg = <0x8>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
-    };
-
-    // PT4 (top-right), pin A3 / 17, AD_B1_07
-    channel@b {
-        reg = <0xb>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
-    };
-
-    // PT3 (bottom-right), pin A2 / 16, AD_B1_06
-    channel@c {
-        reg = <0xc>;
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;

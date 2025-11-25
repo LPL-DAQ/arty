@@ -49,24 +49,24 @@ constexpr std::array<float, NUM_PTS> pts_adc_ranges() {
 
 pt_config pt_configs[NUM_PTS] = {
         {
-                .scale = 1000.0f / pts_adc_ranges()[0],
+                .scale = 2000.0f / pts_adc_ranges()[0],
                 .bias = 0.0f,
-                .range = 1000.0f
+                .range =2000.0f
         },
         {
-                .scale = 1000.0f / pts_adc_ranges()[1],
+                .scale = 2000.0f / pts_adc_ranges()[1],
                 .bias = 0.0f,
-                .range = 1000.0f
+                .range = 2000.0f
         },
         {
-                .scale = 1000.0f / pts_adc_ranges()[2],
+                .scale = 2000.0f / pts_adc_ranges()[2],
                 .bias = 0.0f,
-                .range = 1000.0f
+                .range = 2000.0f
         },
         {
-                .scale = 1000.0f / pts_adc_ranges()[3],
+                .scale = 2000.0f / pts_adc_ranges()[3],
                 .bias = 0.0f,
-                .range = 1000.0f
+                .range = 2000.0f
         },
 };
 
