@@ -34,12 +34,19 @@ int main(void) {
         LOG_ERR("USB is not enabled.");
         while (1);
     }
+
+    // Try connecting to serial over usb for 3 seconds.
     const struct device *usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-    uint32_t dtr = 0;
-   while (!dtr) {
-       uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
-       k_sleep(K_MSEC(100));
-   }
+    for (int i = 0; i < 30; ++i) {
+        k_sleep(K_MSEC(100));
+
+        uint32_t dtr = 0;
+        uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
+        if (dtr) {
+            break;
+        }
+    }
+
 
     LOG_INF("Initializing throttle valve");
     int err = throttle_valve_init();
