@@ -37,8 +37,12 @@ extern pt_config pt_configs[NUM_PTS];
 int pts_init();
 
 pt_readings pts_sample();
+pt_readings pts_sample_mavg(int window);
+
 
 void pts_log_readings(const pt_readings &readings);
+void pts_log_readings_mavg();
+
 
 int pts_set_bias(int index, float bias);
 

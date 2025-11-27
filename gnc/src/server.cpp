@@ -175,6 +175,40 @@ static void handle_client(void *p1_client_socket, void *, void *) {
             if (err) {
                 LOG_ERR("Failed to fully send pt readings: err %d", err);
             }
+        }else if (command.starts_with("getpts;")) {
+            // Syntax: getpts;X#
+            // X = number of samples back to use in the moving average window.
+            int window = 0;
+
+            // "getpts;" is 7 characters, digits start at index 7 and go up to (len - 2)
+            for (int i = 7; i < std::ssize(command) - 1; ++i) {
+                char c = command[i];
+                if (c < '0' || c > '9') {
+                    LOG_ERR("Invalid character '%c' in getpts;X command", c);
+                    window = 0;
+                    break;
+                }
+                window = window * 10 + (c - '0');
+            }
+
+            if (window <= 0) {
+                send_string_fully(client_guard.socket, "Invalid getpts;X window (must be positive integer)\n");
+                continue;
+            }
+
+            pt_readings readings = pts_sample_mavg(window);
+
+            // Same output format as getpts#, but values are moving averages over `window` samples.
+            std::string payload =
+                    "pt202: " + std::to_string(readings.pt202) + ", pt203: " + std::to_string(readings.pt203) +
+                    ", ptf401: " + std::to_string(readings.ptf401) + ", pt102: " + std::to_string(readings.pt102) +
+                    "\n";
+
+            int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
+            if (err) {
+                LOG_ERR("Failed to fully send averaged pt readings: err %d", err);
+            }
+
         } else if (command == "START#") {
             send_string_fully(client_guard.socket, "ACK#");
             // Triggered in DAQ sequencer.
