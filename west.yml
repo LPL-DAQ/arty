@@ -12,3 +12,4 @@ manifest:
           - cmsis_6
           - hal_nxp
           - hal_stm32
+          - nanopb

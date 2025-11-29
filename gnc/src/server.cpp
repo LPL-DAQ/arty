@@ -6,6 +6,10 @@
 #include <sstream>
 #include <string>
 #include <array>
+#include <cstdint>
+#include <pb_encode.h>
+#include <pb_decode.h>
+#include "gnc.pb.h"
 
 #include "throttle_valve.h"
 #include "server.h"
@@ -14,8 +18,11 @@
 #include "encoder.h"
 #include "sequencer.h"
 
-
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
+
+constexpr size_t MAX_MESSAGE_SIZE = 512;
+static_assert(Request_size <= MAX_MESSAGE_SIZE);
+static_assert(Response_size <= MAX_MESSAGE_SIZE);
 
 #define MAX_OPEN_CLIENTS 3
 
@@ -37,7 +44,7 @@ int send_fully(int sock, const char *buf, int len) {
         int ret = zsock_send(sock, buf + bytes_sent,
                              len - bytes_sent, 0);
         if (ret < 0) {
-            LOG_ERR("Unexpected error while sending response to sock %d: err %d", sock, ret);
+            LOG_ERR("Unexpected error while sending response to sock %d: %s", sock, strerror(bytes_sent));
             return ret;
         }
         bytes_sent += ret;
@@ -49,41 +56,119 @@ int send_string_fully(int sock, const std::string &payload) {
     return send_fully(sock, payload.c_str(), std::ssize(payload));
 }
 
+/// Internal callback for pb_istream, used to read from socket to internal buffer and manage count.
+bool pb_socket_write_callback(pb_ostream_t *stream, const uint8_t *buf, size_t count) {
+    int sock = reinterpret_cast<int>(stream->state);
+
+    int bytes_sent = zsock_send(sock, buf, count, 0);
+    if (bytes_sent < 0) {
+        LOG_ERR("Error while sending data over socket %d: %s", sock, strerror(bytes_sent));
+        return false;
+    }
+
+    if (bytes_sent != static_cast<int>(count)) {
+        LOG_ERR("zsock_send only partially wrote its buffer from socket %d, this should be impossible - sent: %d, requested: %d",
+                sock, bytes_sent, count);
+        return false;
+    }
+
+    return true;
+}
+
+pb_ostream_t pb_ostream_from_socket(int sock) {
+    return pb_ostream_t{
+            .callback = pb_socket_write_callback,
+            .state = reinterpret_cast<void *>(sock),
+            .max_size = SIZE_MAX,
+            .bytes_written = 0
+    };
+}
+
+/// Internal callback for pb_istream, used to read from socket to internal buffer.
+bool pb_socket_read_callback(pb_istream_t *stream, uint8_t *buf, size_t count) {
+    int sock = reinterpret_cast<int>(stream->state);
+
+    int bytes_read = zsock_recv(sock, buf, count, ZSOCK_MSG_WAITALL);
+
+    // Hit EOF
+    if (bytes_read == 0) {
+        stream->bytes_left = 0;
+        return false;
+    }
+
+    if (bytes_read != static_cast<int>(count)) {
+        LOG_ERR("zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass ZSOCK_MSG_WAITALL - got: %d, requested: %d",
+                sock, bytes_read, count);
+        return false;
+    }
+
+    return true;
+}
+
+/// Create a nanopb input stream from socket fd.
+pb_istream_t pb_istream_from_socket(int sock) {
+    return pb_istream_t{
+            .callback = pb_socket_read_callback,
+            .state = reinterpret_cast<void *>(sock),
+            .bytes_left = SIZE_MAX
+    };
+}
+
 /// Handles a client connection. Should run in its own thread.
 static void handle_client(void *p1_client_socket, void *, void *) {
     SocketGuard client_guard{reinterpret_cast<int>(p1_client_socket)};
     LOG_INF("Handling socket: %d", client_guard.socket);
     k_sleep(K_MSEC(500));
 
+    pb_istream_t pb_input = pb_istream_from_socket(client_guard.socket);
+
     while (true) {
-        // Read one byte at a time till we get a #-terminated command
-        constexpr int MAX_COMMAND_LEN = 512;
-        char command_buf[MAX_COMMAND_LEN + 1];
-        int next_command_byte = 0;
-        while (true) {
-            ssize_t bytes_read = zsock_recv(client_guard.socket, command_buf + next_command_byte, 1, 0);
+        Request request = Request_init_default;
+        bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
+        if (!valid) {
+            LOG_INF("Failed to decode next message, this can happen if connection is severed.");
+            break;
+        }
 
-            if (bytes_read == 0) {
-                LOG_INF("Client at sock %d has closed their connection.", client_guard.socket);
-                return;
-            } else if (bytes_read < 0) {
-                LOG_WRN("Failed to read bytes: errno %d", errno);
-                return;
+        // Handle request
+        switch (request.which_payload) {
+            case Request_reset_valve_position_tag: {
+                ResetValvePositionRequest &req = request.payload.reset_valve_position;
+                switch(req.valve) {
+                    case Valve_FUEL:
+                        break;
+                    case Valve_LOX:
+                        break;
+                    default:
+                        LOG_
+                }
+                break;
             }
+            case Request_get_valve_status_tag: {
+                break;
+            }
+            case Request_read_pts_tag: {
 
-            // Ignore whitespace
-            if (std::isspace(command_buf[next_command_byte])) {
-                continue;
+                break;
             }
-            if (command_buf[next_command_byte] == '#') {
-                command_buf[next_command_byte + 1] = '\0';
+            case Request_load_open_loop_motor_sequence_tag: {
+
                 break;
             }
 
-            next_command_byte += bytes_read;
-            if (next_command_byte == MAX_COMMAND_LEN) {
-                LOG_WRN("Didn't find command terminator `#` after %d bytes", MAX_COMMAND_LEN);
-                return;
+            case Request_start_sequence_tag: {
+
+                break;
+            }
+            case Request_halt_sequence_tag: {
+
+                break;
+            }
+
+            default: {
+                LOG_ERR("Request has invalid tag, this should be impossible as pb_decode should have produced a valid request - got tag: %u",
+                        request.which_payload);
+                break;
             }
         }
 

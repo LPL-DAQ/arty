@@ -46,7 +46,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 . "$HOME/.local/bin/env"
 cd $HOME && uv venv
 uv tool install ruff@latest
-uv pip install west
+uv pip install west protobuf grpcio-tools
 EOF
 
 # Rust

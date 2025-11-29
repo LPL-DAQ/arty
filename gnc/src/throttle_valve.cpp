@@ -185,6 +185,10 @@ uint64_t throttle_valve_get_nsec_per_pulse() {
 }
 
 int throttle_valve_set_open() {
+
+}
+
+int throttle_valve_set_open() {
     k_mutex_lock(&motor_lock, K_FOREVER);
     if (state != MotorState::STOPPED) {
         k_mutex_unlock(&motor_lock);
