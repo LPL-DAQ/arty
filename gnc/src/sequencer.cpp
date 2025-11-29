@@ -186,6 +186,9 @@ int sequencer_start_trace() {
         LOG_INF("Running closed-loop control trace.");
         // Put our calculated gains here, can make a future command to set them in-run later
         pid_controller.setGains(0,0,0);
+        pid_controller.setOutputLimits(30,90);
+        // can adjust later for anti-windup
+        pid_controller.setIntegralZone(30,90);
         // put our pressure setpoint here, can make a future command to set it in-run later
         pressure_setpoint = 0;
     }
