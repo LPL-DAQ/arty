@@ -2,6 +2,7 @@
 #include "throttle_valve.h"
 #include "pts.h"
 #include "encoder.h"   // NEW: for encoder feedback
+#include "pid.h"
 
 #include <vector>
 #include <zephyr/logging/log.h>
@@ -15,6 +16,7 @@
 #include <cstdint>
 #include "server.h"
 
+
 LOG_MODULE_REGISTER(sequencer, CONFIG_LOG_DEFAULT_LEVEL);
 
 constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
@@ -27,6 +29,8 @@ static int gap_millis;
 static std::vector<float> breakpoints;
 static int data_sock = -1;
 static bool motor_only = false;
+static PID pid_controller = PID(0.0,0.0,0.0);
+static double pressure_setpoint = 0.0;
 
 volatile int step_count = 0;
 volatile int count_to = 0;
@@ -99,9 +103,16 @@ static void step_control_loop(k_work *) {
     } else {
         // Insert closed-loop logic here.
         // NOT 100% SURE IF THIS IS THE RIGHT PT NUMBER
-        float inlet_pressure = pt_readings.ptf401
+        float feedforward = 0; // add feedforward function here if wanted
 
-        valve_target = 45.0f; // Dummy code, repalce this when logic is ready.
+        float inlet_pressure = pt_readings.ptf401
+        // 1000hz loop, ya?
+        float pid_output = pid_controller.calculate(pressure_setpoint, inlet_pressure, NSEC_PER_CONTROL_TICK/1'000'000'000)
+
+        float control_output = feedforward + pid_output;
+
+
+        valve_target = control_output; // Dummy code, repalce this when logic is ready.
     }
 
     // move to target
@@ -147,6 +158,7 @@ static void control_loop_schedule(k_timer *timer) {
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 int sequencer_start_trace() {
+
     if (breakpoints.size() < 2) {
         LOG_ERR("No breakpoints specified.");
         return 1;
@@ -169,8 +181,13 @@ int sequencer_start_trace() {
 
     if (motor_only) {
         LOG_INF("Running open-loop motor trace.");
+
     } else {
         LOG_INF("Running closed-loop control trace.");
+        // Put our calculated gains here, can make a future command to set them in-run later
+        pid_controller.setGains(0,0,0);
+        // put our pressure setpoint here, can make a future command to set it in-run later
+        pressure_setpoint = 0;
     }
 
     // Replace first breakpoint with current position

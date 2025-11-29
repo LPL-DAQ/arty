@@ -1,4 +1,5 @@
 add_subdirectory(guards)
+add_subdirectory(util)
 
 target_sources(app PRIVATE main.cpp)
 target_sources(app PRIVATE server.cpp)
