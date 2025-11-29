@@ -102,10 +102,6 @@ int pts_init() {
     return 0;
 }
 
-//int pts_configure(int pt_index, ) {
-//
-//}
-
 /// Update PT sample readings.
 pt_readings pts_sample() {
     int err = adc_read(adc_channels[0].dev, &sequence);

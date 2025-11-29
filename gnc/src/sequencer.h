@@ -3,7 +3,7 @@
 
 #include <vector>
 
-int sequencer_prepare(int gap, std::vector<float> bps);
+int sequencer_prepare(int gap, std::vector<float> bps, bool motor_only);
 
 int sequencer_start_trace();
 
