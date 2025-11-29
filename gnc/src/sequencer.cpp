@@ -98,6 +98,8 @@ static void step_control_loop(k_work *) {
         valve_target = trace_target;
     } else {
         // Insert closed-loop logic here.
+        // NOT 100% SURE IF THIS IS THE RIGHT PT NUMBER
+        float inlet_pressure = pt_readings.ptf401
 
         valve_target = 45.0f; // Dummy code, repalce this when logic is ready.
     }
