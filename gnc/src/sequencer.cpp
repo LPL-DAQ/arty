@@ -26,6 +26,7 @@ K_MUTEX_DEFINE(sequence_lock);
 static int gap_millis;
 static std::vector<float> breakpoints;
 static int data_sock = -1;
+static bool motor_only = false;
 
 volatile int step_count = 0;
 volatile int count_to = 0;
@@ -66,22 +67,20 @@ static void step_control_loop(k_work *) {
 
     int next_millis = step_count + 1;
 
+    // Interpolate breakpoints to find instantaneous trace target.
     int low_bp_index = MIN(next_millis / gap_millis, std::ssize(breakpoints) - 1);
     int high_bp_index = low_bp_index + 1;
     if (low_bp_index < 0) {
         LOG_WRN("Low index is less than 0, how is that possible? curr: %d, gap: %d", next_millis, gap_millis);
         low_bp_index = 0;
     }
-    float target;
+    float trace_target;
     if (high_bp_index >= std::ssize(breakpoints)) {
-        target = breakpoints.back();
+        trace_target = breakpoints.back();
     } else {
         float tween = static_cast<float>(next_millis - (low_bp_index * gap_millis)) / gap_millis;
-        target = breakpoints[low_bp_index] + (breakpoints[high_bp_index] - breakpoints[low_bp_index]) * tween;
+        trace_target = breakpoints[low_bp_index] + (breakpoints[high_bp_index] - breakpoints[low_bp_index]) * tween;
     }
-
-    // move to target
-    throttle_valve_move(target);
 
     // Timestamp
     uint64_t since_start = k_cycle_get_64() - start_clock;
@@ -94,11 +93,23 @@ static void step_control_loop(k_work *) {
     int32_t enc_ticks = encoder_get_position();
     float enc_deg = encoder_get_degrees();
 
+    float valve_target;
+    if (motor_only) {
+        valve_target = trace_target;
+    } else {
+        // Insert closed-loop logic here.
+
+        valve_target = 45.0f; // Dummy code, repalce this when logic is ready.
+    }
+
+    // move to target
+    throttle_valve_move(valve_target);
+
     // Log current data
     control_iter_data iter_data = {
             .time = static_cast<float>(ns_since_start) / 1e9f,
             .queue_size = k_msgq_num_used_get(&control_data_msgq),
-            .motor_target = target,
+            .motor_target = valve_target,
             .motor_pos = throttle_valve_get_pos(),
             .motor_velocity = throttle_valve_get_velocity(),
             .motor_acceleration = throttle_valve_get_acceleration(),
@@ -152,6 +163,12 @@ int sequencer_start_trace() {
         LOG_ERR("Data socket is not set");
         k_mutex_unlock(&sequence_lock);
         return 1;
+    }
+
+    if (motor_only) {
+        LOG_INF("Running open-loop motor trace.");
+    } else {
+        LOG_INF("Running closed-loop control trace.");
     }
 
     // Replace first breakpoint with current position
@@ -217,13 +234,14 @@ int sequencer_start_trace() {
     return 0;
 }
 
-int sequencer_prepare(int gap, std::vector<float> bps) {
+int sequencer_prepare(int gap, std::vector<float> bps, bool mot_only) {
     if (gap <= 0 || bps.empty()) {
         return 1;
     }
 
     gap_millis = gap;
     breakpoints = bps;
+    motor_only = mot_only;
     return 0;
 }
 

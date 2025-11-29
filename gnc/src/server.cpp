@@ -150,7 +150,7 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                 continue;
             }
             int time_ms = (std::ssize(seq_breakpoints) - 1) * gap;
-            if (sequencer_prepare(gap, seq_breakpoints)) {
+            if (sequencer_prepare(gap, seq_breakpoints, true)) {
                 send_string_fully(client_guard.socket, "Failed to prepare sequence");
                 continue;
             }
