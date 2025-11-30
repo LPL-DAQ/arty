@@ -103,25 +103,76 @@ static void handle_client(void *p1_client_socket, void *, void *) {
             throttle_valve_set_closed();
             encoder_reset_pos(0.0f);
             send_string_fully(client_guard.socket, "Done reset close\n");
+        } else if (command.starts_with("seqsinemotr")) {
+            // Example: seqsinemotr5000,50,40,1000,180#
+            // In order, specify total time, offset, amplitude, period, and phase (in integer deg). The example shown
+            // will oscillate between 10 and 90 deg with a period of 1000ms over 5000ms, starting from the lower valley
+            // of a sine wave.
+
+            std::array<float, 5> values;
+            int next_values = 0;
+            float curr_token = 0.0f;
+            bool invalid = false;
+            for (int i = 11; i < std::ssize(command); ++i) {
+                if (!(command[i] >= '0' && command[i] <= '9')) {
+                    if (next_values == 5) {
+                        send_string_fully(client_guard.socket, "Must have at most 5 in sequence.");
+                        invalid = true;
+                        break;
+                    }
+                    values[next_values] = curr_token;
+                    next_values++;
+                    curr_token = 0;
+                } else {
+                    curr_token = 10 * curr_token + (command[i] - '0');
+                }
+            }
+            if (invalid) {
+                break;
+            }
+            if (next_values < 5) {
+                send_string_fully(client_guard.socket, "Must have 5 parameters in sequence.\n");
+                continue;
+            }
+
+            int err = sequencer_prepare_sine(values[0], values[1], values[2], values[3], values[4]);
+            if (err) {
+                send_string_fully(client_guard.socket, "Failed to prepare sine sequence.\n");
+                continue;
+            }
+            send_string_fully(client_guard.socket, "Sine sequence prepared.\n");
         } else if (command.starts_with("seq")) {
-            // Example: seq500;75,52,70,90, where 500 -> 500ms between each breakpoint and
+            // Example: seqmotr500;75,52,70,90, where 500 -> 500ms between each breakpoint and
             // the commas-seperated values are the breakpoints in degrees.
             // NOTE: An initial breakpoint, representing the valve current starting position,
             // is implicitly added. Thus, the example shown will run for 2s as we actually start
             // at, say, 90 deg.
             // Also, please do not give invalid input :) :) :)
+            //
+            // Use seqmotr to specify motor open-loop setpoints, and use seqctrl to specify setpoints for a closed-loop
+            // control sequence.
 
-            std::vector<float> seq_breakpoints;
+            std::vector<float> seq_breakpoints{
+                    0.0f}; // Initial dummy value, will get rewritten to current when sequence starts.
+
+            bool motor_only;
+            std::string seq_kind = command.substr(3, 4);
+            if (seq_kind == "motr") {
+                motor_only = true;
+            } else if (seq_kind == "ctrl") {
+                motor_only = false;
+            } else {
+                send_string_fully(client_guard.socket, "Invalid sequence kind (must be seqmotr or seqctrl)\n");
+                continue;
+            }
 
             // Mini token parser
             int gap = 0;
-            seq_breakpoints.clear();
-            seq_breakpoints.push_back(throttle_valve_get_pos());
             bool wrote_gap = false;
             int curr_token = 0;
             bool is_neg = false;
-            for (int i = 3; i < std::ssize(command) - 1; ++i) {
-                if (!(command[i] >= '0' && command[i] <= '9')) {
+            for (int i = 7; i < std::ssize(command) - 1; ++i) {
+                if (!((command[i] >= '0' && command[i] <= '9') || command[i] == '-')) {
                     if (command[i] == '-') {
                         is_neg = true;
                     } else if (wrote_gap) {
@@ -143,14 +194,13 @@ static void handle_client(void *p1_client_socket, void *, void *) {
                 curr_token = -curr_token;
             }
             seq_breakpoints.push_back(curr_token);
-            is_neg = false;
 
             if (seq_breakpoints.size() <= 1) {
                 send_string_fully(client_guard.socket, "Breakpoints too short\n");
                 continue;
             }
             int time_ms = (std::ssize(seq_breakpoints) - 1) * gap;
-            if (sequencer_prepare(gap, seq_breakpoints, true)) {
+            if (sequencer_prepare(gap, seq_breakpoints, motor_only)) {
                 send_string_fully(client_guard.socket, "Failed to prepare sequence");
                 continue;
             }

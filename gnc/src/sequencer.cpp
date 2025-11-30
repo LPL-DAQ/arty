@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <string>
 #include <cstdint>
+#include <numbers>
+#include <cmath>
 #include "server.h"
 
 LOG_MODULE_REGISTER(sequencer, CONFIG_LOG_DEFAULT_LEVEL);
@@ -27,6 +29,11 @@ static int gap_millis;
 static std::vector<float> breakpoints;
 static int data_sock = -1;
 static bool motor_only = false;
+static float sine_seq_offset = 0.0f;
+static float sine_seq_amplitude = 0.0f;
+static float sine_seq_period = 0.0f;
+static float sine_seq_phase = 0.0f;
+static bool sine_mode = false;
 
 volatile int step_count = 0;
 volatile int count_to = 0;
@@ -67,19 +74,26 @@ static void step_control_loop(k_work *) {
 
     int next_millis = step_count + 1;
 
-    // Interpolate breakpoints to find instantaneous trace target.
-    int low_bp_index = MIN(next_millis / gap_millis, std::ssize(breakpoints) - 1);
-    int high_bp_index = low_bp_index + 1;
-    if (low_bp_index < 0) {
-        LOG_WRN("Low index is less than 0, how is that possible? curr: %d, gap: %d", next_millis, gap_millis);
-        low_bp_index = 0;
-    }
     float trace_target;
-    if (high_bp_index >= std::ssize(breakpoints)) {
-        trace_target = breakpoints.back();
+    if (!sine_mode) {
+        // Interpolate breakpoints to find instantaneous trace target.
+        int low_bp_index = MIN(next_millis / gap_millis, std::ssize(breakpoints) - 1);
+        int high_bp_index = low_bp_index + 1;
+        if (low_bp_index < 0) {
+            LOG_WRN("Low index is less than 0, how is that possible? curr: %d, gap: %d", next_millis, gap_millis);
+            low_bp_index = 0;
+        }
+        if (high_bp_index >= std::ssize(breakpoints)) {
+            trace_target = breakpoints.back();
+        } else {
+            float tween = static_cast<float>(next_millis - (low_bp_index * gap_millis)) / gap_millis;
+            trace_target = breakpoints[low_bp_index] + (breakpoints[high_bp_index] - breakpoints[low_bp_index]) * tween;
+        }
     } else {
-        float tween = static_cast<float>(next_millis - (low_bp_index * gap_millis)) / gap_millis;
-        trace_target = breakpoints[low_bp_index] + (breakpoints[high_bp_index] - breakpoints[low_bp_index]) * tween;
+        trace_target =
+                std::sin(static_cast<float>(next_millis) / sine_seq_period * std::numbers::pi_v<float> * 2.0f +
+                         sine_seq_phase) * sine_seq_amplitude +
+                sine_seq_offset;
     }
 
     // Timestamp
@@ -165,14 +179,15 @@ int sequencer_start_trace() {
         return 1;
     }
 
+    // Set first breakpoint to whatever the current is to prevent sudden jolts.
     if (motor_only) {
         LOG_INF("Running open-loop motor trace.");
+        breakpoints.front() = throttle_valve_get_pos();
     } else {
         LOG_INF("Running closed-loop control trace.");
+        breakpoints.front() = 0.0f; // Noah put something here, this should be whatever the current feedback is (ptf401?).
     }
 
-    // Replace first breakpoint with current position
-    breakpoints.front() = throttle_valve_get_pos();
     LOG_INF("Got breakpoints:");
     for (int i = 0; i < std::ssize(breakpoints); ++i) {
         LOG_INF("t=%d ms, bp=%f", i * gap_millis, static_cast<double>(breakpoints[i]));
@@ -242,6 +257,22 @@ int sequencer_prepare(int gap, std::vector<float> bps, bool mot_only) {
     gap_millis = gap;
     breakpoints = bps;
     motor_only = mot_only;
+    sine_mode = false;
+    return 0;
+}
+
+int sequencer_prepare_sine(int total_time, float offset, float amplitude, float period, float phase) {
+    if (amplitude <= 0.0f || period <= 0.0f) {
+        return 1;
+    }
+    gap_millis = total_time;
+    breakpoints = std::vector<float>{0.0f, 0.0f};
+    sine_seq_offset = offset;
+    sine_seq_amplitude = amplitude;
+    sine_seq_period = period;
+    sine_seq_phase = phase / 360.0f * 2.0f * std::numbers::pi_v<float>;
+    motor_only = true;
+    sine_mode = true;
     return 0;
 }
 
