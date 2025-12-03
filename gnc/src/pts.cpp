@@ -39,7 +39,7 @@ uint16_t raw_readings[CONFIG_PT_SAMPLES][NUM_PTS];
 
 LOG_MODULE_REGISTER(pts, CONFIG_LOG_DEFAULT_LEVEL);
 
-constexpr std::array<float, NUM_PTS> pts_adc_ranges()
+consteval std::array<float, NUM_PTS> pts_adc_ranges()
 {
     std::array<float, NUM_PTS> ranges;
     for (int i = 0; i < NUM_PTS; ++i) {
@@ -66,6 +66,26 @@ pt_config pt_configs[NUM_PTS] = {
     },
     {
         .scale = 2000.0f / pts_adc_ranges()[3],
+        .bias = 0.0f,
+        .range = 2000.0f
+    },
+    {
+        .scale = 2000.0f / pts_adc_ranges()[4],
+        .bias = 0.0f,
+        .range = 2000.0f
+    },
+    {
+        .scale = 2000.0f / pts_adc_ranges()[5],
+        .bias = 0.0f,
+        .range = 2000.0f
+    },
+    {
+        .scale = 2000.0f / pts_adc_ranges()[6],
+        .bias = 0.0f,
+        .range = 2000.0f
+    },
+    {
+        .scale = 2000.0f / pts_adc_ranges()[7],
         .bias = 0.0f,
         .range = 2000.0f
     },
