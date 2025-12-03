@@ -261,9 +261,14 @@ static void handle_client(void* p1_client_socket, void*, void*)
         else if (command == "getpts#") {
             pt_readings readings = pts_sample();
             std::string payload =
-                "pt202: " + std::to_string(readings.pt202) + ", pt203: " + std::to_string(readings.pt203) +
-                ", ptf401: " + std::to_string(readings.ptf401) + ", pt102: " + std::to_string(readings.pt102) +
-                "\n";
+                "pt102: " + std::to_string(readings.pt102) + "\n"
+                + "pt103: " + std::to_string(readings.pt103) + "\n"
+                + "pt202: " + std::to_string(readings.pt202) + "\n"
+                + "pt203: " + std::to_string(readings.pt203) + "\n"
+                + "ptf401: " + std::to_string(readings.ptf401) + "\n"
+                + "pto401: " + std::to_string(readings.pto401) + "\n"
+                + "ptc401: " + std::to_string(readings.ptc401) + "\n"
+                + "ptc402: " + std::to_string(readings.ptc402) + "\n";
             int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
             if (err) {
                 LOG_ERR("Failed to fully send pt readings: err %d", err);
@@ -342,14 +347,29 @@ static void handle_client(void* p1_client_socket, void*, void*)
             }
 
             int pt_index = -1;
-            if (pt_name == "pt202") {
+            if (pt_name == "ptc401") {
+                pt_index = 0;
+            }
+            else if (pt_name == "pto401") {
                 pt_index = 1;
             }
-            else if (pt_name == "pt203") {
+            else if (pt_name == "pt103") {
                 pt_index = 2;
             }
-            else if (pt_name == "ptf401") {
+            else if (pt_name == "pt202") {
                 pt_index = 3;
+            }
+            else if (pt_name == "pt102") {
+                pt_index = 4;
+            }
+            else if (pt_name == "ptf401") {
+                pt_index = 5;
+            }
+            else if (pt_name == "pt203") {
+                pt_index = 6;
+            }
+            else if (pt_name == "ptc402") {
+                pt_index = 7;
             }
             else {
                 LOG_ERR("Invalid pt name: %s", pt_name.c_str());

@@ -155,7 +155,13 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
     };
 
     uint8_t new_state = read_encoder_state();
-    encoder_count += ENCODER_STEP_TABLE[prev_encoder_state][new_state];
+    // Temp hack: Fuel encoder line is reversed.
+    if constexpr (kind == ValveKind::FUEL) {
+        encoder_count -= ENCODER_STEP_TABLE[prev_encoder_state][new_state];
+    }
+    else {
+        encoder_count += ENCODER_STEP_TABLE[prev_encoder_state][new_state];
+    }
     prev_encoder_state = new_state;
 }
 

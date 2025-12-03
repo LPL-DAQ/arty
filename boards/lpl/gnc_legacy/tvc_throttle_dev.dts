@@ -30,16 +30,16 @@ GNC throttle + TVC flows board.
 
         // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
         // corresponding to the sorted ascending order of ADC1 channels.
-        // PT102 - PT2 - Pin 41 - A17 - adc1 10
-        // PT103 - PT3 - Pin 14 - A0 - adc1 7
+        // PT102 - PT1 - Pin 40 - A16 - adc1 9
+        // PT103 - PT2 - Pin 41 - A17 - adc1 10
         // PT202 - PT4 - Pin 15 - A1 - adc1 8
         // PT203 - PT5 - Pin 16 - A2 - adc1 12
         // PTF401 - PT6 - Pin 17 - A3 - adc1 11
         // PTO401 - PT7 - Pin 18 - A4 - adc1 6
         // PTC401 - PT8 - Pin 19 - A5 - adc1 5
         // PTC402 - PT9 - Pin 20 - A6 - adc1 15
-        pt-names = "ptc401", "pto401", "pt103", "pt202", "pt102", "ptf401", "pt203", "ptc402";
-        io-channels = <&adc1 5>, <&adc1 6>, <&adc1 7>, <&adc1 8>, <&adc1 10>, <&adc1 11>, <&adc1 12>, <&adc1 15>;
+        pt-names = "ptc401", "pto401", "pt202", "pt102", "pt103", "ptf401", "pt203", "ptc402";
+        io-channels = <&adc1 5>, <&adc1 6>, <&adc1 8>, <&adc1 9>, <&adc1 10>, <&adc1 11>, <&adc1 12>, <&adc1 15>;
     };
 
     chosen {
@@ -62,10 +62,14 @@ GNC throttle + TVC flows board.
 &pinctrl {
     pinmux_adc1: pinmux_adc1 {
         group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_00_gpio1_io16>,
+            pinmux = <&iomuxc_gpio_ad_b1_04_gpio1_io20>,
+                     <&iomuxc_gpio_ad_b1_05_gpio1_io21>,
+                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>,
+                     <&iomuxc_gpio_ad_b1_07_gpio1_io23>,
+                     <&iomuxc_gpio_ad_b1_06_gpio1_io22>,
                      <&iomuxc_gpio_ad_b1_00_gpio1_io16>,
                      <&iomuxc_gpio_ad_b1_01_gpio1_io17>,
-                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>;
+                     <&iomuxc_gpio_ad_b1_10_gpio1_io26>;
             bias-disable; // These should be pulled down by voltage divider
             drive-strength = "r0-6";
             slew-rate = "slow";
@@ -101,8 +105,8 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    channel@7 {
-        reg = <0x7>;
+    channel@8 {
+        reg = <0x8>;
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
@@ -110,8 +114,8 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    channel@8 {
-        reg = <0x8>;
+    channel@9 {
+        reg = <0x9>;
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
