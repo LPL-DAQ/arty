@@ -434,7 +434,7 @@ int sequencer_prepare_combo(
     const std::vector<float>& seq_sine_amps_lox,
     const std::vector<float>& seq_sine_periods_lox,
     const std::vector<float>& seq_sine_phases_lox,
-    bool mot_only);{
+    bool mot_only){
     if (gap <= 0 || fuel_bps.empty() || lox_bps.empty()) {
         return 1;
     }
