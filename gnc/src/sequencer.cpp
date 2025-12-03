@@ -376,7 +376,7 @@ int sequencer_prepare_sine(int total_time, float offset, float amplitude, float 
 
 // For example: sequencer_prepare(gap, seq_fuel_breakpoints, seq_lox_breakpoints,
 //                                seq_segment_mode, seq_sine_offsets, motor_only)
-int sequencer_prepare_combo(int gap, std::vector<float> fuel_bps, std::vector<float> lox_bps, std::vector<float> seq_sine_offsets, std::vector<float> seq_sine_amps,, std::vector<float> seq_sine_periods,bool mot_only)
+int sequencer_prepare_combo(int gap, std::vector<float> fuel_bps, std::vector<float> lox_bps, std::vector<float> seq_sine_offsets, std::vector<float> seq_sine_amps, std::vector<float> seq_sine_periods,bool mot_only)
 {
     if (gap <= 0 || fuel_bps.empty() || lox_bps.empty()) {
         return 1;
