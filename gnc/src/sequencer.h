@@ -7,6 +7,8 @@ int sequencer_prepare(int gap, std::vector<float> fuel_bps, std::vector<float> l
 
 int sequencer_prepare_sine(int total_time, float offset, float amplitude, float period, float phase);
 
+int sequencer_prepare_combo(int gap, std::vector<float> fuel_bps, std::vector<float> lox_bps, std::vector<float> seq_sine_offsets, std::vector<float> seq_sine_amps, std::vector<float> seq_sine_periods,bool mot_only);
+
 int sequencer_start_trace();
 
 void sequencer_set_data_recipient(int sock);

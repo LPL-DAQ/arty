@@ -190,6 +190,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
             float curr_token = 0;
             bool saw_decimal = false;
             int num_decimals = 0;
+
             for (int i = 7; i < std::ssize(command); ++i) {
                 if (!((command[i] >= '0' && command[i] <= '9') || command[i] == '.')) {
                     if (command[i] == '_') {
@@ -278,8 +279,11 @@ static void handle_client(void* p1_client_socket, void*, void*)
             bool saw_decimal = false;
             int num_decimals = 0;
 
-            int sine_offset = 0;
+            int sine_offset = 0;        // degrees
+            int sine_amplitude = 0;     // degrees
+            int sine_period = 0;        // milliseconds
             bool saw_sine = false;
+            int sine_param_index = 0;   // 0 = offset, 1 = amplitude, 2 = period
 
             for (int i = 12; i < std::ssize(command); ++i) {                // Start of a sinusoidal token: "sXX"
                 if (command[i] == 's') {
@@ -381,7 +385,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
                 continue;
             }
             int time_ms = (std::ssize(seq_lox_breakpoints) - 1) * gap;
-            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_sine_offsets, motor_only)) {
+            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_sine_offsets,seq_sine_amplitudes,seq_sine_periods, motor_only)) {
                 send_string_fully(client_guard.socket, "Failed to prepare sequence");
                 continue;
             }
