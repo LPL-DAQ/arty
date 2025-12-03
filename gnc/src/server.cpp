@@ -255,9 +255,16 @@ static void handle_client(void* p1_client_socket, void*, void*)
                 0.0f}; // Initial dummy value, will get rewritten to current when sequence starts.
 
             // offset for sinusoidal segments (0.0f for linear segments)
-            std::vector<float> seq_sine_offsets;
-            std::vector<float> seq_sine_amplitudes;
-            std::vector<float> seq_sine_periods;
+            std::vector<float> seq_fuel_sine_offsets;
+            std::vector<float> seq_fuel_sine_amplitudes;
+            std::vector<float> seq_fuel_sine_periods;
+            std::vector<float> seq_fuel_sine_phases;
+
+            std::vector<float> seq_lox_sine_offsets;
+            std::vector<float> seq_lox_sine_amplitudes;
+            std::vector<float> seq_lox_sine_periods;
+            std::vector<float> seq_lox_sine_phases;
+
 
             bool motor_only;
             std::string seq_kind = command.substr(8, 4);
@@ -279,16 +286,25 @@ static void handle_client(void* p1_client_socket, void*, void*)
             bool saw_decimal = false;
             int num_decimals = 0;
 
-            int sine_offset = 0;        // degrees
-            int sine_amplitude = 0;     // degrees
-            int sine_period = 0;        // milliseconds
-            bool saw_sine = false;
-            int sine_param_index = 0;   // 0 = offset, 1 = amplitude, 2 = period
+            float fuel_offset    = 0.0f;
+            float fuel_amplitude = 0.0f;
+            float fuel_period    = 0.0f;
+            float fuel_phase     = 0.0f;
+
+            float lox_offset     = 0.0f;
+            float lox_amplitude  = 0.0f;
+            float lox_period     = 0.0f;
+            float lox_phase      = 0.0f;
+
+            bool saw_sine         = false;
+            int  sine_param_index = 0;  // 0=offset, 1=amp, 2=period, 3=phase
+            int  sine_motor       = 0;  // 0 = fuel side, 1 = lox side
 
             for (int i = 12; i < std::ssize(command); ++i) {                // Start of a sinusoidal token: "sXX"
                 if (command[i] == 's') {
                     saw_sine = true;
                     sine_param_index = 0;
+                    sine_motor = 0;
                     curr_token = 0.0f;
                     saw_decimal = false;
                     num_decimals = 0;
@@ -298,14 +314,16 @@ static void handle_client(void* p1_client_socket, void*, void*)
 
                 if (!((command[i] >= '0' && command[i] <= '9') || command[i] == '.')) {
                     if (saw_sine) {
-                        if (sine_param_index == 0) {
-                            sine_offset = static_cast<int>(curr_token);
-                        }
-                        else if (sine_param_index == 1) {
-                            sine_amplitude = static_cast<int>(curr_token);
-                        }
-                        else if (sine_param_index == 2) {
-                            sine_period = static_cast<int>(curr_token);
+                        if (sine_motor == 0) { // fuel
+                            if      (sine_param_index == 0) fuel_offset    = curr_token;
+                            else if (sine_param_index == 1) fuel_amplitude = curr_token;
+                            else if (sine_param_index == 2) fuel_period    = curr_token;
+                            else if (sine_param_index == 3) fuel_phase     = curr_token;
+                        } else { // lox
+                            if      (sine_param_index == 0) lox_offset     = curr_token;
+                            else if (sine_param_index == 1) lox_amplitude  = curr_token;
+                            else if (sine_param_index == 2) lox_period     = curr_token;
+                            else if (sine_param_index == 3) lox_phase      = curr_token;
                         }
                         sine_param_index++;
 
@@ -315,8 +333,15 @@ static void handle_client(void* p1_client_socket, void*, void*)
                             num_decimals = 0;
                             continue;
                         }
+                        if (c == '-') {
+                            sine_motor       = 1;
+                            sine_param_index = 0;
+                            curr_token       = 0.0f;
+                            saw_decimal      = false;
+                            num_decimals     = 0;
+                            continue;
+                        }
 
-                        // Otherwise, we've reached the end of the sine token
                         saw_sine = false;
 
                         // Create a new breakpoint at the current position
@@ -327,9 +352,15 @@ static void handle_client(void* p1_client_socket, void*, void*)
 
                         // Segment from previous bp to this bp is sinusoidal
                         if (seq_fuel_breakpoints.size() > 1) {
-                            seq_sine_offsets.push_back(static_cast<float>(sine_offset));
-                            seq_sine_amplitudes.push_back(static_cast<float>(sine_amplitude));
-                            seq_sine_periods.push_back(static_cast<float>(sine_period));
+                            seq_fuel_sine_offsets.push_back(fuel_offset);
+                            seq_fuel_sine_amplitudes.push_back(fuel_amplitude);
+                            seq_fuel_sine_periods.push_back(fuel_period);
+                            seq_fuel_sine_phases.push_back(fuel_phase);
+
+                            seq_lox_sine_offsets.push_back(lox_offset);
+                            seq_lox_sine_amplitudes.push_back(lox_amplitude);
+                            seq_lox_sine_periods.push_back(lox_period);
+                            seq_lox_sine_phases.push_back(lox_phase);
                         }
 
                         curr_token = 0.0f;
@@ -344,9 +375,15 @@ static void handle_client(void* p1_client_socket, void*, void*)
                         seq_fuel_breakpoints.push_back(fuel_token);
                         seq_lox_breakpoints.push_back(curr_token);
                         if (std::ssize(seq_fuel_breakpoints) > 1) {
-                            seq_sine_offsets.push_back(0.0f);
-                            seq_sine_amplitudes.push_back(0.0f);
-                            seq_sine_periods.push_back(0.0f);
+                            seq_fuel_sine_offsets.push_back(0.0f);
+                            seq_fuel_sine_amplitudes.push_back(0.0f);
+                            seq_fuel_sine_periods.push_back(0.0f);
+                            seq_fuel_sine_phases.push_back(0.0f);
+
+                            seq_lox_sine_offsets.push_back(0.0f);
+                            seq_lox_sine_amplitudes.push_back(0.0f);
+                            seq_lox_sine_periods.push_back(0.0f);
+                            seq_lox_sine_phases.push_back(0.0f);
                         }
                         fuel_token = 0;
                     }
@@ -374,7 +411,6 @@ static void handle_client(void* p1_client_socket, void*, void*)
                         curr_token += (command[i] - '0') * multiplier;
                     }
                 }
-
             }
 
             if (seq_fuel_breakpoints.size() != seq_lox_breakpoints.size()) {
@@ -387,7 +423,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
                 continue;
             }
             int time_ms = (std::ssize(seq_lox_breakpoints) - 1) * gap;
-            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_sine_offsets,seq_sine_amplitudes,seq_sine_periods, motor_only)) {
+            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_sine_offsets_fuel,seq_sine_amplitudes_fuel,seq_sine_periods_fuel,seq_sine_phase_fuel,seq_sine_offsets_lox,seq_sine_amplitudes_lox,seq_sine_periods_lox,seq_sine_phase_lox, motor_only)) {
                 send_string_fully(client_guard.socket, "Failed to prepare sequence");
                 continue;
             }
