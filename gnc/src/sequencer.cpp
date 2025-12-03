@@ -28,12 +28,10 @@ K_MUTEX_DEFINE(sequence_lock);
 static int gap_millis;
 static std::vector<float> fuel_breakpoints;
 static std::vector<float> lox_breakpoints;
-
 static std::vector<float> sine_offsets_fuel;
 static std::vector<float> sine_amplitudes_fuel;
 static std::vector<float> sine_periods_fuel;
 static std::vector<float> sine_phases_fuel;
-
 static std::vector<float> sine_offsets_lox;
 static std::vector<float> sine_amplitudes_lox;
 static std::vector<float> sine_periods_lox;
@@ -151,7 +149,8 @@ static void step_control_loop(k_work*)
                                (lox_breakpoints[high_bp_index] - lox_breakpoints[low_bp_index]) * tween;
         }
     }
-    else { //  sine mode
+    //  sine mode
+    else {
         fuel_trace_target =
             std::sin(static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f +
                      sine_seq_phase_fuel) *
