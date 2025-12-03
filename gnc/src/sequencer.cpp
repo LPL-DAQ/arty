@@ -280,8 +280,8 @@ int sequencer_start_trace()
         int would_write = snprintfcb(
             buf, MAX_DATA_LEN,
             "%.8f,%d,"
-            "%.8f,%.8f,%.8f,%.8f,%.8f,%llu"
-            "%.8f,%.8f,%.8f,%.8f,%.8f,%llu"
+            "%.8f,%.8f,%.8f,%.8f,%.8f,%llu,"
+            "%.8f,%.8f,%.8f,%.8f,%.8f,%llu,"
             "%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f\n",
             static_cast<double>(data.time),
             data.data_queue_size,

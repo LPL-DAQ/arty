@@ -107,23 +107,21 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
     pulse_interval_cycles = now_cycles - last_pulse_cycle;
     last_pulse_cycle = now_cycles;
 
-    LOG_ERR("%s HI %llu", kind_to_prefix(kind));
-
     int prev_dir_state = gpio_pin_get_dt(&dir_gpio);
     if (prev_dir_state < 0) [[unlikely]] {
-        LOG_ERR("%s Failed to read from direction GPIO in pulse ISR: err %d", kind_to_prefix(kind), prev_dir_state);
+//        LOG_ERR("%s Failed to read from direction GPIO in pulse ISR: err %d", kind_to_prefix(kind), prev_dir_state);
         prev_dir_state = 0;
     }
     int prev_pul_state = gpio_pin_get_dt(&pul_gpio);
     if (prev_pul_state < 0) [[unlikely]] {
-        LOG_ERR("%s Failed to read from pulse GPIO in pulse ISR: err %d", kind_to_prefix(kind), prev_pul_state);
+//        LOG_ERR("%s Failed to read from pulse GPIO in pulse ISR: err %d", kind_to_prefix(kind), prev_pul_state);
         prev_pul_state = 0;
     }
 
     // Switch direction, if we must. Positive velocity -> dir gpio should be high. Negative velocity -> dir gpio should
     // be low.
     if ((!prev_dir_state && velocity > 0) || (prev_dir_state && velocity < 0)) {
-        gpio_pin_toggle_dt(&pul_gpio);
+        gpio_pin_toggle_dt(&dir_gpio);
         // We need to wait a while after changing dir before we continue sending pulses.
         return;
     }
@@ -172,14 +170,14 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
     int a = gpio_pin_get_dt(&enc_a_gpio);
     // Technically, gpio_pin_get_dt may return an error code. Thus, we clamp it to 0 or 1.
     if (a < 0) [[unlikely]] {
-        LOG_ERR("%s Failed to read from encoder A in read_encoder_state: err %d", kind_to_prefix(kind), a);
+//        LOG_ERR("%s Failed to read from encoder A in read_encoder_state: err %d", kind_to_prefix(kind), a);
         a = 0;
     }
 
-    int b = gpio_pin_get_dt(&enc_b_gpio) == 1;
+    int b = gpio_pin_get_dt(&enc_b_gpio);
     // Ditto.
     if (b < 0) [[unlikely]] {
-        LOG_ERR("%s Failed to read from encoder B in read_encoder_state: err %d", kind_to_prefix(kind), b);
+//        LOG_ERR("%s Failed to read from encoder B in read_encoder_state: err %d", kind_to_prefix(kind), b);
         b = 0;
     }
     return (static_cast<uint8_t>(b) << 1) | static_cast<uint8_t>(a);
