@@ -411,7 +411,7 @@ typedef ThrottleValve<ValveKind::FUEL,
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_stepper_dir_gpios),
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_stepper_ena_gpios),
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_encoder_a_gpios),
-    GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_encoder_a_gpios),
+    GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_encoder_b_gpios),
     DEVICE_DT_GET(DT_ALIAS(fuel_valve_stepper_pulse_counter))> FuelValve;
 
 typedef ThrottleValve<ValveKind::LOX,
@@ -419,7 +419,7 @@ typedef ThrottleValve<ValveKind::LOX,
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_stepper_dir_gpios),
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_stepper_ena_gpios),
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_encoder_a_gpios),
-    GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_encoder_a_gpios),
+    GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_encoder_b_gpios),
     DEVICE_DT_GET(DT_ALIAS(lox_valve_stepper_pulse_counter))> LoxValve;
 
 #endif //CLOVER_THROTTLEVALVE_H
