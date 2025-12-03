@@ -16,23 +16,30 @@ GNC throttle + TVC flows board.
     };
 
     zephyr,user {
-        fuel-valve-stepper-pul-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>; // Pin 10
+        fuel-valve-stepper-pul-gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>; // Pin 11
         fuel-valve-stepper-dir-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>; // Pin 12
-        fuel-valve-stepper-ena-gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>; // Pin 11
-        fuel-valve-encoder-a-gpios = <&gpio4 6 GPIO_ACTIVE_HIGH>; // Pin 4
-        fuel-valve-encoder-b-gpios = <&gpio4 8 GPIO_ACTIVE_HIGH>; // Pin 5
+        fuel-valve-stepper-ena-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>; // Pin 10
+        fuel-valve-encoder-a-gpios = <&gpio4 8 GPIO_ACTIVE_HIGH>; // Pin 5
+        fuel-valve-encoder-b-gpios = <&gpio4 6 GPIO_ACTIVE_HIGH>; // Pin 4
 
-        lox-valve-stepper-pul-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>; // Pin 10
-        lox-valve-stepper-dir-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>; // Pin 12
-        lox-valve-stepper-ena-gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>; // Pin 11
-        lox-valve-encoder-a-gpios = <&gpio4 6 GPIO_ACTIVE_HIGH>; // Pin 4
-        lox-valve-encoder-b-gpios = <&gpio4 8 GPIO_ACTIVE_HIGH>; // Pin 5
+        lox-valve-stepper-pul-gpios = <&gpio2 16 GPIO_ACTIVE_HIGH>; // Pin 8
+        lox-valve-stepper-dir-gpios = <&gpio2 11 GPIO_ACTIVE_HIGH>; // Pin 9
+        lox-valve-stepper-ena-gpios = <&gpio2 17 GPIO_ACTIVE_HIGH>; // Pin 7
+        lox-valve-encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
+        lox-valve-encoder-b-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 1
 
         // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
-        // corresponding to the sorted ascending order of ADC1 channels. The following corresonds to pins A0, A1, A3,
-        // and A2. We really ought investigate further.
-        pt-names = "pt202", "pt203", "pt102", "ptf401";
-        io-channels = <&adc1 5>, <&adc1 6>, <&adc1 7>, <&adc1 8>;
+        // corresponding to the sorted ascending order of ADC1 channels.
+        // PT102 - PT2 - Pin 41 - A17 - adc1 10
+        // PT103 - PT3 - Pin 14 - A0 - adc1 7
+        // PT202 - PT4 - Pin 15 - A1 - adc1 8
+        // PT203 - PT5 - Pin 16 - A2 - adc1 12
+        // PTF401 - PT6 - Pin 17 - A3 - adc1 11
+        // PTO401 - PT7 - Pin 18 - A4 - adc1 6
+        // PTC401 - PT8 - Pin 19 - A5 - adc1 5
+        // PTC402 - PT9 - Pin 20 - A6 - adc1 15
+        pt-names = "ptc401", "pto401", "pt103", "pt202", "pt102", "ptf401", "pt203", "ptc402";
+        io-channels = <&adc1 5>, <&adc1 6>, <&adc1 7>, <&adc1 8>, <&adc1 10>, <&adc1 11>, <&adc1 12>, <&adc1 15>;
     };
 
     chosen {
@@ -76,7 +83,6 @@ pt_adc: &adc1 {
     #address-cells = <1>;
     #size-cells = <0>;
 
-    // PT1 (top-left), pin A0 / 14, AD_B1_02
     channel@5 {
         reg = <0x5>;
         zephyr,gain = "ADC_GAIN_1";
@@ -86,7 +92,6 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    // PT2 (bottom-left), pin A5 / 19, AD_B1_00
     channel@6 {
         reg = <0x6>;
         zephyr,gain = "ADC_GAIN_1";
@@ -96,7 +101,6 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    // PT4 (top-right), pin A1 / 15, AD_B1_03
     channel@7 {
         reg = <0x7>;
         zephyr,gain = "ADC_GAIN_1";
@@ -106,7 +110,6 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    // PT3 (bottom-right), pin A4 / 18, AD_B1_01
     channel@8 {
         reg = <0x8>;
         zephyr,gain = "ADC_GAIN_1";
@@ -116,7 +119,41 @@ pt_adc: &adc1 {
         zephyr,oversampling = <5>; // 32x averaging
     };
 
-    // TODO - add add'l analog-ins.
+    channel@a {
+        reg = <0xa>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    channel@b {
+        reg = <0xb>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    channel@c {
+        reg = <0xc>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
+
+    channel@f {
+        reg = <0xf>;
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; // Max for chip
+        zephyr,oversampling = <5>; // 32x averaging
+    };
 };
 
 // Timer for stepper pulses.
@@ -127,6 +164,10 @@ pt_adc: &adc1 {
 };
 
 &pit0_channel0 {
+    status = "okay";
+};
+
+&pit0_channel1 {
     status = "okay";
 };
 
