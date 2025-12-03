@@ -33,6 +33,7 @@ static std::vector<float> sine_offsets_fuel;
 static std::vector<float> sine_amplitudes_fuel;
 static std::vector<float> sine_periods_fuel;
 static std::vector<float> sine_phases_fuel;
+
 static std::vector<float> sine_offsets_lox;
 static std::vector<float> sine_amplitudes_lox;
 static std::vector<float> sine_periods_lox;
