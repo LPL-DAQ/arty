@@ -354,6 +354,10 @@ int sequencer_prepare(int gap, std::vector<float> fuel_bps, std::vector<float> l
     lox_breakpoints = lox_bps;
     motor_only = mot_only;
     sine_mode = false;
+    combo_mode = false;
+    sine_offsets.clear();
+    sine_amplitudes.clear();
+    sine_periods.clear();
     return 0;
 }
 
@@ -371,6 +375,10 @@ int sequencer_prepare_sine(int total_time, float offset, float amplitude, float 
     sine_seq_phase = phase / 360.0f * 2.0f * std::numbers::pi_v<float>;
     motor_only = true;
     sine_mode = true;
+    combo_mode = false;
+    sine_offsets.clear();
+    sine_amplitudes.clear();
+    sine_periods.clear();
     return 0;
 }
 
