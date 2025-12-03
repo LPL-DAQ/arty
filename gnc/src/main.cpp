@@ -10,7 +10,6 @@
 #include "server.h"
 #include "throttle_valve.h"
 #include "pts.h"
-#include "encoder.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -21,9 +20,10 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 BUILD_ASSERT(DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_console), zephyr_cdc_acm_uart),
              "Console device is not ACM CDC UART device");
 
-int main(void) {
+int main(void)
+{
     // Status LED
-    const struct device *blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
+    const struct device* blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
     if (!device_is_ready(blink)) {
         return 0;
     }
@@ -32,11 +32,11 @@ int main(void) {
     // Serial over USB setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB is not enabled.");
-        while (1);
+        while (1) {}
     }
 
     // Try connecting to serial over usb for 3 seconds.
-    const struct device *usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+    const struct device* usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
     for (int i = 0; i < 30; ++i) {
         k_sleep(K_MSEC(100));
 
@@ -48,10 +48,17 @@ int main(void) {
     }
 
 
-    LOG_INF("Initializing throttle valve");
-    int err = throttle_valve_init();
+    LOG_INF("Initializing fuel throttle valve");
+    int err = FuelValve::init();
     if (err) {
-        LOG_ERR("Failed to initialize throttle valve");
+        LOG_ERR("Failed to initialize fuel throttle valve");
+        return 0;
+    }
+
+    LOG_INF("Initializing lox throttle valve");
+    err = LoxValve::init();
+    if (err) {
+        LOG_ERR("Failed to initialize lox throttle valve");
         return 0;
     }
 
@@ -62,16 +69,9 @@ int main(void) {
         return 0;
     }
 
-    LOG_INF("Initializing encoder");
-    err = encoder_init();
-    if (err) {
-        LOG_ERR("Failed to initialize encoder");
-        return 0;
-    }
-
     LOG_INF("Starting server");
     serve_connections();
 
-    while (1);
+    while (1) {}
 }
 

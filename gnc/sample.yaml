@@ -10,7 +10,7 @@ common:
     - custom_plank
     - nucleo_f302r8
 tests:
-  app.default: {}
+  app.default: { }
   app.debug:
     extra_overlay_confs:
       - debug.conf

@@ -12,7 +12,7 @@ print('Importing pandas, this can take a while the first time...')
 import pandas as pd
 
 LOGS_DIR = '/home/lpl/clover/scripts/data/sequences'
-SEQ_FORMAT_VERSION = 'alpha'
+SEQ_FORMAT_VERSION = 'beta'
 
 print(f'Logging to: {LOGS_DIR}')
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -46,13 +46,13 @@ for line in sys.stdin:
             {
                 'row': 1,
                 'col': 1,
-                'sensors': ['pt202', 'pt203', 'ptf401']
+                'sensors': ['pt102', 'pt103', 'pt202', 'pt203', 'ptf401', 'pto401', 'ptc401', 'ptc402']
             },
             {
                 'row': 2,
                 'col': 1,
-                'sensors': ['motor_pos', 'encoder_deg', 'motor_target']
-                # 'sensors': ['motor_pos', 'motor_target', 'motor_velocity', 'motor_acceleration']
+                'sensors': ['fuel_valve_setpoint', 'fuel_valve_internal_pos', 'fuel_valve_encoder_pos',
+                            'lox_valve_setpoint', 'lox_valve_internal_pos', 'lox_valve_encoder_pos']
             },
         ]
         fig = make_subplots(2, 1, shared_xaxes=True, shared_yaxes=False, horizontal_spacing=0.05, vertical_spacing=0.05,

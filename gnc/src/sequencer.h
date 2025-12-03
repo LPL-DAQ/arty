@@ -3,12 +3,14 @@
 
 #include <vector>
 
-int sequencer_prepare(int gap, std::vector<float> bps, bool motor_only);
+int sequencer_prepare(int gap, std::vector<float> fuel_bps, std::vector<float> lox_bps, bool mot_only);
 
 int sequencer_prepare_sine(int total_time, float offset, float amplitude, float period, float phase);
 
 int sequencer_start_trace();
 
 void sequencer_set_data_recipient(int sock);
+
+void sequencer_halt();
 
 #endif //CLOVER_SEQUENCER_H
