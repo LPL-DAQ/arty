@@ -288,9 +288,11 @@ static void handle_client(void* p1_client_socket, void*, void*)
             for (int i = 12; i < std::ssize(command); ++i) {                // Start of a sinusoidal token: "sXX"
                 if (command[i] == 's') {
                     saw_sine = true;
+                    sine_param_index = 0;
                     curr_token = 0.0f;
                     saw_decimal = false;
                     num_decimals = 0;
+
                     continue;
                 }
 
