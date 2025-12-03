@@ -342,14 +342,29 @@ static void handle_client(void* p1_client_socket, void*, void*)
             }
 
             int pt_index = -1;
-            if (pt_name == "pt202") {
+            if (pt_name == "ptc401") {
+                pt_index = 0;
+            }
+            else if (pt_name == "pto401") {
                 pt_index = 1;
             }
-            else if (pt_name == "pt203") {
+            else if (pt_name == "pt103") {
                 pt_index = 2;
             }
-            else if (pt_name == "ptf401") {
+            else if (pt_name == "pt202") {
                 pt_index = 3;
+            }
+            else if (pt_name == "pt102") {
+                pt_index = 4;
+            }
+            else if (pt_name == "ptf401") {
+                pt_index = 5;
+            }
+            else if (pt_name == "pt203") {
+                pt_index = 6;
+            }
+            else if (pt_name == "ptc402") {
+                pt_index = 7;
             }
             else {
                 LOG_ERR("Invalid pt name: %s", pt_name.c_str());
