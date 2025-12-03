@@ -261,9 +261,14 @@ static void handle_client(void* p1_client_socket, void*, void*)
         else if (command == "getpts#") {
             pt_readings readings = pts_sample();
             std::string payload =
-                "pt202: " + std::to_string(readings.pt202) + ", pt203: " + std::to_string(readings.pt203) +
-                ", ptf401: " + std::to_string(readings.ptf401) + ", pt102: " + std::to_string(readings.pt102) +
-                "\n";
+                "pt102: " + std::to_string(readings.pt102) + "\n"
+                + "pt103: " + std::to_string(readings.pt103) + "\n"
+                + "pt202: " + std::to_string(readings.pt202) + "\n"
+                + "pt203: " + std::to_string(readings.pt203) + "\n"
+                + "ptf401: " + std::to_string(readings.ptf401) + "\n"
+                + "pto401: " + std::to_string(readings.pto401) + "\n"
+                + "ptc401: " + std::to_string(readings.ptc401) + "\n"
+                + "ptc402: " + std::to_string(readings.ptc402) + "\n";
             int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
             if (err) {
                 LOG_ERR("Failed to fully send pt readings: err %d", err);
