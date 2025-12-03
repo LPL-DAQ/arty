@@ -423,7 +423,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
                 continue;
             }
             int time_ms = (std::ssize(seq_lox_breakpoints) - 1) * gap;
-            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_sine_offsets_fuel,seq_sine_amplitudes_fuel,seq_sine_periods_fuel,seq_sine_phase_fuel,seq_sine_offsets_lox,seq_sine_amplitudes_lox,seq_sine_periods_lox,seq_sine_phase_lox, motor_only)) {
+            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_fuel_sine_offsets,seq_fuel_sine_amplitudes,seq_fuel_sine_periods,seq_fuel_sine_phases,seq_lox_sine_offsets,seq_lox_sine_amplitudes,seq_lox_sine_periods,seq_lox_sine_phases, motor_only)) {
                 send_string_fully(client_guard.socket, "Failed to prepare sequence");
                 continue;
             }
