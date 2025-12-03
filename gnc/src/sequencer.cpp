@@ -28,6 +28,7 @@ K_MUTEX_DEFINE(sequence_lock);
 static int gap_millis;
 static std::vector<float> fuel_breakpoints;
 static std::vector<float> lox_breakpoints;
+
 static std::vector<float> sine_offsets_fuel;
 static std::vector<float> sine_amplitudes_fuel;
 static std::vector<float> sine_periods_fuel;
