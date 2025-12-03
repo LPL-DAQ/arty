@@ -333,7 +333,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
                             num_decimals = 0;
                             continue;
                         }
-                        if (c == '-') {
+                        if (command[i] == '-') {
                             sine_motor       = 1;
                             sine_param_index = 0;
                             curr_token       = 0.0f;
