@@ -535,7 +535,6 @@ static void handle_client(void* p1_client_socket, void*, void*)
             if (bias_is_negative) {
                 value *= -1;
             }
-
             int pt_index = -1;
             if (pt_name == "ptc401") {
                 pt_index = 0;
