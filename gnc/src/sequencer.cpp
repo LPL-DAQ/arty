@@ -479,22 +479,30 @@ int sequencer_prepare_combo(
         sine_phases_fuel[i] = deg_to_rad(seq_sine_phases_fuel[i]);
         sine_phases_lox[i]  = deg_to_rad(seq_sine_phases_lox[i]);
     }
-    for (size_t i = 0; i < fuel_breakpoints.size(); ++i) {
-        if (sine_offsets_fuel[i] != 0) {
-               fuel_breakpoints[i] = sine_offsets_fuel[i] +
-                       std::sin(static_cast<float>(gap_millis) / sine_periods_fuel[i] * std::numbers::pi_v<float> * 2.0f +
-                               sine_phases_fuel[i]) *
-                               sine_seq_amplitude_fuel;
-            }
+
+    for (size_t i = 0; i < seq_fuel_sine_phases.size(); ++i) {
+        seq_fuel_sine_phases[i] = deg_to_rad(seq_fuel_sine_phases[i]);
+        seq_lox_sine_phases[i]  = deg_to_rad(seq_lox_sine_phases[i]);
     }
-    for (size_t i = 0; i < lox_breakpoints.size(); ++i) {
-        if (sine_offsets_lox[i] != 0) {
-            lox_breakpoints[i] = sine_offsets_lox[i] +
-                    std::sin(static_cast<float>(gap_millis) / sine_periods_lox[i] * std::numbers::pi_v<float> * 2.0f +
-                            sine_phases_lox[i]) *
-                            sine_seq_amplitude_lox;
+
+    for (size_t i = 0; i < seq_fuel_breakpoints.size()-1; ++i) {
+        std::cout << "Debug: fuel bp " << i << ": " << seq_fuel_breakpoints[i] << "\n";
+        if (seq_fuel_sine_offsets[i] != 0) {
+            seq_fuel_breakpoints[i+1] = seq_fuel_sine_offsets[i] +
+                    std::sin(static_cast<float>(gap) / seq_fuel_sine_periods[i] * 3.14159265358979323846f * 2.0f +
+                            seq_fuel_sine_phases[i]) *
+                            seq_fuel_sine_amplitudes[i];
         }
     }
+    for (size_t i = 0; i < seq_lox_breakpoints.size()-1; ++i) {
+        if (seq_lox_sine_offsets[i] != 0) {
+            seq_lox_breakpoints[i+1] = seq_lox_sine_offsets[i] +
+                    std::sin(static_cast<float>(gap) / seq_lox_sine_periods[i] * 3.14159265358979323846f * 2.0f +
+                            seq_lox_sine_phases[i]) *
+                            seq_lox_sine_amplitudes[i];
+        }
+    }
+
 
     motor_only = mot_only;
     combo_mode = true;
