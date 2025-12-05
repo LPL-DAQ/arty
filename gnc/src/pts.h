@@ -38,7 +38,7 @@ int pts_init();
 
 pt_readings pts_sample();
 
-void pts_log_readings(const pt_readings &readings);
+pt_readings pts_get_last_reading();
 
 int pts_set_bias(int index, float bias);
 

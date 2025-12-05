@@ -36,6 +36,9 @@ static adc_sequence_options sequence_options = {
 static adc_sequence sequence;
 uint16_t raw_readings[CONFIG_PT_SAMPLES][NUM_PTS];
 
+static pt_readings last_reading;
+static int64_t last_read_uptime;
+
 LOG_MODULE_REGISTER(pts, CONFIG_LOG_DEFAULT_LEVEL);
 
 consteval std::array<float, NUM_PTS> pts_adc_ranges()
@@ -143,16 +146,22 @@ pt_readings pts_sample()
 
     // Assign each PT name as fields to initialize pt_readings
 #define CLOVER_PTS_DT_TO_READINGS_ASSIGNMENT(node_id, prop, idx) .DT_STRING_TOKEN_BY_IDX(node_id, prop, idx) = readings_by_idx[idx],
-    return pt_readings{
+    auto readings = pt_readings{
         DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, CLOVER_PTS_DT_TO_READINGS_ASSIGNMENT)
     };
+    last_reading = readings;
+    last_read_uptime = k_uptime_get();
+    return readings;
 }
 
-/// Log PT readings for debug purposes
-void pts_log_readings(const pt_readings &readings)
+/// Gets the last sample if it's sufficiently recent, or resample manually.
+pt_readings pts_get_last_reading()
 {
-#define CLOVER_PTS_DT_TO_LOG(node_id, prop, idx) LOG_INF(DT_PROP_BY_IDX(node_id, prop, idx) ": %f psig", static_cast<double>(readings.DT_STRING_TOKEN_BY_IDX(node_id, prop, idx)));
-    DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, CLOVER_PTS_DT_TO_LOG)
+    // If last PT reading was less than 100 ms ago
+    if (k_uptime_get() - last_read_uptime < 100) {
+        return last_reading;
+    }
+    return pts_sample();
 }
 
 int pts_set_bias(int index, float bias)

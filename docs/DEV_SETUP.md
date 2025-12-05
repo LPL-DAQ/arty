@@ -166,6 +166,12 @@ To live-parse sequences, run the following in a separate terminal tab as well:
 tail -n 0 -f ~/clover/out.log | uv --project scripts run scripts/seq_splitter.py
 ```
 
+To run the status-watcher script, run the following, making sure that the script's IP is correctly set:
+
+```shell
+uv --project scripts run scripts/watch_status.py
+```
+
 ## Troubleshooting
 
 ### Build fails due to `<...>.h`: No such file or directory
