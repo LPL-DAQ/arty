@@ -478,7 +478,6 @@ int sequencer_prepare_combo(
         sine_phases_fuel[i] = deg_to_rad(seq_sine_phases_fuel[i]);
         sine_phases_lox[i]  = deg_to_rad(seq_sine_phases_lox[i]);
     }
-
     motor_only = mot_only;
     combo_mode = true;
     return 0;
