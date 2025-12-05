@@ -21,7 +21,7 @@
 #error "pts: `pt-names` and `io-channels` must have the same length."
 #endif
 
-#define CONFIG_PT_SAMPLES 20
+#define CONFIG_PT_SAMPLES 1
 
 
 // Trailing comma needed as we are using preprocessor to instantiate each element of an array.
