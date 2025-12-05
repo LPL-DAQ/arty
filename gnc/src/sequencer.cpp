@@ -108,22 +108,23 @@ static void step_control_loop(k_work*)
     if (combo_mode && gap_millis > 0 && !sine_offsets_fuel.empty() && !sine_offsets_lox.empty()) {
         int seg_idx = next_millis / gap_millis;
         int max_seg_idx = static_cast<int>(sine_offsets_fuel.size()) - 1;
-        if (seg_idx < 0) seg_idx = 0;
-        if (seg_idx > max_seg_idx) seg_idx = max_seg_idx;
+        if (seg_idx < 0) { seg_idx = 0; }
+        if (seg_idx > max_seg_idx) { seg_idx = max_seg_idx; }
         if (sine_offsets_fuel[seg_idx] != 0.0f) {
-            sine_mode=true;
-            sine_seq_offset_fuel=sine_offsets_fuel[seg_idx];
-            sine_seq_amplitude_fuel=sine_amplitudes_fuel[seg_idx];
-            sine_seq_period_fuel=sine_periods_fuel[seg_idx];
-            sine_seq_phase_fuel=sine_phases_fuel[seg_idx];
+            sine_mode = true;
+            sine_seq_offset_fuel = sine_offsets_fuel[seg_idx];
+            sine_seq_amplitude_fuel = sine_amplitudes_fuel[seg_idx];
+            sine_seq_period_fuel = sine_periods_fuel[seg_idx];
+            sine_seq_phase_fuel = sine_phases_fuel[seg_idx];
 
-            sine_seq_offset_lox=sine_offsets_lox[seg_idx];
-            sine_seq_amplitude_lox=sine_amplitudes_lox[seg_idx];
-            sine_seq_period_lox=sine_periods_lox[seg_idx];
-            sine_seq_phase_lox=sine_phases_lox[seg_idx];
+            sine_seq_offset_lox = sine_offsets_lox[seg_idx];
+            sine_seq_amplitude_lox = sine_amplitudes_lox[seg_idx];
+            sine_seq_period_lox = sine_periods_lox[seg_idx];
+            sine_seq_phase_lox = sine_phases_lox[seg_idx];
 
-        } else {
-            sine_mode=false;
+        }
+        else {
+            sine_mode = false;
         }
     }
 
@@ -149,7 +150,7 @@ static void step_control_loop(k_work*)
                                (lox_breakpoints[high_bp_index] - lox_breakpoints[low_bp_index]) * tween;
         }
     }
-    //  sine mode
+        //  sine mode
     else {
         fuel_trace_target =
             std::sin(static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f +
@@ -157,7 +158,8 @@ static void step_control_loop(k_work*)
             sine_seq_amplitude_fuel +
             sine_seq_offset_fuel;
 
-        lox_trace_target = std::sin(static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f +
+        lox_trace_target =
+            std::sin(static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f +
                      sine_seq_phase_lox) *
             sine_seq_amplitude_lox +
             sine_seq_offset_lox;
@@ -424,17 +426,18 @@ int sequencer_prepare_sine(int total_time, float offset, float amplitude, float 
 
 int sequencer_prepare_combo(
     int gap,
-    const std::vector<float>& fuel_bps,
-    const std::vector<float>& lox_bps,
-    const std::vector<float>& seq_sine_offsets_fuel,
-    const std::vector<float>& seq_sine_amps_fuel,
-    const std::vector<float>& seq_sine_periods_fuel,
-    const std::vector<float>& seq_sine_phases_fuel,
-    const std::vector<float>& seq_sine_offsets_lox,
-    const std::vector<float>& seq_sine_amps_lox,
-    const std::vector<float>& seq_sine_periods_lox,
-    const std::vector<float>& seq_sine_phases_lox,
-    bool mot_only){
+    const std::vector<float> &fuel_bps,
+    const std::vector<float> &lox_bps,
+    const std::vector<float> &seq_sine_offsets_fuel,
+    const std::vector<float> &seq_sine_amps_fuel,
+    const std::vector<float> &seq_sine_periods_fuel,
+    const std::vector<float> &seq_sine_phases_fuel,
+    const std::vector<float> &seq_sine_offsets_lox,
+    const std::vector<float> &seq_sine_amps_lox,
+    const std::vector<float> &seq_sine_periods_lox,
+    const std::vector<float> &seq_sine_phases_lox,
+    bool mot_only)
+{
     if (gap <= 0 || fuel_bps.empty() || lox_bps.empty()) {
         return 1;
     }
@@ -443,19 +446,19 @@ int sequencer_prepare_combo(
     }
     // Expect one sine-segment entry per segment (breakpoints - 1)
     const size_t num_segments = fuel_bps.size() - 1;
-    auto check_size = [num_segments](const std::vector<float>& v) {
+    auto check_size = [num_segments](const std::vector<float> &v) {
         return v.size() == num_segments;
     };
-    if (!check_size(seq_sine_offsets_fuel)  ||
-        !check_size(seq_sine_amps_fuel)     ||
-        !check_size(seq_sine_periods_fuel)  ||
-        !check_size(seq_sine_phases_fuel)   ||
-        !check_size(seq_sine_offsets_lox)   ||
-        !check_size(seq_sine_amps_lox)      ||
-        !check_size(seq_sine_periods_lox)   ||
+    if (!check_size(seq_sine_offsets_fuel) ||
+        !check_size(seq_sine_amps_fuel) ||
+        !check_size(seq_sine_periods_fuel) ||
+        !check_size(seq_sine_phases_fuel) ||
+        !check_size(seq_sine_offsets_lox) ||
+        !check_size(seq_sine_amps_lox) ||
+        !check_size(seq_sine_periods_lox) ||
         !check_size(seq_sine_phases_lox)) {
         return 1;
-        }
+    }
 
 
     gap_millis = gap;
@@ -477,23 +480,26 @@ int sequencer_prepare_combo(
 
     for (size_t i = 0; i < sine_phases_fuel.size(); ++i) {
         sine_phases_fuel[i] = deg_to_rad(seq_sine_phases_fuel[i]);
-        sine_phases_lox[i]  = deg_to_rad(seq_sine_phases_lox[i]);
+        sine_phases_lox[i] = deg_to_rad(seq_sine_phases_lox[i]);
     }
 
-    for (size_t i = 0; i < fuel_breakpoints.size()-1; ++i) {
+    for (size_t i = 0; i < fuel_breakpoints.size() - 1; ++i) {
         if (sine_offsets_fuel[i] != 0) {
-            fuel_breakpoints[i+1] = sine_offsets_fuel[i] +
-                    std::sin(static_cast<float>(gap) / sine_periods_fuel[i] * 3.14159265358979323846f * 2.0f +
-                            sine_phases_fuel[i]) *
-                            sine_amplitudes_fuel[i];
+            fuel_breakpoints[i + 1] = sine_offsets_fuel[i] +
+                                      std::sin(
+                                          static_cast<float>(gap) / sine_periods_fuel[i] * 3.14159265358979323846f *
+                                          2.0f +
+                                          sine_phases_fuel[i]) *
+                                      sine_amplitudes_fuel[i];
         }
     }
-    for (size_t i = 0; i < lox_breakpoints.size()-1; ++i) {
+    for (size_t i = 0; i < lox_breakpoints.size() - 1; ++i) {
         if (sine_offsets_lox[i] != 0) {
-            lox_breakpoints[i+1] = sine_offsets_lox[i] +
-                    std::sin(static_cast<float>(gap) / sine_periods_lox[i] * 3.14159265358979323846f * 2.0f +
-                            sine_phases_lox[i]) *
-                            sine_amplitudes_lox[i];
+            lox_breakpoints[i + 1] = sine_offsets_lox[i] +
+                                     std::sin(static_cast<float>(gap) / sine_periods_lox[i] * 3.14159265358979323846f *
+                                              2.0f +
+                                              sine_phases_lox[i]) *
+                                     sine_amplitudes_lox[i];
         }
     }
     motor_only = mot_only;
@@ -508,6 +514,11 @@ void sequencer_set_data_recipient(int sock)
     k_mutex_unlock(&sequence_lock);
 
     LOG_INF("Registered data recipient with socket %d", sock);
+}
+
+int sequencer_get_data_recipient()
+{
+    return data_sock;
 }
 
 void sequencer_halt()

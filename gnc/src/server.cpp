@@ -15,8 +15,7 @@
 #include "sequencer.h"
 
 
-LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL
-);
+LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
 #define MAX_OPEN_CLIENTS 3
 
@@ -32,6 +31,12 @@ static k_thread client_threads[MAX_OPEN_CLIENTS] = {nullptr};
 #define CONNECTION_THREAD_STACK_SIZE (6 * 1024)
 K_THREAD_STACK_ARRAY_DEFINE(client_stacks,
                             MAX_OPEN_CLIENTS, CONNECTION_THREAD_STACK_SIZE);
+
+constexpr int MAX_THREAD_NAME_LENGTH = 10;
+static std::array<std::string, MAX_OPEN_CLIENTS> thread_names;
+static std::array<int, MAX_OPEN_CLIENTS> thread_sockets;
+static std::array<int64_t, MAX_OPEN_CLIENTS> last_pinged;
+K_MUTEX_DEFINE(thread_info_guard);
 
 /// Helper that sends a payload completely through an socket
 int send_fully(int sock, const char* buf, int len)
@@ -55,9 +60,10 @@ int send_string_fully(int sock, const std::string &payload)
 }
 
 /// Handles a client connection. Should run in its own thread.
-static void handle_client(void* p1_client_socket, void*, void*)
+static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
-    SocketGuard client_guard{reinterpret_cast<int>(p1_client_socket)};
+    int thread_index = reinterpret_cast<int>(p1_thread_index);
+    SocketGuard client_guard{reinterpret_cast<int>(p2_client_socket)};
     LOG_INF("Handling socket: %d", client_guard.socket);
     k_sleep(K_MSEC(500));
 
@@ -97,11 +103,99 @@ static void handle_client(void* p1_client_socket, void*, void*)
         LOG_INF("Got command: %s", command_buf);
         std::string command(command_buf); // TODO: Heap allocation? perhaps stick with annoying cstring?
 
-        if (command == "calibrate#") {
-//            throttle_valve_start_calibrate();
-            send_string_fully(client_guard.socket, "Done calibrating\n");
+        if (command == "ping#") {
+            k_mutex_lock(&thread_info_guard, K_FOREVER);
+            last_pinged[thread_index] = k_uptime_get();
+            k_mutex_unlock(&thread_info_guard);
+            send_string_fully(client_guard.socket, "pong\n");
         }
-        else if (command == ("resetfuelopen#")) {
+        else if (command.starts_with("name;")) {
+            k_mutex_lock(&thread_info_guard, K_FOREVER);
+            int name_length = command.size() - 6;
+            if (name_length > MAX_THREAD_NAME_LENGTH) {
+                send_string_fully(client_guard.socket, "Name is too long.\n");
+                k_mutex_unlock(&thread_info_guard);
+                continue;
+            }
+            thread_names[thread_index] = command.substr(5, name_length);
+            thread_sockets[thread_index] = client_guard.socket;
+            last_pinged[thread_index] = k_uptime_get();
+            k_mutex_unlock(&thread_info_guard);
+            send_string_fully(client_guard.socket, "Done setting name.\n");
+        }
+        else if (command == "status#") {
+            pt_readings readings = pts_get_last_reading();
+
+            k_mutex_lock(&thread_info_guard, K_FOREVER);
+
+            int command_thread_index = -1;
+            int status_thread_index = -1;
+            int daq_thread_index = -1;
+            int64_t command_ping_elapsed = -1;
+            int64_t status_ping_elapsed = -1;
+            int64_t daq_ping_elapsed = -1;
+            int data_recipient_primed = 0;
+            for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
+                if (thread_names[i] == "command") {
+                    command_thread_index = i;
+                    command_ping_elapsed = k_uptime_get() - last_pinged[command_thread_index];
+                    data_recipient_primed = sequencer_get_data_recipient() == thread_sockets[command_thread_index];
+                }
+                else if (thread_names[i] == "status") {
+                    status_thread_index = i;
+                    status_ping_elapsed = k_uptime_get() - last_pinged[status_thread_index];
+                }
+                else if (thread_names[i] == "daq") {
+                    daq_thread_index = i;
+                    daq_ping_elapsed = k_uptime_get() - last_pinged[daq_thread_index];
+                }
+            }
+
+            k_mutex_unlock(&thread_info_guard);
+
+            constexpr int MAX_DATA_LEN = 512;
+            char buf[MAX_DATA_LEN];
+            int would_write = snprintfcb(buf, MAX_DATA_LEN,
+                                         "fuel_internal=%.8f\n"
+                                         "fuel_encoder=%.8f\n"
+                                         "lox_internal=%.8f\n"
+                                         "lox_encoder=%.8f\n"
+                                         "pt102=%.8f\n"
+                                         "pt103=%.8f\n"
+                                         "pto401=%.8f\n"
+                                         "pt202=%.8f\n"
+                                         "pt203=%.8f\n"
+                                         "ptf401=%.8f\n"
+                                         "ptc401=%.8f\n"
+                                         "ptc402=%.8f\n"
+                                         "command_ping_elapsed=%lld\n"
+                                         "status_ping_elapsed=%lld\n"
+                                         "daq_ping_elapsed=%lld\n"
+                                         "data_recipient_primed=%d\n"
+                                         ">>STATUS DONE<<\n",
+                                         static_cast<double>(FuelValve::get_pos_internal()),
+                                         static_cast<double>(FuelValve::get_pos_encoder()),
+                                         static_cast<double>(LoxValve::get_pos_internal()),
+                                         static_cast<double>(LoxValve::get_pos_encoder()),
+                                         static_cast<double>(readings.pt102),
+                                         static_cast<double>(readings.pt103),
+                                         static_cast<double>(readings.pto401),
+                                         static_cast<double>(readings.pt202),
+                                         static_cast<double>(readings.pt203),
+                                         static_cast<double>(readings.ptf401),
+                                         static_cast<double>(readings.ptc401),
+                                         static_cast<double>(readings.ptc402),
+                                         command_ping_elapsed,
+                                         status_ping_elapsed,
+                                         daq_ping_elapsed,
+                                         data_recipient_primed);
+            int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
+            int err = send_fully(client_guard.socket, buf, actually_written);
+            if (err) {
+                LOG_WRN("Failed to send data: err %d", err);
+            }
+        }
+        else if (command == "resetfuelopen#") {
             FuelValve::reset_pos(90.0f);
             send_string_fully(client_guard.socket, "Done reset fuel open\n");
         }
@@ -618,6 +712,10 @@ static void handle_client(void* p1_client_socket, void*, void*)
             if (has_thread[i]) {
                 int ret = k_thread_join(&client_threads[i], K_NO_WAIT);
                 if (ret == 0) {
+                    k_mutex_lock(&thread_info_guard, K_FOREVER);
+                    thread_names[i].clear();
+                    k_mutex_unlock(&thread_info_guard);
+
                     has_thread[i] = false;
                     freed_threads[i] = true;
                     k_sem_give(&num_open_connections);
@@ -707,7 +805,8 @@ void serve_connections()
                         reinterpret_cast<k_thread_stack_t*>(&client_stacks[connection_index]),
                         CONNECTION_THREAD_STACK_SIZE,
                         handle_client,
-                        reinterpret_cast<void*>(client_socket), nullptr, nullptr, 5, 0, K_NO_WAIT
+                        reinterpret_cast<void*>(connection_index),
+                        reinterpret_cast<void*>(client_socket), nullptr, 5, 0, K_NO_WAIT
         );
 
         k_mutex_lock(&has_thread_lock, K_FOREVER);
