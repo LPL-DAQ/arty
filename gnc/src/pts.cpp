@@ -23,7 +23,6 @@
 
 #define CONFIG_PT_SAMPLES 1
 
-
 // Trailing comma needed as we are using preprocessor to instantiate each element of an array.
 #define CLOVER_PTS_DT_SPEC_AND_COMMA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
 static constexpr struct adc_dt_spec adc_channels[NUM_PTS] = {
