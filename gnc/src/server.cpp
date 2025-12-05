@@ -29,7 +29,7 @@ bool has_thread[MAX_OPEN_CLIENTS] = {false};
 K_MUTEX_DEFINE(has_thread_lock);
 
 static k_thread client_threads[MAX_OPEN_CLIENTS] = {nullptr};
-#define CONNECTION_THREAD_STACK_SIZE (4 * 1024)
+#define CONNECTION_THREAD_STACK_SIZE (6 * 1024)
 K_THREAD_STACK_ARRAY_DEFINE(client_stacks,
                             MAX_OPEN_CLIENTS, CONNECTION_THREAD_STACK_SIZE);
 
@@ -63,7 +63,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
 
     while (true) {
         // Read one byte at a time till we get a #-terminated command
-        constexpr int MAX_COMMAND_LEN = 512;
+        constexpr int MAX_COMMAND_LEN = 2048;
         char command_buf[MAX_COMMAND_LEN + 1];
         int next_command_byte = 0;
         while (true) {
@@ -286,19 +286,19 @@ static void handle_client(void* p1_client_socket, void*, void*)
             bool saw_decimal = false;
             int num_decimals = 0;
 
-            float fuel_offset    = 0.0f;
+            float fuel_offset = 0.0f;
             float fuel_amplitude = 0.0f;
-            float fuel_period    = 0.0f;
-            float fuel_phase     = 0.0f;
+            float fuel_period = 0.0f;
+            float fuel_phase = 0.0f;
 
-            float lox_offset     = 0.0f;
-            float lox_amplitude  = 0.0f;
-            float lox_period     = 0.0f;
-            float lox_phase      = 0.0f;
+            float lox_offset = 0.0f;
+            float lox_amplitude = 0.0f;
+            float lox_period = 0.0f;
+            float lox_phase = 0.0f;
 
-            bool saw_sine         = false;
-            int  sine_param_index = 0;  // 0=offset, 1=amp, 2=period, 3=phase
-            int  sine_motor       = 0;  // 0 = fuel side, 1 = lox side
+            bool saw_sine = false;
+            int sine_param_index = 0;  // 0=offset, 1=amp, 2=period, 3=phase
+            int sine_motor = 0;  // 0 = fuel side, 1 = lox side
 
             for (int i = 12; i < std::ssize(command); ++i) {                // Start of a sinusoidal token: "sXX"
                 if (command[i] == 's') {
@@ -315,15 +315,16 @@ static void handle_client(void* p1_client_socket, void*, void*)
                 if (!((command[i] >= '0' && command[i] <= '9') || command[i] == '.')) {
                     if (saw_sine) {
                         if (sine_motor == 0) { // fuel
-                            if      (sine_param_index == 0) fuel_offset    = curr_token;
-                            else if (sine_param_index == 1) fuel_amplitude = curr_token;
-                            else if (sine_param_index == 2) fuel_period    = curr_token;
-                            else if (sine_param_index == 3) fuel_phase     = curr_token;
-                        } else { // lox
-                            if      (sine_param_index == 0) lox_offset     = curr_token;
-                            else if (sine_param_index == 1) lox_amplitude  = curr_token;
-                            else if (sine_param_index == 2) lox_period     = curr_token;
-                            else if (sine_param_index == 3) lox_phase      = curr_token;
+                            if (sine_param_index == 0) { fuel_offset = curr_token; }
+                            else if (sine_param_index == 1) { fuel_amplitude = curr_token; }
+                            else if (sine_param_index == 2) { fuel_period = curr_token; }
+                            else if (sine_param_index == 3) { fuel_phase = curr_token; }
+                        }
+                        else { // lox
+                            if (sine_param_index == 0) { lox_offset = curr_token; }
+                            else if (sine_param_index == 1) { lox_amplitude = curr_token; }
+                            else if (sine_param_index == 2) { lox_period = curr_token; }
+                            else if (sine_param_index == 3) { lox_phase = curr_token; }
                         }
                         sine_param_index++;
 
@@ -334,11 +335,11 @@ static void handle_client(void* p1_client_socket, void*, void*)
                             continue;
                         }
                         if (command[i] == '-') {
-                            sine_motor       = 1;
+                            sine_motor = 1;
                             sine_param_index = 0;
-                            curr_token       = 0.0f;
-                            saw_decimal      = false;
-                            num_decimals     = 0;
+                            curr_token = 0.0f;
+                            saw_decimal = false;
+                            num_decimals = 0;
                             continue;
                         }
 
@@ -346,7 +347,7 @@ static void handle_client(void* p1_client_socket, void*, void*)
 
                         // Create a new breakpoint at the current position
                         float last_fuel = seq_fuel_breakpoints.back();
-                        float last_lox  = seq_lox_breakpoints.back();
+                        float last_lox = seq_lox_breakpoints.back();
                         seq_fuel_breakpoints.push_back(last_fuel);
                         seq_lox_breakpoints.push_back(last_lox);
 
@@ -423,7 +424,10 @@ static void handle_client(void* p1_client_socket, void*, void*)
                 continue;
             }
             int time_ms = (std::ssize(seq_lox_breakpoints) - 1) * gap;
-            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_fuel_sine_offsets,seq_fuel_sine_amplitudes,seq_fuel_sine_periods,seq_fuel_sine_phases,seq_lox_sine_offsets,seq_lox_sine_amplitudes,seq_lox_sine_periods,seq_lox_sine_phases, motor_only)) {
+            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_fuel_sine_offsets,
+                                        seq_fuel_sine_amplitudes, seq_fuel_sine_periods, seq_fuel_sine_phases,
+                                        seq_lox_sine_offsets, seq_lox_sine_amplitudes, seq_lox_sine_periods,
+                                        seq_lox_sine_phases, motor_only)) {
                 send_string_fully(client_guard.socket, "Failed to prepare sequence");
                 continue;
             }
