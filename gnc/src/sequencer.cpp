@@ -479,6 +479,22 @@ int sequencer_prepare_combo(
         sine_phases_fuel[i] = deg_to_rad(seq_sine_phases_fuel[i]);
         sine_phases_lox[i]  = deg_to_rad(seq_sine_phases_lox[i]);
     }
+    for (size_t i = 0; i < fuel_breakpoints.size(); ++i) {
+        if (sine_offsets_fuel[i] != 0) {
+               fuel_breakpoints[i] = sine_offsets_fuel[i] +
+                       std::sin(static_cast<float>(gap_millis) / sine_periods_fuel[i] * std::numbers::pi_v<float> * 2.0f +
+                               sine_phases_fuel[i]) *
+                               sine_seq_amplitude_fuel;
+            }
+    }
+    for (size_t i = 0; i < lox_breakpoints.size(); ++i) {
+        if (sine_offsets_lox[i] != 0) {
+            lox_breakpoints[i] = sine_offsets_lox[i] +
+                    std::sin(static_cast<float>(gap_millis) / sine_periods_lox[i] * std::numbers::pi_v<float> * 2.0f +
+                            sine_phases_lox[i]) *
+                            sine_seq_amplitude_lox;
+        }
+    }
 
     motor_only = mot_only;
     combo_mode = true;
