@@ -457,7 +457,6 @@ int sequencer_prepare_combo(
         return 1;
         }
 
-
     gap_millis = gap;
     fuel_breakpoints = fuel_bps;
     lox_breakpoints = lox_bps;
