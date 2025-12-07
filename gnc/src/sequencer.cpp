@@ -21,7 +21,7 @@ LOG_MODULE_REGISTER(sequencer, CONFIG_LOG_DEFAULT_LEVEL);
 constexpr uint64_t
     NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
 
-static constexpr int MAX_BREAKPOINTS = 67;
+static constexpr int MAX_BREAKPOINTS = 128;
 
 K_MUTEX_DEFINE(sequence_lock);
 
