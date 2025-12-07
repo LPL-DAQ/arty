@@ -100,8 +100,10 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             }
         }
 
-        LOG_INF("Got command: %s", command_buf);
         std::string command(command_buf); // TODO: Heap allocation? perhaps stick with annoying cstring?
+        if (command != "status#") {
+            LOG_INF("Got command: %s", command.c_str());
+        }
 
         if (command == "ping#") {
             k_mutex_lock(&thread_info_guard, K_FOREVER);

@@ -93,6 +93,6 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 [key, val] = line.split('=')
                 datapoints[key] = val
 
-            for i in range(25):
-                live.update(generate_output(round(2.5 - i / 10, 1), datapoints))
+            for i in range(5):
+                live.update(generate_output(round(0.5 - i / 10, 1), datapoints))
                 time.sleep(0.1)
