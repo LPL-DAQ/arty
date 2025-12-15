@@ -10,6 +10,8 @@
 #include "server.h"
 #include "throttle_valve.h"
 #include "pts.h"
+#include "servotesting.h"
+
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -68,7 +70,12 @@ int main(void)
         LOG_ERR("Failed to initialize PTs");
         return 0;
     }
-
+    err = servos_init();
+    if (err) {
+        LOG_ERR("Failed to initialize servos");
+        return 0;
+    }
+    servotesting_demo();
     LOG_INF("Starting server");
     serve_connections();
 
