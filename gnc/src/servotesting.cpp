@@ -6,7 +6,12 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/pwm.h>
 
-#define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
+#define USER_NODE DT_PATH(zephyr_user)
+
+// Validate devicetree
+#if !DT_NODE_HAS_PROP(USER_NODE, pwm_names)
+#error "pts: Missing `pwm-names` property from `zephyr-user` node."
+#endif
 
 LOG_MODULE_REGISTER(servotesting, CONFIG_LOG_DEFAULT_LEVEL);
 

@@ -5,6 +5,8 @@ GNC throttle + TVC flows board.
 /dts-v1/;
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
 
 / {
     model = "TVC/Throttle Dev Board";
@@ -27,6 +29,17 @@ GNC throttle + TVC flows board.
         lox-valve-stepper-ena-gpios = <&gpio2 17 GPIO_ACTIVE_HIGH>; // Pin 7
         lox-valve-encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
         lox-valve-encoder-b-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 1
+
+
+        pwms = <&flexpwm2_pwm2 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>, /* tvc_x -> pin 6 (A) */
+               <&flexpwm4_pwm2 1 PWM_MSEC(20) PWM_POLARITY_NORMAL>, /* tvc_y -> pin 3 (B) */
+               <&flexpwm1_pwm3 1 PWM_MSEC(20) PWM_POLARITY_NORMAL>, /* esc_1 -> pin 7 (B) */
+               <&flexpwm2_pwm1 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>; /* esc_2 -> pin 5 (A) */
+
+        pwm-names = "tvc_x", "tvc_y", "esc_1", "esc_2";
+
+        servo-min-pulse-us = <1000>;
+        servo-max-pulse-us = <2000>;
 
         // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
         // corresponding to the sorted ascending order of ADC1 channels.
@@ -58,6 +71,38 @@ GNC throttle + TVC flows board.
     };
 };
 
+// docs: https://www.pjrc.com/store/teensy41.html
+/* Module 2, submodule 2 -> pins 6 (A) and 9 (B) */
+/* tvc_x on pin 6 (A of FlexPWM2 submodule 2) */
+&flexpwm2_pwm2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pwm2_2_a_b0_10>;
+    status = "okay";
+};
+
+
+/* esc_1 on pin 7 (A of FlexPWM1 submodule 3) */
+&flexpwm1_pwm3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pwm1_3_b_b1_01>;
+    status = "okay";
+};
+
+/* tvc_y on pin 3 (B of FlexPWM4 submodule 2) */
+&flexpwm4_pwm2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pwm4_2_b_emc_05>;
+    status = "okay";
+};
+
+
+/* esc_2 on pin 5 (A of FlexPWM2 submodule 1) */
+&flexpwm2_pwm1 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pwm2_1_a_emc_08>;
+    status = "okay";
+};
+
 // Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
 &pinctrl {
     pinmux_adc1: pinmux_adc1 {
@@ -74,6 +119,62 @@ GNC throttle + TVC flows board.
             drive-strength = "r0-6";
             slew-rate = "slow";
             nxp,speed = "100-mhz";
+        };
+    };
+
+
+    /* Teensy 4.1 pin 6 -> GPIO_B0_10 -> FLEXPWM2_PWMA02 */
+    pwm2_2_a_b0_10: pwm2_2_a_b0_10 {
+        group0 {
+            pinmux = <&iomuxc_gpio_b0_10_flexpwm2_pwma2>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* pin 3 : GPIO_EMC_05 -> FLEXPWM4_PWMB02 */
+    pwm4_2_b_emc_05: pwm4_2_b_emc_05 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_05_flexpwm4_pwmb2>;
+            bias-disable;
+            drive-strength = "r0-6";
+            nxp,speed = "100-mhz";
+            slew-rate = "slow";
+        };
+    };
+
+    /* pin 5 : GPIO_EMC_08 -> FLEXPWM2_PWMA01 */
+    pwm2_1_a_emc_08: pwm2_1_a_emc_08 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_08_flexpwm2_pwma1>;
+            bias-disable;
+            drive-strength = "r0-6";
+            nxp,speed = "100-mhz";
+            slew-rate = "slow";
+        };
+    };
+
+    //	/* Teensy 4.1 pin 9-> GPIO_B1_01 -> FLEXPWM1_PWMB03 */
+    //	pwm2_2_b_b0_11: pwm2_2_b_b0_11 {
+    //		group0 {
+    //			pinmux = <&iomuxc_gpio_b0_11_flexpwm2_pwmb2>;
+    //			bias-disable;
+    //			drive-strength = "r0-6";
+    //			slew-rate = "slow";
+    //			nxp,speed = "100-mhz";
+    //		};
+    //	};
+
+    /* pin 7 : GPIO_B1_01 -> FLEXPWM1_PWMb03 */
+    pwm1_3_b_b1_01: pwm1_3_b_b1_01 {
+        group0 {
+            pinmux = <&iomuxc_gpio_b1_01_flexpwm1_pwmb3>;
+            bias-disable;
+            drive-strength = "r0-6";
+            nxp,speed = "100-mhz";
+            slew-rate = "slow";
         };
     };
 };
