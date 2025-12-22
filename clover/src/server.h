@@ -1,5 +1,5 @@
-#ifndef CLOVER_SERVER_H
-#define CLOVER_SERVER_H
+#ifndef ARTY_SERVER_H
+#define ARTY_SERVER_H
 
 #include <string>
 
@@ -9,4 +9,4 @@ int send_fully(int sock, const char *buf, int len);
 
 int send_string_fully(int sock, const std::string &payload);
 
-#endif //CLOVER_SERVER_H
+#endif //ARTY_SERVER_H

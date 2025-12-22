@@ -1,5 +1,5 @@
-#ifndef CLOVER_PTS_H
-#define CLOVER_PTS_H
+#ifndef ARTY_PTS_H
+#define ARTY_PTS_H
 
 #include <zephyr/devicetree.h>
 
@@ -20,9 +20,9 @@
 
 #define USER_NODE DT_PATH(zephyr_user)
 
-#define CLOVER_PTS_DT_TO_READINGS_FIELD(node_id, prop, idx) float DT_STRING_TOKEN_BY_IDX(node_id, prop, idx);
+#define ARTY_PTS_DT_TO_READINGS_FIELD(node_id, prop, idx) float DT_STRING_TOKEN_BY_IDX(node_id, prop, idx);
 struct pt_readings {
-    DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, CLOVER_PTS_DT_TO_READINGS_FIELD)
+    DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, ARTY_PTS_DT_TO_READINGS_FIELD)
 };
 
 struct pt_config {
@@ -44,4 +44,4 @@ int pts_set_bias(int index, float bias);
 
 int pts_set_range(int index, float range);
 
-#endif //CLOVER_PTS_H
+#endif //ARTY_PTS_H

@@ -1,5 +1,5 @@
-#ifndef CLOVER_SEQUENCER_H
-#define CLOVER_SEQUENCER_H
+#ifndef ARTY_SEQUENCER_H
+#define ARTY_SEQUENCER_H
 
 #include <vector>
 
@@ -28,4 +28,4 @@ int sequencer_get_data_recipient();
 
 void sequencer_halt();
 
-#endif //CLOVER_SEQUENCER_H
+#endif //ARTY_SEQUENCER_H

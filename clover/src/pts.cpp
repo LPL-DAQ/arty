@@ -24,9 +24,9 @@
 #define CONFIG_PT_SAMPLES 1
 
 // Trailing comma needed as we are using preprocessor to instantiate each element of an array.
-#define CLOVER_PTS_DT_SPEC_AND_COMMA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
+#define ARTY_PTS_DT_SPEC_AND_COMMA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
 static constexpr struct adc_dt_spec adc_channels[NUM_PTS] = {
-    DT_FOREACH_PROP_ELEM(USER_NODE, io_channels, CLOVER_PTS_DT_SPEC_AND_COMMA)
+    DT_FOREACH_PROP_ELEM(USER_NODE, io_channels, ARTY_PTS_DT_SPEC_AND_COMMA)
 };
 
 static adc_sequence_options sequence_options = {
@@ -145,9 +145,9 @@ pt_readings pts_sample()
     }
 
     // Assign each PT name as fields to initialize pt_readings
-#define CLOVER_PTS_DT_TO_READINGS_ASSIGNMENT(node_id, prop, idx) .DT_STRING_TOKEN_BY_IDX(node_id, prop, idx) = readings_by_idx[idx],
+#define ARTY_PTS_DT_TO_READINGS_ASSIGNMENT(node_id, prop, idx) .DT_STRING_TOKEN_BY_IDX(node_id, prop, idx) = readings_by_idx[idx],
     auto readings = pt_readings{
-        DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, CLOVER_PTS_DT_TO_READINGS_ASSIGNMENT)
+        DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, ARTY_PTS_DT_TO_READINGS_ASSIGNMENT)
     };
     last_reading = readings;
     last_read_uptime = k_uptime_get();
