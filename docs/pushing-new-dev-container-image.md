@@ -28,3 +28,7 @@ scripts/build-dev-container-image.sh
 
 This will re-build the image, push it to the Github Container Registry, update the dev container config so
 your image is used, and push all changes.
+
+## Managing images
+
+All images being served under the `lpl-daq` org can be viewed and cleaned up [at this page](https://github.com/orgs/lpl-daq/packages).
