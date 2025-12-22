@@ -34,7 +34,7 @@ impl FlasherdService {
             panic!("Invalid arguments: {args:?}");
         }
         let clover_root = PathBuf::from(args.skip(1).next().unwrap());
-        info!("Clover root: {clover_root:?}");
+        info!("arty root: {clover_root:?}");
         Self { clover_root }
     }
 }

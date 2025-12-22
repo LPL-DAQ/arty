@@ -6,12 +6,12 @@
 FROM ubuntu:noble
 
 # Sensible utilities that every system should probably have
+ENV TZ="America/Los_Angeles" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 RUN << EOF
 apt update
 apt -y upgrade
 apt -y install sudo nano git curl wget jq yq iproute2 netcat-openbsd gh locales
 EOF
-ENV LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
 # Zephyr dependencies -- from https://docs.zephyrproject.org/latest/develop/getting_started/index.html, but we
 # replace gcc/g++ with gcc-arm-none-eabi because in practice we're just building for Cortex M7's.
@@ -27,9 +27,19 @@ RUN << EOF
 apt -y install cppcheck clang-tidy
 EOF
 
+# Labjack library installation
+RUN << EOF
+apt -y install unzip
+mkdir -p /tmp/labjack-install
+curl -o /tmp/labjack-install/installer.zip https://files.labjack.com/installers/LJM/Linux/x64/release/LabJack-LJM_2025-05-07.zip
+unzip /tmp/labjack-install/installer.zip/tmp/labjack-install/installer.zip
+/tmp/labjack-install/labjack_ljm_installer.run
+rm -rf /tmp/labjack-install
+EOF
+
 # Other dev dependencies
 RUN << EOF
-apt -y install protobuf-compiler build-essential
+apt -y install protobuf-compiler build-essential libboost-all-dev
 EOF
 
 # Create non-root user
@@ -96,10 +106,10 @@ ${lplred}/____${lplylw}/_/  ${lplred}/____/
 ${lplbld}Welcome!${style_rst}"
 
 # Ensure path is correct for flasherd test
-export PATH="$PATH:/home/lpl/clover/bin"
+export PATH="$PATH:/home/lpl/arty/bin"
 
 # Show flasherd status
-if $HOME/clover/scripts/flasherd-connection-test.sh > /dev/null 2>&1; then
+if $HOME/arty/scripts/flasherd-connection-test.sh > /dev/null 2>&1; then
     grnbld="\e[32;1m"
     echo -e "flasherd is ${grnbld}active${style_rst}".
 else
@@ -116,4 +126,4 @@ echo '. "$HOME/.venv/bin/activate"' >> "$HOME/.bashrc"
 # Populate zephyr vars
 echo '. $HOME/zephyr/zephyr-env.sh' >> "$HOME/.bashrc"
 EOF
-ENV PYTHONPATH="$PYTHONPATH:/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/clover/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+ENV PYTHONPATH="/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/arty/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr

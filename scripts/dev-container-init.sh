@@ -10,7 +10,7 @@ west zephyr-export
 west sdk install -t arm-zephyr-eabi
 
 # Set up flasherd
-cd /home/lpl/clover || exit 1
+cd /home/lpl/arty || exit 1
 cargo build --package flasherd-client --release
-mkdir -p /home/lpl/clover/bin
-cp -f /home/lpl/clover/target/release/flasherd-client /home/lpl/clover/bin/flasherd-client
+mkdir -p /home/lpl/arty/bin
+cp -f /home/lpl/arty/target/release/flasherd-client /home/lpl/arty/bin/flasherd-client

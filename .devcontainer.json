@@ -1,10 +1,7 @@
 {
   "name": "clover",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
   "runArgs": [
-    "--network=host",
+    "--network=host"
   ],
   "workspaceMount": "source=${localWorkspaceFolder},target=/home/lpl/clover,type=bind,consistency=cached",
   "workspaceFolder": "/home/lpl/clover",
@@ -15,6 +12,6 @@
   },
   "onCreateCommand": "bash /home/lpl/clover/scripts/dev-container-init.sh",
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
-  // Ensures flasherd is running
   "initializeCommand": "cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- \"${localWorkspaceFolder}\" --daemonize",
+  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2025-12-21_21-30-44_f36a614301095568a8f816d44c627e863c874d92"
 }
