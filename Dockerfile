@@ -5,8 +5,10 @@
 
 FROM ubuntu:noble
 
-# Sensible utilities that every system should probably have
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV TZ="America/Los_Angeles" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+
+# Sensible utilities that every system should probably have
 RUN << EOF
 apt update
 apt -y upgrade
@@ -31,7 +33,7 @@ RUN << EOF
 apt -y install unzip
 mkdir -p /tmp/labjack-install
 curl -o /tmp/labjack-install/installer.zip https://files.labjack.com/installers/LJM/Linux/x64/release/LabJack-LJM_2025-05-07.zip
-unzip /tmp/labjack-install/installer.zip/tmp/labjack-install/installer.zip
+unzip /tmp/labjack-install/installer.zip -d /tmp/labjack-install
 /tmp/labjack-install/labjack_ljm_installer.run
 rm -rf /tmp/labjack-install
 EOF
