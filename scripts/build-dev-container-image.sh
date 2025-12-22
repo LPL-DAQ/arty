@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -euo pipefail
 source /home/lpl/arty/credentials
 
 set -euxo pipefail
