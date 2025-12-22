@@ -10,7 +10,7 @@
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
   },
-  "onCreateCommand": "bash /home/lpl/arty/scripts/dev-container-init.sh",
+  "onCreateCommand": "mkdir -p /home/lpl/arty/bin && cp /home/lpl/prebaked-bin/* /home/lpl/arty/bin",
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
   "initializeCommand": "cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- \"${localWorkspaceFolder}\" --daemonize",
   "image": "ghcr.io/lpl-daq/arty/dev-container:build_2025-12-21_21-30-44_f36a614301095568a8f816d44c627e863c874d92"

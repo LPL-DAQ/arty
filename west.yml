@@ -1,3 +1,5 @@
+# If this file is modified, you must also rebuild the dev container as we pre-bake the west projects into the image.
+# See docs/pushing-new-dev-container-image.md for instructions.
 manifest:
   remotes:
     - name: zephyrproject-rtos

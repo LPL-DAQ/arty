@@ -59,15 +59,17 @@ uv pip install west
 EOF
 
 # Install zephyr dependencies that require West -- namely, toolchain and SDK
-COPY west.yml /home/lpl/arty/west.yml
+COPY --chmod=777 west.yml /home/lpl/arty/west.yml
 RUN << EOF
+. "$HOME/.local/bin/env"
+. /home/lpl/.venv/bin/activate
 west init -l /home/lpl/arty
 cd /home/lpl || exit 1
 west update
 uv pip install -r /home/lpl/zephyr/scripts/requirements.txt
 west zephyr-export
 west sdk install -t arm-zephyr-eabi
-rm -rf /home/lpl/arty
+sudo rm -rf /home/lpl/arty
 EOF
 
 # Rust
@@ -77,20 +79,25 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 rustup component add rustfmt
 EOF
 
-# Set up flasherd-client
+# Build flasherd-client and store it at ~/prebaked-bin so it can be copied into ~/arty/bin upon dev container startup.
 COPY Cargo.toml /home/lpl/arty/Cargo.toml
 COPY Cargo.lock /home/lpl/arty/Cargo.lock
+COPY flasherd /home/lpl/arty/flasherd
 COPY flasherd-client /home/lpl/arty/flasherd-client
 COPY api /home/lpl/arty/api
 RUN << EOF
-cd /home/lpl/arty || exit 1
-cargo build --package flasherd-client --release
-mv /home/lpl/arty/target/release/flasherd-client /tmp/flasherd-client
-rm -rf /home/lpl/arty
-mkdir -p /home/lpl/arty/bin
-cp -f /home/lpl/arty/target/release/flasherd-client /home/lpl/arty/bin/flasherd-client
-EOF
+sudo chown -R lpl ~/arty
+sudo chmod -R 0777 ~/arty
 
+. ~/.cargo/env
+cd ~/arty || exit 1
+cargo build --package flasherd-client --release
+
+mkdir -p ~/prebaked-bin
+mv ~/arty/target/release/flasherd-client ~/prebaked-bin/flasherd-client
+
+sudo rm -rf ~/arty
+EOF
 
 # Cosmetic changes
 RUN << EOF
