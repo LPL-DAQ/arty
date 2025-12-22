@@ -1,8 +1,8 @@
 #!/bin/bash
 
-set -euxo pipefail
-
 source /home/lpl/arty/credentials
+
+set -euxo pipefail
 
 # Check for uncommitted changes
 if [[ -n "$(git status -s)" ]]; then
@@ -20,7 +20,7 @@ elif [[ -z "$curr_branch" ]]; then
     exit 1
 fi
 
-image_tag="ghcr.io/LPL-DAQ/arty/dev-container:build_$(date '+%Y-%m-%d_%H-%M-%S')_$(git rev-parse HEAD)"
+image_tag="ghcr.io/lpl-daq/arty/dev-container:build_$(date '+%Y-%m-%d_%H-%M-%S')_$(git rev-parse HEAD)"
 
 # Build image
 docker build ~/arty -t "$image_tag"
