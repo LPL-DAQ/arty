@@ -5,16 +5,13 @@
 
 FROM ubuntu:noble
 
-# Set timezone
-ENV TZ="America/Los_Angeles"
-
 # Sensible utilities that every system should probably have
+ENV TZ="America/Los_Angeles" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 RUN << EOF
 apt update
 apt -y upgrade
 apt -y install sudo nano git curl wget jq yq iproute2 netcat-openbsd gh locales
 EOF
-ENV LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
 # Zephyr dependencies -- from https://docs.zephyrproject.org/latest/develop/getting_started/index.html, but we
 # replace gcc/g++ with gcc-arm-none-eabi because in practice we're just building for Cortex M7's.
