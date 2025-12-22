@@ -13,5 +13,5 @@
   "onCreateCommand": "mkdir -p /home/lpl/arty/bin && cp /home/lpl/prebaked-bin/* /home/lpl/arty/bin",
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
   "initializeCommand": "cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- \"${localWorkspaceFolder}\" --daemonize",
-  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2025-12-22_01-20-17_07d7f162bb99aabb4b077fd9b797a93c0471e948"
+  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2025-12-22_01-39-16_917d9ebe81625ef9916693f04a4f0ac938fe12d4"
 }
