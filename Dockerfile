@@ -27,9 +27,19 @@ RUN << EOF
 apt -y install cppcheck clang-tidy
 EOF
 
+# Labjack library installation
+RUN << EOF
+apt -y install unzip
+mkdir -p /tmp/labjack-install
+curl -o /tmp/labjack-install/installer.zip https://files.labjack.com/installers/LJM/Linux/x64/release/LabJack-LJM_2025-05-07.zip
+unzip /tmp/labjack-install/installer.zip/tmp/labjack-install/installer.zip
+/tmp/labjack-install/labjack_ljm_installer.run
+rm -rf /tmp/labjack-install
+EOF
+
 # Other dev dependencies
 RUN << EOF
-apt -y install protobuf-compiler build-essential
+apt -y install protobuf-compiler build-essential libboost-all-dev
 EOF
 
 # Create non-root user
