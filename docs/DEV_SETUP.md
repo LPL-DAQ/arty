@@ -117,7 +117,7 @@ hello
 Run the following to build the `clover` application:
 
 ```shell
-west build -p auto clover -b throttle_legacy
+west build -p auto clover -b tvc_throttle_dev
 ```
 
 Press the large white reset button on the Teensy. Then, run the following to flash:
