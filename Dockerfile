@@ -126,4 +126,4 @@ echo '. "$HOME/.venv/bin/activate"' >> "$HOME/.bashrc"
 # Populate zephyr vars
 echo '. $HOME/zephyr/zephyr-env.sh' >> "$HOME/.bashrc"
 EOF
-ENV PYTHONPATH="$PYTHONPATH:/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/arty/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+ENV PYTHONPATH="/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/arty/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr
