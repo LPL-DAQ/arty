@@ -6,7 +6,7 @@ service Flasherd {
 }
 
 // Represents a segment of a command. `regular` segments are passed as-is, while `path` segments should be paths
-// relative to the clover root. Only one or the other may be specified.
+// relative to the arty root. Only one or the other may be specified.
 message Arg {
   optional string regular = 1;
   optional string path = 2;

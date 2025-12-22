@@ -5,6 +5,9 @@
 
 FROM ubuntu:noble
 
+# Set timezone
+ENV TZ="America/Los_Angeles"
+
 # Sensible utilities that every system should probably have
 RUN << EOF
 apt update
@@ -106,10 +109,10 @@ ${lplred}/____${lplylw}/_/  ${lplred}/____/
 ${lplbld}Welcome!${style_rst}"
 
 # Ensure path is correct for flasherd test
-export PATH="$PATH:/home/lpl/clover/bin"
+export PATH="$PATH:/home/lpl/arty/bin"
 
 # Show flasherd status
-if $HOME/clover/scripts/flasherd-connection-test.sh > /dev/null 2>&1; then
+if $HOME/arty/scripts/flasherd-connection-test.sh > /dev/null 2>&1; then
     grnbld="\e[32;1m"
     echo -e "flasherd is ${grnbld}active${style_rst}".
 else
@@ -126,4 +129,4 @@ echo '. "$HOME/.venv/bin/activate"' >> "$HOME/.bashrc"
 # Populate zephyr vars
 echo '. $HOME/zephyr/zephyr-env.sh' >> "$HOME/.bashrc"
 EOF
-ENV PYTHONPATH="$PYTHONPATH:/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/clover/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+ENV PYTHONPATH="$PYTHONPATH:/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/arty/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr

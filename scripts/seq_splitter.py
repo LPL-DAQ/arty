@@ -11,7 +11,7 @@ import os
 print('Importing pandas, this can take a while the first time...')
 import pandas as pd
 
-LOGS_DIR = '/home/lpl/clover/scripts/data/sequences'
+LOGS_DIR = '/home/lpl/arty/scripts/data/sequences'
 SEQ_FORMAT_VERSION = 'beta'
 
 print(f'Logging to: {LOGS_DIR}')

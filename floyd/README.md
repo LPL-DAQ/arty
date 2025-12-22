@@ -7,19 +7,19 @@
 Make sure to run from the dev container.
 
 ```shell
-cmake -S ~/clover/floyd -B ~/clover/floyd/build -G Ninja
+cmake -S ~/arty/floyd -B ~/arty/floyd/build -G Ninja
 ninja -C floyd/build install
 ```
 
 If you have any weird build issues, try removing the build directory then re-building, like so:
 
 ```shell
-rm -rf ~/clover/floyd/build
+rm -rf ~/arty/floyd/build
 ```
 
 ## Run
 
-Make sure to run from `~/clover` in the dev container.
+Make sure to run from `~/arty` in the dev container.
 
 ```shell
 floyd

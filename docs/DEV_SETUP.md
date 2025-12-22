@@ -1,6 +1,6 @@
 # Development Environment
 
-The clover dev relies on [Dev Containers](https://containers.dev/) to maintain a consistent programming environment
+The arty dev relies on [Dev Containers](https://containers.dev/) to maintain a consistent programming environment
 across all developer machines, regardless of operating system. This guide contains all setup necessary
 to 1) build and flash firmware, 2) run Python scripts for data processing or other utilities, and 3)
 contribute code.
@@ -60,12 +60,12 @@ components," ensure that you have Windows 11 SDK and Microsoft Visual C++ for x8
 Install Rust via [rustup](https://rustup.rs/). Use all defaults for the installation.
 
 Then, relaunch this repository in a dev container. Your IDE should automatically run a command to build and run
-`flasherd`. IntelliJ on Windows doesn't do this correctly, so you may need to run it yourself from the `clover`
+`flasherd`. IntelliJ on Windows doesn't do this correctly, so you may need to run it yourself from the `arty`
 directory:
 
 ```shell
 # On host
-cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- "/path/to/clover" --daemonize
+cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- "/path/to/arty" --daemonize
 ```
 
 **Example:**
@@ -91,7 +91,7 @@ If successful, you should see the following when you start a terminal in the dev
 /____/_/  /____/                                                                                                                                                                                                                                                                                                    
 Welcome!                                                                                                                                                                                                                                                                                                            
 flasherd is active.
-lpl@docker-desktop ~/clover Δ 
+lpl@docker-desktop ~/arty Δ 
 ```
 
 Afterwards, you can test your connection within the dev container by running:
@@ -103,7 +103,7 @@ flasherd-client --command-windows echo --command-macos echo --command-linux echo
 **Example:**
 
 ```
-lpl@docker-desktop ~/clover Δ scripts/flasherd-connection-test.sh
+lpl@docker-desktop ~/arty Δ scripts/flasherd-connection-test.sh
 [flasherd-connection-test] Testing flasherd...
 [flasherd-client] Received args: ["--command-windows", "echo", "--command-macos", "echo", "--command-linux", "echo", "--arg", "hello"]
 [flasherd-client] Connecting to host flasherd at port 6767
@@ -114,21 +114,21 @@ hello
 
 ## Test build and flash
 
-Run the following to build the `throttle` application:
+Run the following to build the `clover` application:
 
 ```shell
-west build -p auto gnc -b throttle_legacy
+west build -p auto clover -b throttle_legacy
 ```
 
 Press the large white reset button on the Teensy. Then, run the following to flash:
 
 ```text
-lpl@docker-desktop ~/clover Δ west flash                                                                                                                                                                                                                                                                            
+lpl@docker-desktop ~/arty Δ west flash                                                                                                                                                                                                                                                                            
 -- west flash: rebuilding
 ninja: no work to do.                                                                                                                                                                                                                                                                                               
 -- west flash: using runner tycmd_flasherd
--- runners.tycmd_flasherd: Flashing file: /home/lpl/clover/build/zephyr/zephyr.hex                                                                                                                                                                                                                                  
-[flasherd-client] Received args: ["--command-windows", "C:\\Program Files (x86)\\TyTools\\tycmd.exe", "--command-macos", "tycmd", "--command-linux", "tycmd", "--arg", "upload", "--arg", "--nocheck", "--arg-path", "/home/lpl/clover/build/zephyr/zephyr.hex"]                                                    
+-- runners.tycmd_flasherd: Flashing file: /home/lpl/arty/build/zephyr/zephyr.hex                                                                                                                                                                                                                                  
+[flasherd-client] Received args: ["--command-windows", "C:\\Program Files (x86)\\TyTools\\tycmd.exe", "--command-macos", "tycmd", "--command-linux", "tycmd", "--arg", "upload", "--arg", "--nocheck", "--arg-path", "/home/lpl/arty/build/zephyr/zephyr.hex"]                                                    
 [flasherd-client] Connecting to host flasherd at port 6767
       upload@17271870-Teensy  Uploading to board '17271870-Teensy' (Teensy 4.1)
       upload@17271870-Teensy  Firmware: zephyr.hex
@@ -157,13 +157,13 @@ nc 169.254.99.99 19690
 And to ensure the output is saved to a file, run:
 
 ```shell
-nc 169.254.99.99 19690 | tee -a ~/clover/out.log
+nc 169.254.99.99 19690 | tee -a ~/arty/out.log
 ```
 
 To live-parse sequences, run the following in a separate terminal tab as well:
 
 ```shell
-tail -n 0 -f ~/clover/out.log | uv --project scripts run scripts/seq_splitter.py
+tail -n 0 -f ~/arty/out.log | uv --project scripts run scripts/seq_splitter.py
 ```
 
 To run the status-watcher script, run the following, making sure that the script's IP is correctly set:

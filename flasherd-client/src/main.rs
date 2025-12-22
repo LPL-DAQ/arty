@@ -57,14 +57,14 @@ async fn main() {
             "--command-linux" => run_request.command_linux = val,
             "--arg-path" => {
                 let val = val.unwrap();
-                let relative_path = if let Some(path) = val.strip_prefix("~/clover/") {
+                let relative_path = if let Some(path) = val.strip_prefix("~/arty/") {
                     path
-                } else if let Some(path) = val.strip_prefix("/home/lpl/clover/") {
+                } else if let Some(path) = val.strip_prefix("/home/lpl/arty/") {
                     path
                 } else if !val.starts_with("/") {
                     val.as_str()
                 } else {
-                    panic!("Path argument is not relative, or is not rooted at clover: {val}");
+                    panic!("Path argument is not relative, or is not rooted at arty: {val}");
                 };
                 run_request.args.push(Arg {
                     path: Some(relative_path.to_string()),

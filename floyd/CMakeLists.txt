@@ -4,8 +4,8 @@ project(floyd)
 
 add_subdirectory(src)
 
-# Upon install, write binary to ~/clover/bin, which is in PATH.
-install(TARGETS floyd RUNTIME DESTINATION /home/lpl/clover/bin)
+# Upon install, write binary to ~/arty/bin, which is in PATH.
+install(TARGETS floyd RUNTIME DESTINATION /home/lpl/arty/bin)
 
 # Boost
 # Note: Non-header-only components must be explicitly added as separate components: https://www.boost.org/doc/libs/latest/more/getting_started/unix-variants.html#header-only-libraries
