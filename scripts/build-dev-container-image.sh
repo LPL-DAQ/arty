@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -euo pipefail
 source /home/lpl/arty/credentials
 
 set -euxo pipefail
@@ -28,6 +29,9 @@ docker build ~/arty -t "$image_tag"
 # Push to ghcr
 echo "$GITHUB_PERSONAL_ACCESS_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
 docker image push "$image_tag"
+
+# Show image details
+docker image ls "$image_tag"
 
 # Reference new image from dev container config
 jq ".image = \"$image_tag\" | del(.build)" .devcontainer.json | tee /home/lpl/arty/.devcontainer.json.temp

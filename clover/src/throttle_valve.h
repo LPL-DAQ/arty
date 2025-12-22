@@ -1,5 +1,5 @@
-#ifndef CLOVER_THROTTLEVALVE_H
-#define CLOVER_THROTTLEVALVE_H
+#ifndef ARTY_THROTTLEVALVE_H
+#define ARTY_THROTTLEVALVE_H
 
 #include <cstdint>
 #include <zephyr/drivers/gpio.h>
@@ -428,4 +428,4 @@ typedef ThrottleValve<ValveKind::LOX,
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_encoder_b_gpios),
     DEVICE_DT_GET(DT_ALIAS(lox_valve_stepper_pulse_counter))> LoxValve;
 
-#endif //CLOVER_THROTTLEVALVE_H
+#endif //ARTY_THROTTLEVALVE_H

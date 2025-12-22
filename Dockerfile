@@ -14,13 +14,12 @@ apt -y install sudo nano git curl wget jq yq iproute2 netcat-openbsd gh locales
 EOF
 
 # Zephyr dependencies -- from https://docs.zephyrproject.org/latest/develop/getting_started/index.html, but we
-# replace gcc/g++ with gcc-arm-none-eabi because in practice we're just building for Cortex M7's.
 RUN << EOF
 apt -y install --no-install-recommends git cmake ninja-build gperf \
     ccache dfu-util device-tree-compiler python3-dev python3-venv python3-tk \
-    xz-utils file make gcc-arm-none-eabi libsdl2-dev libmagic1
+    xz-utils file make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1
 EOF
-ENV ZEPHYR_TOOLCHAIN_VARIANT=cross-compile CROSS_COMPILE=/usr/bin/arm-none-eabi-
+ENV ZEPHYR_TOOLCHAIN_VARIANT=zephyr
 
 # C/C++ linters, static analysis
 RUN << EOF
@@ -59,11 +58,45 @@ uv tool install ruff@latest
 uv pip install west
 EOF
 
+# Install zephyr dependencies that require West -- namely, toolchain and SDK
+COPY --chmod=777 west.yml /home/lpl/arty/west.yml
+RUN << EOF
+. "$HOME/.local/bin/env"
+. /home/lpl/.venv/bin/activate
+west init -l /home/lpl/arty
+cd /home/lpl || exit 1
+west update
+uv pip install -r /home/lpl/zephyr/scripts/requirements.txt
+west zephyr-export
+west sdk install -t arm-zephyr-eabi
+sudo rm -rf /home/lpl/arty
+EOF
+
 # Rust
 RUN << EOF
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"
 rustup component add rustfmt
+EOF
+
+# Build flasherd-client and store it at ~/prebaked-bin so it can be copied into ~/arty/bin upon dev container startup.
+COPY Cargo.toml /home/lpl/arty/Cargo.toml
+COPY Cargo.lock /home/lpl/arty/Cargo.lock
+COPY flasherd /home/lpl/arty/flasherd
+COPY flasherd-client /home/lpl/arty/flasherd-client
+COPY api /home/lpl/arty/api
+RUN << EOF
+sudo chown -R lpl ~/arty
+sudo chmod -R 0777 ~/arty
+
+. ~/.cargo/env
+cd ~/arty || exit 1
+cargo build --package flasherd-client --release
+
+mkdir -p ~/prebaked-bin
+mv ~/arty/target/release/flasherd-client ~/prebaked-bin/flasherd-client
+
+sudo rm -rf ~/arty
 EOF
 
 # Cosmetic changes
