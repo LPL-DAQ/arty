@@ -1,0 +1,19 @@
+{
+  "name": "clover",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "runArgs": [
+    "--network=host"
+  ],
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/lpl/clover,type=bind,consistency=cached",
+  "workspaceFolder": "/home/lpl/clover",
+  "privileged": true,
+  "remoteUser": "lpl",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
+  },
+  "onCreateCommand": "bash /home/lpl/clover/scripts/dev-container-init.sh",
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+  "initializeCommand": "cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- \"${localWorkspaceFolder}\" --daemonize"
+}
