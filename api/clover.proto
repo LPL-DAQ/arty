@@ -1,0 +1,72 @@
+syntax = "proto2";
+
+// Throttle valve control
+enum Valve {
+  UNKNOWN = 0;
+  FUEL = 1;
+  LOX = 2;
+}
+
+// ResetValvePosition - returns Ok
+message ResetValvePositionRequest {
+  required Valve valve = 1;
+  required float new_pos_deg = 2;
+}
+
+// GetValveStatus - returns GetValveStatusResponse
+message GetValveStatusRequest {}
+
+message ValveStatus {
+  required bool enabled = 1;
+  required float target_pos_deg = 2;
+  required float driver_setpoint_pos_deg = 3;
+  required float encoder_pos_deg = 4;
+}
+
+message GetValveStatusResponse {
+  required ValveStatus fuel_status = 1;
+  required ValveStatus lox_status = 2;
+}
+
+
+// Sensorsdecode_message
+message ReadPTRequest {}
+
+
+// Control sequences
+
+// LoadMotorSequence - returns Ok
+message LoadMotorSequenceRequest {
+  required float breakpoint_gap_millis = 1;
+  repeated float fuel_breakpoints_deg = 2;
+  repeated float lox_breakpoints_deg = 3;
+}
+
+// StartSequence - returns Ok
+message StartSequenceRequest {}
+
+// HaltSequence - returns Ok
+message HaltSequenceRequest {}
+
+// Every request sent to the server is an instance of this parent Request. The server then examines the payload to
+// determine the exact command specified.
+message Request {
+  oneof payload {
+    ResetValvePositionRequest reset_valve_position = 1;
+    GetValveStatusRequest get_valve_status = 2;
+    ReadPTRequest read_pts = 3;
+    LoadMotorSequenceRequest load_open_loop_motor_sequence = 4;
+    StartSequenceRequest start_sequence = 5;
+    HaltSequenceRequest halt_sequence = 6;
+  }
+}
+
+message Ok {}
+
+message Response {
+  oneof payload {
+    string err = 1;
+    Ok ok = 2;
+    GetValveStatusResponse get_valve_status = 3;
+  }
+}
