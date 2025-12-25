@@ -24,7 +24,7 @@ fi
 image_tag="ghcr.io/lpl-daq/arty/dev-container:build_$(date '+%Y-%m-%d_%H-%M-%S')_$(git rev-parse HEAD)"
 
 # Build image
-docker build ~/arty -t "$image_tag"
+docker build ~/arty -t "$image_tag" "$@"
 
 # Push to ghcr
 echo "$GITHUB_PERSONAL_ACCESS_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
