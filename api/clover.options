@@ -1,0 +1,4 @@
+LoadMotorSequenceRequest.fuel_breakpoints_deg max_count:50
+LoadMotorSequenceRequest.lox_breakpoints_deg max_count:50
+
+Response.err max_size:500

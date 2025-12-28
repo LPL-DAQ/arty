@@ -1,5 +1,9 @@
 syntax = "proto2";
 
+// Command stream.
+// Delivered over a bytestream. Each incoming request is processed in sequence and will have its responses delivered in
+// the same sequence.
+
 // Throttle valve control
 enum Valve {
   UNKNOWN = 0;
@@ -11,21 +15,6 @@ enum Valve {
 message ResetValvePositionRequest {
   required Valve valve = 1;
   required float new_pos_deg = 2;
-}
-
-// GetValveStatus - returns GetValveStatusResponse
-message GetValveStatusRequest {}
-
-message ValveStatus {
-  required bool enabled = 1;
-  required float target_pos_deg = 2;
-  required float driver_setpoint_pos_deg = 3;
-  required float encoder_pos_deg = 4;
-}
-
-message GetValveStatusResponse {
-  required ValveStatus fuel_status = 1;
-  required ValveStatus lox_status = 2;
 }
 
 
@@ -53,7 +42,6 @@ message HaltSequenceRequest {}
 message Request {
   oneof payload {
     ResetValvePositionRequest reset_valve_position = 1;
-    GetValveStatusRequest get_valve_status = 2;
     ReadPTRequest read_pts = 3;
     LoadMotorSequenceRequest load_open_loop_motor_sequence = 4;
     StartSequenceRequest start_sequence = 5;
@@ -61,12 +49,22 @@ message Request {
   }
 }
 
-message Ok {}
-
+// Successful if err is missing.
 message Response {
-  oneof payload {
-    string err = 1;
-    Ok ok = 2;
-    GetValveStatusResponse get_valve_status = 3;
-  }
+  optional string err = 1;
+}
+
+// Data stream.
+// Delivered in individual packets on a regular interval, only from clover to external listeners.
+
+message DataPacket {
+  required ValveStatus fuel_valve = 1;
+  required ValveStatus lox_valve = 2;
+}
+
+message ValveStatus {
+  required bool enabled = 1;
+  required float target_pos_deg = 2;
+  required float driver_setpoint_pos_deg = 3;
+  required float encoder_pos_deg = 4;
 }

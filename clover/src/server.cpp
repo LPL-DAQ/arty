@@ -7,7 +7,11 @@
 #include <string>
 #include <array>
 #include <climits>
+#include <cstdint>
+#include <pb_encode.h>
+#include <pb_decode.h>
 
+#include "clover.pb.h"
 #include "throttle_valve.h"
 #include "server.h"
 #include "guards/SocketGuard.h"
@@ -16,6 +20,10 @@
 
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
+
+constexpr size_t MAX_MESSAGE_SIZE = 512;
+static_assert(Request_size <= MAX_MESSAGE_SIZE);
+static_assert(Response_size <= MAX_MESSAGE_SIZE);
 
 #define MAX_OPEN_CLIENTS 3
 
@@ -42,10 +50,12 @@ K_MUTEX_DEFINE(thread_info_guard);
 int send_fully(int sock, const char* buf, int len)
 {
     int bytes_sent = 0;
-    while (bytes_sent < len) {
+    while (bytes_sent < len)
+    {
         int ret = zsock_send(sock, buf + bytes_sent,
                              len - bytes_sent, 0);
-        if (ret < 0) {
+        if (ret < 0)
+        {
             LOG_ERR("Unexpected error while sending response to sock %d: err %d", sock, ret);
             return ret;
         }
@@ -54,10 +64,80 @@ int send_fully(int sock, const char* buf, int len)
     return 0;
 }
 
-int send_string_fully(int sock, const std::string &payload)
+int send_string_fully(int sock, const std::string& payload)
 {
     return send_fully(sock, payload.c_str(), std::ssize(payload));
 }
+
+
+/// Internal callback for pb_istream, used to read from socket to internal buffer and manage count.
+bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t count)
+{
+    int sock = reinterpret_cast<int>(stream->state);
+
+    int bytes_sent = zsock_send(sock, buf, count, 0);
+    if (bytes_sent < 0)
+    {
+        LOG_ERR("Error while sending data over socket %d: %s", sock, strerror(bytes_sent));
+        return false;
+    }
+
+    if (bytes_sent != static_cast<int>(count))
+    {
+        LOG_ERR(
+            "zsock_send only partially wrote its buffer from socket %d, this should be impossible - sent: %d, requested: %d",
+            sock, bytes_sent, count);
+        return false;
+    }
+
+    return true;
+}
+
+pb_ostream_t pb_ostream_from_socket(int sock)
+{
+    return pb_ostream_t{
+        .callback = pb_socket_write_callback,
+        .state = reinterpret_cast<void*>(sock),
+        .max_size = SIZE_MAX,
+        .bytes_written = 0
+    };
+}
+
+/// Internal callback for pb_istream, used to read from socket to internal buffer.
+bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
+{
+    int sock = reinterpret_cast<int>(stream->state);
+
+    int bytes_read = zsock_recv(sock, buf, count, ZSOCK_MSG_WAITALL);
+
+    // Hit EOF
+    if (bytes_read == 0)
+    {
+        stream->bytes_left = 0;
+        return false;
+    }
+
+    if (bytes_read != static_cast<int>(count))
+    {
+        LOG_ERR(
+            "zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass ZSOCK_MSG_WAITALL - got: %d, requested: %d",
+            sock, bytes_read, count);
+        return false;
+    }
+
+    return true;
+}
+
+/// Create a nanopb input stream from socket fd.
+pb_istream_t pb_istream_from_socket(int sock)
+{
+    return pb_istream_t{
+        .callback = pb_socket_read_callback,
+        .state = reinterpret_cast<void*>(sock),
+        .bytes_left = SIZE_MAX
+    };
+}
+
 
 /// Handles a client connection. Should run in its own thread.
 static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
@@ -67,639 +147,67 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
     LOG_INF("Handling socket: %d", client_guard.socket);
     k_sleep(K_MSEC(500));
 
-    while (true) {
-        // Read one byte at a time till we get a #-terminated command
-        constexpr int MAX_COMMAND_LEN = 2048;
-        char command_buf[MAX_COMMAND_LEN + 1];
-        int next_command_byte = 0;
-        while (true) {
-            ssize_t bytes_read = zsock_recv(client_guard.socket, command_buf + next_command_byte, 1, 0);
+    pb_istream_t pb_input = pb_istream_from_socket(client_guard.socket);
 
-            if (bytes_read == 0) {
-                LOG_INF("Client at sock %d has closed their connection.", client_guard.socket);
-                return;
-            }
-            else if (bytes_read < 0) {
-                LOG_WRN("Failed to read bytes: errno %d", errno);
-                return;
-            }
+    while (true)
+    {
+        Request request = Request_init_default;
+        bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
+        if (!valid)
+        {
+            LOG_INF("Failed to decode next message, this can happen if connection is severed.");
+            break;
+        }
 
-            // Ignore whitespace
-            if (std::isspace(command_buf[next_command_byte])) {
-                continue;
+        // Handle request
+        switch (request.which_payload)
+        {
+        case Request_reset_valve_position_tag:
+            {
+                ResetValvePositionRequest& req = request.payload.reset_valve_position;
+                switch (req.valve)
+                {
+                case Valve_FUEL:
+                    LOG_INF("Reset value fuel");
+                    break;
+                case Valve_LOX:
+                    LOG_INF("Reset valve lox");
+                    break;
+                default:
+                    LOG_ERR("Bad value.");
+                    break;
+                }
+                break;
             }
-            if (command_buf[next_command_byte] == '#') {
-                command_buf[next_command_byte + 1] = '\0';
+        case Request_read_pts_tag:
+            {
+                LOG_INF("Read pts");
+                break;
+            }
+        case Request_load_open_loop_motor_sequence_tag:
+            {
+                LOG_INF("Open loop motor sequence");
                 break;
             }
 
-            next_command_byte += bytes_read;
-            if (next_command_byte == MAX_COMMAND_LEN) {
-                LOG_WRN("Didn't find command terminator `#` after %d bytes", MAX_COMMAND_LEN);
-                return;
-            }
-        }
-
-        std::string command(command_buf); // TODO: Heap allocation? perhaps stick with annoying cstring?
-        if (command != "status#") {
-            LOG_INF("Got command: %s", command.c_str());
-        }
-
-        if (command == "ping#") {
-            k_mutex_lock(&thread_info_guard, K_FOREVER);
-            last_pinged[thread_index] = k_uptime_get();
-            k_mutex_unlock(&thread_info_guard);
-            send_string_fully(client_guard.socket, "pong\n");
-        }
-        else if (command.starts_with("name;")) {
-            k_mutex_lock(&thread_info_guard, K_FOREVER);
-            int name_length = command.size() - 6;
-            if (name_length > MAX_THREAD_NAME_LENGTH) {
-                send_string_fully(client_guard.socket, "Name is too long.\n");
-                k_mutex_unlock(&thread_info_guard);
-                continue;
-            }
-            thread_names[thread_index] = command.substr(5, name_length);
-            thread_sockets[thread_index] = client_guard.socket;
-            last_pinged[thread_index] = k_uptime_get();
-            k_mutex_unlock(&thread_info_guard);
-            send_string_fully(client_guard.socket, "Done setting name.\n");
-        }
-        else if (command == "status#") {
-            pt_readings readings = pts_get_last_reading();
-
-            k_mutex_lock(&thread_info_guard, K_FOREVER);
-
-            int command_thread_index = -1;
-            int status_thread_index = -1;
-            int daq_thread_index = -1;
-            int64_t command_ping_elapsed = -1;
-            int64_t status_ping_elapsed = -1;
-            int64_t daq_ping_elapsed = -1;
-            int data_recipient_primed = 0;
-            for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
-                if (thread_names[i] == "command") {
-                    command_thread_index = i;
-                    command_ping_elapsed = k_uptime_get() - last_pinged[command_thread_index];
-                    data_recipient_primed = sequencer_get_data_recipient() == thread_sockets[command_thread_index];
-                }
-                else if (thread_names[i] == "status") {
-                    status_thread_index = i;
-                    status_ping_elapsed = k_uptime_get() - last_pinged[status_thread_index];
-                }
-                else if (thread_names[i] == "daq") {
-                    daq_thread_index = i;
-                    daq_ping_elapsed = k_uptime_get() - last_pinged[daq_thread_index];
-                }
-            }
-
-            k_mutex_unlock(&thread_info_guard);
-
-            constexpr int MAX_DATA_LEN = 512;
-            char buf[MAX_DATA_LEN];
-            int would_write = snprintfcb(buf, MAX_DATA_LEN,
-                                         "fuel_internal=%.8f\n"
-                                         "fuel_encoder=%.8f\n"
-                                         "lox_internal=%.8f\n"
-                                         "lox_encoder=%.8f\n"
-                                         "pt102=%.8f\n"
-                                         "pt103=%.8f\n"
-                                         "pto401=%.8f\n"
-                                         "pt202=%.8f\n"
-                                         "pt203=%.8f\n"
-                                         "ptf401=%.8f\n"
-                                         "ptc401=%.8f\n"
-                                         "ptc402=%.8f\n"
-                                         "command_ping_elapsed=%lld\n"
-                                         "status_ping_elapsed=%lld\n"
-                                         "daq_ping_elapsed=%lld\n"
-                                         "data_recipient_primed=%d\n"
-                                         ">>STATUS DONE<<\n",
-                                         static_cast<double>(FuelValve::get_pos_internal()),
-                                         static_cast<double>(FuelValve::get_pos_encoder()),
-                                         static_cast<double>(LoxValve::get_pos_internal()),
-                                         static_cast<double>(LoxValve::get_pos_encoder()),
-                                         static_cast<double>(readings.pt102),
-                                         static_cast<double>(readings.pt103),
-                                         static_cast<double>(readings.pto401),
-                                         static_cast<double>(readings.pt202),
-                                         static_cast<double>(readings.pt203),
-                                         static_cast<double>(readings.ptf401),
-                                         static_cast<double>(readings.ptc401),
-                                         static_cast<double>(readings.ptc402),
-                                         command_ping_elapsed,
-                                         status_ping_elapsed,
-                                         daq_ping_elapsed,
-                                         data_recipient_primed);
-            int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
-            int err = send_fully(client_guard.socket, buf, actually_written);
-            if (err) {
-                LOG_WRN("Failed to send data: err %d", err);
-            }
-        }
-        else if (command == "resetfuelopen#") {
-            FuelValve::reset_pos(90.0f);
-            send_string_fully(client_guard.socket, "Done reset fuel open\n");
-        }
-        else if (command == "resetloxopen#") {
-            LoxValve::reset_pos(90.0f);
-            send_string_fully(client_guard.socket, "Done reset lox open\n");
-        }
-        else if (command == ("resetfuelclose#")) {
-            FuelValve::reset_pos(0.0f);
-            send_string_fully(client_guard.socket, "Done reset fuel close\n");
-        }
-        else if (command == "resetloxclose#") {
-            LoxValve::reset_pos(0.0f);
-            send_string_fully(client_guard.socket, "Done reset lox close\n");
-        }
-        else if (command.starts_with("seqsinemotr")) {
-            // Example: seqsinemotr5000,50,40,1000,180#
-            // In order, specify total time, offset, amplitude, period, and phase (in integer deg). The example shown
-            // will oscillate between 10 and 90 deg with a period of 1000ms over 5000ms, starting from the lower valley
-            // of a sine wave.
-
-            std::array<float, 5> values;
-            int next_values = 0;
-            float curr_token = 0.0f;
-            bool invalid = false;
-            for (int i = 11; i < std::ssize(command); ++i) {
-                if (!(command[i] >= '0' && command[i] <= '9')) {
-                    if (next_values == 5) {
-                        send_string_fully(client_guard.socket, "Must have at most 5 in sequence.");
-                        invalid = true;
-                        break;
-                    }
-                    values[next_values] = curr_token;
-                    next_values++;
-                    curr_token = 0;
-                }
-                else {
-                    curr_token = 10 * curr_token + (command[i] - '0');
-                }
-            }
-            if (invalid) {
+        case Request_start_sequence_tag:
+            {
+                LOG_INF("Start sequence");
                 break;
             }
-            if (next_values < 5) {
-                send_string_fully(client_guard.socket, "Must have 5 parameters in sequence.\n");
-                continue;
+        case Request_halt_sequence_tag:
+            {
+                LOG_INF("halt seq");
+                break;
             }
 
-            int err = sequencer_prepare_sine(values[0], values[1], values[2], values[3], values[4]);
-            if (err) {
-                send_string_fully(client_guard.socket, "Failed to prepare sine sequence.\n");
-                continue;
+        default:
+            {
+                LOG_ERR(
+                    "Request has invalid tag, this should be impossible as pb_decode should have produced a valid request - got tag: %u",
+                    request.which_payload);
+                break;
             }
-            send_string_fully(client_guard.socket, "Sine sequence prepared.\n");
-        }
-        else if (command == "halt#") {
-            sequencer_halt();
-        }
-        else if (command.starts_with("seq")) {
-            // Example: seqmotr500;75_75,52_52,70_60,90_30
-            // Use seqmotr to specify motor open-loop setpoints, and use seqctrl to specify setpoints for a closed-loop
-            // control sequence.
-
-            std::vector<float> seq_fuel_breakpoints{
-                0.0f}; // Initial dummy value, will get rewritten to current when sequence starts.
-            std::vector<float> seq_lox_breakpoints{
-                0.0f}; // Initial dummy value, will get rewritten to current when sequence starts.
-
-            bool motor_only;
-            std::string seq_kind = command.substr(3, 4);
-            if (seq_kind == "motr") {
-                motor_only = true;
-            }
-            else if (seq_kind == "ctrl") {
-                motor_only = false;
-            }
-            else {
-                send_string_fully(client_guard.socket, "Invalid sequence kind (must be seqmotr or seqctrl)\n");
-                continue;
-            }
-
-            // Mini token parser
-            int gap = 0;
-            bool wrote_gap = false;
-            float fuel_token = 0;
-            float curr_token = 0;
-            bool saw_decimal = false;
-            int num_decimals = 0;
-
-            for (int i = 7; i < std::ssize(command); ++i) {
-                if (!((command[i] >= '0' && command[i] <= '9') || command[i] == '.')) {
-                    if (command[i] == '_') {
-                        fuel_token = curr_token;
-                    }
-                    else if (wrote_gap) {
-                        seq_fuel_breakpoints.push_back(fuel_token);
-                        seq_lox_breakpoints.push_back(curr_token);
-                        fuel_token = 0;
-                    }
-                    else {
-                        gap = curr_token;
-                        wrote_gap = true;
-                    }
-                    curr_token = 0;
-                    saw_decimal = false;
-                    num_decimals = 0;
-                }
-                else {
-                    if (command[i] == '.') {
-                        saw_decimal = true;
-                    }
-                    else if (!saw_decimal) {
-                        curr_token = 10.0f * curr_token + (command[i] - '0');
-                    }
-                    else {
-                        float multiplier = 0.1f;
-                        for (int j = 0; j < num_decimals; ++j) {
-                            multiplier *= 0.1f;
-                        }
-                        num_decimals++;
-                        curr_token += (command[i] - '0') * multiplier;
-                    }
-                }
-            }
-
-            if (seq_fuel_breakpoints.size() != seq_lox_breakpoints.size()) {
-                send_string_fully(client_guard.socket, "Fuel breakpoints length not same as lox breakpoints\n");
-                continue;
-            }
-
-            if (seq_lox_breakpoints.size() <= 1) {
-                send_string_fully(client_guard.socket, "Breakpoints too short\n");
-                continue;
-            }
-            int time_ms = (std::ssize(seq_lox_breakpoints) - 1) * gap;
-            if (sequencer_prepare(gap, seq_fuel_breakpoints, seq_lox_breakpoints, motor_only)) {
-                send_string_fully(client_guard.socket, "Failed to prepare sequence");
-                continue;
-            }
-            std::string msg = "Breakpoints prepared, length is: " + std::to_string(time_ms) + "ms\n";
-            send_string_fully(client_guard.socket, msg.c_str());
-        }
-        else if (command.starts_with("comboseq")) {
-            // Example: comboseqmotr500;75_75,s50,52_52,70_60,s20,90_30
-            // Use seqmotr to specify motor open-loop setpoints, and use seqctrl to specify setpoints for a closed-loop
-            // control sequence.
-
-            std::vector<float> seq_fuel_breakpoints{
-                0.0f}; // Initial dummy value, will get rewritten to current when sequence starts.
-            std::vector<float> seq_lox_breakpoints{
-                0.0f}; // Initial dummy value, will get rewritten to current when sequence starts.
-
-            // offset for sinusoidal segments (0.0f for linear segments)
-            std::vector<float> seq_fuel_sine_offsets;
-            std::vector<float> seq_fuel_sine_amplitudes;
-            std::vector<float> seq_fuel_sine_periods;
-            std::vector<float> seq_fuel_sine_phases;
-
-            std::vector<float> seq_lox_sine_offsets;
-            std::vector<float> seq_lox_sine_amplitudes;
-            std::vector<float> seq_lox_sine_periods;
-            std::vector<float> seq_lox_sine_phases;
-
-
-            bool motor_only;
-            std::string seq_kind = command.substr(8, 4);
-            if (seq_kind == "motr") {
-                motor_only = true;
-            }
-            else if (seq_kind == "ctrl") {
-                motor_only = false;
-            }
-            else {
-                send_string_fully(client_guard.socket, "Invalid sequence kind (must be seqmotr or seqctrl)\n");
-                continue;
-            }
-
-            int gap = 0;
-            bool wrote_gap = false;
-            float fuel_token = 0;
-            float curr_token = 0;
-            bool saw_decimal = false;
-            int num_decimals = 0;
-
-            float fuel_offset = 0.0f;
-            float fuel_amplitude = 0.0f;
-            float fuel_period = 0.0f;
-            float fuel_phase = 0.0f;
-
-            float lox_offset = 0.0f;
-            float lox_amplitude = 0.0f;
-            float lox_period = 0.0f;
-            float lox_phase = 0.0f;
-
-            bool saw_sine = false;
-            int sine_param_index = 0;  // 0=offset, 1=amp, 2=period, 3=phase
-            int sine_motor = 0;  // 0 = fuel side, 1 = lox side
-
-            for (int i = 12; i < std::ssize(command); ++i) {                // Start of a sinusoidal token: "sXX"
-                if (command[i] == 's') {
-                    saw_sine = true;
-                    sine_param_index = 0;
-                    sine_motor = 0;
-                    curr_token = 0.0f;
-                    saw_decimal = false;
-                    num_decimals = 0;
-
-                    continue;
-                }
-
-                if (!((command[i] >= '0' && command[i] <= '9') || command[i] == '.')) {
-                    if (saw_sine) {
-                        if (sine_motor == 0) { // fuel
-                            if (sine_param_index == 0) { fuel_offset = curr_token; }
-                            else if (sine_param_index == 1) { fuel_amplitude = curr_token; }
-                            else if (sine_param_index == 2) { fuel_period = curr_token; }
-                            else if (sine_param_index == 3) { fuel_phase = curr_token; }
-                        }
-                        else { // lox
-                            if (sine_param_index == 0) { lox_offset = curr_token; }
-                            else if (sine_param_index == 1) { lox_amplitude = curr_token; }
-                            else if (sine_param_index == 2) { lox_period = curr_token; }
-                            else if (sine_param_index == 3) { lox_phase = curr_token; }
-                        }
-                        sine_param_index++;
-
-                        if (command[i] == '_') {
-                            curr_token = 0.0f;
-                            saw_decimal = false;
-                            num_decimals = 0;
-                            continue;
-                        }
-                        if (command[i] == '-') {
-                            sine_motor = 1;
-                            sine_param_index = 0;
-                            curr_token = 0.0f;
-                            saw_decimal = false;
-                            num_decimals = 0;
-                            continue;
-                        }
-
-                        saw_sine = false;
-
-                        // Create a new breakpoint at the current position
-                        float last_fuel = seq_fuel_breakpoints.back();
-                        float last_lox = seq_lox_breakpoints.back();
-                        seq_fuel_breakpoints.push_back(last_fuel);
-                        seq_lox_breakpoints.push_back(last_lox);
-
-                        // Segment from previous bp to this bp is sinusoidal
-                        if (seq_fuel_breakpoints.size() > 1) {
-                            seq_fuel_sine_offsets.push_back(fuel_offset);
-                            seq_fuel_sine_amplitudes.push_back(fuel_amplitude);
-                            seq_fuel_sine_periods.push_back(fuel_period);
-                            seq_fuel_sine_phases.push_back(fuel_phase);
-
-                            seq_lox_sine_offsets.push_back(lox_offset);
-                            seq_lox_sine_amplitudes.push_back(lox_amplitude);
-                            seq_lox_sine_periods.push_back(lox_period);
-                            seq_lox_sine_phases.push_back(lox_phase);
-                        }
-
-                        curr_token = 0.0f;
-                        saw_decimal = false;
-                        num_decimals = 0;
-                        continue;
-                    }
-                    else if (command[i] == '_') {
-                        fuel_token = curr_token;
-                    }
-                    else if (wrote_gap) {
-                        seq_fuel_breakpoints.push_back(fuel_token);
-                        seq_lox_breakpoints.push_back(curr_token);
-                        if (std::ssize(seq_fuel_breakpoints) > 1) {
-                            seq_fuel_sine_offsets.push_back(0.0f);
-                            seq_fuel_sine_amplitudes.push_back(0.0f);
-                            seq_fuel_sine_periods.push_back(0.0f);
-                            seq_fuel_sine_phases.push_back(0.0f);
-
-                            seq_lox_sine_offsets.push_back(0.0f);
-                            seq_lox_sine_amplitudes.push_back(0.0f);
-                            seq_lox_sine_periods.push_back(0.0f);
-                            seq_lox_sine_phases.push_back(0.0f);
-                        }
-                        fuel_token = 0;
-                    }
-                    else {
-                        gap = curr_token;
-                        wrote_gap = true;
-                    }
-                    curr_token = 0;
-                    saw_decimal = false;
-                    num_decimals = 0;
-                }
-                else {
-                    if (command[i] == '.') {
-                        saw_decimal = true;
-                    }
-                    else if (!saw_decimal) {
-                        curr_token = 10.0f * curr_token + (command[i] - '0');
-                    }
-                    else {
-                        float multiplier = 0.1f;
-                        for (int j = 0; j < num_decimals; ++j) {
-                            multiplier *= 0.1f;
-                        }
-                        num_decimals++;
-                        curr_token += (command[i] - '0') * multiplier;
-                    }
-                }
-            }
-
-            if (seq_fuel_breakpoints.size() != seq_lox_breakpoints.size()) {
-                send_string_fully(client_guard.socket, "Fuel breakpoints length not same as lox breakpoints\n");
-                continue;
-            }
-
-            if (seq_lox_breakpoints.size() <= 1) {
-                send_string_fully(client_guard.socket, "Breakpoints too short\n");
-                continue;
-            }
-            int time_ms = (std::ssize(seq_lox_breakpoints) - 1) * gap;
-            if (sequencer_prepare_combo(gap, seq_fuel_breakpoints, seq_lox_breakpoints, seq_fuel_sine_offsets,
-                                        seq_fuel_sine_amplitudes, seq_fuel_sine_periods, seq_fuel_sine_phases,
-                                        seq_lox_sine_offsets, seq_lox_sine_amplitudes, seq_lox_sine_periods,
-                                        seq_lox_sine_phases, motor_only)) {
-                send_string_fully(client_guard.socket, "Failed to prepare sequence");
-                continue;
-            }
-            std::string msg = "Breakpoints prepared, length is: " + std::to_string(time_ms) + "ms\n";
-            send_string_fully(client_guard.socket, msg.c_str());
-        }
-
-
-        else if (command == "getfuelpos#") {
-            double fuel_pos = FuelValve::get_pos_internal();
-            std::string payload = "valve pos: " + std::to_string(fuel_pos) + " deg\n";
-            int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
-            if (err) {
-                LOG_ERR("Failed to fully send valve pos: err %d", err);
-            }
-        }
-        else if (command == "getloxpos#") {
-            double lox_pos = LoxValve::get_pos_internal();
-            std::string payload = "valve pos: " + std::to_string(lox_pos) + " deg\n";
-            int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
-            if (err) {
-                LOG_ERR("Failed to fully send valve pos: err %d", err);
-            }
-        }
-        else if (command == "getpts#") {
-            pt_readings readings = pts_sample();
-            std::string payload =
-                "pt102: " + std::to_string(readings.pt102) + "\n"
-                + "pt103: " + std::to_string(readings.pt103) + "\n"
-                + "pt202: " + std::to_string(readings.pt202) + "\n"
-                + "pt203: " + std::to_string(readings.pt203) + "\n"
-                + "ptf401: " + std::to_string(readings.ptf401) + "\n"
-                + "pto401: " + std::to_string(readings.pto401) + "\n"
-                + "ptc401: " + std::to_string(readings.ptc401) + "\n"
-                + "ptc402: " + std::to_string(readings.ptc402) + "\n";
-            int err = send_fully(client_guard.socket, payload.c_str(), std::ssize(payload));
-            if (err) {
-                LOG_ERR("Failed to fully send pt readings: err %d", err);
-            }
-        }
-        else if (command == "START#") {
-            send_string_fully(client_guard.socket, "ACK#");
-            // Triggered in DAQ sequencer.
-            LOG_INF("Triggering sequence from DAQ.");
-            int err = sequencer_start_trace();
-            if (err) {
-                LOG_ERR("Failed to run sequence: err %d", err);
-                continue;
-            }
-        }
-        else if (command == "listen#") {
-            send_string_fully(client_guard.socket,
-                              "Don't send additional commands till the sequence is done, lest the output be mangled.\n");
-            send_string_fully(client_guard.socket, "Listening for sequence...\n");
-            sequencer_set_data_recipient(client_guard.socket);
-        }
-        else if (command == "dstart#") {
-            // Triggered manually.
-            sequencer_set_data_recipient(client_guard.socket);
-            int err = sequencer_start_trace();
-            if (err) {
-                LOG_ERR("Failed to run sequence: err %d", err);
-                send_string_fully(client_guard.socket, "Failed to run sequence\n");
-                continue;
-            }
-            send_string_fully(client_guard.socket, "Done sequence.\n");
-        }
-        else if (command.starts_with("configpt")) {
-            // Configure the pt bias as such:
-            // configptbias,pt203,-5#
-            // Or set the PT range (e.g., 1k PT) as such:
-            // configptrang,pt203,2000#
-
-            bool config_bias_not_range = false;
-            std::string config_what = command.substr(8, 4);
-            if (config_what == "bias") {
-                config_bias_not_range = true;
-            }
-            else if (config_what == "rang") {
-                config_bias_not_range = false;
-            }
-            else {
-                LOG_ERR("Invalid config option for PT");
-                continue;
-            }
-
-            std::string pt_name;
-            float value = 0;
-            bool bias_is_negative = false;
-            bool in_label_segment = true;
-            for (int i = 13; i < std::ssize(command) - 1; ++i) {
-                if (command[i] != ',') {
-                    if (in_label_segment) {
-                        pt_name += command[i];
-                    }
-                    else {
-                        if (command[i] == '-') {
-                            bias_is_negative = true;
-                        }
-                        else {
-                            value = value * 10.0f + static_cast<float>(command[i] - '0');
-                        }
-                    }
-                }
-                else {
-                    in_label_segment = false;
-                }
-            }
-            if (bias_is_negative) {
-                value *= -1;
-            }
-
-            int pt_index = -1;
-            if (pt_name == "ptc401") {
-                pt_index = 0;
-            }
-            else if (pt_name == "pto401") {
-                pt_index = 1;
-            }
-            else if (pt_name == "pt103") {
-                pt_index = 2;
-            }
-            else if (pt_name == "pt202") {
-                pt_index = 3;
-            }
-            else if (pt_name == "pt102") {
-                pt_index = 4;
-            }
-            else if (pt_name == "ptf401") {
-                pt_index = 5;
-            }
-            else if (pt_name == "pt203") {
-                pt_index = 6;
-            }
-            else if (pt_name == "ptc402") {
-                pt_index = 7;
-            }
-            else {
-                LOG_ERR("Invalid pt name: %s", pt_name.c_str());
-                continue;
-            }
-
-            int err = 0;
-            if (config_bias_not_range) {
-                err = pts_set_bias(pt_index, value);
-            }
-            else {
-                err = pts_set_range(pt_index, value);
-            }
-            if (err) {
-                LOG_ERR("Failed to set PT bias: err %d", err);
-                continue;
-            }
-            if (config_bias_not_range) {
-                send_string_fully(client_guard.socket, "Set PT bias.\n");
-            }
-            else {
-                send_string_fully(client_guard.socket, "Set PT range.\n");
-            }
-        }
-        else if (command == "getptconfigs#") {
-            std::string payload;
-            std::array<std::string, 4> index_to_pt{
-                "UNUSED",
-                "pt202",
-                "pt203",
-                "ptf401"
-            };
-            for (int i = 1; i < 4; ++i) {
-                payload += index_to_pt[i] + ": bias=" + std::to_string(pt_configs[i].bias) + " psig, range=" +
-                           std::to_string(pt_configs[i].range) + " psig\n";
-            }
-            send_string_fully(client_guard.socket, payload);
-        }
-        else {
-            LOG_WRN("Unknown command.");
         }
     }
 }
@@ -708,12 +216,16 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 [[noreturn]] static void reap_dead_connections(void*, void*, void*)
 {
     bool freed_threads[MAX_OPEN_CLIENTS] = {false};
-    while (true) {
+    while (true)
+    {
         k_mutex_lock(&has_thread_lock, K_FOREVER);
-        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
-            if (has_thread[i]) {
+        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i)
+        {
+            if (has_thread[i])
+            {
                 int ret = k_thread_join(&client_threads[i], K_NO_WAIT);
-                if (ret == 0) {
+                if (ret == 0)
+                {
                     k_mutex_lock(&thread_info_guard, K_FOREVER);
                     thread_names[i].clear();
                     k_mutex_unlock(&thread_info_guard);
@@ -722,10 +234,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                     freed_threads[i] = true;
                     k_sem_give(&num_open_connections);
                 }
-                else if (ret == -EBUSY) {
+                else if (ret == -EBUSY)
+                {
                     // Thread still running
                 }
-                else {
+                else
+                {
                     LOG_ERR("Unexpected code from joining client thread: err %d", ret);
                 }
             }
@@ -733,8 +247,10 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         k_mutex_unlock(&has_thread_lock);
 
         // Log freed threads outside mutex
-        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
-            if (freed_threads[i]) {
+        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i)
+        {
+            if (freed_threads[i])
+            {
                 LOG_INF("Freed thread at slot %d", i);
                 freed_threads[i] = false;
             }
@@ -754,7 +270,8 @@ void serve_connections()
 {
     LOG_INF("Opening server socket");
     int server_socket = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (server_socket < 0) {
+    if (server_socket < 0)
+    {
         LOG_ERR("Failed to create TCP socket: %d", errno);
         return;
     }
@@ -766,22 +283,26 @@ void serve_connections()
 
     LOG_INF("Binding server socket to address");
     int err = zsock_bind(server_socket, reinterpret_cast<sockaddr*>(&bind_addr), sizeof(bind_addr));
-    if (err) {
+    if (err)
+    {
         LOG_ERR("Failed to bind to socket `%d`: %d", server_socket, err);
         return;
     }
     LOG_INF("Listening for open connections");
     err = zsock_listen(server_socket, 0);
-    if (err) {
+    if (err)
+    {
         LOG_ERR("Failed to listen on socket `%d`: %d", server_socket, err);
         return;
     }
 
     // Serve new connections indefinitely
-    while (true) {
+    while (true)
+    {
         // Wait for free thread slot
         err = k_sem_take(&num_open_connections, K_FOREVER);
-        if (err) {
+        if (err)
+        {
             LOG_INF("Failed to acquire semaphore: %d", err);
             return;
         }
@@ -789,13 +310,16 @@ void serve_connections()
         // Find open connection index
         int connection_index = 0;
         k_mutex_lock(&has_thread_lock, K_FOREVER);
-        for (connection_index = 0; connection_index < MAX_OPEN_CLIENTS; ++connection_index) {
-            if (!has_thread[connection_index]) {
+        for (connection_index = 0; connection_index < MAX_OPEN_CLIENTS; ++connection_index)
+        {
+            if (!has_thread[connection_index])
+            {
                 break;
             }
         }
         k_mutex_unlock(&has_thread_lock);
-        if (connection_index == MAX_OPEN_CLIENTS) {
+        if (connection_index == MAX_OPEN_CLIENTS)
+        {
             LOG_ERR("Consistency error: Server acquired connection semaphore but no thread slots were open");
             return;
         }
