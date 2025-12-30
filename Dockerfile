@@ -67,6 +67,7 @@ RUN << EOF
 . /home/lpl/.venv/bin/activate
 west init -l /home/lpl/arty
 cd /home/lpl || exit 1
+west config manifest.project-filter -- +nanopb
 west update
 uv pip install -r /home/lpl/zephyr/scripts/requirements.txt
 uv pip install protobuf grpcio-tools

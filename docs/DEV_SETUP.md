@@ -20,6 +20,9 @@ Open Docker Desktop, and click through the setup. **Do not create an account if 
 
 ![Alt text](docker-setup.png)
 
+We require host networking for many internal utilities. Ensure that you are on the latest version of Docker Desktop,
+then ensure host networking is enabled by checking `Settings > Resources > Network > Enable host networking`.
+
 ### Install an IDE
 
 Dev Containers rely heavily on an IDE, or Integrated Development Environment, for a smooth experience.
@@ -64,8 +67,8 @@ Then, relaunch this repository in a dev container. Your IDE should automatically
 directory:
 
 ```shell
-# On host
-cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- "/path/to/arty" --daemonize
+# On host    
+cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- "C:\Users\james\clover" --daemonize
 ```
 
 **Example:**

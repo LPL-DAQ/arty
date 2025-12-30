@@ -1,20 +1,111 @@
 syntax = "proto2";
 
+//////////////////////////////////////////////////////////////////////
+// IMPORTANT:                                                       //
+// When changing this file, you MUST re-run the following:          //
+// protoc --python_out=scripts api/clover.proto --proto_path=api    //
+//////////////////////////////////////////////////////////////////////
+
+// Command stream.
+// Delivered over a bytestream. Each incoming request is processed in sequence and will have its responses delivered in
+// the same sequence.
+
+// Every request sent to the server is an instance of this parent Request. The server then examines the payload to
+// determine the exact command specified.
+message Request {
+  oneof payload {
+    SubscribeDataStreamRequest subscribe_data_stream = 1;
+    IdentifyClientRequest identify_client = 6;
+    ResetValvePositionRequest reset_valve_position = 2;
+    LoadMotorSequenceRequest load_motor_sequence = 3;
+    StartSequenceRequest start_sequence = 4;
+    HaltSequenceRequest halt_sequence = 5;
+  }
+}
+
+// Successful if err is missing.
+message Response {
+  optional string err = 1;
+}
+
+// Subscribe client IP to data stream
+message SubscribeDataStreamRequest {}
+
+// Names client
+message IdentifyClientRequest {
+  required ClientType client = 1;
+}
+
+enum ClientType {
+  UNKNOWN_CLIENT = 1;
+  GNC = 2;
+  DAQ = 3;
+}
+
 // Throttle valve control
 enum Valve {
-  UNKNOWN = 0;
+  UNKNOWN_VALVE = 0;
   FUEL = 1;
   LOX = 2;
 }
 
-// ResetValvePosition - returns Ok
+// ResetValvePosition
 message ResetValvePositionRequest {
   required Valve valve = 1;
   required float new_pos_deg = 2;
 }
 
-// GetValveStatus - returns GetValveStatusResponse
-message GetValveStatusRequest {}
+
+// Control sequences
+message Trace {
+  required uint32 total_time_ms = 1;
+  repeated Segment segments = 2;
+}
+
+message Segment {
+  required uint32 start_ms = 1;
+  required uint32 length_ms = 2;
+  oneof type {
+    LinearSegment linear = 3;
+    SineSegment sine = 4;
+  }
+}
+
+message LinearSegment {
+  required float start_val = 1;
+  required float end_val = 2;
+}
+
+message SineSegment {
+  required float offset = 1;
+  required float amplitude = 2;
+  required float period = 3;
+  required float phase_deg = 4;
+}
+
+message LoadMotorSequenceRequest {
+  optional Trace fuel_trace = 1;
+  optional Trace lox_trace = 2;
+}
+
+// StartSequence
+message StartSequenceRequest {}
+
+// HaltSequence
+message HaltSequenceRequest {}
+
+// Data stream.
+// Delivered in individual packets on a regular interval, only from clover to external listeners.
+
+message DataPacket {
+  required float time = 1;
+  required uint32 data_queue_size = 2;
+
+  required ValveStatus fuel_valve = 3;
+  required ValveStatus lox_valve = 4;
+
+  required Sensors sensors = 5;
+}
 
 message ValveStatus {
   required bool enabled = 1;
@@ -23,50 +114,13 @@ message ValveStatus {
   required float encoder_pos_deg = 4;
 }
 
-message GetValveStatusResponse {
-  required ValveStatus fuel_status = 1;
-  required ValveStatus lox_status = 2;
-}
-
-
-// Sensorsdecode_message
-message ReadPTRequest {}
-
-
-// Control sequences
-
-// LoadMotorSequence - returns Ok
-message LoadMotorSequenceRequest {
-  required float breakpoint_gap_millis = 1;
-  repeated float fuel_breakpoints_deg = 2;
-  repeated float lox_breakpoints_deg = 3;
-}
-
-// StartSequence - returns Ok
-message StartSequenceRequest {}
-
-// HaltSequence - returns Ok
-message HaltSequenceRequest {}
-
-// Every request sent to the server is an instance of this parent Request. The server then examines the payload to
-// determine the exact command specified.
-message Request {
-  oneof payload {
-    ResetValvePositionRequest reset_valve_position = 1;
-    GetValveStatusRequest get_valve_status = 2;
-    ReadPTRequest read_pts = 3;
-    LoadMotorSequenceRequest load_open_loop_motor_sequence = 4;
-    StartSequenceRequest start_sequence = 5;
-    HaltSequenceRequest halt_sequence = 6;
-  }
-}
-
-message Ok {}
-
-message Response {
-  oneof payload {
-    string err = 1;
-    Ok ok = 2;
-    GetValveStatusResponse get_valve_status = 3;
-  }
+message Sensors {
+  optional float pt102 = 1;
+  optional float pt103 = 2;
+  optional float pt202 = 3;
+  optional float pt203 = 4;
+  optional float ptf401 = 5;
+  optional float pto401 = 6;
+  optional float ptc401 = 7;
+  optional float ptc402 = 8;
 }
