@@ -232,7 +232,7 @@ static void handle_client(void *p1_thread_index, void *p2_client_socket, void *)
         // Send message over TCP with varint length prefix.
         bool ok = pb_encode_ex(&pb_output, Response_fields, &response, PB_ENCODE_DELIMITED);
         if (!ok) {
-            LOG_ERR("Failed to encode command response: %s", data_packet_ostream.errmsg);
+            LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
     }
 }
