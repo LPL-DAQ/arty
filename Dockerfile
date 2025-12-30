@@ -67,12 +67,12 @@ RUN << EOF
 . /home/lpl/.venv/bin/activate
 west init -l /home/lpl/arty
 cd /home/lpl || exit 1
+west config manifest.project-filter -- +nanopb
 west update
 uv pip install -r /home/lpl/zephyr/scripts/requirements.txt
 uv pip install protobuf grpcio-tools
 west zephyr-export
 west sdk install -t arm-zephyr-eabi
-west config manifest.project-filter -- +nanopb
 sudo rm -rf /home/lpl/arty
 EOF
 
