@@ -37,10 +37,9 @@ async fn main() {
     );
 
     println!("[flasherd-client] Connecting to host flasherd at port {FLASHERD_PORT}");
-    let mut client =
-        FlasherdClient::connect(format!("http://host.docker.internal:{FLASHERD_PORT}"))
-            .await
-            .expect("Failed to connect to client");
+    let mut client = FlasherdClient::connect(format!("http://localhost:{FLASHERD_PORT}"))
+        .await
+        .expect("Failed to connect to client");
     let (tx, rx) = mpsc::channel(128);
 
     // First packet starts command process
