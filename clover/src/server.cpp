@@ -166,12 +166,12 @@ static void handle_client(void *p1_thread_index, void *p2_client_socket, void *)
                     }
                     found_data_client_slot = true;
                     data_client_slot_indexes[i] = thread_index;
-                    LOG_INF("New thread inex: %d", data_client_slot_indexes[i]);
+
                     int err = getpeername(client_guard.socket, &data_client_addrs[i], &data_client_addr_lens[i]);
                     if (err) {
                         LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
                     }
-                    LOG_INF("Original port: %u", reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port);
+
                     // Set client port
                     reinterpret_cast<sockaddr_in *>(&data_client_addrs[i])->sin_port = htons(19691);
                 }
@@ -181,6 +181,7 @@ static void handle_client(void *p1_thread_index, void *p2_client_socket, void *)
                 }
 
                 k_mutex_unlock(&data_client_info_guard);
+                break;
             }
             case Request_identify_client_tag: {
                 LOG_INF("Identify client");
@@ -420,7 +421,7 @@ void serve_data_connections() {
             const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0,
                                                 &data_client_addrs[i],
                                                 data_client_addr_lens[i]);
-            if (bytes_sent != 10) {
+            if (bytes_sent != data_packet_ostream.bytes_written) {
                 LOG_ERR("Failed to send data packet over UDP: %d", bytes_sent);
             }
         }

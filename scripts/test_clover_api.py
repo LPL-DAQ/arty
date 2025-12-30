@@ -70,7 +70,7 @@ def handle_data_stream():
             data = clover_api.DataPacket()
             data.ParseFromString(raw_packet)
 
-            print(f'Got data packet: {data}')
+            print(f'Got data packet:\n{data}')
 
 
 def handle_command_stream():
