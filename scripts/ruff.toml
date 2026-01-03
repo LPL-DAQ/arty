@@ -1,0 +1,4 @@
+extend = "../ruff.toml"
+
+# Exclude generated files
+extend-exclude = ["clover_pb2.py"]

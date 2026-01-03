@@ -14,3 +14,5 @@ Standard: c++20
 UseTab: Never
 PointerAlignment: Left
 ColumnLimit: 160
+IndentAccessModifiers: false
+AccessModifierOffset: -4

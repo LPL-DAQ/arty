@@ -30,7 +30,7 @@ template <
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
 class ThrottleValve {
-  private:
+private:
     enum class ValveState {
         STOPPED,
         RUNNING,
@@ -67,7 +67,7 @@ class ThrottleValve {
 
     static uint8_t read_encoder_state();
 
-  public:
+public:
     ThrottleValve() = delete;
 
     static int init();
@@ -93,7 +93,8 @@ template <
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
 consteval const char*
-ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::kind_to_prefix(ValveKind valve_kind) {
+ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::kind_to_prefix(ValveKind valve_kind)
+{
     switch (valve_kind) {
     case ValveKind::FUEL:
         return "[fuel]";
@@ -112,7 +113,8 @@ template <
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::control_pulse_isr(
-    const struct device*, void*) {
+    const struct device*, void*)
+{
     LOG_MODULE_DECLARE(throttle_valve);
 
     // Time cycles since last pulse
@@ -142,14 +144,15 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     if (!prev_pul_state) {
         if (!prev_dir_state) {
             steps = steps - 1;
-        } else {
+        }
+        else {
             steps = steps + 1;
         }
     }
     gpio_pin_toggle_dt(&pul_gpio);
 }
 
-// ISR on any edge
+/// ISR on any edge
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
@@ -159,7 +162,8 @@ template <
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::encoder_update_isr(
-    const device*, struct gpio_callback*, gpio_port_pins_t) {
+    const device*, struct gpio_callback*, gpio_port_pins_t)
+{
     // Quadrature encoder lookup table. Index as ENCODER_STEP_TABLE[old_state][new_state] to output either -1, 0, or +1
     // for the steps that the encoder has advanced.
     // forward: 00 → 01 → 11 → 10 → 00
@@ -175,7 +179,8 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     // Temp hack: Fuel encoder line is reversed.
     if constexpr (kind == ValveKind::FUEL) {
         encoder_count -= ENCODER_STEP_TABLE[prev_encoder_state][new_state];
-    } else {
+    }
+    else {
         encoder_count += ENCODER_STEP_TABLE[prev_encoder_state][new_state];
     }
     prev_encoder_state = new_state;
@@ -191,7 +196,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-uint8_t ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::read_encoder_state() {
+uint8_t ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::read_encoder_state()
+{
     LOG_MODULE_DECLARE(throttle_valve);
 
     int a = gpio_pin_get_dt(&enc_a_gpio);
@@ -219,7 +225,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::init() {
+int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::init()
+{
     LOG_MODULE_DECLARE(throttle_valve);
     LOG_INF("%s Initializing throttle valve...", kind_to_prefix(kind));
 
@@ -310,7 +317,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(float target_deg) {
+int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(float target_deg)
+{
     LOG_MODULE_DECLARE(throttle_valve);
 
     constexpr float CONTROL_TIME = 0.001;
@@ -363,7 +371,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::stop() {
+void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::stop()
+{
     k_mutex_lock(&motor_lock, K_FOREVER);
     counter_stop(control_counter);
     acceleration = 0;
@@ -382,7 +391,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::reset_pos(float new_pos) {
+void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::reset_pos(float new_pos)
+{
     LOG_MODULE_DECLARE(throttle_valve);
 
     k_mutex_lock(&motor_lock, K_FOREVER);
@@ -409,7 +419,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_pos_internal() {
+float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_pos_internal()
+{
     return static_cast<float>(steps) * DEG_PER_STEP;
 }
 
@@ -422,7 +433,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_pos_encoder() {
+float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_pos_encoder()
+{
     return static_cast<float>(encoder_count) * DEG_PER_ENCODER_COUNT;
 }
 
@@ -436,7 +448,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_velocity() {
+float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_velocity()
+{
     return velocity;
 }
 
@@ -450,7 +463,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_acceleration() {
+float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_acceleration()
+{
     return acceleration;
 }
 
@@ -463,7 +477,8 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-uint64_t ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_nsec_per_pulse() {
+uint64_t ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_nsec_per_pulse()
+{
     return k_cyc_to_ns_near64(pulse_interval_cycles);
 }
 

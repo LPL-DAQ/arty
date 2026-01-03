@@ -39,7 +39,8 @@ static int64_t last_read_uptime;
 
 LOG_MODULE_REGISTER(pts, CONFIG_LOG_DEFAULT_LEVEL);
 
-consteval std::array<float, NUM_PTS> pts_adc_ranges() {
+consteval std::array<float, NUM_PTS> pts_adc_ranges()
+{
     std::array<float, NUM_PTS> ranges;
     for (int i = 0; i < NUM_PTS; ++i) {
         ranges[i] = static_cast<float>(1 << static_cast<uint32_t>(adc_channels[i].resolution));
@@ -59,7 +60,8 @@ pt_config pt_configs[NUM_PTS] = {
 };
 
 /// Initialize PT sensors by initializing the ADC they're all connected to.
-int pts_init() {
+int pts_init()
+{
     // Initializes resolution and oversampling from device tree. Let's assume all channels share those properties. Also
     // initializes `channels` with just one channel, so we overwrite that later to sample all channels at once.
     LOG_INF("Initializing ADC sequence");
@@ -91,7 +93,8 @@ int pts_init() {
 }
 
 /// Update PT sample readings.
-pt_readings pts_sample() {
+pt_readings pts_sample()
+{
     int err = adc_read(adc_channels[0].dev, &sequence);
     if (err) {
         LOG_ERR("Failed to read from ADC: err %d", err);
@@ -116,7 +119,8 @@ pt_readings pts_sample() {
 }
 
 /// Gets the last sample if it's sufficiently recent, or resample manually.
-pt_readings pts_get_last_reading() {
+pt_readings pts_get_last_reading()
+{
     // If last PT reading was less than 100 ms ago
     if (k_uptime_get() - last_read_uptime < 100) {
         return last_reading;
@@ -124,7 +128,8 @@ pt_readings pts_get_last_reading() {
     return pts_sample();
 }
 
-int pts_set_bias(int index, float bias) {
+int pts_set_bias(int index, float bias)
+{
     if (index < 0 || index >= NUM_PTS) {
         LOG_ERR("Invalid PT index: %d", index);
         return 1;
@@ -135,7 +140,8 @@ int pts_set_bias(int index, float bias) {
     return 0;
 }
 
-int pts_set_range(int index, float range) {
+int pts_set_range(int index, float range)
+{
     if (index < 0 || index >= NUM_PTS) {
         LOG_ERR("Invalid PT index: %d", index);
         return 1;

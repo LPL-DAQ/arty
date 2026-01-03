@@ -7,9 +7,9 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
+#include "ThrottleValve.h"
 #include "pts.h"
 #include "server.h"
-#include "throttle_valve.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -19,7 +19,8 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 BUILD_ASSERT(DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_console), zephyr_cdc_acm_uart), "Console device is not ACM CDC UART device");
 
-int main(void) {
+int main(void)
+{
     // Status LED
     const struct device* blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
     if (!device_is_ready(blink)) {

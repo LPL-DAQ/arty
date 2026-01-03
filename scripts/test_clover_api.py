@@ -1,8 +1,9 @@
-import subprocess
-import socket
 import base64
-import time
+import socket
+import subprocess
 import threading
+import time
+
 from google.protobuf.internal.encoder import _VarintBytes
 
 try:
@@ -10,12 +11,15 @@ try:
 
 except ImportError as e:
     print(f'Failed to import clover protobuf bindings: {e}')
-    print(f'Attempting rebuild...')
-    subprocess.run(['protoc', '--python_out=scripts', 'api/clover.proto', '--proto_path=api'], cwd='/home/lpl/arty')
+    print('Attempting rebuild...')
+    subprocess.run(
+        ['protoc', '--python_out=scripts', 'api/clover.proto', '--proto_path=api'],
+        cwd='/home/lpl/arty',
+    )
 
     import clover_pb2 as clover_api
 
-    print(f'Loaded API bindings.')
+    print('Loaded API bindings.')
 
 IP = '169.254.99.99'
 COMMAND_PORT = 19690
@@ -37,11 +41,11 @@ def send_request(sock: socket.socket, req: clover_api.Request) -> clover_api.Res
     while True:
         varint_byte = sock.recv(1)
         if len(varint_byte) != 1:
-            raise Exception(f'Expected 1 byte from socket but got 0')
+            raise Exception('Expected 1 byte from socket but got 0')
         varint_byte = int.from_bytes(varint_byte)
 
         # After dropping continuation byte, bytes are sent in little-endian order
-        resp_len |= ((varint_byte & 0x7f) << (7 * prefix_bytes_seen))
+        resp_len |= (varint_byte & 0x7F) << (7 * prefix_bytes_seen)
 
         if varint_byte & 0x80 == 0:
             break

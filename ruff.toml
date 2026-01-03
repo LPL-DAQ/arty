@@ -1,0 +1,53 @@
+line-length = 100
+
+[format]
+quote-style = "single"
+docstring-code-format = true
+line-ending = "lf"
+
+[lint]
+extend-select = [
+    "F",        # Pyflakes rules
+    "W",        # PyCodeStyle warnings
+    "E",        # PyCodeStyle errors
+    "I",        # Sort imports properly
+    "UP",       # Warn if certain things can changed due to newer Python versions
+    "C4",       # Catch incorrect use of comprehensions, dict, list, etc
+    "FA",       # Enforce from __future__ import annotations
+    "ISC",      # Good use of string concatenation
+    "ICN",      # Use common import conventions
+    "RET",      # Good return practices
+    "SIM",      # Common simplification rules
+    "TID",      # Some good import practices
+    "TC",       # Enforce importing certain types in a TYPE_CHECKING block
+    "PTH",      # Use pathlib instead of os.path
+    "NPY",      # Some numpy-specific things
+    "A",        # detect shadowed builtins
+    "BLE",      # disallow catch-all exceptions
+    "S",        # disallow things like "exec"
+    "COM",      # enforce trailing comma rules
+    "DTZ",      # require strict timezone manipulation with datetime
+    "FBT",      # detect boolean traps
+    "N",        # enforce naming conventions
+]
+ignore = [
+    "DTZ005", # call-datetime-now-without-tzinfo
+    "PTH123", # builtin-open
+    "S603",   # subprocess-without-shell-equals-true
+    "S607",   # start-process-with-partial-path
+
+    # disable these rules to use the ruff formatter.
+    "COM812", # missing-trailing-comma
+    "COM819", # prohibited-trailing-comma
+    "D206",   # docstring-tab-indentation
+    "D300",   # triple-single-quotes
+    "E111",   # indentation-with-invalid-multiple
+    "E114",   # indentation-with-invalid-multiple-comment
+    "E117",   # over-indented
+    "E501",   # line-too-long
+    "Q000",   # bad-quotes-inline-string
+    "Q001",   # bad-quotes-multiline-string
+    "Q002",   # bad-quotes-docstring
+    "Q003",   # avoidable-escaped-quote
+    "W191",   # tab-indentation
+]

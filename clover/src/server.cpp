@@ -12,12 +12,12 @@
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
 
+#include "ThrottleValve.h"
 #include "clover.pb.h"
 #include "guards/SocketGuard.h"
 #include "pts.h"
 #include "sequencer.h"
 #include "server.h"
-#include "throttle_valve.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 

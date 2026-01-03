@@ -2,7 +2,7 @@
 #define APP_SOCKETGUARD_H
 
 class SocketGuard {
-  public:
+public:
     int socket;
 
     explicit SocketGuard(int s);
