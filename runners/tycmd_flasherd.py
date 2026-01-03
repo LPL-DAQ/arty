@@ -1,12 +1,8 @@
-# Copyright (c) 2024 NXP
-#
-# SPDX-License-Identifier: Apache-2.0
+"""Runner for teensy ."""
 
-'''Runner for teensy .'''
-
-import os
 import subprocess
-from typing import override
+from pathlib import Path
+
 from clover_runners_common import FlasherdCommand
 
 from runners.core import ZephyrBinaryRunner
@@ -27,7 +23,7 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
         pass
 
     @classmethod
-    def do_create(cls, cfg, args) -> "TycmdFlasherdBinaryRunner":
+    def do_create(cls, cfg, args) -> 'TycmdFlasherdBinaryRunner':
         return TycmdFlasherdBinaryRunner(cfg)
 
     def do_run(self, command):
@@ -41,13 +37,12 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
         cmd.add_macos_command('tycmd')
         cmd.add_linux_command('tycmd')
 
-        if self.cfg.hex_file is not None and os.path.isfile(self.cfg.hex_file):
+        if self.cfg.hex_file is not None and Path(self.cfg.hex_file).is_file():
             cmd += 'upload'
             cmd += '--nocheck'
             cmd.add_path_arg(self.cfg.hex_file)
         else:
-            raise ValueError(
-                f'Cannot flash; no hex ({self.cfg.hex_file}) file found. ')
+            raise ValueError(f'Cannot flash; no hex ({self.cfg.hex_file}) file found. ')
 
         self.logger.info(f'Flashing file: {self.cfg.hex_file}')
 
@@ -55,4 +50,4 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
             self.check_call(cmd.payload)
             self.logger.info('Success')
         except subprocess.CalledProcessError as grepexc:
-            self.logger.error(f"Failure {grepexc.returncode}")
+            self.logger.error(f'Failure {grepexc.returncode}')

@@ -1,24 +1,22 @@
 # Run as less ~/ | uv run scripts/seq-splitter.py
 
-import sys
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import datetime
 import re
-import os
+import sys
+from pathlib import Path
 
-print('Importing pandas, this can take a while the first time...')
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 LOGS_DIR = '/home/lpl/arty/scripts/data/sequences'
 SEQ_FORMAT_VERSION = 'beta'
 
 print(f'Logging to: {LOGS_DIR}')
-os.makedirs(LOGS_DIR, exist_ok=True)
+Path(LOGS_DIR).mkdir(parents=True, exist_ok=True)
 
 print(f'Starting sequence splitter, format version: {SEQ_FORMAT_VERSION}')
-print(f'Ready for sequences')
+print('Ready for sequences')
 in_seq = False
 log_text = ''
 for line in sys.stdin:
@@ -39,43 +37,65 @@ for line in sys.stdin:
 
         print(f'Wrote sequence data to: {log_path}')
 
-        print(f'Plotting data...')
+        print('Plotting data...')
         df = pd.read_csv(log_path)
 
         SUBPLOT_SPECS = [
             {
                 'row': 1,
                 'col': 1,
-                'sensors': ['pt102', 'pt103', 'pt202', 'pt203', 'ptf401', 'pto401', 'ptc401', 'ptc402']
+                'sensors': [
+                    'pt102',
+                    'pt103',
+                    'pt202',
+                    'pt203',
+                    'ptf401',
+                    'pto401',
+                    'ptc401',
+                    'ptc402',
+                ],
             },
             {
                 'row': 2,
                 'col': 1,
-                'sensors': ['fuel_valve_setpoint', 'fuel_valve_internal_pos', 'fuel_valve_encoder_pos',
-                            'lox_valve_setpoint', 'lox_valve_internal_pos', 'lox_valve_encoder_pos']
+                'sensors': [
+                    'fuel_valve_setpoint',
+                    'fuel_valve_internal_pos',
+                    'fuel_valve_encoder_pos',
+                    'lox_valve_setpoint',
+                    'lox_valve_internal_pos',
+                    'lox_valve_encoder_pos',
+                ],
             },
         ]
-        fig = make_subplots(2, 1, shared_xaxes=True, shared_yaxes=False, horizontal_spacing=0.05, vertical_spacing=0.05,
-                            subplot_titles=['PTs', 'Motor'])
+        fig = make_subplots(
+            2,
+            1,
+            shared_xaxes=True,
+            shared_yaxes=False,
+            horizontal_spacing=0.05,
+            vertical_spacing=0.05,
+            subplot_titles=['PTs', 'Motor'],
+        )
         for spec in SUBPLOT_SPECS:
             for sensor in spec['sensors']:
-                fig.add_trace(go.Scatter(x=df['time'], y=df[sensor], name=sensor), row=spec['row'],
-                              col=spec['col'])
-        fig.update_layout({
-            # 'template': 'plotly_light',
-            'hoversubplots': 'axis',
-            'hovermode': 'x',
-            'grid': {
-                'rows': 2,
-                'columns': 1
-            },
-            'title': {
-                'text': f'Sequence: {log_path}'
+                fig.add_trace(
+                    go.Scatter(x=df['time'], y=df[sensor], name=sensor),
+                    row=spec['row'],
+                    col=spec['col'],
+                )
+        fig.update_layout(
+            {
+                # 'template': 'plotly_light',
+                'hoversubplots': 'axis',
+                'hovermode': 'x',
+                'grid': {'rows': 2, 'columns': 1},
+                'title': {'text': f'Sequence: {log_path}'},
             }
-        })
+        )
         fig.show(renderer='browser')
 
-        print(f'Ready for next sequence')
+        print('Ready for next sequence')
 
     elif in_seq:
         log_text += line + '\n'

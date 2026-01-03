@@ -1,25 +1,24 @@
 #include "sequencer.h"
-#include "throttle_valve.h"
+#include "ThrottleValve.h"
 #include "pts.h"
 
-#include <vector>
-#include <zephyr/logging/log.h>
-#include <zephyr/kernel.h>
-#include <zephyr/sys/util.h>
-#include <zephyr/sys/cbprintf.h>
-#include <array>
-#include <zephyr/net/socket.h>
+#include "server.h"
 #include <algorithm>
-#include <string>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <numbers>
-#include <cmath>
-#include "server.h"
+#include <string>
+#include <vector>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/sys/cbprintf.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(sequencer, CONFIG_LOG_DEFAULT_LEVEL);
 
-constexpr uint64_t
-    NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
+constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'000'000;  // 1 ms
 
 static constexpr int MAX_BREAKPOINTS = 128;
 
@@ -36,7 +35,6 @@ static std::vector<float> sine_offsets_lox;
 static std::vector<float> sine_amplitudes_lox;
 static std::vector<float> sine_periods_lox;
 static std::vector<float> sine_phases_lox;
-
 
 static int data_sock = -1;
 static bool motor_only = false;
@@ -82,8 +80,7 @@ struct control_iter_data {
 };
 
 static constexpr int MAX_CONTROL_DATA_QUEUE_SIZE = 250;
-K_MSGQ_DEFINE(control_data_msgq,
-              sizeof(control_iter_data), MAX_CONTROL_DATA_QUEUE_SIZE, 1);
+K_MSGQ_DEFINE(control_data_msgq, sizeof(control_iter_data), MAX_CONTROL_DATA_QUEUE_SIZE, 1);
 
 // Performs one iteration of the control loop. This must execute very quickly, so any physical actions or
 // interactions with peripherals should be asynchronous.
@@ -98,7 +95,7 @@ static void step_control_loop(k_work*)
         // HACK: relinquish control for a little bit to allow client connection to flush data.
         // There really ought to be a cleaner way to do this.
         k_sleep(K_MSEC(100));
-        k_msgq_purge(&control_data_msgq); // Signals client connection that no more
+        k_msgq_purge(&control_data_msgq);  // Signals client connection that no more
         return;
     }
 
@@ -108,8 +105,12 @@ static void step_control_loop(k_work*)
     if (combo_mode && gap_millis > 0 && !sine_offsets_fuel.empty() && !sine_offsets_lox.empty()) {
         int seg_idx = next_millis / gap_millis;
         int max_seg_idx = static_cast<int>(sine_offsets_fuel.size()) - 1;
-        if (seg_idx < 0) { seg_idx = 0; }
-        if (seg_idx > max_seg_idx) { seg_idx = max_seg_idx; }
+        if (seg_idx < 0) {
+            seg_idx = 0;
+        }
+        if (seg_idx > max_seg_idx) {
+            seg_idx = max_seg_idx;
+        }
         if (sine_offsets_fuel[seg_idx] != 0.0f) {
             sine_mode = true;
             sine_seq_offset_fuel = sine_offsets_fuel[seg_idx];
@@ -121,7 +122,6 @@ static void step_control_loop(k_work*)
             sine_seq_amplitude_lox = sine_amplitudes_lox[seg_idx];
             sine_seq_period_lox = sine_periods_lox[seg_idx];
             sine_seq_phase_lox = sine_phases_lox[seg_idx];
-
         }
         else {
             sine_mode = false;
@@ -144,24 +144,18 @@ static void step_control_loop(k_work*)
         }
         else {
             float tween = static_cast<float>(next_millis - (low_bp_index * gap_millis)) / gap_millis;
-            fuel_trace_target = fuel_breakpoints[low_bp_index] +
-                                (fuel_breakpoints[high_bp_index] - fuel_breakpoints[low_bp_index]) * tween;
-            lox_trace_target = lox_breakpoints[low_bp_index] +
-                               (lox_breakpoints[high_bp_index] - lox_breakpoints[low_bp_index]) * tween;
+            fuel_trace_target = fuel_breakpoints[low_bp_index] + (fuel_breakpoints[high_bp_index] - fuel_breakpoints[low_bp_index]) * tween;
+            lox_trace_target = lox_breakpoints[low_bp_index] + (lox_breakpoints[high_bp_index] - lox_breakpoints[low_bp_index]) * tween;
         }
     }
-        //  sine mode
+    //  sine mode
     else {
-        fuel_trace_target =
-            std::sin(static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f +
-                     sine_seq_phase_fuel) *
-            sine_seq_amplitude_fuel +
-            sine_seq_offset_fuel;
+        fuel_trace_target = std::sin(static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f + sine_seq_phase_fuel) *
+                                sine_seq_amplitude_fuel +
+                            sine_seq_offset_fuel;
 
         lox_trace_target =
-            std::sin(static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f +
-                     sine_seq_phase_lox) *
-            sine_seq_amplitude_lox +
+            std::sin(static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f + sine_seq_phase_lox) * sine_seq_amplitude_lox +
             sine_seq_offset_lox;
     }
 
@@ -223,8 +217,7 @@ static void step_control_loop(k_work*)
     }
 }
 
-K_WORK_DEFINE(control_loop, step_control_loop
-);
+K_WORK_DEFINE(control_loop, step_control_loop);
 
 // ISR that schedules a control iteration in the work queue.
 static void control_loop_schedule(k_timer* timer)
@@ -240,8 +233,7 @@ static void control_loop_schedule(k_timer* timer)
     step_count += 1;
 }
 
-K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr
-);
+K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 int sequencer_start_trace()
 {
@@ -286,8 +278,7 @@ int sequencer_start_trace()
 
     LOG_INF("Got breakpoints:");
     for (int i = 0; i < std::ssize(fuel_breakpoints); ++i) {
-        LOG_INF("t=%d ms, fuel=%f, lox=%f", i * gap_millis, static_cast<double>(fuel_breakpoints[i]),
-                static_cast<double>(lox_breakpoints[i]));
+        LOG_INF("t=%d ms, fuel=%f, lox=%f", i * gap_millis, static_cast<double>(fuel_breakpoints[i]), static_cast<double>(lox_breakpoints[i]));
     }
 
     step_count = 0;
@@ -305,13 +296,14 @@ int sequencer_start_trace()
 
     // Print header
     send_string_fully(data_sock, ">>>>SEQ START<<<<\n");
-    send_string_fully(data_sock,
-                      "time,data_queue_size,"
-                      "fuel_valve_setpoint,fuel_valve_internal_pos,fuel_valve_encoder_pos,"
-                      "fuel_valve_velocity,fuel_valve_acceleration,fuel_valve_nsec_per_pulse,"
-                      "lox_valve_setpoint,lox_valve_internal_pos,lox_valve_encoder_pos,"
-                      "lox_valve_velocity,lox_valve_acceleration,lox_valve_nsec_per_pulse,"
-                      "pt102,pt103,pto401,pt202,pt203,ptf401,ptc401,ptc402\n");
+    send_string_fully(
+        data_sock,
+        "time,data_queue_size,"
+        "fuel_valve_setpoint,fuel_valve_internal_pos,fuel_valve_encoder_pos,"
+        "fuel_valve_velocity,fuel_valve_acceleration,fuel_valve_nsec_per_pulse,"
+        "lox_valve_setpoint,lox_valve_internal_pos,lox_valve_encoder_pos,"
+        "lox_valve_velocity,lox_valve_acceleration,lox_valve_nsec_per_pulse,"
+        "pt102,pt103,pto401,pt202,pt203,ptf401,ptc401,ptc402\n");
     // Dump data as we get it.
     control_iter_data data = {0};
     while (true) {
@@ -324,7 +316,8 @@ int sequencer_start_trace()
         char buf[MAX_DATA_LEN];
 
         int would_write = snprintfcb(
-            buf, MAX_DATA_LEN,
+            buf,
+            MAX_DATA_LEN,
             "%.8f,%d,"
             "%.8f,%.8f,%.8f,%.8f,%.8f,%llu,"
             "%.8f,%.8f,%.8f,%.8f,%.8f,%llu,"
@@ -350,8 +343,7 @@ int sequencer_start_trace()
             static_cast<double>(data.pt203),
             static_cast<double>(data.ptf401),
             static_cast<double>(data.ptc401),
-            static_cast<double>(data.ptc402)
-        );
+            static_cast<double>(data.ptc402));
         int actually_written = std::min(would_write, MAX_DATA_LEN - 1);
         err = send_fully(data_sock, buf, actually_written);
         if (err) {
@@ -426,16 +418,16 @@ int sequencer_prepare_sine(int total_time, float offset, float amplitude, float 
 
 int sequencer_prepare_combo(
     int gap,
-    const std::vector<float> &fuel_bps,
-    const std::vector<float> &lox_bps,
-    const std::vector<float> &seq_sine_offsets_fuel,
-    const std::vector<float> &seq_sine_amps_fuel,
-    const std::vector<float> &seq_sine_periods_fuel,
-    const std::vector<float> &seq_sine_phases_fuel,
-    const std::vector<float> &seq_sine_offsets_lox,
-    const std::vector<float> &seq_sine_amps_lox,
-    const std::vector<float> &seq_sine_periods_lox,
-    const std::vector<float> &seq_sine_phases_lox,
+    const std::vector<float>& fuel_bps,
+    const std::vector<float>& lox_bps,
+    const std::vector<float>& seq_sine_offsets_fuel,
+    const std::vector<float>& seq_sine_amps_fuel,
+    const std::vector<float>& seq_sine_periods_fuel,
+    const std::vector<float>& seq_sine_phases_fuel,
+    const std::vector<float>& seq_sine_offsets_lox,
+    const std::vector<float>& seq_sine_amps_lox,
+    const std::vector<float>& seq_sine_periods_lox,
+    const std::vector<float>& seq_sine_phases_lox,
     bool mot_only)
 {
     if (gap <= 0 || fuel_bps.empty() || lox_bps.empty()) {
@@ -446,20 +438,11 @@ int sequencer_prepare_combo(
     }
     // Expect one sine-segment entry per segment (breakpoints - 1)
     const size_t num_segments = fuel_bps.size() - 1;
-    auto check_size = [num_segments](const std::vector<float> &v) {
-        return v.size() == num_segments;
-    };
-    if (!check_size(seq_sine_offsets_fuel) ||
-        !check_size(seq_sine_amps_fuel) ||
-        !check_size(seq_sine_periods_fuel) ||
-        !check_size(seq_sine_phases_fuel) ||
-        !check_size(seq_sine_offsets_lox) ||
-        !check_size(seq_sine_amps_lox) ||
-        !check_size(seq_sine_periods_lox) ||
-        !check_size(seq_sine_phases_lox)) {
+    auto check_size = [num_segments](const std::vector<float>& v) { return v.size() == num_segments; };
+    if (!check_size(seq_sine_offsets_fuel) || !check_size(seq_sine_amps_fuel) || !check_size(seq_sine_periods_fuel) || !check_size(seq_sine_phases_fuel) ||
+        !check_size(seq_sine_offsets_lox) || !check_size(seq_sine_amps_lox) || !check_size(seq_sine_periods_lox) || !check_size(seq_sine_phases_lox)) {
         return 1;
     }
-
 
     gap_millis = gap;
     fuel_breakpoints = fuel_bps;
@@ -485,21 +468,16 @@ int sequencer_prepare_combo(
 
     for (size_t i = 0; i < fuel_breakpoints.size() - 1; ++i) {
         if (sine_offsets_fuel[i] != 0) {
-            fuel_breakpoints[i + 1] = sine_offsets_fuel[i] +
-                                      std::sin(
-                                          static_cast<float>(gap) / sine_periods_fuel[i] * 3.14159265358979323846f *
-                                          2.0f +
-                                          sine_phases_fuel[i]) *
-                                      sine_amplitudes_fuel[i];
+            fuel_breakpoints[i + 1] =
+                sine_offsets_fuel[i] +
+                std::sin(static_cast<float>(gap) / sine_periods_fuel[i] * 3.14159265358979323846f * 2.0f + sine_phases_fuel[i]) * sine_amplitudes_fuel[i];
         }
     }
     for (size_t i = 0; i < lox_breakpoints.size() - 1; ++i) {
         if (sine_offsets_lox[i] != 0) {
-            lox_breakpoints[i + 1] = sine_offsets_lox[i] +
-                                     std::sin(static_cast<float>(gap) / sine_periods_lox[i] * 3.14159265358979323846f *
-                                              2.0f +
-                                              sine_phases_lox[i]) *
-                                     sine_amplitudes_lox[i];
+            lox_breakpoints[i + 1] =
+                sine_offsets_lox[i] +
+                std::sin(static_cast<float>(gap) / sine_periods_lox[i] * 3.14159265358979323846f * 2.0f + sine_phases_lox[i]) * sine_amplitudes_lox[i];
         }
     }
     motor_only = mot_only;

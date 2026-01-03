@@ -1,3 +1,3 @@
-#include "throttle_valve.h"
+#include "ThrottleValve.h"
 
 LOG_MODULE_REGISTER(throttle_valve);

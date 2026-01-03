@@ -1,12 +1,9 @@
 import socket
-import datetime
 import time
+
 from rich.live import Live
-from rich.text import Text
 from rich.table import Table
-from rich.console import Group
-from rich.panel import Panel
-from rich import box
+from rich.text import Text
 
 IP = '192.168.0.150'
 PORT = 19690
@@ -19,22 +16,33 @@ def generate_output(refresh_in, data):
     connections_table.add_column('Connection')
     connections_table.add_column('Status')
     connections_table.add_row('Refresh in', f'{refresh_in} sec')
-    connections_table.add_row('Command', 'DISCONNECTED' if data[
-                                                               'command_ping_elapsed'] == '-1' else f'Last pinged {float(data["command_ping_elapsed"]) / 1000} sec ago')
-    connections_table.add_row('DAQ', 'DISCONNECTED' if data[
-                                                           'daq_ping_elapsed'] == '-1' else f'Last pinged {float(data["daq_ping_elapsed"]) / 1000} sec ago')
-    connections_table.add_row('Data recipient', 'PRIMED' if data['data_recipient_primed'] == '1' else 'NOT READY')
+    connections_table.add_row(
+        'Command',
+        'DISCONNECTED'
+        if data['command_ping_elapsed'] == '-1'
+        else f'Last pinged {float(data["command_ping_elapsed"]) / 1000} sec ago',
+    )
+    connections_table.add_row(
+        'DAQ',
+        'DISCONNECTED'
+        if data['daq_ping_elapsed'] == '-1'
+        else f'Last pinged {float(data["daq_ping_elapsed"]) / 1000} sec ago',
+    )
+    connections_table.add_row(
+        'Data recipient',
+        'PRIMED' if data['data_recipient_primed'] == '1' else 'NOT READY',
+    )
 
     fuel_valve_table = Table.grid(padding=(0, 3), pad_edge=True)
     fuel_valve_table.add_column('Value')
-    fuel_valve_table.add_row("Internal position", f'{data["fuel_internal"]} deg')
-    fuel_valve_table.add_row("Encoder position", f'{data["fuel_encoder"]} deg')
+    fuel_valve_table.add_row('Internal position', f'{data["fuel_internal"]} deg')
+    fuel_valve_table.add_row('Encoder position', f'{data["fuel_encoder"]} deg')
 
     lox_valve_table = Table.grid(padding=(0, 3), pad_edge=True)
     lox_valve_table.add_column('Sensor')
     lox_valve_table.add_column('Value')
-    lox_valve_table.add_row("Internal position", f'{data["lox_internal"]} deg')
-    lox_valve_table.add_row("Encoder position", f'{data["lox_encoder"]} deg')
+    lox_valve_table.add_row('Internal position', f'{data["lox_internal"]} deg')
+    lox_valve_table.add_row('Encoder position', f'{data["lox_encoder"]} deg')
 
     pts_table = Table.grid(padding=(0, 3), pad_edge=True)
     pts_table.add_column('Sensor')
@@ -58,7 +66,7 @@ def generate_output(refresh_in, data):
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     sock.connect((IP, PORT))
     print('Socket OK, identifying as status client...')
-    sock.sendall('name;status#'.encode())
+    sock.sendall(b'name;status#')
 
     buf = ''
     while True:
@@ -69,7 +77,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             break
 
     print('Connected.')
-    sock.sendall('status#'.encode())
+    sock.sendall(b'status#')
     buf = ''
     while True:
         buf += sock.recv(1).decode()
@@ -78,9 +86,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             break
 
     with Live(Text('Fetching status'), refresh_per_second=10) as live:
-
         while True:
-            sock.sendall('status#'.encode())
+            sock.sendall(b'status#')
             buf = ''
             while True:
                 buf += sock.recv(1).decode()

@@ -1,10 +1,10 @@
 #include "pts.h"
 
-#include <zephyr/sys/util.h>
-#include <zephyr/drivers/adc.h>
-#include <zephyr/logging/log.h>
-#include <zephyr/kernel.h>
 #include <array>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
 
 #define USER_NODE DT_PATH(zephyr_user)
 
@@ -25,9 +25,7 @@
 
 // Trailing comma needed as we are using preprocessor to instantiate each element of an array.
 #define ARTY_PTS_DT_SPEC_AND_COMMA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
-static constexpr struct adc_dt_spec adc_channels[NUM_PTS] = {
-    DT_FOREACH_PROP_ELEM(USER_NODE, io_channels, ARTY_PTS_DT_SPEC_AND_COMMA)
-};
+static constexpr struct adc_dt_spec adc_channels[NUM_PTS] = {DT_FOREACH_PROP_ELEM(USER_NODE, io_channels, ARTY_PTS_DT_SPEC_AND_COMMA)};
 
 static adc_sequence_options sequence_options = {
     .interval_us = 0,
@@ -51,46 +49,14 @@ consteval std::array<float, NUM_PTS> pts_adc_ranges()
 }
 
 pt_config pt_configs[NUM_PTS] = {
-    {
-        .scale = 1000.0f / pts_adc_ranges()[0],
-        .bias = -13.0f,
-        .range = 1000.0f
-    },
-    {
-        .scale = 1000.0f / pts_adc_ranges()[1],
-        .bias = -14.0f,
-        .range = 1000.0f
-    },
-    {
-        .scale = 2000.0f / pts_adc_ranges()[2],
-        .bias = -38.0f,
-        .range = 2000.0f
-    },
-    {
-        .scale = 2000.0f / pts_adc_ranges()[3],
-        .bias = -32.0f,
-        .range = 2000.0f
-    },
-    {
-        .scale = 2000.0f / pts_adc_ranges()[4],
-        .bias = -30.0f,
-        .range = 2000.0f
-    },
-    {
-        .scale = 1000.0f / pts_adc_ranges()[5],
-        .bias = -18.7f,
-        .range = 1000.0f
-    },
-    {
-        .scale = 2000.0f / pts_adc_ranges()[6],
-        .bias = -28.0f,
-        .range = 2000.0f
-    },
-    {
-        .scale = 1000.0f / pts_adc_ranges()[7],
-        .bias = -13.0f,
-        .range = 1000.0f
-    },
+    {.scale = 1000.0f / pts_adc_ranges()[0], .bias = -13.0f, .range = 1000.0f},
+    {.scale = 1000.0f / pts_adc_ranges()[1], .bias = -14.0f, .range = 1000.0f},
+    {.scale = 2000.0f / pts_adc_ranges()[2], .bias = -38.0f, .range = 2000.0f},
+    {.scale = 2000.0f / pts_adc_ranges()[3], .bias = -32.0f, .range = 2000.0f},
+    {.scale = 2000.0f / pts_adc_ranges()[4], .bias = -30.0f, .range = 2000.0f},
+    {.scale = 1000.0f / pts_adc_ranges()[5], .bias = -18.7f, .range = 1000.0f},
+    {.scale = 2000.0f / pts_adc_ranges()[6], .bias = -28.0f, .range = 2000.0f},
+    {.scale = 1000.0f / pts_adc_ranges()[7], .bias = -13.0f, .range = 1000.0f},
 };
 
 /// Initialize PT sensors by initializing the ADC they're all connected to.
@@ -146,9 +112,7 @@ pt_readings pts_sample()
 
     // Assign each PT name as fields to initialize pt_readings
 #define ARTY_PTS_DT_TO_READINGS_ASSIGNMENT(node_id, prop, idx) .DT_STRING_TOKEN_BY_IDX(node_id, prop, idx) = readings_by_idx[idx],
-    auto readings = pt_readings{
-        DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, ARTY_PTS_DT_TO_READINGS_ASSIGNMENT)
-    };
+    auto readings = pt_readings{DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, ARTY_PTS_DT_TO_READINGS_ASSIGNMENT)};
     last_reading = readings;
     last_read_uptime = k_uptime_get();
     return readings;
