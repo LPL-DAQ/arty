@@ -1,9 +1,8 @@
 #ifndef APP_SOCKETGUARD_H
 #define APP_SOCKETGUARD_H
 
-
 class SocketGuard {
-public:
+  public:
     int socket;
 
     explicit SocketGuard(int s);
@@ -11,5 +10,4 @@ public:
     ~SocketGuard();
 };
 
-
-#endif //APP_SOCKETGUARD_H
+#endif  // APP_SOCKETGUARD_H
