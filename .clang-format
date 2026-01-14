@@ -13,6 +13,6 @@ IndentWidth: 4
 Standard: c++20
 UseTab: Never
 PointerAlignment: Left
-ColumnLimit: 160
+ColumnLimit: 120
 IndentAccessModifiers: false
 AccessModifierOffset: -4
