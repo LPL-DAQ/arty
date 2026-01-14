@@ -152,14 +152,17 @@ static void step_control_loop(k_work*)
     }
         //  sine mode
     else {
+        int low_bp_index = MIN(next_millis / gap_millis, std::ssize(fuel_breakpoints) - 1);
+        float seg_start = static_cast<float>(low_bp_index * gap_millis);
+
         fuel_trace_target =
-            std::sin(static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f +
+            std::sin(static_cast<float>(next_millis - seg_start) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f +
                      sine_seq_phase_fuel) *
             sine_seq_amplitude_fuel +
             sine_seq_offset_fuel;
 
         lox_trace_target =
-            std::sin(static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f +
+            std::sin(static_cast<float>(next_millis - seg_start) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f +
                      sine_seq_phase_lox) *
             sine_seq_amplitude_lox +
             sine_seq_offset_lox;
