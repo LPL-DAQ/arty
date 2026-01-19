@@ -144,18 +144,26 @@ static void step_control_loop(k_work*)
         }
         else {
             float tween = static_cast<float>(next_millis - (low_bp_index * gap_millis)) / gap_millis;
-            fuel_trace_target = fuel_breakpoints[low_bp_index] + (fuel_breakpoints[high_bp_index] - fuel_breakpoints[low_bp_index]) * tween;
-            lox_trace_target = lox_breakpoints[low_bp_index] + (lox_breakpoints[high_bp_index] - lox_breakpoints[low_bp_index]) * tween;
+            fuel_trace_target = fuel_breakpoints[low_bp_index] +
+                                (fuel_breakpoints[high_bp_index] - fuel_breakpoints[low_bp_index]) * tween;
+            lox_trace_target = lox_breakpoints[low_bp_index] +
+                               (lox_breakpoints[high_bp_index] - lox_breakpoints[low_bp_index]) * tween;
         }
     }
     //  sine mode
     else {
-        fuel_trace_target = std::sin(static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f + sine_seq_phase_fuel) *
-                                sine_seq_amplitude_fuel +
-                            sine_seq_offset_fuel;
+        fuel_trace_target =
+            std::sin(
+                static_cast<float>(next_millis) / sine_seq_period_fuel * std::numbers::pi_v<float> * 2.0f +
+                sine_seq_phase_fuel) *
+                sine_seq_amplitude_fuel +
+            sine_seq_offset_fuel;
 
         lox_trace_target =
-            std::sin(static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f + sine_seq_phase_lox) * sine_seq_amplitude_lox +
+            std::sin(
+                static_cast<float>(next_millis) / sine_seq_period_lox * std::numbers::pi_v<float> * 2.0f +
+                sine_seq_phase_lox) *
+                sine_seq_amplitude_lox +
             sine_seq_offset_lox;
     }
 
@@ -278,7 +286,11 @@ int sequencer_start_trace()
 
     LOG_INF("Got breakpoints:");
     for (int i = 0; i < std::ssize(fuel_breakpoints); ++i) {
-        LOG_INF("t=%d ms, fuel=%f, lox=%f", i * gap_millis, static_cast<double>(fuel_breakpoints[i]), static_cast<double>(lox_breakpoints[i]));
+        LOG_INF(
+            "t=%d ms, fuel=%f, lox=%f",
+            i * gap_millis,
+            static_cast<double>(fuel_breakpoints[i]),
+            static_cast<double>(lox_breakpoints[i]));
     }
 
     step_count = 0;
@@ -357,7 +369,6 @@ int sequencer_start_trace()
     k_mutex_unlock(&sequence_lock);
     return 0;
 }
-
 
 void sequencer_set_data_recipient(int sock)
 {

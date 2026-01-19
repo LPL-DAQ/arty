@@ -27,8 +27,8 @@ class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
         start_address: int | None,
         start_modifiers: list[str],
         conn_modifiers: str | None,
-        use_elf: bool, # noqa: FBT001
-        erase: bool, # noqa: FBT001
+        use_elf: bool,  # noqa: FBT001
+        erase: bool,  # noqa: FBT001
         extload: str | None,
         tool_opt: list[str],
     ) -> None:

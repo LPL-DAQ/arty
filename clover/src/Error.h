@@ -1,5 +1,8 @@
 #ifndef APP_ERROR_H
 #define APP_ERROR_H
+
+#include "MaxLengthString.h"
+
 #include <string_view>
 
 /// Error propagation class. Used with std::expected to attach context for fallible operations. Such errors are not
@@ -20,7 +23,7 @@ private:
 public:
     static Error error(std::string_view cause);
     void context(std::string_view ctx);
-    static std::string_view build_message(Error error);
+    MaxLengthString<500> build_message(Error error);
 };
 
 #endif  // APP_ERROR_H

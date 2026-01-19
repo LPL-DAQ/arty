@@ -86,7 +86,12 @@ bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t c
     }
 
     if (bytes_sent != static_cast<int>(count)) {
-        LOG_ERR("zsock_send only partially wrote its buffer from socket %d, this should be impossible - sent: %d, requested: %d", sock, bytes_sent, count);
+        LOG_ERR(
+            "zsock_send only partially wrote its buffer from socket %d, this should be impossible - sent: %d, "
+            "requested: %d",
+            sock,
+            bytes_sent,
+            count);
         return false;
     }
 
@@ -95,7 +100,11 @@ bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t c
 
 pb_ostream_t pb_ostream_from_socket(int sock)
 {
-    return pb_ostream_t{.callback = pb_socket_write_callback, .state = reinterpret_cast<void*>(sock), .max_size = SIZE_MAX, .bytes_written = 0};
+    return pb_ostream_t{
+        .callback = pb_socket_write_callback,
+        .state = reinterpret_cast<void*>(sock),
+        .max_size = SIZE_MAX,
+        .bytes_written = 0};
 }
 
 /// Internal callback for pb_istream, used to read from socket to internal buffer.
@@ -113,7 +122,8 @@ bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
 
     if (bytes_read != static_cast<int>(count)) {
         LOG_ERR(
-            "zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass ZSOCK_MSG_WAITALL - got: %d, requested: %d",
+            "zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass "
+            "ZSOCK_MSG_WAITALL - got: %d, requested: %d",
             sock,
             bytes_read,
             count);
@@ -126,7 +136,8 @@ bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
 /// Create a nanopb input stream from socket fd.
 pb_istream_t pb_istream_from_socket(int sock)
 {
-    return pb_istream_t{.callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(sock), .bytes_left = SIZE_MAX};
+    return pb_istream_t{
+        .callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(sock), .bytes_left = SIZE_MAX};
 }
 
 /// Handles a client connection. Should run in its own thread.
@@ -211,7 +222,9 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         default: {
             LOG_ERR(
-                "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);
+                "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request "
+                "- got tag: %u",
+                request.which_payload);
             break;
         }
         }
@@ -221,9 +234,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         // Do not use this for prod code as it may write beyond the err message buffer.
         strcpy(
             response.err,
-            "Very long test error message. Very long test error message. Very long test error message. Very long test error message. Very long test error "
-            "message. Very long test error message. Very long test error message. Very long test error message. Very long test error message. Very long test "
-            "error message. Very long test error message. Very long test error message. Very long test error message. Very long test error message. Very long "
+            "Very long test error message. Very long test error message. Very long test error message. Very long test "
+            "error message. Very long test error "
+            "message. Very long test error message. Very long test error message. Very long test error message. Very "
+            "long test error message. Very long test "
+            "error message. Very long test error message. Very long test error message. Very long test error message. "
+            "Very long test error message. Very long "
             "test error message.");
 
         // Send message over TCP with varint length prefix.
@@ -416,7 +432,13 @@ void serve_data_connections()
                 continue;
             }
 
-            const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
+            const int bytes_sent = zsock_sendto(
+                server_socket,
+                buf,
+                data_packet_ostream.bytes_written,
+                0,
+                &data_client_addrs[i],
+                data_client_addr_lens[i]);
             if (bytes_sent != data_packet_ostream.bytes_written) {
                 LOG_ERR("Failed to send data packet over UDP: %d", bytes_sent);
             }

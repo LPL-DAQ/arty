@@ -26,7 +26,8 @@ struct pt_readings {
 };
 
 struct pt_config {
-    float scale;  // psig per analog reading unit. For teensy, resolution = 12, so for a 1k PT this would be (1000.0 / 4096.0)
+    float scale;  // psig per analog reading unit. For teensy, resolution = 12, so for a 1k PT this would be (1000.0 /
+                  // 4096.0)
     float bias;
     float range;
 };

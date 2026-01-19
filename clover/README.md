@@ -4,11 +4,16 @@
 
 GNC embedded software.
 
-## Build and Run
+## Build
+
+```shell
+west build ~/arty/clover --pristine auto --board tvc_throttle_dev --build-dir ~/arty/clover/build
+```
+
+## Flash
 
 Ensure flasherd is running and the Teensy is plugged in to your computer and is in bootloader mode. Then, run:
 
 ```shell
-west build -p auto clover -b tvc_throttle_dev
-west flash
+west flash --build-dir ~/arty/clover/build
 ```
