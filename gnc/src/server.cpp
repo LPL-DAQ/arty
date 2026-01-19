@@ -643,13 +643,13 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             else if (pt_name == "pto401") {
                 pt_index = 1;
             }
-            else if (pt_name == "pt103") {
+            else if (pt_name == "pt202") {
                 pt_index = 2;
             }
-            else if (pt_name == "pt202") {
+            else if (pt_name == "pt102") {
                 pt_index = 3;
             }
-            else if (pt_name == "pt102") {
+            else if (pt_name == "pt103") {
                 pt_index = 4;
             }
             else if (pt_name == "ptf401") {

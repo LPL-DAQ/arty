@@ -53,42 +53,42 @@ consteval std::array<float, NUM_PTS> pts_adc_ranges()
 pt_config pt_configs[NUM_PTS] = {
     {
         .scale = 1000.0f / pts_adc_ranges()[0],
-        .bias = -13.0f,
+        .bias = -14.5f,
         .range = 1000.0f
     },
     {
-        .scale = 1000.0f / pts_adc_ranges()[1],
-        .bias = -14.0f,
-        .range = 1000.0f
-    },
-    {
-        .scale = 2000.0f / pts_adc_ranges()[2],
+        .scale = 2000.0f / pts_adc_ranges()[1],
         .bias = -38.0f,
         .range = 2000.0f
     },
     {
+        .scale = 2000.0f / pts_adc_ranges()[2],
+        .bias = -32f,
+        .range = 2000.0f
+    },
+    {
         .scale = 2000.0f / pts_adc_ranges()[3],
-        .bias = -32.0f,
+        .bias = -33.0f-13.0f,
         .range = 2000.0f
     },
     {
         .scale = 2000.0f / pts_adc_ranges()[4],
-        .bias = -30.0f,
+        .bias = -31.0f,
         .range = 2000.0f
     },
     {
         .scale = 1000.0f / pts_adc_ranges()[5],
-        .bias = -18.7f,
+        .bias = -18.7f+1.5f-0.8f,
         .range = 1000.0f
     },
     {
-        .scale = 2000.0f / pts_adc_ranges()[6],
-        .bias = -28.0f,
-        .range = 2000.0f
+        .scale = 3000.0f / pts_adc_ranges()[6],
+        .bias = -40.0f,
+        .range = 3000.0f
     },
     {
         .scale = 1000.0f / pts_adc_ranges()[7],
-        .bias = -13.0f,
+        .bias = -13.0f-0.25f,
         .range = 1000.0f
     },
 };

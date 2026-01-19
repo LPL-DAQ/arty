@@ -1,20 +1,17 @@
 {
-  "name": "clover",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
+  "name": "arty",
   "runArgs": [
-    "--network=host",
+    "--network=host"
   ],
-  "workspaceMount": "source=${localWorkspaceFolder},target=/home/lpl/clover,type=bind,consistency=cached",
-  "workspaceFolder": "/home/lpl/clover",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/lpl/arty,type=bind,consistency=cached",
+  "workspaceFolder": "/home/lpl/arty",
   "privileged": true,
   "remoteUser": "lpl",
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
   },
-  "onCreateCommand": "bash /home/lpl/clover/scripts/dev-container-init.sh",
-  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
-  // Ensures flasherd is running
+  "onCreateCommand": "mkdir -p /home/lpl/arty/bin && cp /home/lpl/prebaked-bin/* /home/lpl/arty/bin",
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
   "initializeCommand": "cargo run --bin flasherd_cleaner --release && cargo run --bin flasherd --release -- \"${localWorkspaceFolder}\" --daemonize",
+  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2025-12-30_01-53-44_d636e93ebcb3caf410159cff3df23ce4b354fe55"
 }

@@ -157,13 +157,13 @@ nc 169.254.99.99 19690
 And to ensure the output is saved to a file, run:
 
 ```shell
-nc 169.254.99.99 19690 | tee -a ~/clover/out.log
+nc 169.254.99.99 19690 | tee -a ~/arty/out.log
 ```
 
 To live-parse sequences, run the following in a separate terminal tab as well:
 
 ```shell
-tail -n 0 -f ~/clover/out.log | uv --project scripts run scripts/seq_splitter.py
+tail -n 0 -f ~/arty/out.log | uv --project scripts run scripts/seq_splitter.py
 ```
 
 To run the status-watcher script, run the following, making sure that the script's IP is correctly set:

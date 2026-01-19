@@ -36,7 +36,7 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
 
     def flash(self):
         # Prepare base command
-        cmd = FlasherdCommand('/home/lpl/clover/bin/flasherd-client')
+        cmd = FlasherdCommand('/home/lpl/arty/bin/flasherd-client')
         cmd.add_windows_command(r'C:\Program Files (x86)\TyTools\tycmd.exe')
         cmd.add_macos_command('tycmd')
         cmd.add_linux_command('tycmd')
