@@ -1,11 +1,14 @@
 #ifndef ARTY_THROTTLEVALVE_H
 #define ARTY_THROTTLEVALVE_H
 
+#include "Error.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <zephyr/drivers/counter.h>
 #include <zephyr/drivers/gpio.h>
+#include <expected>
 #include <zephyr/logging/log.h>
 
 constexpr float MICROSTEPS = 8.0f;
@@ -20,6 +23,8 @@ constexpr float ENCODER_CPR = 4000.0f;  // counts per motor revolution (quadratu
 constexpr float DEG_PER_ENCODER_COUNT = 360.0f / (ENCODER_CPR * GEARBOX_RATIO);
 
 enum class ValveKind { FUEL, LOX };
+
+std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
 
 template <
     ValveKind kind,
@@ -70,7 +75,7 @@ private:
 public:
     ThrottleValve() = delete;
 
-    static int init();
+    static std::expected<void, Error> init();
 
     static int tick(float target_deg);
     static void stop();
@@ -124,13 +129,13 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     last_pulse_cycle = now_cycles;
 
     int prev_dir_state = gpio_pin_get_dt(&dir_gpio);
-    if (prev_dir_state < 0) [[unlikely]] {
+    if (prev_dir_state < 0) {
         //        LOG_ERR("%s Failed to read from direction GPIO in pulse ISR: err %d", kind_to_prefix(kind),
         //        prev_dir_state);
         prev_dir_state = 0;
     }
     int prev_pul_state = gpio_pin_get_dt(&pul_gpio);
-    if (prev_pul_state < 0) [[unlikely]] {
+    if (prev_pul_state < 0) {
         //        LOG_ERR("%s Failed to read from pulse GPIO in pulse ISR: err %d", kind_to_prefix(kind),
         //        prev_pul_state);
         prev_pul_state = 0;
@@ -207,14 +212,14 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
 
     int a = gpio_pin_get_dt(&enc_a_gpio);
     // Technically, gpio_pin_get_dt may return an error code. Thus, we clamp it to 0 or 1.
-    if (a < 0) [[unlikely]] {
+    if (a < 0) {
         //        LOG_ERR("%s Failed to read from encoder A in read_encoder_state: err %d", kind_to_prefix(kind), a);
         a = 0;
     }
 
     int b = gpio_pin_get_dt(&enc_b_gpio);
     // Ditto.
-    if (b < 0) [[unlikely]] {
+    if (b < 0) {
         //        LOG_ERR("%s Failed to read from encoder B in read_encoder_state: err %d", kind_to_prefix(kind), b);
         b = 0;
     }
@@ -230,65 +235,51 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::
+std::expected<void, Error> ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::
     init()
 {
     LOG_MODULE_DECLARE(throttle_valve);
     LOG_INF("%s Initializing throttle valve...", kind_to_prefix(kind));
 
     if (!device_is_ready(pul_gpio.port)) {
-        LOG_ERR("%s Pulse GPIO not ready: err %d", kind_to_prefix(kind), pul_gpio.port->state->init_res);
-        return -ENODEV;
+        return std::unexpected(Error::from_device_not_ready(pul_gpio.port).context("pulse gpio not ready"));
     }
     if (!device_is_ready(dir_gpio.port)) {
-        LOG_ERR("%s Direction GPIO not ready: err %d", kind_to_prefix(kind), dir_gpio.port->state->init_res);
-        return -ENODEV;
+        return std::unexpected(Error::from_device_not_ready(dir_gpio.port).context("direction gpio not ready"));
     }
     if (!device_is_ready(ena_gpio.port)) {
-        LOG_ERR("%s Enable GPIO not ready: err %d", kind_to_prefix(kind), ena_gpio.port->state->init_res);
-        return -ENODEV;
+        return std::unexpected(Error::from_device_not_ready(ena_gpio.port).context("enable gpio not ready"));
     }
     if (!device_is_ready(enc_a_gpio.port)) {
-        LOG_ERR("%s Encoder A GPIO not ready: err %d", kind_to_prefix(kind), enc_a_gpio.port->state->init_res);
-        return -ENODEV;
+        return std::unexpected(Error::from_device_not_ready(enc_a_gpio.port).context("encoder a gpio not ready"));
     }
     if (!device_is_ready(enc_b_gpio.port)) {
-        LOG_ERR("%s Encoder B GPIO not ready: err %d", kind_to_prefix(kind), enc_b_gpio.port->state->init_res);
-        return -ENODEV;
+        return std::unexpected(Error::from_device_not_ready(enc_b_gpio.port).context("encoder b gpio not ready"));
     }
     if (!device_is_ready(control_counter)) {
-        LOG_ERR(
-            "%s Stepper driver control signal counter not ready: err %d",
-            kind_to_prefix(kind),
-            control_counter->state->init_res);
-        return -ENODEV;
+        return std::unexpected(Error::from_device_not_ready(control_counter).context("stepper driver control signal counter not ready"));
     }
 
     int err;
     err = gpio_pin_configure_dt(&pul_gpio, GPIO_OUTPUT_INACTIVE);
     if (err) {
-        LOG_ERR("%s Failed to put pulse GPIO in default low: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to configure pulse gpio"));
     }
     err = gpio_pin_configure_dt(&dir_gpio, GPIO_OUTPUT_INACTIVE);
     if (err) {
-        LOG_ERR("%s Failed to put direction GPIO in default low: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to configure dir gpio"));
     }
     err = gpio_pin_configure_dt(&ena_gpio, GPIO_OUTPUT_ACTIVE);
     if (err) {
-        LOG_ERR("%s Failed to put enable GPIO in default high: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to configure enable gpio"));
     }
     err = gpio_pin_configure_dt(&enc_a_gpio, GPIO_INPUT);
     if (err) {
-        LOG_ERR("%s Failed to set encoder A gpio as input: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to configure encoder a gpio"));
     }
     err = gpio_pin_configure_dt(&enc_b_gpio, GPIO_INPUT);
     if (err) {
-        LOG_ERR("%s Failed to set encoder B gpio as input: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to configure encoder b gpio"));
     }
 
     // Set initial encoder state.
@@ -297,13 +288,11 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
     // Set interrupts for encoder state.
     err = gpio_pin_interrupt_configure_dt(&enc_a_gpio, GPIO_INT_EDGE_BOTH);
     if (err) {
-        LOG_ERR("%s Failed to enable encoder A pin interrupts: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to enable encoder a pin interrupts"));
     }
     err = gpio_pin_interrupt_configure_dt(&enc_b_gpio, GPIO_INT_EDGE_BOTH);
     if (err) {
-        LOG_ERR("%s Failed to enable encoder B pin interrupts: err %d", kind_to_prefix(kind), err);
-        return err;
+        return std::unexpected(Error::from_code(err).context("failed to enable encoder b pin interrupts"));
     }
 
     gpio_init_callback(&encoder_a_callback, encoder_update_isr, BIT(enc_a_gpio.pin));
@@ -315,7 +304,7 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
 
     LOG_INF("Throttle valve initialized.");
 
-    return 0;
+    return {};
 }
 
 template <
@@ -362,13 +351,13 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
     counter_top_cfg pulse_counter_config{
         .ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
     int err = counter_set_top_value(control_counter, &pulse_counter_config);
-    if (err) [[unlikely]] {
+    if (err) {
         LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);
     }
 
     // Ensure timer is running
     err = counter_start(control_counter);
-    if (err) [[unlikely]] {
+    if (err) {
         LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
     }
 

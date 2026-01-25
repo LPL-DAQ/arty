@@ -1,6 +1,9 @@
 #ifndef ARTY_PTS_H
 #define ARTY_PTS_H
 
+#include "Error.h"
+
+#include <expected>
 #include <zephyr/devicetree.h>
 
 /*
@@ -35,7 +38,7 @@ struct pt_config {
 constexpr int NUM_PTS = DT_PROP_LEN(USER_NODE, io_channels);
 extern pt_config pt_configs[NUM_PTS];
 
-int pts_init();
+std::expected<void, Error> pts_init();
 pt_readings pts_sample();
 pt_readings pts_get_last_reading();
 int pts_set_bias(int index, float bias);

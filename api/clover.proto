@@ -57,7 +57,7 @@ message ResetValvePositionRequest {
 
 
 // Control sequences
-message Trace {
+message ControlTrace {
   required uint32 total_time_ms = 1;
   repeated Segment segments = 2;
 }
@@ -79,13 +79,13 @@ message LinearSegment {
 message SineSegment {
   required float offset = 1;
   required float amplitude = 2;
-  required float period = 3;
+  required float period_ms = 3;
   required float phase_deg = 4;
 }
 
 message LoadMotorSequenceRequest {
-  optional Trace fuel_trace = 1;
-  optional Trace lox_trace = 2;
+  optional ControlTrace fuel_trace = 1;
+  optional ControlTrace lox_trace = 2;
 }
 
 // StartSequence

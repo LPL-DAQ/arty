@@ -2,6 +2,7 @@
 #include <cctype>
 #include <climits>
 #include <cstdint>
+#include <cstring>
 #include <pb_decode.h>
 #include <pb_encode.h>
 #include <sstream>
@@ -10,7 +11,6 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/posix/arpa/inet.h>
-#include <zephyr/sys/errno_private.h>
 
 #include "ThrottleValve.h"
 #include "clover.pb.h"
@@ -18,6 +18,7 @@
 #include "pts.h"
 #include "sequencer.h"
 #include "server.h"
+#include "Controller.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -39,8 +40,8 @@ static k_thread client_threads[MAX_OPEN_CLIENTS] = {nullptr};
 K_THREAD_STACK_ARRAY_DEFINE(client_stacks, MAX_OPEN_CLIENTS, CONNECTION_THREAD_STACK_SIZE);
 
 constexpr int MAX_THREAD_NAME_LENGTH = 10;
-static std::array<std::string, MAX_OPEN_CLIENTS> thread_names;
-static std::array<int, MAX_OPEN_CLIENTS> thread_sockets;
+static std::array<ClientType, MAX_OPEN_CLIENTS> client_types;
+static std::array<int, MAX_OPEN_CLIENTS> client_sockets;
 static std::array<int64_t, MAX_OPEN_CLIENTS> last_pinged;
 K_MUTEX_DEFINE(thread_info_guard);
 
@@ -140,6 +141,59 @@ pb_istream_t pb_istream_from_socket(int sock)
         .callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(sock), .bytes_left = SIZE_MAX};
 }
 
+/// Subscribes a client to the data stream. The client IP will be included in the peers to whom we send the UDP data
+/// packets.
+static std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStreamRequest&, const int thread_index, const int socket)
+{
+    k_mutex_lock(&data_client_info_guard, K_FOREVER);
+    bool found_data_client_slot = false;
+    for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
+        if (data_client_slot_indexes[i] != -1) {
+            continue;
+        }
+        found_data_client_slot = true;
+        data_client_slot_indexes[i] = thread_index;
+
+        int err = getpeername(socket, &data_client_addrs[i], &data_client_addr_lens[i]);
+        if (err) {
+            return std::unexpected(Error::from_code(err).context("failed to get peername when subscribing to data stream"));
+        }
+
+        // Set client port
+        reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
+    }
+
+    if (!found_data_client_slot) {
+        return std::unexpected(Error::from_cause("did not find a data client slot"));
+    }
+
+    k_mutex_unlock(&data_client_info_guard);
+
+    return {};
+}
+
+/// Handles self-identification of a client, allowing us to send metrics for what clients are connected.
+static std::expected<void, Error> handle_identify_client(const IdentifyClientRequest& req, const int thread_index, const int socket)
+{
+    switch (req.client) {
+    case ClientType_GNC:
+    case ClientType_DAQ:
+        break;
+    default:
+        return std::unexpected(Error::from_cause("unknown client type `%d`", req.client));
+    }
+
+    k_mutex_lock(&thread_info_guard, K_FOREVER);
+
+    client_types[thread_index] = req.client;
+    client_sockets[thread_index] = socket;
+    last_pinged[thread_index] = k_uptime_get();
+
+    k_mutex_unlock(&thread_info_guard);
+
+    return {};
+}
+
 /// Handles a client connection. Should run in its own thread.
 static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
@@ -154,93 +208,48 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         Request request = Request_init_default;
         bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
         if (!valid) {
-            LOG_INF("Failed to decode next message, this can happen if connection is severed.");
+            LOG_INF("Failed to decode next client request, this can happen if connection is severed.");
             break;
         }
 
         // Handle request
+        std::expected<void, Error> result;
         switch (request.which_payload) {
-        case Request_subscribe_data_stream_tag: {
-            LOG_INF("Subscribe data stream");
-            k_mutex_lock(&data_client_info_guard, K_FOREVER);
-            bool found_data_client_slot = false;
-            for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-                if (data_client_slot_indexes[i] != -1) {
-                    continue;
-                }
-                found_data_client_slot = true;
-                data_client_slot_indexes[i] = thread_index;
-
-                int err = getpeername(client_guard.socket, &data_client_addrs[i], &data_client_addr_lens[i]);
-                if (err) {
-                    LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
-                }
-
-                // Set client port
-                reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
-            }
-
-            if (!found_data_client_slot) {
-                LOG_ERR("Did not find a data client slot");
-            }
-
-            k_mutex_unlock(&data_client_info_guard);
+        case Request_subscribe_data_stream_tag:
+            result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_guard.socket);
             break;
-        }
-        case Request_identify_client_tag: {
-            LOG_INF("Identify client");
+
+        case Request_identify_client_tag:
+            result = handle_identify_client(request.payload.identify_client, thread_index, client_guard.socket);
             break;
-        }
-        case Request_reset_valve_position_tag: {
-            ResetValvePositionRequest& req = request.payload.reset_valve_position;
-            switch (req.valve) {
-            case Valve_FUEL:
-                LOG_INF("Reset value fuel");
-                break;
-            case Valve_LOX:
-                LOG_INF("Reset valve lox");
-                break;
-            default:
-                LOG_ERR("Bad value.");
-                break;
-            }
+
+        case Request_reset_valve_position_tag:
+            result = handle_reset_valve_position(request.payload.reset_valve_position);
             break;
-        }
-        case Request_load_motor_sequence_tag: {
+
+        case Request_load_motor_sequence_tag:
             LOG_INF("Open loop motor sequence");
             break;
-        }
 
-        case Request_start_sequence_tag: {
+        case Request_start_sequence_tag:
             LOG_INF("Start sequence");
             break;
-        }
-        case Request_halt_sequence_tag: {
+
+        case Request_halt_sequence_tag:
             LOG_INF("halt seq");
             break;
-        }
 
-        default: {
-            LOG_ERR(
-                "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request "
-                "- got tag: %u",
-                request.which_payload);
+        default:
+            result = std::unexpected(Error::from_cause("Error has invalid tag, got `%u`", request.which_payload));
             break;
-        }
         }
 
         Response response = Response_init_default;
-        response.has_err = true;
-        // Do not use this for prod code as it may write beyond the err message buffer.
-        strcpy(
-            response.err,
-            "Very long test error message. Very long test error message. Very long test error message. Very long test "
-            "error message. Very long test error "
-            "message. Very long test error message. Very long test error message. Very long test error message. Very "
-            "long test error message. Very long test "
-            "error message. Very long test error message. Very long test error message. Very long test error message. "
-            "Very long test error message. Very long "
-            "test error message.");
+        if (!result) {
+            response.has_err = true;
+            std::strncpy(response.err, result.error().build_message().c_str(), MAX_ERR_MESSAGE_SIZE);
+            response.err[MAX_ERR_MESSAGE_SIZE] = '\0';
+        }
 
         // Send message over TCP with varint length prefix.
         bool ok = pb_encode_ex(&pb_output, Response_fields, &response, PB_ENCODE_DELIMITED);
@@ -261,7 +270,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                 int ret = k_thread_join(&client_threads[i], K_NO_WAIT);
                 if (ret == 0) {
                     k_mutex_lock(&thread_info_guard, K_FOREVER);
-                    thread_names[i].clear();
+                    client_types[i].clear();
                     k_mutex_unlock(&thread_info_guard);
 
                     // Clean up potential data client subscription

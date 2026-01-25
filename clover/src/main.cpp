@@ -20,10 +20,10 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 BUILD_ASSERT(
     DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_console), zephyr_cdc_acm_uart), "Console device is not ACM CDC UART device");
 
-int main(void)
+int main()
 {
     // Status LED
-    const struct device* blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
+    const device* blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
     if (!device_is_ready(blink)) {
         return 0;
     }
@@ -49,24 +49,24 @@ int main(void)
     }
 
     LOG_INF("Initializing fuel throttle valve");
-    int err = FuelValve::init();
-    if (err) {
-        LOG_ERR("Failed to initialize fuel throttle valve");
-        return 0;
+    auto result = FuelValve::init();
+    if (!result) {
+        LOG_ERR("%s", result.error().context("failed to initialize fuel throttle valve").build_message().c_str());
+        return 1;
     }
 
     LOG_INF("Initializing lox throttle valve");
-    err = LoxValve::init();
-    if (err) {
-        LOG_ERR("Failed to initialize lox throttle valve");
-        return 0;
+    result = LoxValve::init();
+    if (!result) {
+        LOG_ERR("%s", result.error().context("failed to initialize lox throttle valve").build_message().c_str());
+        return 1;
     }
 
     LOG_INF("Initializing PTs");
-    err = pts_init();
-    if (err) {
-        LOG_ERR("Failed to initialize PTs");
-        return 0;
+    result = pts_init();
+    if (!result) {
+        LOG_ERR("%s", result.error().context("failed to initialize pts").build_message().c_str());
+        return 1;
     }
 
     k_sleep(K_MSEC(500));

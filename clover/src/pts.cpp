@@ -61,7 +61,7 @@ pt_config pt_configs[NUM_PTS] = {
 };
 
 /// Initialize PT sensors by initializing the ADC they're all connected to.
-int pts_init()
+std::expected<void, Error> pts_init()
 {
     // Initializes resolution and oversampling from device tree. Let's assume all channels share those properties. Also
     // initializes `channels` with just one channel, so we overwrite that later to sample all channels at once.
@@ -75,22 +75,20 @@ int pts_init()
     for (int i = 0; i < NUM_PTS; i++) {
         LOG_INF("pt %d: Checking readiness", i);
         if (!adc_is_ready_dt(&adc_channels[i])) {
-            LOG_ERR("pt %d: ADC controller device %s not ready", i, adc_channels[i].dev->name);
-            return 1;
+            return std::unexpected(Error::from_device_not_ready(adc_channels[i].dev).context("adc for pt %d not ready", i));
         }
 
         LOG_INF("pt %d: Initializing channel", i);
         int err = adc_channel_setup_dt(&adc_channels[i]);
         if (err) {
-            LOG_ERR("pt %d: Failed to set up channel: err %d", i, err);
-            return 1;
+            return std::unexpected(Error::from_code(err).context("failed to set up channel for pt %d", i));
         }
 
         // Request reading for this channel in sequence.
         sequence.channels |= BIT(adc_channels[i].channel_id);
     }
 
-    return 0;
+    return {};
 }
 
 /// Update PT sample readings.

@@ -1,9 +1,13 @@
 #ifndef APP_ERROR_H
 #define APP_ERROR_H
-
 #include "MaxLengthString.h"
+#include "clover.pb.h"
 
 #include <string_view>
+
+/// Max built error message string size.
+constexpr int MAX_ERR_MESSAGE_SIZE =
+    sizeof(static_cast<Response*>(nullptr)->err)-1;  // Generated from ~/arty/api/clover.options
 
 /// Error propagation class. Used with std::expected to attach context for fallible operations. Such errors are not
 /// intended to be inspected or handled -- rather, it should just be propagated to the top-level caller, which can then
@@ -18,12 +22,14 @@
 class Error {
 private:
     Error() = default;
-    ~Error() = default;
 
 public:
-    static Error error(std::string_view cause);
-    void context(std::string_view ctx);
-    MaxLengthString<500> build_message(Error error);
+    static Error from_cause(std::string_view format, ...);
+    static Error from_code(int code);
+    static Error from_device_not_ready(const device* dev);
+
+    Error& context(std::string_view format, ...);
+    MaxLengthString<MAX_ERR_MESSAGE_SIZE> build_message();
 };
 
 #endif  // APP_ERROR_H
