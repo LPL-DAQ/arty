@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include <zephyr/ztest.h>
 
 /// The transition between two segments must be within EPSILON of each other to be considered valid.
 static constexpr float EPSILON = 0.00001f;

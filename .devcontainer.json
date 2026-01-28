@@ -3,8 +3,8 @@
   "runArgs": [
     "--network=host"
   ],
-  "workspaceMount": "source=${localWorkspaceFolder},target=/home/lpl/arty,type=bind,consistency=cached",
-  "workspaceFolder": "/home/lpl/arty",
+//  "workspaceMount": "source=${localWorkspaceFolder},target=/home/lpl/arty,type=volume",
+//  "workspaceFolder": "/home/lpl/arty",
   "privileged": true,
   "remoteUser": "lpl",
   "features": {

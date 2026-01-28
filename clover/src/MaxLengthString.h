@@ -21,7 +21,6 @@ public:
     void append(const std::string_view& rhs);
 
     [[nodiscard]] int size() const;
-    [[deprecated("Prefer size() for consistency with other STL-like containers")]] [[nodiscard]] int length() const;
 
     [[nodiscard]] const char* c_str() const;
     [[nodiscard]] std::string_view string_view() const;
@@ -78,13 +77,6 @@ void MaxLengthString<max_len>::append(const std::string_view& rhs)
 template <int max_len>
     requires(max_len > 0)
 int MaxLengthString<max_len>::size() const
-{
-    return len;
-}
-
-template <int max_len>
-    requires(max_len > 0)
-int MaxLengthString<max_len>::length() const
 {
     return len;
 }
