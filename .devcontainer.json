@@ -8,7 +8,6 @@
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
   },
-  "onCreateCommand": "mkdir -p /home/lpl/arty/bin && cp /home/lpl/prebaked-bin/* /home/lpl/arty/bin",
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
   "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-28_03-42-29_1a51c8e194a4c6d4d35b5617e504e9a744833fba"
 }
