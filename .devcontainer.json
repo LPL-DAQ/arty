@@ -3,11 +3,12 @@
   "runArgs": [
     "--network=host"
   ],
+  "workspaceFolder": "/workspaces/arty",
   "privileged": true,
   "remoteUser": "lpl",
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
   },
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
-  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-28_03-42-29_1a51c8e194a4c6d4d35b5617e504e9a744833fba"
+  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299"
 }
