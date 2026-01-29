@@ -5,19 +5,6 @@ source /home/lpl/arty/credentials
 
 set -euxo pipefail
 
-# Ensure dependencies are installed
-if ! which devcontainer; then
-    if ! which npm; then
-        if ! which n; then
-            sudo curl -fsSL -o /usr/local/bin/n https://raw.githubusercontent.com/tj/n/master/bin/n
-            sudo chmod 0755 /usr/local/bin/n
-        fi
-        sudo n install lts
-    fi
-
-    sudo npm install -g @devcontainers/cli
-fi
-
 # Check for uncommitted changes
 if [[ -n "$(git status -s)" ]]; then
     echo "You have uncommitted changes, please commit everything before running this script."
@@ -37,7 +24,7 @@ fi
 image_tag="ghcr.io/lpl-daq/arty/dev-container:build_$(date '+%Y-%m-%d_%H-%M-%S')_$(git rev-parse HEAD)"
 
 # Build image
-devcontainer build --workspace-folder ~/arty --image-name "$image_tag" --push true --platform linux/arm64,linux/amd64 "$@"
+docker build ~/arty --platform linux/arm64,linux/amd64 -t "$image_tag" "$@"
 
 # Push to ghcr
 echo "$GITHUB_PERSONAL_ACCESS_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
