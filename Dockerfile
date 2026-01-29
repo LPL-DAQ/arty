@@ -25,7 +25,7 @@ ENV ZEPHYR_TOOLCHAIN_VARIANT=zephyr
 
 # C/C++ linters, static analysis
 RUN << EOF
-apt -y install cppcheck clang-tidy
+apt -y install clang-tidy
 EOF
 
 # Labjack library installation
@@ -97,8 +97,7 @@ sudo chmod -R 0777 ~/arty
 cd ~/arty || exit 1
 cargo build --package flasherd-client --release
 
-mkdir -p ~/prebaked-bin
-mv ~/arty/target/release/flasherd-client ~/prebaked-bin/flasherd-client
+mv ~/arty/target/release/flasherd-client /usr/bin/flasherd-client
 
 sudo rm -rf ~/arty
 EOF
@@ -162,5 +161,9 @@ RUN << EOF
 echo '. "$HOME/.venv/bin/activate"' >> "$HOME/.bashrc"
 # Populate zephyr vars
 echo '. $HOME/zephyr/zephyr-env.sh' >> "$HOME/.bashrc"
+# Set initial working directory
+echo 'cd /home/lpl/arty' >> "$HOME/.bashrc"
+# Ensure that workspace is put in correct location
+sudo ln -s /workspaces/arty /home/lpl/arty
 EOF
 ENV PYTHONPATH="/home/lpl/zephyr/scripts/west_commands" PATH="$PATH:/home/lpl/arty/bin" ZEPHYR_TOOLCHAIN_VARIANT=zephyr
