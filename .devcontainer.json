@@ -10,5 +10,5 @@
     "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
   },
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
-  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2025-12-30_01-53-44_d636e93ebcb3caf410159cff3df23ce4b354fe55"
+  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299"
 }
