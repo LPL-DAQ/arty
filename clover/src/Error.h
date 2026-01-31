@@ -24,11 +24,12 @@ private:
     Error() = default;
 
 public:
-    static Error from_cause(std::string_view format, ...);
+    static Error from_cause(std::string_view cause);
+    template<typename... Args> static Error from_cause(std::string_view format, Args... args);
     static Error from_code(int code);
     static Error from_device_not_ready(const device* dev);
 
-    Error& context(std::string_view format, ...);
+    template<typename... Args> Error& context(std::string_view format, Args... args);
     MaxLengthString<MAX_ERR_MESSAGE_SIZE> build_message();
 };
 

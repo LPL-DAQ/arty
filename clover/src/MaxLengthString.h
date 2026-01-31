@@ -14,8 +14,7 @@ private:
 
 public:
     constexpr MaxLengthString();
-    MaxLengthString(std::string_view format, ...);
-    MaxLengthString(std::string_view format, std::va_list args);
+    template<typename... Args> MaxLengthString(std::string_view format, Args... args);
 
     template <int max_rhs_len> void append(const MaxLengthString<max_rhs_len>& rhs);
     void append(const std::string_view& rhs);
@@ -27,29 +26,20 @@ public:
     int copy_buf(char* dest, int max_bytes) const;
 };
 
+/// Builds an empty MaxLengthString.
 template <int max_len>
     requires(max_len > 0)
 constexpr MaxLengthString<max_len>::MaxLengthString() : len(0), buf{'\0'}  // buf is a zero-length cstring.
 {
 }
 
+/// Creates a MaxLengthString from a format string.
 template <int max_len>
     requires(max_len > 0)
-MaxLengthString<max_len>::MaxLengthString(std::string_view format, ...)
+template <typename... Args>
+MaxLengthString<max_len>::MaxLengthString(std::string_view format, Args... args)
 {
-    std::va_list args;
-    va_start(args, format);
-    const int ideal_chars_written = vsnprintfcb(buf.data(), max_len+1, format.data(), args);
-    va_end(args);
-    len = std::min(ideal_chars_written, max_len);
-    buf[len] = '\0';
-}
-
-template <int max_len>
-    requires(max_len > 0)
-MaxLengthString<max_len>::MaxLengthString(std::string_view format, std::va_list args)
-{
-    const int ideal_chars_written = vsnprintfcb(buf.data(), max_len+1, format.data(), args);
+    const int ideal_chars_written = snprintfcb(buf.data(), max_len+1, format.data(), args...);
     len = std::min(ideal_chars_written, max_len);
     buf[len] = '\0';
 }

@@ -59,8 +59,7 @@ static MaxLengthString<MAX_CONTEXT_LENGTH> trim_context(const std::string_view& 
     return trimmed;
 }
 
-/// Instantiate a new Error with a root cause. This locks the scheduler till the Error is built into a message.
-Error Error::from_cause(std::string_view format, ...)
+Error Error::from_cause(std::string_view cause)
 {
     // We are writing to shared buffers which is not thread safe, so we must lock the scheduler while the error is
     // propagated.
@@ -75,10 +74,32 @@ Error Error::from_cause(std::string_view format, ...)
         k_mutex_lock(&context_guard, K_FOREVER);
     }
 
-    va_list args;
-    va_start(args, format);
-    const MaxLengthString<MAX_FORMATTED_CONTEXT_LENGTH> cause {format, args};
-    va_end(args);
+    static_assert(MAX_CONTEXTS > 0);
+    contexts[0] = trim_context(cause);
+    used_contexts = 1;
+    elided_contexts = false;
+
+    return Error{};
+}
+
+/// Instantiate a new Error with a root cause. This locks the scheduler till the Error is built into a message.
+template<typename... Args>
+Error Error::from_cause(std::string_view format, Args... args)
+{
+    // We are writing to shared buffers which is not thread safe, so we must lock the scheduler while the error is
+    // propagated.
+    k_sched_lock();
+
+    int ret = k_mutex_lock(&context_guard, K_NO_WAIT);
+    if (ret == -EBUSY) {
+        LOG_ERR("!!!! UNSOUND CODE: multiple Errors instantiated at once, Errors may only be immediately propogated upward till consumed into a message. !!!!");
+        // Rather than panic, we attempt to recover by waiting for the context guard. Either are pretty horrendous
+        // options, as we are certainly clobbering another error message. But that's potentially better than causing
+        // a hard abort of the whole system. Note that the scheduler lock is maintained even if we yield here.
+        k_mutex_lock(&context_guard, K_FOREVER);
+    }
+
+    const MaxLengthString<MAX_FORMATTED_CONTEXT_LENGTH> cause {format, args...};
 
     static_assert(MAX_CONTEXTS > 0);
     contexts[0] = trim_context(cause.string_view());
@@ -102,7 +123,8 @@ Error Error::from_device_not_ready(const device* dev)
 }
 
 /// Attach context to an error while propagating it upward.
-Error& Error::context(std::string_view format, ...)
+template<typename... Args>
+Error& Error::context(std::string_view format, Args... args)
 {
     // If necessary, shuffle off an intermediate context to make room for this new context, keeping only highest and
     // lowest messages.
@@ -114,10 +136,7 @@ Error& Error::context(std::string_view format, ...)
         elided_contexts = true;
     }
 
-    va_list args;
-    va_start(args, format);
-    const MaxLengthString<MAX_FORMATTED_CONTEXT_LENGTH> context {format, args};
-    va_end(args);
+    const MaxLengthString<MAX_FORMATTED_CONTEXT_LENGTH> context {format, args...};
 
     contexts[used_contexts] = trim_context(context.string_view());
     used_contexts++;
