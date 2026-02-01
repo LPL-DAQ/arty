@@ -2,8 +2,12 @@
 
 import subprocess
 from pathlib import Path
-
-from clover_runners_common import FlasherdCommand
+import grpc
+import warnings
+import sys
+import queue
+import flasherd_pb2
+import flasherd_pb2_grpc
 
 from runners.core import ZephyrBinaryRunner
 
@@ -31,23 +35,44 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
             self.flash()
 
     def flash(self):
-        # Prepare base command
-        cmd = FlasherdCommand('/home/lpl/arty/bin/flasherd-client')
-        cmd.add_windows_command(r'C:\Program Files (x86)\TyTools\tycmd.exe')
-        cmd.add_macos_command('tycmd')
-        cmd.add_linux_command('tycmd')
-
-        if self.cfg.hex_file is not None and Path(self.cfg.hex_file).is_file():
-            cmd += 'upload'
-            cmd += '--nocheck'
-            cmd.add_path_arg(self.cfg.hex_file)
-        else:
+        if self.cfg.hex_file is None or not Path(self.cfg.hex_file).is_file():
             raise ValueError(f'Cannot flash; no hex ({self.cfg.hex_file}) file found. ')
+        self.logger.info(f'Hex file: {self.cfg.hex_file}')
 
-        self.logger.info(f'Flashing file: {self.cfg.hex_file}')
+        with grpc.insecure_channel('localhost:6767') as channel:
+            stub = flasherd_pb2_grpc.FlasherdStub(channel)
+            req_queue = queue.SimpleQueue()
 
-        try:
-            self.check_call(cmd.payload)
-            self.logger.info('Success')
-        except subprocess.CalledProcessError as grepexc:
-            self.logger.error(f'Failure {grepexc.returncode}')
+            with open(self.cfg.hex_file, 'rb') as binary_file:
+                for block in iter(lambda: binary_file.read(4096), b''):
+                    req_queue.put(flasherd_pb2.RunCommandRequest(binary_name='zephyr_hex', binary_chunk=block))
+
+            req_queue.put(flasherd_pb2.RunCommandRequest(
+                command_windows=r'C:\Program Files (x86)\TyTools\tycmd.exe',
+                command_macos='tycmd',
+                command_linux='tycmd',
+                args=[
+                    flasherd_pb2.Arg(regular='upload'),
+                    flasherd_pb2.Arg(regular='--nocheck'),
+                    flasherd_pb2.Arg(binary='zephyr_hex')
+                ]
+            ))
+
+            self.logger.info(f'Launching tycmd via flasherd...')
+
+            try:
+                for resp in stub.RunCommand(iter(req_queue.get, None)):
+                    if resp.HasField('stdout'):
+                        print(resp.stdout, end='')
+                    if resp.HasField('stderr'):
+                        print(resp.stderr, file=sys.stderr, end='')
+                    if resp.HasField('exit_code'):
+                        self.logger.info('Process terminated with code {resp.exit_code}')
+                        if resp.exit_code == 0:
+                            self.logger.info('Flashed successfully.')
+                        break
+            except grpc.RpcError as e:
+                self.logger.error('Failed to run command via flasherd.')
+                print(e)
+                if e.code() == grpc.StatusCode.UNAVAILABLE:
+                    self.logger.error('Failed to connect to flasherd, it may not be running.')

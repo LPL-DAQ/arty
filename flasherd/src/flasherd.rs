@@ -1,4 +1,5 @@
 mod flasherd_service;
+pub mod map_tonic_err;
 mod pid_path;
 
 pub mod flasherd {
@@ -56,7 +57,9 @@ async fn main() -> Result<()> {
     info!("Logging to {log_file_path:?}");
 
     // Spawn service.
-    let service = FlasherdService::new();
+    let service = FlasherdService::new()
+        .await
+        .expect("Failed to create service");
     let res = Server::builder()
         .add_service(FlasherdServer::new(service))
         .serve(format!("127.0.0.1:{FLASHERD_PORT}").parse()?)
@@ -69,7 +72,7 @@ async fn main() -> Result<()> {
 /// If --daemonize is passed as an arg, respawn flasherd as a detatched process.
 async fn daemonize() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 || args[2] != "--daemonize" {
+    if args.len() != 2 || args[1] != "--daemonize" {
         return;
     }
     let sys = System::new_all();
@@ -82,7 +85,6 @@ async fn daemonize() {
         .exe()
         .unwrap();
     let child = Command::new(self_bin_path)
-        .arg(args[1].clone())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

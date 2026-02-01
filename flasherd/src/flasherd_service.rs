@@ -1,19 +1,24 @@
 use crate::flasherd::flasherd_server::Flasherd;
 use crate::flasherd::{RunCommandRequest, RunCommandResponse};
-use anyhow::Result;
-use futures::executor::block_on;
+use crate::map_tonic_err::MapTonicErr;
+use anyhow::{Context, Result, anyhow, bail};
 use log::{error, info};
-use std::env::args;
+use std::cmp::max;
 use std::mem::replace;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::SeqCst;
+use tokio::fs::{OpenOptions, create_dir_all, read_dir};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{Stream, StreamExt};
-use tonic::{Request, Response, Status, Streaming};
+use tonic::{Code, Request, Response, Status, Streaming};
+
+const INITIAL_REQ_ID: u64 = 67;
 
 /// Reports an error and closes the response stream.
 async fn send_err_msg(tx: mpsc::Sender<Result<RunCommandResponse, Status>>, status: Status) {
@@ -23,19 +28,43 @@ async fn send_err_msg(tx: mpsc::Sender<Result<RunCommandResponse, Status>>, stat
 }
 
 pub struct FlasherdService {
-    clover_root: PathBuf,
+    next_req_id: AtomicU64,
+    binaries_dir: PathBuf,
 }
 
 impl FlasherdService {
-    pub(crate) fn new() -> Self {
-        let args = args();
-        info!("Received args: {args:?}");
-        if args.len() != 2 {
-            panic!("Invalid arguments: {args:?}");
+    pub(crate) async fn new() -> Result<Self> {
+        let binaries_dir = dirs::data_local_dir()
+            .context("Failed to get data local dir")?
+            .join("flasherd");
+        create_dir_all(&binaries_dir)
+            .await
+            .context("Failed to ensure existence of registry dir")?;
+
+        // Parse existing binaries for max request ID
+        let mut max_req_id_seen = 0;
+        let mut entries = read_dir(&binaries_dir)
+            .await
+            .context("Failed to read from registry dir")?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .context("Failed to get next entry")?
+        {
+            let id: u64 = entry
+                .file_name()
+                .into_string()
+                .map_err(|s| anyhow!("Failed to convert filename to string: {s:?}"))?
+                .split_once('_')
+                .context("Missing ID delimiter")
+                .and_then(|(id, _)| id.parse().context("Failed to parse ID"))?;
+            max_req_id_seen = max(max_req_id_seen, id);
         }
-        let clover_root = PathBuf::from(args.skip(1).next().unwrap());
-        info!("arty root: {clover_root:?}");
-        Self { clover_root }
+
+        Ok(Self {
+            next_req_id: AtomicU64::new(max(INITIAL_REQ_ID, max_req_id_seen)),
+            binaries_dir,
+        })
     }
 }
 
@@ -49,251 +78,221 @@ impl Flasherd for FlasherdService {
     ) -> Result<Response<Self::RunCommandStream>, Status> {
         let mut req_stream = request.into_inner();
         let (resp_tx, resp_rx) = mpsc::channel(1024);
+        let req_id = self.next_req_id.fetch_add(1, SeqCst);
 
-        let clover_root = self.clover_root.clone();
-        tokio::spawn(async move {
-            // Initial packet should specify only command
-            let Some(packet) = req_stream.next().await else {
-                return;
-            };
-            let request = match packet {
-                Err(err) => {
-                    send_err_msg(resp_tx, err).await;
-                    return;
-                }
-                Ok(request) => request,
-            };
-            info!("Received command packet: {request:#?}");
+        let mut child = loop {
+            let req = req_stream
+                .next()
+                .await
+                .context("Missing initial packets")
+                .map_tonic_err(Code::InvalidArgument)?
+                .context("Initial packet is err")
+                .map_tonic_err(Code::InvalidArgument)?;
 
-            if let Some(ref stdin) = request.stdin {
-                send_err_msg(
-                    resp_tx,
-                    Status::invalid_argument(format!(
-                        "First packet must have empty stdin, got: `{}`",
-                        String::from_utf8_lossy(stdin)
-                    )),
-                )
-                .await;
-                return;
-            }
+            info!("Received packet: {req:#?}");
 
-            // Convert first packet to actual command and args
-            let command = if cfg!(target_os = "windows") {
-                let Some(command) = request.command_windows else {
-                    send_err_msg(resp_tx, Status::invalid_argument("Missing Windows command"))
-                        .await;
-                    return;
-                };
-                command
-            } else if cfg!(target_os = "linux") {
-                let Some(command) = request.command_linux else {
-                    send_err_msg(resp_tx, Status::invalid_argument("Missing Linux command")).await;
-                    return;
-                };
-                command
-            } else if cfg!(target_os = "macos") {
-                let Some(command) = request.command_macos else {
-                    send_err_msg(resp_tx, Status::invalid_argument("Missing macOS command")).await;
-                    return;
-                };
-                command
+            // Build binary file
+            if let Some(binary_name) = req.binary_name {
+                let binary_chunk = req
+                    .binary_chunk
+                    .context("Missing binary chunk")
+                    .map_tonic_err(Code::InvalidArgument)?;
+
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .create(true)
+                    .open(format!("{req_id}_{binary_name}"))
+                    .await
+                    .context("Failed to open file")
+                    .map_tonic_err(Code::Internal)?;
+                file.write_all(&binary_chunk)
+                    .await
+                    .context("Failed to append chunk")
+                    .map_tonic_err(Code::Internal)?;
             } else {
-                panic!("Unknown target os");
-            };
-            let Ok(args): Result<Vec<String>, _> = request
-                .args
-                .into_iter()
-                .map(|arg| match (arg.regular, arg.path) {
-                    (Some(regular_arg), None) => Ok(regular_arg),
-                    (None, Some(path_arg)) => {
-                        Ok(clover_root.join(path_arg).to_string_lossy().to_string())
+                let command = if cfg!(target_os = "windows") {
+                    req.command_windows
+                        .context("Missing windows command")
+                        .map_tonic_err(Code::InvalidArgument)?
+                } else if cfg!(target_os = "linux") {
+                    req.command_linux
+                        .context("Missing linux command")
+                        .map_tonic_err(Code::InvalidArgument)?
+                } else if cfg!(target_os = "macos") {
+                    req.command_macos
+                        .context("Missing macos command")
+                        .map_tonic_err(Code::InvalidArgument)?
+                } else {
+                    return Err(Status::internal("Unknown OS"));
+                };
+
+                let args: Vec<_> = req
+                    .args
+                    .into_iter()
+                    .map(|arg| match (arg.regular, arg.binary) {
+                        (Some(regular), None) => Ok(regular),
+                        (None, Some(binary)) => Ok(self
+                            .binaries_dir
+                            .join(format!("{req_id}_{binary}"))
+                            .to_string_lossy()
+                            .to_string()),
+                        _ => bail!("Either regular or binary must be specified, but never both"),
+                    })
+                    .collect::<Result<_>>()
+                    .map_tonic_err(Code::InvalidArgument)?;
+
+                info!("Spawning `{command}` with args {args:?}");
+                break Command::new(command)
+                    .args(args)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .kill_on_drop(true)
+                    .spawn()
+                    .context("Failed to spawn command")
+                    .map_tonic_err(Code::Internal)?;
+            }
+        };
+
+        // Child is spawned with all stdio piped, this should never panic.
+        let mut stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        // Stream stdin from request to process.
+        let resp_tx2 = resp_tx.clone();
+        let handle_stdin = tokio::spawn(async move {
+            while let Some(packet) = req_stream.next().await {
+                match packet {
+                    Err(err) => {
+                        send_err_msg(resp_tx2, err).await;
+                        return;
                     }
-                    _ => Err(()),
-                })
-                .collect()
-            else {
-                block_on(send_err_msg(
-                    resp_tx,
-                    Status::invalid_argument("Invalid arguments field"),
-                ));
-                return;
-            };
+                    Ok(request) => {
+                        info!("Received stdin packet: {request:#?}");
 
-            // Spawn command process
-            info!("Spawning: {:?}", command);
-            let child = Command::new(command)
-                .args(args)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn();
-            let mut child = match child {
-                Err(err) => {
-                    send_err_msg(
-                        resp_tx,
-                        Status::internal(format!("Failed to spawn command: {err}")),
-                    )
-                    .await;
-                    return;
-                }
-                Ok(child) => child,
-            };
-
-            // Child is spawned with all stdio piped, this should never panic.
-            let mut stdin = child.stdin.take().unwrap();
-            let stdout = child.stdout.take().unwrap();
-            let stderr = child.stderr.take().unwrap();
-
-            // Stream stdin from request to process.
-            let resp_tx2 = resp_tx.clone();
-            let handle_stdin = tokio::spawn(async move {
-                while let Some(packet) = req_stream.next().await {
-                    match packet {
-                        Err(err) => {
-                            send_err_msg(resp_tx2, err).await;
-                            return;
-                        }
-                        Ok(request) => {
-                            info!("Received stdin packet: {request:#?}");
-
-                            if request.command_windows.is_some()
-                                || request.command_linux.is_some()
-                                || request.command_macos.is_some()
-                                || !request.args.is_empty()
-                            {
-                                send_err_msg(
-                                    resp_tx2,
-                                    Status::invalid_argument(format!(
-                                        "Stdin request cannot have a command, got: {:?}",
-                                        request
-                                    )),
-                                )
-                                .await;
-                                return;
-                            }
-                            let Some(message) = request.stdin else {
-                                send_err_msg(
-                                    resp_tx2,
-                                    Status::invalid_argument(
-                                        "Stdin request must have non-empty stdin",
-                                    ),
-                                )
-                                .await;
-                                return;
-                            };
-
-                            // If process is terminating
-                            if let Err(_) = stdin.write_all(&message).await {
-                                return;
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Stream stdout
-            let resp_tx3 = resp_tx.clone();
-            let handle_stdout = tokio::spawn(async move {
-                let mut reader = BufReader::new(stdout);
-                let mut message = Vec::new();
-                loop {
-                    match reader.read_until(b'\n', &mut message).await {
-                        Err(err) => {
+                        if request.command_windows.is_some()
+                            || request.command_linux.is_some()
+                            || request.command_macos.is_some()
+                            || !request.args.is_empty()
+                        {
                             send_err_msg(
-                                resp_tx3,
-                                Status::internal(format!("Failed to stream stdout: {err}")),
+                                resp_tx2,
+                                Status::invalid_argument(format!(
+                                    "Stdin request cannot have a command, got: {:?}",
+                                    request
+                                )),
                             )
                             .await;
                             return;
                         }
-                        Ok(bytes_read) => {
-                            // Stream reached EOF
-                            if bytes_read == 0 {
-                                return;
-                            }
-                            if let Err(err) = resp_tx3
-                                .send(Ok(RunCommandResponse {
-                                    stdout: Some(replace(&mut message, Vec::new())),
-                                    ..Default::default()
-                                }))
-                                .await
-                            {
-                                error!("Failed to send response: {err}");
-                                return;
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Stream stderr
-            let resp_tx3 = resp_tx.clone();
-            let handle_stderr = tokio::spawn(async move {
-                let mut reader = BufReader::new(stderr);
-                let mut message = Vec::new();
-                loop {
-                    match reader.read_until(b'\n', &mut message).await {
-                        Err(err) => {
+                        let Some(message) = request.stdin else {
                             send_err_msg(
-                                resp_tx3,
-                                Status::internal(format!("Failed to stream stdout: {err}")),
+                                resp_tx2,
+                                Status::invalid_argument("Stdin request must have non-empty stdin"),
                             )
                             .await;
                             return;
-                        }
-                        Ok(bytes_read) => {
-                            // Stream reached EOF
-                            if bytes_read == 0 {
-                                return;
-                            }
-                            if let Err(err) = resp_tx3
-                                .send(Ok(RunCommandResponse {
-                                    stderr: Some(replace(&mut message, Vec::new())),
-                                    ..Default::default()
-                                }))
-                                .await
-                            {
-                                error!("Failed to send response: {err}");
-                                return;
-                            }
+                        };
+
+                        // If process is terminating
+                        if let Err(_) = stdin.write_all(&message).await {
+                            return;
                         }
                     }
                 }
-            });
+            }
+        });
 
-            // Await process death
-            let _ = tokio::spawn(async move {
-                let exit_code = child.wait().await;
-                info!("Got status code: {exit_code:?}");
-                match exit_code {
+        // Stream stdout
+        let resp_tx3 = resp_tx.clone();
+        let handle_stdout = tokio::spawn(async move {
+            let mut reader = BufReader::new(stdout);
+            let mut message = Vec::new();
+            loop {
+                match reader.read_until(b'\n', &mut message).await {
                     Err(err) => {
                         send_err_msg(
-                            resp_tx,
-                            Status::internal(format!("Failed to get exit code: {err}")),
+                            resp_tx3,
+                            Status::internal(format!("Failed to stream stdout: {err}")),
                         )
                         .await;
                         return;
                     }
-                    Ok(code) => {
-                        _ = handle_stdin.abort();
-                        _ = handle_stdout.abort();
-                        _ = handle_stderr.abort();
-
-                        if let Err(err) = resp_tx
+                    Ok(bytes_read) => {
+                        // Stream reached EOF
+                        if bytes_read == 0 {
+                            return;
+                        }
+                        _ = resp_tx3
                             .send(Ok(RunCommandResponse {
-                                exit_code: Some(
-                                    code.code().unwrap_or(255).try_into().unwrap_or(255),
-                                ),
+                                stdout: Some(replace(&mut message, Vec::new())),
                                 ..Default::default()
                             }))
                             .await
-                        {
-                            error!("Failed to send response: {err}");
-                            return;
-                        }
                     }
                 }
-            });
+            }
+        });
+
+        // Stream stderr
+        let resp_tx3 = resp_tx.clone();
+        let handle_stderr = tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            let mut message = Vec::new();
+            loop {
+                match reader.read_until(b'\n', &mut message).await {
+                    Err(err) => {
+                        send_err_msg(
+                            resp_tx3,
+                            Status::internal(format!("Failed to stream stdout: {err}")),
+                        )
+                        .await;
+                        return;
+                    }
+                    Ok(bytes_read) => {
+                        // Stream reached EOF
+                        if bytes_read == 0 {
+                            return;
+                        }
+                        _ = resp_tx3
+                            .send(Ok(RunCommandResponse {
+                                stderr: Some(replace(&mut message, Vec::new())),
+                                ..Default::default()
+                            }))
+                            .await;
+                    }
+                }
+            }
+        });
+
+        // Await process death
+        _ = tokio::spawn(async move {
+            let exit_code = child.wait().await;
+            info!("Got status code: {exit_code:?}");
+            match exit_code {
+                Err(err) => {
+                    send_err_msg(
+                        resp_tx,
+                        Status::internal(format!("Failed to get exit code: {err}")),
+                    )
+                    .await;
+                    return;
+                }
+                Ok(code) => {
+                    _ = handle_stdin.abort();
+                    _ = handle_stdout.abort();
+                    _ = handle_stderr.abort();
+
+                    _ = resp_tx
+                        .send(Ok(RunCommandResponse {
+                            exit_code: Some(code.code().unwrap_or(255).try_into().unwrap_or(255)),
+                            ..Default::default()
+                        }))
+                        .await;
+                }
+            }
         });
 
         Ok(Response::new(

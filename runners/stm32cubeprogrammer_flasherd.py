@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
-from clover_runners_common import FlasherdCommand
+import flasherd_pb2
+import flasherd_pb2_grpc
 
 from runners.stm32cubeprogrammer import STM32CubeProgrammerBinaryRunner
 
