@@ -1,7 +1,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 
-static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_gpios);
+static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_NODELABEL(user_led), gpios);
 
 int main(void)
 {
