@@ -1,60 +1,40 @@
 # flasherd
 
-Lightweight daemon that allows flashing of MCUs from within a container. The flasher CLI
-within the container is replaced with a client that sends its arguments through a TCP
-socket to this daemon, which calls the real device flasher on the host OS. Paths
-relative to the container root are dynamically replaced to be relative to the host root.
+A host daemon that communicates with processes within the dev container to call MCU flashing toolchains.
+Effectively just a grpc server that launches processes on behalf of requests and streams the output.
+Integrates with zephyr runners for smooth integration with the rest of the development ecosystem.
 
-## Distribution
+## Build
 
-As flasherd is an integral part of the development environment, its release is tied with
-that of the dev container image. The script at `/scripts/publish-dev-container.sh` will
-take care of compiling the binaries and placing them in `/bin/flasherd/*`. Because these
-binaries are committed into the repo alongside the image digest change in `/devcontainers.json`,
-developers pulling to update to a given container version will also update their flasherd binaries.
+We use cx_Freeze to build the python grpc server into standalone, installable apps. As it doesn't
+support cross-compilation, we must unfortunately run specific build commands in each of our
+supported OS's.
 
-## Protocol
+Builds are configured via the script at `flasherd/cxfreeze_setup.py`. Each time the flasherd server
+is updated, ensure that the `VERSION` number in that script is bumped.
 
-### Request
+### Common setup
 
-The client should establish a TCP connection on port `TBD`. To send a command, the client
-should send a little-endian u32 declaring the number of arguments to come, then a null
-character. Then, each argument should be a null-terminated string sent sequentially. 
-The u32 header should match the number of subsequent arguments. The first argument should
-be the name of the executable to run, which must be on a pre-defined whitelist.
+Ensure `uv` is installed on the host; instructions to do so are [here](https://docs.astral.sh/uv/getting-started/installation/).
 
-Here's an example request:
+Clone the `arty` repo somewhere on the host.
 
-```
-0x00 0x00 0x00 0x04 0x00    4 incoming arguments, null seperator
-"stm32cubeprogrammer\0"     What to execute, must be whitelisted
-"--board\0"                 Second arg
-"lpl-test-board\0"          Third arg
-"--some-other-arg\0"        Fourth arg
+### Windows
+
+Run the following in a terminal from the root of the repo.
+
+```shell
+uv --project flasherd run flasherd/cxfreeze_setup.py bdist_msi --dist-dir flasherd/dist
 ```
 
-Once the request is complete, the client may send additional requests sequentially.
+This will produce a Windows installer under `flasherd/dist`.
 
-### Resposne
+### MacOS
 
-After receiving a request, flasherd will send lines of output to stream the result of the
-requested command. Each line will begin with a 2-byte header, then between 0 and 2^14-1 bytes of content.
+Run the following in a termainl from the root of the repo.
 
+```shell
+uv --project flasherd run flasherd/cxfreeze_setup.py bdist_dmg && mv build/flasherd.dmg flasherd/dist/flasherd.dmg
 ```
-┌────────┬────────┐                               
-│PPLLLLLL│LLLLLLLL│                               
-└▲─▲─────┴────────┘                               
- │ └────Length of incoming content, network-endian
- │                                                
- └────2-bit prefix                                
- ```
 
-|Prefix|Meaning|
-|-|-|
-|`00`|Line of stdout|
-|`01`|Line of stderr|
-|`10`|Program has terminated. Line will be one byte containing the status code as a u8.|
-|`11`|flasherd had an error, perhaps malformed input or something internal. Content line will be an error message.|
-
-If a line has a `1X` prefix, do not expect any additional lines to follow -- the response has fully ended.
-The client, emulating a real execution of the CLI, should thus terminate.
+This builds a disk image installer and moves it under `flasherd/dist`.

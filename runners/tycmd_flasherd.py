@@ -2,9 +2,13 @@
 
 import subprocess
 from pathlib import Path
-
-from clover_runners_common import FlasherdCommand
-
+import grpc
+import warnings
+import sys
+import queue
+import flasherd_pb2
+import flasherd_pb2_grpc
+import client
 from runners.core import ZephyrBinaryRunner
 
 
@@ -31,23 +35,21 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
             self.flash()
 
     def flash(self):
-        # Prepare base command
-        cmd = FlasherdCommand('/home/lpl/arty/bin/flasherd-client')
-        cmd.add_windows_command(r'C:\Program Files (x86)\TyTools\tycmd.exe')
-        cmd.add_macos_command('tycmd')
-        cmd.add_linux_command('tycmd')
-
-        if self.cfg.hex_file is not None and Path(self.cfg.hex_file).is_file():
-            cmd += 'upload'
-            cmd += '--nocheck'
-            cmd.add_path_arg(self.cfg.hex_file)
-        else:
+        if self.cfg.hex_file is None or not Path(self.cfg.hex_file).is_file():
             raise ValueError(f'Cannot flash; no hex ({self.cfg.hex_file}) file found. ')
+        self.logger.info(f'Hex file: {self.cfg.hex_file}')
 
-        self.logger.info(f'Flashing file: {self.cfg.hex_file}')
-
-        try:
-            self.check_call(cmd.payload)
-            self.logger.info('Success')
-        except subprocess.CalledProcessError as grepexc:
-            self.logger.error(f'Failure {grepexc.returncode}')
+        binaries={
+            "zephyr.hex": self.cfg.hex_file
+        }
+        command_req = flasherd_pb2.RunCommandRequest(
+            command_windows=r'C:\Program Files (x86)\TyTools\tycmd.exe',
+            command_macos='tycmd',
+            command_linux='tycmd',
+            args=[
+                flasherd_pb2.Arg(regular='upload'),
+                flasherd_pb2.Arg(regular='--nocheck'),
+                flasherd_pb2.Arg(binary='zephyr.hex')
+            ]
+        )
+        client.launch_flasherd_command(self.logger, command_req, binaries)
