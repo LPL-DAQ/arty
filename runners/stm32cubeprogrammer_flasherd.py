@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, override
-
+import os
 import flasherd_pb2
 import flasherd_pb2_grpc
-
+import client
 from runners.stm32cubeprogrammer import STM32CubeProgrammerBinaryRunner
 
 if TYPE_CHECKING:
@@ -13,53 +13,29 @@ if TYPE_CHECKING:
 
     from runners.core import RunnerConfig
 
-
 class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
-    """Extends the Zephyr base STM32CubeProgrammerBinaryRunner to use flasherd."""
+    """STM32CubeProgrammer frontend integrated with flasherd"""
 
     def __init__(
         self,
-        cfg: RunnerConfig,
-        port: str,
-        frequency: int | None,
-        reset_mode: str | None,
-        download_address: int | None,
-        download_modifiers: list[str],
-        start_address: int | None,
-        start_modifiers: list[str],
-        conn_modifiers: str | None,
-        use_elf: bool, # noqa: FBT001
-        erase: bool, # noqa: FBT001
-        extload: str | None,
-        tool_opt: list[str],
+        cfg: RunnerConfig, **kwargs
     ) -> None:
         super().__init__(
-            cfg,
-            port,
-            frequency,
-            reset_mode,
-            download_address,
-            download_modifiers,
-            start_address,
-            start_modifiers,
-            conn_modifiers,
-            Path('flasherd-client'),
-            use_elf,
-            erase,
-            extload,
-            tool_opt,
+            cfg, **kwargs
         )
 
     @classmethod
-    @override
     def name(cls):
         return 'stm32cubeprogrammer_flasherd'
 
     @classmethod
-    @override
+    def do_add_parser(cls, parser):
+        super().do_add_parser(parser)
+
+    @classmethod
     def do_create(
         cls, cfg: RunnerConfig, args: argparse.Namespace
-    ) -> STM32CubeProgrammerFlasherdBinaryRunner:
+    ) -> 'STM32CubeProgrammerFlasherdBinaryRunner':
         return STM32CubeProgrammerFlasherdBinaryRunner(
             cfg,
             port=args.port,
@@ -70,11 +46,16 @@ class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
             start_address=args.start_address,
             start_modifiers=args.start_modifiers,
             conn_modifiers=args.conn_modifiers,
+            cli=args.cli,
             use_elf=args.use_elf,
             erase=args.erase,
             extload=args.extload,
             tool_opt=args.tool_opt,
         )
+
+    def do_run(self, command):
+        if command == 'flash':
+            self.flash()
 
     def flash(self, **kwargs) -> None:
         base_command = flasherd_pb2.RunCommandRequest(
@@ -83,11 +64,17 @@ class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
             command_linux='~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI',
         )
 
+        # List devices
+        command_req = flasherd_pb2.RunCommandRequest()
+        command_req.CopyFrom(base_command)
+        command_req.args.append(flasherd_pb2.Arg(regular='-l'))
+        client.launch_flasherd_command(self.logger, command_req, {})
+
         connect_opts = f'port={self._port}'
         if self._frequency:
             connect_opts += f' freq={self._frequency}'
         if self._reset_mode:
-            reset_mode = self._RESET_MODES[self._reset_mode]
+            reset_mode = STM32CubeProgrammerFlasherdBinaryRunner._RESET_MODES[self._reset_mode]
             connect_opts += f' reset={reset_mode}'
         if self._conn_modifiers:
             connect_opts += f' {self._conn_modifiers}'
@@ -102,8 +89,9 @@ class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
         if self._erase:
             self.logger.info('Erasing first...')
 
-            command_req = flasherd_pb2.RunCommandRequest.CopyFrom(base_command)
-            command_req.args = [flasherd_pb2.RunCommandRequest(regular=arg) for arg in args + ['--erase', 'all']]
+            command_req = flasherd_pb2.RunCommandRequest()
+            command_req.CopyFrom(base_command)
+            command_req.args.extend([flasherd_pb2.Arg(regular=arg) for arg in args + ['--erase', 'all']])
             client.launch_flasherd_command(self.logger, command_req, {})
 
         # Define binary to be loaded
@@ -131,25 +119,27 @@ class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
         if not Path(dl_file).is_file():
             raise RuntimeError(f'download file {dl_file} does not exist')
 
-        args.append('--download')
+        req_args = [flasherd_pb2.Arg(regular=arg) for arg in args + ['--download']]
 
-        req_args = [flasherd_pb2.RunCommandRequest(regular=arg) for arg in args + ['--download']]
-        req_args.append(flasherd_pb2.RunCommandRequest(binary='dl_file'))
-        binaries = {'dl_file': dl_file}
+        _, ext = os.path.splitext(dl_file)
+        req_args.append(flasherd_pb2.Arg(binary=f'binary{ext}'))
+        binaries = {f'binary{ext}': dl_file}
 
         if self._download_address is not None:
-            req_args.append(flasherd_pb2.RunCommandRequest(regular=f'0x{self._download_address:X}'))
-        req_args.append(flasherd_pb2.RunCommandRequest(regular=self._download_modifiers))
+            req_args.append(flasherd_pb2.Arg(regular=f'0x{self._download_address:X}'))
+        req_args += [flasherd_pb2.Arg(regular=arg) for arg in self._download_modifiers]
 
         # '--start' is needed to start execution after flash.
         # The default start address is the beggining of the flash,
         # but another value can be explicitly specified if desired.
-        req_args.append(flasherd_pb2.RunCommandRequest(regular='--start'))
+        req_args.append(flasherd_pb2.Arg(regular='--start'))
         if self._start_address is not None:
-            req_args.append(flasherd_pb2.RunCommandRequest(regular=f'0x{self._start_address:X}'))
-        req_args.append(flasherd_pb2.RunCommandRequest(regular=self._start_modifiers))
+            req_args.append(flasherd_pb2.Arg(regular=f'0x{self._start_address:X}'))
+        req_args += [flasherd_pb2.Arg(regular=arg) for arg in self._start_modifiers]
 
         self.logger.info(f'Binary file: {dl_file}')
 
-        command_req.args = args
-        client.launch_flasherd_command(command_req, )
+        command_req = flasherd_pb2.RunCommandRequest()
+        command_req.CopyFrom(base_command)
+        command_req.args.extend(req_args)
+        client.launch_flasherd_command(self.logger, command_req, binaries)

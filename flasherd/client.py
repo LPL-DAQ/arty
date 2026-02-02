@@ -19,8 +19,11 @@ def launch_flasherd_command(logger, command_req: flasherd_pb2.RunCommandRequest,
 
         reqs.append(command_req)
 
-        logger.info(f'Command request:\n{command_req}')
-        logger.info(f'Binaries: {binaries}')
+        logger.debug(f'Windows command: {command_req.command_windows}')
+        logger.debug(f'MacOS command: {command_req.command_macos}')
+        logger.debug(f'Linux command: {command_req.command_linux}')
+        logger.info(f'Launching command with args: {[(arg.regular if arg.HasField("regular") else f"{arg.binary} (binary)") for arg in command_req.args]}')
+        logger.debug(f'Binaries: {binaries}')
 
         try:
             for resp in stub.RunCommand((req for req in reqs)):

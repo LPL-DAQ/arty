@@ -6,5 +6,5 @@ build:
     dts_root: .
 runners:
   - file: runners/modules.py  # This file *must* go first.
-  - file: runners/stm32cubeprogrammer_flasherd.py
   - file: runners/tycmd_flasherd.py
+  - file: runners/stm32cubeprogrammer_flasherd.py
