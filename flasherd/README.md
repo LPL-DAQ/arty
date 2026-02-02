@@ -10,6 +10,9 @@ We use cx_Freeze to build the python grpc server into standalone, installable ap
 support cross-compilation, we must unfortunately run specific build commands in each of our
 supported OS's.
 
+Builds are configured via the script at `flasherd/cxfreeze_setup.py`. Each time the flasherd server
+is updated, ensure that the `VERSION` number in that script is bumped.
+
 ### Common setup
 
 Ensure `uv` is installed on the host; instructions to do so are [here](https://docs.astral.sh/uv/getting-started/installation/).
@@ -21,5 +24,7 @@ Clone the `arty` repo somewhere on the host.
 Run the following in a terminal from the root of the repo.
 
 ```shell
-uv --project flasherd run flasherd/cxfreeze_setup.py bdist_msi --dist-dir flasherd/dist --target-name flasherd
+uv --project flasherd run flasherd/setup.py bdist_msi --dist-dir flasherd/dist
 ```
+
+This will produce a Windows installer under `flasherd/dist`.
