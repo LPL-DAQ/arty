@@ -65,9 +65,9 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
             try:
                 for resp in stub.RunCommand((req for req in reqs)):
                     if resp.HasField('stdout'):
-                        print(resp.stdout, end='')
+                        print(resp.stdout.decode(), end='')
                     if resp.HasField('stderr'):
-                        print(resp.stderr, file=sys.stderr, end='')
+                        print(resp.stderr.decode(), file=sys.stderr, end='')
                     if resp.HasField('exit_code'):
                         self.logger.info('Process terminated with code {resp.exit_code}')
                         if resp.exit_code == 0:
