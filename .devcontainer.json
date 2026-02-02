@@ -4,6 +4,9 @@
     "--network=host",
     "--platform=linux/amd64"
   ],
+  "build": {
+    "options": ["--platform=linux/amd64"]
+  },
   "workspaceFolder": "/workspaces/arty",
   "privileged": true,
   "remoteUser": "lpl",
