@@ -1,0 +1,5 @@
+west:
+  command: /home/lpl/.venv/bin/west build -b fs_board/stm32h750xx --pristine auto
+    --build-dir /home/lpl/arty/clover/bees/build
+  topdir: /home/lpl
+  version: 1.5.0

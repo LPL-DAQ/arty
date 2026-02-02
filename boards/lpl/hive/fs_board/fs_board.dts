@@ -13,6 +13,11 @@
     model = "VCC-GND Studio STM32H750VB";
     compatible = "st,stm32h750vb";
 
+    zephyr,user {
+        led-test-gpios = <&gpiob 6 GPIO_ACTIVE_HIGH>;
+
+    };
+
     aliases {
         led0 = &yellow_led;
         led1 = &blue_led;
@@ -60,14 +65,7 @@
     };
 };
 
-&clk_hse {
-    clock-frequency = <DT_FREQ_M(25)>;
-    status = "okay";
-};
 
-&clk_lse {
-    status = "okay";
-};
 
 &pll {
     div-m = <5>;
