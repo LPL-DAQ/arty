@@ -24,7 +24,17 @@ Clone the `arty` repo somewhere on the host.
 Run the following in a terminal from the root of the repo.
 
 ```shell
-uv --project flasherd run flasherd/setup.py bdist_msi --dist-dir flasherd/dist
+uv --project flasherd run flasherd/cxfreeze_setup.py bdist_msi --dist-dir flasherd/dist
 ```
 
 This will produce a Windows installer under `flasherd/dist`.
+
+### MacOS
+
+Run the following in a termainl from the root of the repo.
+
+```shell
+uv --project flasherd run flasherd/cxfreeze_setup.py bdist_dmg && mv build/flasherd.dmg flasherd/dist/flasherd.dmg
+```
+
+This builds a disk image installer and moves it under `flasherd/dist`.

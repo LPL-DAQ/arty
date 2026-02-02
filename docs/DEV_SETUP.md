@@ -23,6 +23,8 @@ Open Docker Desktop, and click through the setup. **Do not create an account if 
 We require host networking for many internal utilities. Ensure that you are on the latest version of Docker Desktop,
 then ensure host networking is enabled by checking `Settings > Resources > Network > Enable host networking`.
 
+On MacOS, ensure that x86 emulation via Rosetta 2 is enabled by checking `Settings > General > Virtual Machine Options > Use Rosetta for x86_64/amd64 emulation on Apple Silicon`.
+
 ### Install an IDE
 
 Dev Containers rely heavily on an IDE, or Integrated Development Environment, for a smooth experience.

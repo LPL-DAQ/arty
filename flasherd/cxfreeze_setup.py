@@ -14,11 +14,26 @@ bdist_msi_options = {
     "target_name": "flasherd"
 }
 
+bdist_dmg_options = {
+    "volume_label": "flasherd",
+    "applications_shortcut": True,
+    "background": "builtin-arrow"
+}
+
+bdist_mac_options = {
+    "bundle_name": "flasherd",
+}
+
 server_script_path = f'{os.path.dirname(os.path.realpath(__file__))}/server.py'
 setup(
     name="flasherd",
     version=VERSION,
-    options={"build_exe": build_exe_options, "bdist_msi": bdist_msi_options},
+    options={
+        "build_exe": build_exe_options, 
+        "bdist_msi": bdist_msi_options, 
+        "bdist_dmg": bdist_dmg_options,
+        "bdist_mac": bdist_mac_options
+    },
     executables=[{
         "script": server_script_path, 
         "base": "console",
