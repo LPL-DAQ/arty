@@ -63,10 +63,9 @@ class Flasherd(flasherd_pb2_grpc.FlasherdServicer):
 
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in proc.stdout.readlines():
-            print(f'Got line: {line}')
             yield flasherd_pb2.RunCommandResponse(stdout=line)
         exit_code = proc.wait()
-        print(f'Got exit code: {exit_code}')
+        print(f'Terminated with exit code: {exit_code}')
         yield flasherd_pb2.RunCommandResponse(exit_code=exit_code)
 
 
