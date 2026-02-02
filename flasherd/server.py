@@ -28,6 +28,9 @@ class Flasherd(flasherd_pb2_grpc.FlasherdServicer):
     def RunCommand(self, req_iter, context):
         self.req_id_lock.acquire()
         req_id = self.next_req_id
+        self.next_req_id += 1
+        self.req_id_lock.release()
+        
         print(f'Request ID: {req_id}')
 
         for req in req_iter:
