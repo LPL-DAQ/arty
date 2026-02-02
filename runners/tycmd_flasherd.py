@@ -9,6 +9,8 @@ import queue
 import flasherd_pb2
 import flasherd_pb2_grpc
 
+print(grpc.__version__)
+
 from runners.core import ZephyrBinaryRunner
 
 
@@ -41,13 +43,13 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
 
         with grpc.insecure_channel('localhost:6767') as channel:
             stub = flasherd_pb2_grpc.FlasherdStub(channel)
-            req_queue = queue.SimpleQueue()
+            reqs = []
 
             with open(self.cfg.hex_file, 'rb') as binary_file:
                 for block in iter(lambda: binary_file.read(4096), b''):
-                    req_queue.put(flasherd_pb2.RunCommandRequest(binary_name='zephyr_hex', binary_chunk=block))
+                    reqs.append(flasherd_pb2.RunCommandRequest(binary_name='zephyr_hex', binary_chunk=block))
 
-            req_queue.put(flasherd_pb2.RunCommandRequest(
+            reqs.append(flasherd_pb2.RunCommandRequest(
                 command_windows=r'C:\Program Files (x86)\TyTools\tycmd.exe',
                 command_macos='tycmd',
                 command_linux='tycmd',
@@ -61,7 +63,7 @@ class TycmdFlasherdBinaryRunner(ZephyrBinaryRunner):
             self.logger.info(f'Launching tycmd via flasherd...')
 
             try:
-                for resp in stub.RunCommand(iter(req_queue.get, None)):
+                for resp in stub.RunCommand((req for req in reqs)):
                     if resp.HasField('stdout'):
                         print(resp.stdout, end='')
                     if resp.HasField('stderr'):

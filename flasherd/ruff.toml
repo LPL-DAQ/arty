@@ -1,0 +1,4 @@
+extend = "../ruff.toml"
+
+# Exclude generated files
+extend-exclude = ["flasherd_pb2.py", "flasherd_pb2_grpc.py", "flasherd_pb2.pyi"]
