@@ -5,7 +5,10 @@
     "--platform=linux/amd64"
   ],
   "build": {
-    "options": ["--platform=linux/amd64"]
+    "options": [
+      "--platform=linux/amd64"
+    ],
+    "dockerfile": "Dockerfile_noop"
   },
   "workspaceFolder": "/workspaces/arty",
   "privileged": true,
@@ -14,5 +17,5 @@
     "ghcr.io/devcontainers/features/docker-outside-of-docker": {}
   },
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
-  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299"
+  // "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299"
 }
