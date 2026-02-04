@@ -33,14 +33,9 @@ docker image push "$image_tag"
 # Show image details
 docker image ls "$image_tag"
 
-# Reference new image from rebuild no-op DevContainer Dockerfile.
-cat << EOF > /home/lpl/arty/Dockerfile_noop
-# A no-op dockerfile used as a hacky workaround to force devcontainer to use an x86 image on
-# M-series Macs. The above line's image ref is replaced by the devcontainer build script
-# automatically.
-
-FROM --platform linux/amd64 ${image_tag}
-EOF
+# Reference new image from dev container config
+jq ".image = \"$image_tag\" | del(.build) | .initializeCommand = \"docker image pull --platform=linux/amd64 $image_tag\"" .devcontainer.json | tee /home/lpl/arty/.devcontainer.json.temp
+mv /home/lpl/arty/.devcontainer.json.temp /home/lpl/arty/.devcontainer.json
 
 # Commit changes
 git add /home/lpl/arty/.devcontainer.json

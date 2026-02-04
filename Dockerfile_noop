@@ -1,6 +1,0 @@
-# A no-op dockerfile used as a hacky workaround to force devcontainer to use an x86 image on
-# M-series Macs. The above line's image ref is replaced by the devcontainer build script
-# automatically.
-
-FROM --platform=linux/amd64 ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299
-
