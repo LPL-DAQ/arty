@@ -145,7 +145,7 @@ ${lplbld}Welcome!${style_rst}"
 export PATH="$PATH:/home/lpl/arty/bin"
 
 # Show flasherd status
-if $HOME/arty/scripts/flasherd-connection-test.sh > /dev/null 2>&1; then
+if uv --project /home/lpl/arty/flasherd run /home/lpl/arty/flasherd/check_connection.py > /dev/null 2>&1; then
     grnbld="\e[32;1m"
     echo -e "flasherd is ${grnbld}active${style_rst}".
 else

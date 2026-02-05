@@ -38,3 +38,11 @@ uv --project flasherd run flasherd/cxfreeze_setup.py bdist_dmg && mv build/flash
 ```
 
 This builds a disk image installer and moves it under `flasherd/dist`.
+
+## Connection test
+
+Run the following from within the dev container to check that flasherd is running:
+
+```shell
+if uv --project flasherd run flasherd/check_connection.py; then echo -e "\\e[32;1mflasherd is active\\e[0m"; else echo -e "\\e[31;1mflasherd is inactive\\e[0m"; fi
+```
