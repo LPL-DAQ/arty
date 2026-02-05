@@ -47,6 +47,8 @@ int main(void)
         }
     }
 
+    fdsjlkfdslcnxznmv,nfs
+
     LOG_INF("Initializing fuel throttle valve");
     int err = FuelValve::init();
     if (err) {
