@@ -5,11 +5,16 @@ import sys
 
 # HACK: Zephyr imports runners one by one with an identical module name each time. As its module name is shadowed, other
 # runners have no way to refer to this module. We bypass this by manually making this file available for import under
-# another name when it's first executed. This only works if this file is specified first in `zephyr/module.yml`.
+# another name when it's first executed. This is also how we must import the runners themselves.
 MODULES = [
+    # Runner dependencies
     ('flasherd_pb2', '/home/lpl/arty/flasherd/flasherd_pb2.py'),
     ('flasherd_pb2_grpc', '/home/lpl/arty/flasherd/flasherd_pb2_grpc.py'),
-    ('client', '/home/lpl/arty/flasherd/client.py')
+    ('client', '/home/lpl/arty/flasherd/client.py'),
+
+    # Runners
+    ('stm32cubeprogrammer_flasherd', '/home/lpl/arty/runners/stm32cubeprogrammer_flasherd.py'),
+    ('tycmd_flasherd', '/home/lpl/arty/runners/tycmd_flasherd.py')
 ]
 
 for name, file in MODULES:
