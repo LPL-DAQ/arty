@@ -136,6 +136,9 @@ class STM32CubeProgrammerFlasherdBinaryRunner(STM32CubeProgrammerBinaryRunner):
         if self._start_address is not None:
             req_args.append(flasherd_pb2.Arg(regular=f'0x{self._start_address:X}'))
         req_args += [flasherd_pb2.Arg(regular=arg) for arg in self._start_modifiers]
+        
+        req_args.append(flasherd_pb2.Arg(regular='-vb'))
+        req_args.append(flasherd_pb2.Arg(regular='3'))
 
         self.logger.info(f'Binary file: {dl_file}')
 
