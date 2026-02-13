@@ -10,27 +10,18 @@
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
-    model = "VCC-GND Studio STM32H750VB";
+    model = "Feed System Board";
     compatible = "st,stm32h750vb";
 
     zephyr,user {
-        led-test-gpios = <&gpiob 6 GPIO_ACTIVE_HIGH>;
-
-    };
-
-    aliases {
-        led0 = &yellow_led;
-        led1 = &blue_led;
-        sw0 = &user_button;
-        spi-flash0 = &w25q128jv;
+        led-test-gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
     };
 
     chosen {
-        zephyr,console = &usart1;
-        zephyr,shell-uart = &usart1;
+        zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
         zephyr,sram = &sram0;
         zephyr,flash = &flash0;
-        zephyr,flash-controller = &w25q128jv;
     };
 
     leds {
@@ -55,6 +46,7 @@
         };
     };
 
+/*
     gpio_keys {
         compatible = "gpio-keys";
         user_button: button {
@@ -62,10 +54,8 @@
             zephyr,code = <INPUT_KEY_0>;
             label = "USR";
         };
-    };
+    };*/
 };
-
-
 
 &pll {
     div-m = <5>;
@@ -77,24 +67,33 @@
     status = "okay";
 };
 
+
 &rcc {
     clocks = <&pll>;
     clock-frequency = <DT_FREQ_M(480)>;
     d1cpre = <1>;
-    hpre = <2>;
-    d1ppre = <2>;
-    d2ppre1 = <2>;
-    d2ppre2 = <2>;
-    d3ppre = <2>;
+	hpre = <2>;
+	d1ppre = <2>;
+	d2ppre1 = <2>;
+	d2ppre2 = <2>;
+	d3ppre = <2>;
+    status = "okay";
 };
-
+/*
 &usart1 {
     pinctrl-names = "default";
     pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
     current-speed = <115200>;
     status = "okay";
-};
+};*/
 
+&uart4 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart4_tx_pd1 &uart4_rx_pd0>;
+    current-speed = <115200>;
+    status = "okay";
+};
+/*
 &sdmmc1 {
     pinctrl-names = "default";
     pinctrl-0 = <&sdmmc1_d0_pc8 &sdmmc1_d1_pc9
@@ -103,8 +102,9 @@
     cd-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
     disk-name = "SD";
     status = "okay";
-};
+};*/
 
+/*
 &quadspi {
     pinctrl-names = "default";
     pinctrl-0 = <&quadspi_clk_pb2 &quadspi_bk1_ncs_pb10
@@ -115,7 +115,7 @@
     w25q128jv: qspi-nor-flash@0 {
         compatible = "st,stm32-qspi-nor";
         reg = <0>;
-        size = <DT_SIZE_M(128)>; /* 128 Mbits */
+        size = <DT_SIZE_M(128)>;  128 Mbits 
         qspi-max-frequency = <80000000>;
         spi-bus-width = <4>;
         status = "okay";
@@ -131,4 +131,4 @@
             };
         };
     };
-};
+};*/

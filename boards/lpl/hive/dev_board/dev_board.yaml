@@ -1,13 +1,21 @@
-identifier: fk750m1_vbt6
-name: FANKE FK750M1-VBT6
+identifier: nucleo_h755zi_q/stm32h755xx/m7
+name: ST Nucleo H755ZI-Q (M7)
 type: mcu
 arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-ram: 1024
-flash: 128
+ram: 512
+flash: 1024
 supported:
+  - arduino_gpio
+  - arduino_i2c
   - uart
   - gpio
-vendor: fanke
+  - counter
+  - i2c
+  - pwm
+  - netif:eth
+  - usb_device
+  - can
+vendor: st

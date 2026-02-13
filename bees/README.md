@@ -5,7 +5,7 @@
 ## Build
 
 ```shell
-west build ~/arty/bees --pristine auto --board dev_board/stm32h750xx --build-dir ~/arty/bees/build
+west build ~/arty/bees --pristine auto --board fs_board/stm32h750xx --build-dir ~/arty/bees/build
 ```
 
 ## Flash
