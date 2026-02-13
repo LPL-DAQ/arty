@@ -1,9 +1,6 @@
-# Copyright (c) 2024 Nordic Semiconductor ASA
-# SPDX-License-Identifier: Apache-2.0
-
 board:
-  name: dev_board
-  vendor: Fanke
+  name: nucleo_h755zi_q
+  full_name: Nucleo H755ZI-Q
+  vendor: st
   socs:
-    - name: stm32h750xx
-
+    - name: stm32h755xx
