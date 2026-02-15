@@ -76,32 +76,6 @@ west sdk install -t arm-zephyr-eabi
 sudo rm -rf /home/lpl/arty
 EOF
 
-# Rust
-RUN << EOF
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-. "$HOME/.cargo/env"
-rustup component add rustfmt
-EOF
-
-# Build flasherd-client and store it at ~/prebaked-bin so it can be copied into ~/arty/bin upon dev container startup.
-COPY Cargo.toml /home/lpl/arty/Cargo.toml
-COPY Cargo.lock /home/lpl/arty/Cargo.lock
-COPY flasherd /home/lpl/arty/flasherd
-COPY flasherd-client /home/lpl/arty/flasherd-client
-COPY api /home/lpl/arty/api
-RUN << EOF
-sudo chown -R lpl ~/arty
-sudo chmod -R 0777 ~/arty
-
-. ~/.cargo/env
-cd ~/arty || exit 1
-cargo build --package flasherd-client --release
-
-mv ~/arty/target/release/flasherd-client /usr/bin/flasherd-client
-
-sudo rm -rf ~/arty
-EOF
-
 # Cosmetic changes
 RUN << EOF
 # Remove sudo tutorial from startup
