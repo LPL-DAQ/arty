@@ -76,6 +76,26 @@ west sdk install -t arm-zephyr-eabi
 sudo rm -rf /home/lpl/arty
 EOF
 
+# Install docker CLI only
+RUN << EOF
+sudo apt install -y ca-certificates
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+sudo tee /etc/apt/sources.list.d/docker.sources << END
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+END
+
+sudo apt update
+sudo apt install -y docker-ce-cli
+EOF
+ENV DOCKER_HOST=tcp://localhost:2375
+
 # Cosmetic changes
 RUN << EOF
 # Remove sudo tutorial from startup
