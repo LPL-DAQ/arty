@@ -2,26 +2,22 @@
 #define ARTY_SEQUENCER_H
 
 #include <vector>
+#include <expected>
+#include <zephyr/kernel.h>
+#include "clover.pb.h"
+#include "Error.h"
 
-int sequencer_prepare(int gap, std::vector<float> fuel_bps, std::vector<float> lox_bps, bool mot_only);
-int sequencer_prepare_sine(int total_time, float offset, float amplitude, float period, float phase);
-int sequencer_prepare_combo(
-    int gap,
-    const std::vector<float>& fuel_bps,
-    const std::vector<float>& lox_bps,
-    const std::vector<float>& seq_sine_offsets_fuel,
-    const std::vector<float>& seq_sine_amps_fuel,
-    const std::vector<float>& seq_sine_periods_fuel,
-    const std::vector<float>& seq_sine_phases_fuel,
-    const std::vector<float>& seq_sine_offsets_lox,
-    const std::vector<float>& seq_sine_amps_lox,
-    const std::vector<float>& seq_sine_periods_lox,
-    const std::vector<float>& seq_sine_phases_lox,
-    bool mot_only);
+// Shared variables physically defined in sequencer.cpp
+extern std::vector<float> fuel_breakpoints, lox_breakpoints;
+extern volatile int step_count, count_to;
+extern uint64_t start_clock;
 
-int sequencer_start_trace();
-void sequencer_set_data_recipient(int sock);
-int sequencer_get_data_recipient();
-void sequencer_halt();
+// FIX: Wrap the Zephyr queue in extern "C" to match the macro definition
+extern "C" {
+    extern struct k_msgq control_data_msgq;
+}
 
-#endif  // ARTY_SEQUENCER_H
+int sequencer_load_from_proto(const LoadMotorSequenceRequest& req);
+float get_trace_val(const ControlTrace& trace, uint32_t ms);
+
+#endif

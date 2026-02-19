@@ -1,470 +1,106 @@
-#include <array>
-#include <cctype>
-#include <climits>
-#include <cstdint>
-#include <cstring>
+#include "server.h"
+#include "clover.pb.h"
+#include "Controller.h"
+#include "sequencer.h"
+#include "guards/SocketGuard.h"
 #include <pb_decode.h>
 #include <pb_encode.h>
-#include <sstream>
-#include <string>
-#include <zephyr/logging/log.h>
-#include <zephyr/net/net_pkt.h>
 #include <zephyr/net/socket.h>
-#include <zephyr/posix/arpa/inet.h>
+#include <zephyr/logging/log.h>
 
-#include "ThrottleValve.h"
-#include "clover.pb.h"
-#include "guards/SocketGuard.h"
-#include "pts.h"
-#include "sequencer.h"
-#include "server.h"
-#include "Controller.h"
+LOG_MODULE_REGISTER(server_api);
 
-LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
-
-constexpr size_t MAX_MESSAGE_SIZE = 1024 * 8;
-static_assert(Request_size <= MAX_MESSAGE_SIZE);
-static_assert(Response_size <= MAX_MESSAGE_SIZE);
+extern Controller controller;
+extern "C" { extern struct k_msgq control_data_msgq; }
 
 #define MAX_OPEN_CLIENTS 3
-
-/// Main server thread must acquire one of these before accepting a connection. It must then scan through the thread
-/// array to find an open slot.
 K_SEM_DEFINE(num_open_connections, MAX_OPEN_CLIENTS, MAX_OPEN_CLIENTS);
-
-bool has_thread[MAX_OPEN_CLIENTS] = {false};
+K_SEM_DEFINE(allow_serve_connections_sem, 0, 1);
 K_MUTEX_DEFINE(has_thread_lock);
 
-static k_thread client_threads[MAX_OPEN_CLIENTS] = {nullptr};
-#define CONNECTION_THREAD_STACK_SIZE (6 * 1024)
-K_THREAD_STACK_ARRAY_DEFINE(client_stacks, MAX_OPEN_CLIENTS, CONNECTION_THREAD_STACK_SIZE);
-
-constexpr int MAX_THREAD_NAME_LENGTH = 10;
+static bool has_thread[MAX_OPEN_CLIENTS] = {false};
+static k_thread client_threads[MAX_OPEN_CLIENTS];
+K_THREAD_STACK_ARRAY_DEFINE(client_stacks, MAX_OPEN_CLIENTS, 4096);
 static std::array<ClientType, MAX_OPEN_CLIENTS> client_types;
-static std::array<int, MAX_OPEN_CLIENTS> client_sockets;
-static std::array<int64_t, MAX_OPEN_CLIENTS> last_pinged;
-K_MUTEX_DEFINE(thread_info_guard);
 
-constexpr int MAX_DATA_CLIENTS = 1;
-static std::array<sockaddr, MAX_DATA_CLIENTS> data_client_addrs;
-static std::array<socklen_t, MAX_DATA_CLIENTS> data_client_addr_lens;
-static std::array<int, MAX_DATA_CLIENTS> data_client_slot_indexes;
-K_MUTEX_DEFINE(data_client_info_guard);
-
-/// Synchronizes command/data server threads to ensure they only start accepting connections after startup is fully
-/// done (i.e., when serve_connections() is called).
-K_SEM_DEFINE(allow_serve_connections_sem, 0, 2);
-
-/// Helper that sends a payload completely through an socket
-int send_fully(int sock, const char* buf, int len)
-{
-    int bytes_sent = 0;
-    while (bytes_sent < len) {
-        int ret = zsock_send(sock, buf + bytes_sent, len - bytes_sent, 0);
-        if (ret < 0) {
-            LOG_ERR("Unexpected error while sending response to sock %d: err %d", sock, ret);
-            return ret;
-        }
-        bytes_sent += ret;
-    }
-    return 0;
+bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t count) {
+    int sock = static_cast<int>(reinterpret_cast<intptr_t>(stream->state));
+    return zsock_send(sock, buf, count, 0) == static_cast<int>(count);
 }
 
-int send_string_fully(int sock, const std::string& payload)
-{
-    return send_fully(sock, payload.c_str(), std::ssize(payload));
-}
-
-/// Internal callback for pb_istream, used to read from socket to internal buffer and manage count.
-bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t count)
-{
-    int sock = reinterpret_cast<int>(stream->state);
-
-    int bytes_sent = zsock_send(sock, buf, count, 0);
-    if (bytes_sent < 0) {
-        LOG_ERR("Error while sending data over socket %d: %s", sock, strerror(bytes_sent));
-        return false;
-    }
-
-    if (bytes_sent != static_cast<int>(count)) {
-        LOG_ERR(
-            "zsock_send only partially wrote its buffer from socket %d, this should be impossible - sent: %d, "
-            "requested: %d",
-            sock,
-            bytes_sent,
-            count);
-        return false;
-    }
-
+bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count) {
+    int sock = static_cast<int>(reinterpret_cast<intptr_t>(stream->state));
+    int ret = zsock_recv(sock, buf, count, ZSOCK_MSG_WAITALL);
+    if (ret <= 0) { stream->bytes_left = 0; return false; }
     return true;
 }
 
-pb_ostream_t pb_ostream_from_socket(int sock)
-{
-    return pb_ostream_t{
-        .callback = pb_socket_write_callback,
-        .state = reinterpret_cast<void*>(sock),
-        .max_size = SIZE_MAX,
-        .bytes_written = 0};
-}
-
-/// Internal callback for pb_istream, used to read from socket to internal buffer.
-bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
-{
-    int sock = reinterpret_cast<int>(stream->state);
-
-    int bytes_read = zsock_recv(sock, buf, count, ZSOCK_MSG_WAITALL);
-
-    // Hit EOF
-    if (bytes_read == 0) {
-        stream->bytes_left = 0;
-        return false;
-    }
-
-    if (bytes_read != static_cast<int>(count)) {
-        LOG_ERR(
-            "zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass "
-            "ZSOCK_MSG_WAITALL - got: %d, requested: %d",
-            sock,
-            bytes_read,
-            count);
-        return false;
-    }
-
-    return true;
-}
-
-/// Create a nanopb input stream from socket fd.
-pb_istream_t pb_istream_from_socket(int sock)
-{
-    return pb_istream_t{
-        .callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(sock), .bytes_left = SIZE_MAX};
-}
-
-/// Subscribes a client to the data stream. The client IP will be included in the peers to whom we send the UDP data
-/// packets.
-static std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStreamRequest&, const int thread_index, const int socket)
-{
-    k_mutex_lock(&data_client_info_guard, K_FOREVER);
-    bool found_data_client_slot = false;
-    for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-        if (data_client_slot_indexes[i] != -1) {
-            continue;
-        }
-        found_data_client_slot = true;
-        data_client_slot_indexes[i] = thread_index;
-
-        int err = getpeername(socket, &data_client_addrs[i], &data_client_addr_lens[i]);
-        if (err) {
-            return std::unexpected(Error::from_code(err).context("failed to get peername when subscribing to data stream"));
-        }
-
-        // Set client port
-        reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
-    }
-
-    if (!found_data_client_slot) {
-        return std::unexpected(Error::from_cause("did not find a data client slot"));
-    }
-
-    k_mutex_unlock(&data_client_info_guard);
-
-    return {};
-}
-
-/// Handles self-identification of a client, allowing us to send metrics for what clients are connected.
-static std::expected<void, Error> handle_identify_client(const IdentifyClientRequest& req, const int thread_index, const int socket)
-{
-    switch (req.client) {
-    case ClientType_GNC:
-    case ClientType_DAQ:
-        break;
-    default:
-        return std::unexpected(Error::from_cause("unknown client type `%d`", req.client));
-    }
-
-    k_mutex_lock(&thread_info_guard, K_FOREVER);
-
-    client_types[thread_index] = req.client;
-    client_sockets[thread_index] = socket;
-    last_pinged[thread_index] = k_uptime_get();
-
-    k_mutex_unlock(&thread_info_guard);
-
-    return {};
-}
-
-/// Handles a client connection. Should run in its own thread.
-static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
-{
-    int thread_index = reinterpret_cast<int>(p1_thread_index);
-    SocketGuard client_guard{reinterpret_cast<int>(p2_client_socket)};
-    LOG_INF("Handling socket: %d", client_guard.socket);
-
-    pb_istream_t pb_input = pb_istream_from_socket(client_guard.socket);
-    pb_ostream_t pb_output = pb_ostream_from_socket(client_guard.socket);
+static void handle_client(void* p1, void* p2, void*) {
+    int thread_idx = static_cast<int>(reinterpret_cast<intptr_t>(p1));
+    int sock_raw = static_cast<int>(reinterpret_cast<intptr_t>(p2));
+    SocketGuard client_guard{sock_raw};
+    
+    pb_istream_t pb_in = { .callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(static_cast<intptr_t>(client_guard.socket)), .bytes_left = SIZE_MAX };
+    pb_ostream_t pb_out = { .callback = pb_socket_write_callback, .state = reinterpret_cast<void*>(static_cast<intptr_t>(client_guard.socket)), .max_size = SIZE_MAX };
 
     while (true) {
-        Request request = Request_init_default;
-        bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
-        if (!valid) {
-            LOG_INF("Failed to decode next client request, this can happen if connection is severed.");
-            break;
+        Request req = Request_init_default;
+        if (!pb_decode_ex(&pb_in, Request_fields, &req, PB_DECODE_DELIMITED)) break;
+
+        std::expected<void, Error> res;
+        switch (req.which_payload) {
+            case Request_load_motor_sequence_tag: res = controller.handle_load_motor_sequence(req.payload.load_motor_sequence); break;
+            case Request_start_sequence_tag: res = controller.handle_start_sequence(req.payload.start_sequence); break;
+            case Request_halt_sequence_tag: res = controller.handle_halt_sequence(req.payload.halt_sequence); break;
+            case Request_identify_client_tag: client_types[thread_idx] = req.payload.identify_client.client; res = {}; break;
+            default: res = std::unexpected(Error::from_cause("Unknown tag")); break;
         }
 
-        // Handle request
-        std::expected<void, Error> result;
-        switch (request.which_payload) {
-        case Request_subscribe_data_stream_tag:
-            result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_guard.socket);
-            break;
-
-        case Request_identify_client_tag:
-            result = handle_identify_client(request.payload.identify_client, thread_index, client_guard.socket);
-            break;
-
-        case Request_reset_valve_position_tag:
-            result = handle_reset_valve_position(request.payload.reset_valve_position);
-            break;
-
-        case Request_load_motor_sequence_tag:
-            LOG_INF("Open loop motor sequence");
-            break;
-
-        case Request_start_sequence_tag:
-            LOG_INF("Start sequence");
-            break;
-
-        case Request_halt_sequence_tag:
-            LOG_INF("halt seq");
-            break;
-
-        default:
-            result = std::unexpected(Error::from_cause("Error has invalid tag, got `%u`", request.which_payload));
-            break;
+        Response resp = Response_init_default;
+        if (!res) { 
+            resp.has_err = true; 
+            strncpy(resp.err, res.error().build_message().c_str(), sizeof(resp.err) - 1); 
         }
-
-        Response response = Response_init_default;
-        if (!result) {
-            response.has_err = true;
-            std::strncpy(response.err, result.error().build_message().c_str(), MAX_ERR_MESSAGE_SIZE);
-            response.err[MAX_ERR_MESSAGE_SIZE] = '\0';
-        }
-
-        // Send message over TCP with varint length prefix.
-        bool ok = pb_encode_ex(&pb_output, Response_fields, &response, PB_ENCODE_DELIMITED);
-        if (!ok) {
-            LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
-        }
+        pb_encode_ex(&pb_out, Response_fields, &resp, PB_ENCODE_DELIMITED);
     }
+    k_mutex_lock(&has_thread_lock, K_FOREVER);
+    has_thread[thread_idx] = false;
+    k_mutex_unlock(&has_thread_lock);
+    k_sem_give(&num_open_connections);
+    client_types[thread_idx] = ClientType_UNKNOWN_CLIENT;
 }
 
-/// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
-[[noreturn]] static void reap_dead_connections(void*, void*, void*)
-{
-    bool freed_threads[MAX_OPEN_CLIENTS] = {false};
-    while (true) {
-        k_mutex_lock(&has_thread_lock, K_FOREVER);
-        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
-            if (has_thread[i]) {
-                int ret = k_thread_join(&client_threads[i], K_NO_WAIT);
-                if (ret == 0) {
-                    k_mutex_lock(&thread_info_guard, K_FOREVER);
-                    client_types[i].clear();
-                    k_mutex_unlock(&thread_info_guard);
-
-                    // Clean up potential data client subscription
-                    k_mutex_lock(&data_client_info_guard, K_FOREVER);
-                    for (int j = 0; j < MAX_DATA_CLIENTS; ++j) {
-                        if (data_client_slot_indexes[j] == i) {
-                            data_client_slot_indexes[j] = -1;
-                            data_client_addr_lens[j] = sizeof(sockaddr);
-                        }
-                    }
-                    k_mutex_unlock(&data_client_info_guard);
-
-                    has_thread[i] = false;
-                    freed_threads[i] = true;
-                    k_sem_give(&num_open_connections);
-                }
-                else if (ret == -EBUSY) {
-                    // Thread still running
-                }
-                else {
-                    LOG_ERR("Unexpected code from joining client thread: err %d", ret);
-                }
-            }
-        }
-        k_mutex_unlock(&has_thread_lock);
-
-        // Log freed threads outside mutex
-        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
-            if (freed_threads[i]) {
-                LOG_INF("Freed thread at slot %d", i);
-                freed_threads[i] = false;
-            }
-        }
-
-        k_sleep(K_MSEC(50));
-    }
-}
-
-K_THREAD_DEFINE(server_reaper, 1024, reap_dead_connections, nullptr, nullptr, nullptr, 1, 0, 0);
-
-/// Opens a TCP server, listens for incoming clients, and spawns new threads to serve these connections. This function
-/// blocks indefinitely.
-void serve_command_connections()
-{
+[[noreturn]] void serve_command_connections(void*, void*, void*) {
     k_sem_take(&allow_serve_connections_sem, K_FOREVER);
+    int sock = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    struct sockaddr_in addr = { .sin_family = AF_INET, .sin_port = htons(19690), .sin_addr = { .s_addr = htonl(INADDR_ANY) } };
+    zsock_bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+    zsock_listen(sock, MAX_OPEN_CLIENTS);
 
-    LOG_INF("Opening command server socket");
-    int server_socket = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (server_socket < 0) {
-        LOG_ERR("Failed to create TCP socket: %d", errno);
-        return;
-    }
-
-    LOG_INF("Binding command server socket to address");
-    sockaddr_in bind_addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(19690),
-        .sin_addr = in_addr{.s_addr = htonl(INADDR_ANY)},
-    };
-    int err = zsock_bind(server_socket, reinterpret_cast<sockaddr*>(&bind_addr), sizeof(bind_addr));
-    if (err) {
-        LOG_ERR("Failed to bind to socket `%d` for command server: %d", server_socket, err);
-        return;
-    }
-
-    LOG_INF("Listening for command connections");
-    err = zsock_listen(server_socket, 0);
-    if (err) {
-        LOG_ERR("Failed to listen on socket `%d` for command server: %d", server_socket, err);
-        return;
-    }
-
-    // Serve new connections indefinitely
     while (true) {
-        // Wait for free thread slot
-        err = k_sem_take(&num_open_connections, K_FOREVER);
-        if (err) {
-            LOG_INF("Failed to acquire semaphore: %d", err);
-            return;
-        }
-
-        // Find open connection index
-        int connection_index = 0;
+        k_sem_take(&num_open_connections, K_FOREVER);
+        int idx = -1;
         k_mutex_lock(&has_thread_lock, K_FOREVER);
-        for (connection_index = 0; connection_index < MAX_OPEN_CLIENTS; ++connection_index) {
-            if (!has_thread[connection_index]) {
-                break;
-            }
-        }
+        for (int i = 0; i < MAX_OPEN_CLIENTS; i++) { if (!has_thread[i]) { idx = i; has_thread[idx] = true; break; } }
         k_mutex_unlock(&has_thread_lock);
-        if (connection_index == MAX_OPEN_CLIENTS) {
-            LOG_ERR("Consistency error: Server acquired connection semaphore but no thread slots were open");
-            return;
+
+        int client_sock = zsock_accept(sock, nullptr, nullptr);
+        if (client_sock >= 0) {
+            k_thread_create(&client_threads[idx], client_stacks[idx], 4096, handle_client, 
+                            reinterpret_cast<void*>(static_cast<intptr_t>(idx)), 
+                            reinterpret_cast<void*>(static_cast<intptr_t>(client_sock)), 
+                            nullptr, 5, 0, K_NO_WAIT);
+        } else {
+            k_mutex_lock(&has_thread_lock, K_FOREVER);
+            has_thread[idx] = false;
+            k_mutex_unlock(&has_thread_lock);
+            k_sem_give(&num_open_connections);
         }
-
-        // Spawn thread to service client connection
-        int client_socket = zsock_accept(server_socket, nullptr, nullptr);
-        LOG_INF("Spawning thread in slot %d to serve socket %d", connection_index, client_socket);
-        k_thread_create(
-            &client_threads[connection_index],
-            reinterpret_cast<k_thread_stack_t*>(&client_stacks[connection_index]),
-            CONNECTION_THREAD_STACK_SIZE,
-            handle_client,
-            reinterpret_cast<void*>(connection_index),
-            reinterpret_cast<void*>(client_socket),
-            nullptr,
-            5,
-            0,
-            K_NO_WAIT);
-
-        k_mutex_lock(&has_thread_lock, K_FOREVER);
-        has_thread[connection_index] = true;
-        k_mutex_unlock(&has_thread_lock);
     }
 }
-
 K_THREAD_DEFINE(command_server, 4096, serve_command_connections, nullptr, nullptr, nullptr, 2, 0, 0);
 
-/// Broadcasts UDP data packets using a multicast IP.
-void serve_data_connections()
-{
-    k_sem_take(&allow_serve_connections_sem, K_FOREVER);
-
-    LOG_INF("Opening data server socket");
-    int server_socket = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (server_socket < 0) {
-        LOG_ERR("Failed to create UDP socket: %d", errno);
-        return;
-    }
-
-    LOG_INF("Binding data server socket to address");
-    sockaddr_in bind_addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(19691),
-        .sin_addr = in_addr{.s_addr = htonl(INADDR_ANY)},
-    };
-    int err = zsock_bind(server_socket, reinterpret_cast<sockaddr*>(&bind_addr), sizeof(bind_addr));
-    if (err) {
-        LOG_ERR("Failed to bind to socket `%d` for data server: %d", server_socket, err);
-        return;
-    }
-
-    // Serve new connections indefinitely
-    while (true) {
-        k_mutex_lock(&data_client_info_guard, K_FOREVER);
-        for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-            if (data_client_slot_indexes[i] == -1) {
-                continue;
-            }
-
-            DataPacket data_packet = DataPacket_init_default;
-            data_packet.time = static_cast<float>(k_cyc_to_ns_floor64(k_cycle_get_64())) / 1e9f;
-            data_packet.sensors.has_pt102 = true;
-            data_packet.sensors.pt102 = 67.67f;
-            data_packet.sensors.has_pt103 = true;
-            data_packet.sensors.pt103 = 67.67f;
-            data_packet.sensors.has_pt202 = true;
-            data_packet.sensors.pt202 = 67.67f;
-            data_packet.sensors.has_pt203 = true;
-            data_packet.sensors.pt203 = 67.67f;
-
-            // Encode data packet
-            uint8_t buf[DataPacket_size];
-            pb_ostream_t data_packet_ostream = pb_ostream_from_buffer(buf, DataPacket_size);
-            bool ok = pb_encode(&data_packet_ostream, DataPacket_fields, &data_packet);
-            if (!ok) {
-                LOG_ERR("Failed to encode data packet: %s", data_packet_ostream.errmsg);
-                continue;
-            }
-
-            const int bytes_sent = zsock_sendto(
-                server_socket,
-                buf,
-                data_packet_ostream.bytes_written,
-                0,
-                &data_client_addrs[i],
-                data_client_addr_lens[i]);
-            if (bytes_sent != data_packet_ostream.bytes_written) {
-                LOG_ERR("Failed to send data packet over UDP: %d", bytes_sent);
-            }
-        }
-        k_mutex_unlock(&data_client_info_guard);
-        k_sleep(K_MSEC(3000));
-    }
-}
-
-K_THREAD_DEFINE(data_server, 1024 * 4, serve_data_connections, nullptr, nullptr, nullptr, 2, 0, 0);
-
-/// Called at the end of startup, allowing the command and data server threads to initialize their respective sockets
-/// and serve connections.
-void serve_connections()
-{
-    data_client_slot_indexes.fill(-1);
-    data_client_addr_lens.fill(sizeof(sockaddr));
-    k_sem_give(&allow_serve_connections_sem);
+// Restored missing entry point
+void serve_connections() {
     k_sem_give(&allow_serve_connections_sem);
 }
