@@ -63,8 +63,6 @@ pt_config pt_configs[NUM_PTS] = {
 /// Initialize PT sensors by initializing the ADC they're all connected to.
 std::expected<void, Error> pts_init()
 {
-    // Initializes resolution and oversampling from device tree. Let's assume all channels share those properties. Also
-    // initializes `channels` with just one channel, so we overwrite that later to sample all channels at once.
     LOG_INF("Initializing ADC sequence");
     adc_sequence_init_dt(&adc_channels[0], &sequence);
     sequence.buffer = raw_readings;
@@ -73,18 +71,19 @@ std::expected<void, Error> pts_init()
 
     // Configure ADC channels.
     for (int i = 0; i < NUM_PTS; i++) {
-        LOG_INF("pt %d: Checking readiness", i);
         if (!adc_is_ready_dt(&adc_channels[i])) {
-            return std::unexpected(Error::from_device_not_ready(adc_channels[i].dev).context("adc for pt %d not ready", i));
+            // Using updated Error bridge logic for device readiness
+            return std::unexpected(Error::from_device_not_ready(adc_channels[i].dev)
+                    .context("ADC for PT %d not ready", i));
         }
 
-        LOG_INF("pt %d: Initializing channel", i);
         int err = adc_channel_setup_dt(&adc_channels[i]);
         if (err) {
-            return std::unexpected(Error::from_code(err).context("failed to set up channel for pt %d", i));
+            // Using updated Error bridge logic for error codes
+            return std::unexpected(Error::from_code(err)
+                    .context("Failed to set up channel for PT %d", i));
         }
 
-        // Request reading for this channel in sequence.
         sequence.channels |= BIT(adc_channels[i].channel_id);
     }
 
@@ -100,7 +99,6 @@ pt_readings pts_sample()
         return pt_readings{};
     }
 
-    // Averaging readings
     float readings_by_idx[NUM_PTS] = {0};
     for (int i = 0; i < NUM_PTS; ++i) {
         for (int j = 0; j < CONFIG_PT_SAMPLES; ++j) {
@@ -109,19 +107,17 @@ pt_readings pts_sample()
         readings_by_idx[i] = readings_by_idx[i] / CONFIG_PT_SAMPLES * pt_configs[i].scale + pt_configs[i].bias;
     }
 
-    // Assign each PT name as fields to initialize pt_readings
 #define ARTY_PTS_DT_TO_READINGS_ASSIGNMENT(node_id, prop, idx) \
     .DT_STRING_TOKEN_BY_IDX(node_id, prop, idx) = readings_by_idx[idx],
+
     auto readings = pt_readings{DT_FOREACH_PROP_ELEM(USER_NODE, pt_names, ARTY_PTS_DT_TO_READINGS_ASSIGNMENT)};
     last_reading = readings;
     last_read_uptime = k_uptime_get();
     return readings;
 }
 
-/// Gets the last sample if it's sufficiently recent, or resample manually.
 pt_readings pts_get_last_reading()
 {
-    // If last PT reading was less than 100 ms ago
     if (k_uptime_get() - last_read_uptime < 100) {
         return last_reading;
     }
@@ -134,9 +130,7 @@ int pts_set_bias(int index, float bias)
         LOG_ERR("Invalid PT index: %d", index);
         return 1;
     }
-
     pt_configs[index].bias = bias;
-
     return 0;
 }
 
@@ -146,9 +140,7 @@ int pts_set_range(int index, float range)
         LOG_ERR("Invalid PT index: %d", index);
         return 1;
     }
-
     pt_configs[index].range = range;
     pt_configs[index].scale = range / pts_adc_ranges()[index];
-
     return 0;
 }

@@ -1,20 +1,16 @@
-cmake_minimum_required(VERSION 3.13.1)
+cmake_minimum_required(VERSION 3.20)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
-# For god's sake, why isn't this set automatically?
-set(CMAKE_CPP_COMPILER "${CROSS_COMPILE}g++")
+project(clover)
 
-message(STATUS "C compiler: ${CMAKE_C_COMPILER}")
-message(STATUS "C++ compiler: ${CMAKE_CPP_COMPILER}")
+# Enable C++20 for the new Controller logic
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(app)
-
-# Add nanopb dependency
+# Setup Nanopb
 list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
 include(nanopb)
 
-zephyr_include_directories(${CMAKE_CURRENT_BINARY_DIR})
-zephyr_nanopb_sources(app ../api/clover.proto)
-
-target_sources(app PRIVATE src/main.cpp src/server.cpp src/pts.cpp src/sequencer.cpp src/ThrottleValve.cpp src/Error.cpp src/Controller.cpp src/Trace.cpp)
+# This tells CMake to go into the src folder to find the code
+add_subdirectory(src)

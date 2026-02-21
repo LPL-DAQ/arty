@@ -5,38 +5,35 @@
 #include "clover.pb.h"
 #include <string_view>
 #include <cstdarg>
+#include <cstdio>
+#include <expected>
 
 struct device;
-
-constexpr int MAX_ERR_MESSAGE_SIZE = sizeof(static_cast<Response*>(nullptr)->err)-1;
+constexpr int MAX_ERR_MESSAGE_SIZE = sizeof(static_cast<Response*>(nullptr)->err) - 1;
 
 class Error {
 private:
+    // The internal constructor is private to force use of static factory methods
     Error() = default;
-    static void format_to_static_buffer(std::string_view format, va_list args);
+
+    // The "Bridge": This C-style variadic function handles the actual formatting
+    // safely for the compiler.
+    static void format_buffer(const char* format, ...);
 
 public:
+    static Error from_cause(const char* format, ...);
     static Error from_cause(std::string_view cause);
     static Error from_code(int code);
     static Error from_device_not_ready(const struct device* dev);
 
-    // Templates moved to header to fix undefined references in other files
+    // C++ Variadic Template for context-adding
     template<typename... Args>
-    static Error from_cause(std::string_view format, Args... args) {
-        va_list vl; va_start(vl, format);
-        format_to_static_buffer(format, vl);
-        va_end(vl);
-        return from_cause(format);
-    }
-
-    template<typename... Args>
-    Error& context(std::string_view format, Args... args) {
-        va_list vl; va_start(vl, format);
-        format_to_static_buffer(format, vl);
-        va_end(vl);
+    Error& context(const char* format, Args... args) {
+        format_buffer(format, args...);
         return *this;
     }
 
-    MaxLengthString<MAX_ERR_MESSAGE_SIZE> build_message();
+    MaxLengthString<MAX_ERR_MESSAGE_SIZE> build_message() const;
 };
-#endif
+
+#endif // APP_ERROR_H

@@ -1,9 +1,11 @@
 #ifndef APP_MAXLENGTHSTRING_H
 #define APP_MAXLENGTHSTRING_H
+
 #include <array>
 #include <string_view>
 #include <cstdarg>
 #include <zephyr/sys/cbprintf.h>
+#include <algorithm>
 
 template <int max_len>
     requires(max_len > 0)
@@ -14,37 +16,45 @@ private:
 
 public:
     constexpr MaxLengthString();
-    template<typename... Args> MaxLengthString(std::string_view format, Args... args);
 
-    template <int max_rhs_len> void append(const MaxLengthString<max_rhs_len>& rhs);
+    template<typename... Args>
+    MaxLengthString(std::string_view format, Args... args);
+
+    template <int max_rhs_len>
+    void append(const MaxLengthString<max_rhs_len>& rhs);
+
     void append(const std::string_view& rhs);
 
     [[nodiscard]] int size() const;
-
     [[nodiscard]] const char* c_str() const;
     [[nodiscard]] std::string_view string_view() const;
     int copy_buf(char* dest, int max_bytes) const;
 };
 
-/// Builds an empty MaxLengthString.
 template <int max_len>
     requires(max_len > 0)
-constexpr MaxLengthString<max_len>::MaxLengthString() : len(0), buf{'\0'}  // buf is a zero-length cstring.
+constexpr MaxLengthString<max_len>::MaxLengthString() : len(0), buf{'\0'}
 {
 }
 
-/// Creates a MaxLengthString from a format string.
 template <int max_len>
     requires(max_len > 0)
 template <typename... Args>
 MaxLengthString<max_len>::MaxLengthString(std::string_view format, Args... args)
 {
-    const int ideal_chars_written = snprintfcb(buf.data(), max_len+1, format.data(), args...);
+    int ideal_chars_written;
+    // Fix: Explicitly handle the case where no extra arguments are provided
+    // to satisfy -Wformat-security.
+    if constexpr (sizeof...(Args) == 0) {
+        ideal_chars_written = snprintfcb(buf.data(), max_len + 1, "%s", format.data());
+    } else {
+        ideal_chars_written = snprintfcb(buf.data(), max_len + 1, format.data(), args...);
+    }
+
     len = std::min(ideal_chars_written, max_len);
     buf[len] = '\0';
 }
 
-/// Append another MaxLengthString to this string, truncating if rhs is longer than this string has unused bytes.
 template <int max_len>
     requires(max_len > 0)
 template <int max_rhs_len>
@@ -53,13 +63,12 @@ void MaxLengthString<max_len>::append(const MaxLengthString<max_rhs_len>& rhs)
     append(rhs.string_view());
 }
 
-/// Append a string_view to this string, truncating if rhs is longer than this string has unused bytes.
 template <int max_len>
     requires(max_len > 0)
 void MaxLengthString<max_len>::append(const std::string_view& rhs)
 {
-    const int chars_of_rhs = std::min(std::ssize(rhs), max_len - len);
-    rhs.copy(buf.begin() + len, chars_of_rhs);
+    const int chars_of_rhs = std::min(static_cast<int>(rhs.size()), max_len - len);
+    std::copy(rhs.begin(), rhs.begin() + chars_of_rhs, buf.begin() + len);
     len += chars_of_rhs;
     buf[len] = '\0';
 }
@@ -71,8 +80,6 @@ int MaxLengthString<max_len>::size() const
     return len;
 }
 
-/// Returns a cstring corresponding to the max length string, using its internal buffer. When the MaxLengthString goes
-/// out of scope, the cstring pointer is no longer valid.
 template <int max_len>
     requires(max_len > 0)
 const char* MaxLengthString<max_len>::c_str() const
@@ -80,8 +87,6 @@ const char* MaxLengthString<max_len>::c_str() const
     return buf.data();
 }
 
-/// Returns a std::string_view corresponding to the max length string, using its internal buffer. When the
-/// MaxLengthString goes out of scope, the std::string_view is no longer valid.
 template <int max_len>
     requires(max_len > 0)
 std::string_view MaxLengthString<max_len>::string_view() const
@@ -89,8 +94,6 @@ std::string_view MaxLengthString<max_len>::string_view() const
     return std::string_view{buf.data(), static_cast<std::size_t>(len)};
 }
 
-/// Copies the contents of the string into another buffer, not including the trailing null byte. Copies up to max_bytes.
-/// Returns the number of bytes actually copied.
 template <int max_len>
     requires(max_len > 0)
 int MaxLengthString<max_len>::copy_buf(char* dest, int max_bytes) const

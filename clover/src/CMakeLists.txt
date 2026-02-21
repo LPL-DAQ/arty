@@ -1,21 +1,21 @@
-find_package(nanopb REQUIRED)
+# Generate Protobuf headers and sources
+# PROJECT_SOURCE_DIR is 'clover/'. We go up one level to 'arty/' then into 'api/'
+zephyr_nanopb_sources(app ${PROJECT_SOURCE_DIR}/../api/clover.proto)
 
-# Generate C code from your proto in the api folder
-nanopb_generate_cpp(proto_sources proto_headers ../api/clover.proto RELPATH ../api)
+# Required so the compiler can find clover.pb.h in the build folder
+zephyr_include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-target_sources(app PRIVATE 
-    main.cpp 
-    server.cpp 
-    pts.cpp 
-    sequencer.cpp 
-    ThrottleValve.cpp 
-    Error.cpp 
-    Controller.cpp 
+# Map all your source files into the build
+target_sources(app PRIVATE
+    main.cpp
+    server.cpp
+    pts.cpp
+    sequencer.cpp
+    ThrottleValve.cpp
+    Controller.cpp
+    Error.cpp
     Trace.cpp
-    ${proto_sources}
 )
 
-# Ensure headers are found in the build directory
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(app PRIVATE nanopb)
-add_subdirectory(guards)
+# Allow headers in 'src' to find each other
+target_include_directories(app PRIVATE .)
