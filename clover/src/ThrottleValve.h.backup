@@ -322,30 +322,8 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
     LOG_MODULE_DECLARE(throttle_valve);
 
     constexpr float CONTROL_TIME = 0.001;
-    
-    // ========== START OF NEW CODE (Fix #1: Encoder Feedback) ==========
-    // Toggle between encoder feedback (new) and internal position (old)
-    #define USE_ENCODER_FEEDBACK 1  // Set to 0 to revert to original behavior
-    
-    #if USE_ENCODER_FEEDBACK
-        // NEW: Use actual encoder position (where motor really is)
-        float current_position = get_pos_encoder();
-    #else
-        // OLD: Use commanded step count (what we told motor to do)
-        float current_position = get_pos_internal();
-    #endif
-    
-    // Calculate position error and required velocity
-    float position_error = target_deg - current_position;
-    float target_velocity = position_error / CONTROL_TIME;
-    
-    // Temporary logging to compare both methods
-    LOG_DBG("Encoder: %.2f, Internal: %.2f, Diff: %.2f", 
-            get_pos_encoder(), get_pos_internal(), 
-            get_pos_encoder() - get_pos_internal());
-    // ========== END OF NEW CODE ==========
 
-    //this is previous code: float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME; 
+    float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME;
 
     // If target velocity would require excessive acceleration, clamp it.
     float required_acceleration = (target_velocity - velocity) / CONTROL_TIME;
