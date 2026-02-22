@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS lpl.sensors (
     `event` LowCardinality(String)
 ) ENGINE = MergeTree()
 ORDER BY
-    (`test_id`, `time`, `sensor`) PARTITION BY `system`;
+    (`test_id`, `time`, `sensor`);
 
 CREATE TABLE IF NOT EXISTS lpl.tests (
     `id` UUID,
