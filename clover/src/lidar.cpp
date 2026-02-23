@@ -53,6 +53,19 @@ int lidar_init()
         LOG_ERR("LiDAR 1 device not ready");
         return -ENODEV;
     }
+
+    // Configure LiDAR
+    static const uint8_t set_framerate[] = {0x5A, 0x06, 0x03, 0x64, 0x00, 0x00}; // 100 Hz
+    static const uint8_t enable_output[] = {0x5A, 0x05, 0x07, 0x01, 0x67};       // output on
+    static const uint8_t save_settings[]  = {0x5A, 0x04, 0x11, 0x6F};             // persist
+
+    for (uint8_t b : set_framerate) uart_poll_out(lidar_1, b);
+    k_msleep(100);
+    for (uint8_t b : enable_output)  uart_poll_out(lidar_1, b);
+    k_msleep(100);
+    for (uint8_t b : save_settings)  uart_poll_out(lidar_1, b);
+    k_msleep(100);
+
     k_sem_give(&lidar_ready);
     return 0;
 }
