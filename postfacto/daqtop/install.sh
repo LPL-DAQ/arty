@@ -9,15 +9,25 @@ if [ "$(whoami)" != "root" ]; then
     exit 1
 fi
 
-postfacto_dir="$(dirname -- $0)/.."
-
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/opt/uv" sh
 
-mkdir -p /opt/postfacto/daqtop
-cp -R "$postfacto_dir/*" /opt/postfacto/
+rm -rf /opt/postfacto
+mkdir -p /opt/postfacto
+cp -R /home/labtop/arty/postfacto/ /opt/
 
-echo "Please ensure CLICKHOUSE_HOST, CLICKHOUSE_USERNAME, and CLICKHOUSE_PASSWORD are set in /opt/postfacto/db_config,"
+echo "Please ensure CLICKHOUSE_HOST, CLICKHOUSE_USERNAME, and CLICKHOUSE_PASSWORD are set in /etc/postfacto/db_config,"
 echo "then press enter to install the systemd services"
 read
 
+chmod +r /opt/postfacto
 
+cp /opt/postfacto/daqtop/ingest-legacy-daq-data.service /etc/systemd/system
+cp /opt/postfacto/daqtop/ingest-legacy-daq-events.service /etc/systemd/system
+
+systemctl daemon-reload
+
+systemctl enable ingest-legacy-daq-data
+systemctl enable ingest-legacy-daq-events
+
+systemctl start ingest-legacy-daq-data
+systemctl start ingest-legacy-daq-events

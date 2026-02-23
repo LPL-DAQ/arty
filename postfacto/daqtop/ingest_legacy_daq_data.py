@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 import clickhouse_connect
 import polars as pl
 
-PERSISTENT_PATH = Path('/home/lpl/arty/persist.json')
-DATA_PATH = Path('/home/lpl/arty/jamtest')
+PERSISTENT_PATH = Path('/opt/postfacto/ingest_legacy_daq_data_persist.json')
+DATA_PATH = Path('/home/labtop/DAC/data')
 
 READ_AT_ONCE = 1024 * 40
 
@@ -39,8 +39,10 @@ def next_data_dir(curr_dir: Path):
     dirs = list(DATA_PATH.iterdir())
     dirs.sort(key=lambda p: p.stat().st_mtime)
     if curr_dir == Path():
-        return dirs[0]
+        curr_dir = dirs[0]
     for i in range(len(dirs) - 1):
+        if not dirs[i].joinpath('testData.txt').exists():
+            continue
         if dirs[i] == curr_dir:
             return dirs[i + 1]
 
@@ -48,7 +50,9 @@ def next_data_dir(curr_dir: Path):
 
 
 client = clickhouse_connect.get_client(
-    host=os.environ['CLICKHOUSE_HOST'], username=os.environ['CLICKHOUSE_USERNAME'], password=os.environ['CLICKHOUSE_PASSWORD']
+    host=os.environ['CLICKHOUSE_HOST'],
+    username=os.environ['CLICKHOUSE_USERNAME'],
+    password=os.environ['CLICKHOUSE_PASSWORD'],
 )
 
 done_file = False
@@ -60,7 +64,9 @@ while True:
     # Find next file to parse through, if necessary.
     if done_file or progress['dir'] == Path():
         prev_dir = progress['dir']
+        print(prev_dir)
         progress['dir'] = next_data_dir(progress['dir'])
+        print(progress['dir'])
         if progress['dir'] is not None:
             print(f'Found next dir: {progress["dir"]}')
 
@@ -76,8 +82,6 @@ while True:
             time.sleep(0.1)
             with open(data_path, encoding='utf-8') as f:
                 cols = f.readline()
-                if cols == '':
-                    raise Exception('Columns are empty!')
                 progress['bytes_read'] += len(cols)
                 progress['col_names'] = cols.strip().lower().split(',')
         else:
@@ -93,6 +97,7 @@ while True:
         if not file_waiting:
             print(f'Waiting for file... (last read: {progress["dir"]})')
             file_waiting = True
+        save_progress(progress)
         time.sleep(5)
         continue
 

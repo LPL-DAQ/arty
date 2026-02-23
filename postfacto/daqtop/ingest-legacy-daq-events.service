@@ -3,12 +3,11 @@ Description=postfacto legacy daq events ingestion
 After=network-online.target
 
 [Service]
-ExecStart=/opt/uv/uv --project /opt/postfacto run /opt/postfacto/daqtop/ingest_legacy_daq_events.py
+ExecStart=/opt/uv/uv --project /opt/postfacto run --env-file /etc/postfacto/db_config /opt/postfacto/daqtop/ingest_legacy_daq_events.py
 Type=simple
 Nice=10
 Restart=always
 RestartSec=5
-EnvironmentFile=/opt/postfacto/db_config
 
 [Install]
 WantedBy=multi-user.target

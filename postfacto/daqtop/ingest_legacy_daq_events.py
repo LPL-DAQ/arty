@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 import clickhouse_connect
 import polars as pl
 
-PERSISTENT_PATH = Path('/home/lpl/arty/persist_events.json')
-DATA_PATH = Path('/home/lpl/arty/jamtest')
+PERSISTENT_PATH = Path('/opt/postfacto/ingest_legacy_daq_events_persist.json')
+DATA_PATH = Path('/home/labtop/DAC/data')
 
 READ_AT_ONCE = 1024 * 40
 
@@ -44,8 +44,10 @@ def next_data_dir(curr_dir: Path):
     dirs = list(DATA_PATH.iterdir())
     dirs.sort(key=lambda p: p.stat().st_mtime)
     if curr_dir == Path():
-        return dirs[0]
+        curr_dir = dirs[0]
     for i in range(len(dirs) - 1):
+        if not dirs[i].joinpath('testData_log.txt').exists():
+            continue
         if dirs[i] == curr_dir:
             return dirs[i + 1]
 
@@ -65,6 +67,7 @@ while True:
     # Find next file to parse through, if necessary.
     if done_file or progress['dir'] == Path():
         prev_dir = progress['dir']
+        print(f'prev dir: {prev_dir}')
         progress['dir'] = next_data_dir(progress['dir'])
         if progress['dir'] is not None:
             print(f'Found next dir: {progress["dir"]}')
@@ -76,15 +79,6 @@ while True:
             )
             progress['bytes_read'] = 0
             data_path = progress['dir'].joinpath('testData_log.txt')
-
-            # Wait a moment to ensure csv header is written
-            time.sleep(0.1)
-            with open(data_path, encoding='utf-8') as f:
-                cols = f.readline()
-                if cols == '':
-                    raise Exception('Columns are empty!')
-                progress['bytes_read'] += len(cols)
-                progress['col_names'] = cols.strip().lower().split(',')
         else:
             progress['dir'] = prev_dir
     data_path = progress['dir'].joinpath('testData_log.txt')
@@ -99,6 +93,7 @@ while True:
             print(f'Waiting for file... (last read: {progress["dir"]})')
             file_waiting = True
         time.sleep(5)
+        save_progress(progress)
         continue
 
     line_break_idx = buf.rfind(b'\n')
