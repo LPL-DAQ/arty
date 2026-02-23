@@ -11,7 +11,7 @@ import polars as pl
 PERSISTENT_PATH = Path('/opt/postfacto/ingest_legacy_daq_data_persist.json')
 DATA_PATH = Path('/home/labtop/DAC/data')
 
-READ_AT_ONCE = 1024 * 40
+READ_AT_ONCE = 1024 * 1024 * 50
 
 count = 0
 

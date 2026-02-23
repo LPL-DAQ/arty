@@ -67,7 +67,6 @@ while True:
     # Find next file to parse through, if necessary.
     if done_file or progress['dir'] == Path():
         prev_dir = progress['dir']
-        print(f'prev dir: {prev_dir}')
         progress['dir'] = next_data_dir(progress['dir'])
         if progress['dir'] is not None:
             print(f'Found next dir: {progress["dir"]}')
