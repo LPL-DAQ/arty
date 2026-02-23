@@ -11,7 +11,7 @@ K_SEM_DEFINE(lidar_ready, 0, 1);
 
 static float current_distance = 0.0f;
 static const struct device* lidar_1;
-int decode(uint8_t*);
+int decode(uint8_t*, bool);
 
 static void lidar_thread(void*, void*, void*)
 {
@@ -26,18 +26,22 @@ static void lidar_thread(void*, void*, void*)
     uint8_t msg[9];
     int i=0;
 
-    int rx_count = 0;
     while (1) {
         uint8_t byte;
         if (uart_poll_in(lidar_1, &byte) == 0) {
-            LOG_INF("rx[%d]: 0x%02x", rx_count++, byte);
-            k_msleep(5); // Slow down logging to avoid FIFO overflow
+            if (i == 0 && byte != 0x59) continue;
+            if (i == 1 && byte != 0x59) { i = 0; continue; }
+
+            msg[i++] = byte;
+            if (i == 4) {
+                i = 0;
+                decode(msg, false);
+            }
         }
         else{
             k_msleep(1);
         }
     }
-
 }
 
 K_THREAD_DEFINE(lidar_tid, 2048, lidar_thread, nullptr, nullptr, nullptr, 5, 0, 0);
@@ -49,15 +53,6 @@ int lidar_init()
         LOG_ERR("LiDAR 1 device not ready");
         return -ENODEV;
     }
-    // Restore factory settings in case a previous session left the LiDAR in a bad
-    // state (e.g. frame rate = 0 / trigger mode, or output disabled).
-    static const uint8_t factory_restore[] = {0x5A, 0x04, 0x10, 0x6E};
-    static const uint8_t save_settings[]   = {0x5A, 0x04, 0x11, 0x6F};
-    for (uint8_t b : factory_restore) uart_poll_out(lidar_1, b);
-    k_msleep(1000); // Manual requires 1s after reset
-    for (uint8_t b : save_settings) uart_poll_out(lidar_1, b);
-    k_msleep(100);
-
     k_sem_give(&lidar_ready);
     return 0;
 }
@@ -70,22 +65,30 @@ float lidar_get_distance()
     return d;
 }
 
-int decode(uint8_t* msg)
+int decode(uint8_t* msg, bool detailed) //lod for level of detail
 {
+    uint16_t strength;
+    uint16_t temp;
+    uint16_t checksum;
+
     if (msg[0] != 0x59 || msg[1] != 0x59) {
         LOG_ERR("Invalid LiDAR message header");
         return -EINVAL;
     }
 
     uint16_t distance = msg[2] | (msg[3] << 8);
-    uint16_t strength = msg[4] | (msg[5] << 8);
-    uint16_t temp     = msg[6] | (msg[7] << 8);
-    uint8_t checksum  = msg[8];
 
-    uint8_t calculated_checksum = (msg[0] + msg[1] + msg[2] + msg[3] + msg[4] + msg[5] + msg[6] + msg[7]) & 0xFF;
-    if (checksum != calculated_checksum) {
-        LOG_ERR("LiDAR message checksum mismatch");
-        return -EINVAL;
+    if(detailed){
+        strength = msg[4] | (msg[5] << 8);
+        temp     = msg[6] | (msg[7] << 8);
+        checksum  = msg[8];
+
+
+        uint8_t calculated_checksum = (msg[0] + msg[1] + msg[2] + msg[3] + msg[4] + msg[5] + msg[6] + msg[7]) & 0xFF;
+        if (checksum != calculated_checksum) {
+            LOG_ERR("LiDAR message checksum mismatch");
+            return -EINVAL;
+        }
     }
 
     float distance_meters = distance / 100.0f;
@@ -94,6 +97,12 @@ int decode(uint8_t* msg)
     current_distance = distance_meters;
     k_mutex_unlock(&lidar_lock);
 
-    LOG_INF("LiDAR distance: %.2f m, strength: %u, temp: %u", distance_meters, strength, temp);
+    if(detailed){
+        LOG_INF("LiDAR distance: %.2f m, strength: %u, temp: %u", distance_meters, strength, temp);
+    }
+    else
+    {
+        LOG_INF("LiDAR distance: %.2f m", distance_meters);
+    }
     return 0;
 }
