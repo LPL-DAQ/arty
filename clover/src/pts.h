@@ -26,7 +26,7 @@ struct pt_readings {
 };
 
 struct pt_config {
-    float scale;  // psig per analog reading unit. For teensy, resolution = 12, so for a 1k PT this would be (1000.0 / 4096.0)
+    float scale;
     float bias;
     float range;
 };
@@ -34,10 +34,19 @@ struct pt_config {
 constexpr int NUM_PTS = DT_PROP_LEN(USER_NODE, io_channels);
 extern pt_config pt_configs[NUM_PTS];
 
+// ADDED: extern "C" so the C++ Controller can link to these Zephyr C functions
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int pts_init();
 pt_readings pts_sample();
 pt_readings pts_get_last_reading();
 int pts_set_bias(int index, float bias);
 int pts_set_range(int index, float range);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // ARTY_PTS_H
