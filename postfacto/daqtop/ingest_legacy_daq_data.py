@@ -64,9 +64,7 @@ while True:
     # Find next file to parse through, if necessary.
     if done_file or progress['dir'] == Path():
         prev_dir = progress['dir']
-        print(prev_dir)
         progress['dir'] = next_data_dir(progress['dir'])
-        print(progress['dir'])
         if progress['dir'] is not None:
             print(f'Found next dir: {progress["dir"]}')
 
@@ -103,7 +101,8 @@ while True:
 
     line_break_idx = buf.rfind(b'\n')
     if line_break_idx == -1:
-        print("Didn't find a newline, how is this possible?")
+        print("Didn't find a newline, how is this possible? This file's surely gotta be done...")
+        done_file = True
         continue
 
     buf = buf[: line_break_idx + 1]
