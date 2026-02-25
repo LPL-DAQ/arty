@@ -104,7 +104,7 @@
     status = "okay";
 };*/
 
-/*
+
 &quadspi {
     pinctrl-names = "default";
     pinctrl-0 = <&quadspi_clk_pb2 &quadspi_bk1_ncs_pb10
@@ -115,7 +115,7 @@
     w25q128jv: qspi-nor-flash@0 {
         compatible = "st,stm32-qspi-nor";
         reg = <0>;
-        size = <DT_SIZE_M(128)>;  128 Mbits 
+        size = <DT_SIZE_M(16)>;
         qspi-max-frequency = <80000000>;
         spi-bus-width = <4>;
         status = "okay";
@@ -127,8 +127,8 @@
 
             storage_partition: partition@0 {
                 label = "storage";
-                reg = <0x0 DT_SIZE_M(16)>;
+                reg = <0x0 DT_SIZE_M(8)>;
             };
         };
     };
-};*/
+};

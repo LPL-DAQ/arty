@@ -1,6 +1,13 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 
+/* ---- Denny ---- */
+#include <stdint.h>
+
+__attribute__((section(".ext_rodata")))
+const uint8_t test_table[1024] = {1};
+/* ---- Denny ---- */
+
 static const device* rcc_dev = DEVICE_DT_GET(DT_NODELABEL(rcc));
 static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_gpios);
 
