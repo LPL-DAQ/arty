@@ -12,6 +12,10 @@
 typedef SystemState SystemState;
 
 class Controller {
+private:
+    // Define nominal safe positions
+    static constexpr float DEFAULT_FUEL_POS = 81.0f;
+    static constexpr float DEFAULT_LOX_POS = 74.0f;
 public:
     // Removed constructor/singleton. All methods are now static.
     static SystemState state() { return _state; }
@@ -23,6 +27,7 @@ public:
     static std::expected<void, Error> handle_load_motor_sequence(const LoadMotorSequenceRequest& req);
     static std::expected<void, Error> handle_start_sequence(const StartSequenceRequest& req);
     static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
+    static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
 
     static void trigger_abort();
     Controller() = delete; // Explicitly prevent instantiation

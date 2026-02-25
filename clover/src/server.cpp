@@ -187,22 +187,9 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
         case Request_reset_valve_position_tag: {
-            ResetValvePositionRequest& req = request.payload.reset_valve_position;
-            switch (req.valve) {
-            case Valve_FUEL:
-                LOG_INF("Reset value fuel");
-                // ADDED: Hooked up to actual ThrottleValve class
-                FuelValve::reset_pos(0.0f);
-                break;
-            case Valve_LOX:
-                LOG_INF("Reset valve lox");
-                // ADDED: Hooked up to actual ThrottleValve class
-                LoxValve::reset_pos(0.0f);
-                break;
-            default:
-                LOG_ERR("Bad value.");
-                break;
-            }
+            LOG_INF("Reset valve position");
+            // ADDED: Defer to the static controller to conform to std::expected pattern
+            cmd_result = Controller::handle_reset_valve_position(request.payload.reset_valve_position);
             break;
         }
         case Request_load_motor_sequence_tag: {
@@ -239,9 +226,8 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             response.has_err = true;
             MaxLengthString<MAX_ERR_MESSAGE_SIZE> err_msg = cmd_result.error().build_message();
 
-            // Safely copy the string using strncpy to prevent buffer overflows, ensuring null-termination
-            strncpy(response.err, err_msg.c_str(), sizeof(response.err) - 1);
-            response.err[sizeof(response.err) - 1] = '\0';
+            // LEAD FIX: Safely copy the string using copy_buf
+            err_msg.copy_buf(response.err, sizeof(response.err));
 
             LOG_ERR("Command rejected, returning error to client: %s", response.err);
         }

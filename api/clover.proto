@@ -49,14 +49,6 @@ enum Valve {
   LOX = 2;
 }
 
-// Controller State definition
-enum SystemState {
-  STATE_IDLE = 0;
-  STATE_SEQUENCE = 1;
-  STATE_CLOSED_LOOP_THROTTLE = 2;
-  STATE_ABORT = 3;
-}
-
 // ResetValvePosition
 message ResetValvePositionRequest {
   required Valve valve = 1;
@@ -102,8 +94,17 @@ message StartSequenceRequest {}
 // HaltSequence
 message HaltSequenceRequest {}
 
+
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
+
+// Controller State definition
+enum SystemState {
+  STATE_IDLE = 0;
+  STATE_SEQUENCE = 1;
+  STATE_CLOSED_LOOP_THROTTLE = 2;
+  STATE_ABORT = 3;
+}
 
 message DataPacket {
   required float time = 1;
