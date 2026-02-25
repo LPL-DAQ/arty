@@ -9,6 +9,9 @@ message(STATUS "C++ compiler: ${CMAKE_CPP_COMPILER}")
 
 project(app)
 
+# Denny
+zephyr_linker_sources(SECTIONS linker_extmem.ld)
+
 # # Add nanopb dependency
 # list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
 # include(nanopb)
