@@ -2,17 +2,27 @@
 #include <zephyr/drivers/gpio.h>
 
 /* ---- Denny ---- */
+#include <extmem.h>
 #include <stdint.h>
+#define ENABLE_QSPI_MMAP_DEMO
 
-__attribute__((section(".ext_rodata")))
+__attribute__((section(".ext_rodata"))) __attribute__((used))
 const uint8_t test_table[1024] = {1};
-/* ---- Denny ---- */
+//
 
 static const device* rcc_dev = DEVICE_DT_GET(DT_NODELABEL(rcc));
 static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_gpios);
 
 int main(void)
 {
+    /* enable QSPI memory-mapped mode */
+    #ifdef ENABLE_QSPI_MMAP_DEMO
+        extmem_enable_mmap();
+        volatile uint8_t v = test_table[0];
+        printk("ext[0]=%d\n", v);
+    #endif
+    //
+
     int my_var = rcc_dev->state->init_res;
     if(my_var == 111) {
         k_sleep(K_MSEC(1000));

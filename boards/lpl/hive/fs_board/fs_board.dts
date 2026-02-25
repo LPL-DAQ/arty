@@ -115,11 +115,12 @@
     w25q128jv: qspi-nor-flash@0 {
         compatible = "st,stm32-qspi-nor";
         reg = <0>;
-        size = <DT_SIZE_M(16)>;
+        size = <DT_SIZE_M(32)>;
         qspi-max-frequency = <80000000>;
         spi-bus-width = <4>;
         status = "okay";
 
+        /*
         partitions {
             compatible = "fixed-partitions";
             #address-cells = <1>;
@@ -130,5 +131,6 @@
                 reg = <0x0 DT_SIZE_M(8)>;
             };
         };
+        */
     };
 };
