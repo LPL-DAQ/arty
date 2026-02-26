@@ -6,19 +6,30 @@
 #include <expected>
 #include "pts.h"
 #include "Trace.h"
+#include "State.h"
+#include "IdleState.h" // Needed for inline pointer initialization
 #include <zephyr/kernel.h> // Needed for msgq
 
-// ADDED: Use the Protobuf-generated enum directly to avoid naming collisions
 typedef SystemState SystemState;
 
 class Controller {
-private:
-    // Define nominal safe positions
+public:
+    // Define nominal safe positions (Made public for states)
     static constexpr float DEFAULT_FUEL_POS = 81.0f;
     static constexpr float DEFAULT_LOX_POS = 74.0f;
-public:
-    // Removed constructor/singleton. All methods are now static.
-    static SystemState state() { return _state; }
+
+    // Shared tracking variables (Made public for states)
+    static inline uint32_t abort_entry_time = 0;
+    static inline uint32_t sequence_start_time = 0;
+    static inline Trace fuel_trace;
+    static inline Trace lox_trace;
+
+    static SystemState state() { return current_state->get_state_enum(); }
+
+    // State machine control
+    static inline State* current_state = &IdleState::get();
+    static inline State* previous_state = &IdleState::get();
+    static void change_state(State* new_state) { current_state = new_state; }
 
     static void init();
     static void tick(); // The 1ms dispatcher called by the timer
@@ -33,20 +44,7 @@ public:
     Controller() = delete; // Explicitly prevent instantiation
 
 private:
-    // ADDED: Initialize using the proper Protobuf enum prefix
-    static inline SystemState _state = SystemState_STATE_IDLE;
-    static inline uint32_t abort_entry_time = 0;
-    static inline uint32_t sequence_start_time = 0;
     static inline uint32_t udp_sequence_number = 0;
-
-    // Trace objects replace the sequencer
-    static inline Trace fuel_trace;
-    static inline Trace lox_trace;
-
-    // State logic handlers
-    static void run_idle(const Sensors& sensors);
-    static void run_sequence(const Sensors& sensors);
-    static void run_abort(const Sensors& sensors);
     static void stream_telemetry(const Sensors& sensors);
 };
 
