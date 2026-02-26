@@ -1,6 +1,7 @@
 #include "Controller.h"
+#include "IdleState.h"
 #include "SequenceState.h"
-#include "ClosedLoopState.h" // NEW
+#include "ClosedLoopState.h"
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
@@ -14,11 +15,21 @@ K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 static void control_timer_expiry(struct k_timer *t);
 K_TIMER_DEFINE(control_loop_timer, control_timer_expiry, NULL);
 
-void Controller::init() {
-    current_state = &IdleState::get();
-    previous_state = current_state;
-    current_state->init();
+void Controller::change_state(SystemState new_state) {
+    if (current_state == new_state) return;
 
+    current_state = new_state;
+    switch(current_state) {
+        case SystemState_STATE_IDLE: IdleState::init(); break;
+        case SystemState_STATE_SEQUENCE: SequenceState::init(); break;
+        case SystemState_STATE_ABORT: AbortState::init(); break;
+        case SystemState_STATE_CLOSED_LOOP_THROTTLE: ClosedLoopState::init(); break;
+        default: break;
+    }
+}
+
+void Controller::init() {
+    change_state(SystemState_STATE_IDLE);
     k_timer_start(&control_loop_timer, K_MSEC(1), K_MSEC(1));
 }
 
@@ -35,22 +46,51 @@ void Controller::tick() {
     current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
     current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
 
-    // --- NEW OOP STATE MACHINE LOGIC ---
-    if (current_state != previous_state) {
-        previous_state->end();
-        current_state->init();
-        previous_state = current_state;
+    ControllerOutput out;
+
+    // --- PROCEDURAL LOGIC DISPATCHER ---
+    switch(current_state) {
+        case SystemState_STATE_IDLE:
+            out = IdleState::tick();
+            break;
+        case SystemState_STATE_SEQUENCE:
+            out = SequenceState::tick(k_uptime_get(), sequence_start_time, fuel_trace, lox_trace);
+            break;
+        case SystemState_STATE_ABORT:
+            out = AbortState::tick(k_uptime_get(), abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+            break;
+        case SystemState_STATE_CLOSED_LOOP_THROTTLE:
+            out = ClosedLoopState::tick(current_sensors.has_ptc401, current_sensors.ptc401);
+            break;
+        default:
+            out = IdleState::tick();
+            break;
     }
 
-    current_state->run(current_sensors);
-    // -----------------------------------
+    // Handle Logic-Requested State Transitions
+    if (out.next_state != current_state) {
+        change_state(out.next_state);
+    }
+
+    // --- CENTRALIZED HARDWARE ACTUATION ---
+    if (out.set_fuel) {
+        FuelValve::tick(out.fuel_pos);
+    } else {
+        FuelValve::stop();
+    }
+
+    if (out.set_lox) {
+        LoxValve::tick(out.lox_pos);
+    } else {
+        LoxValve::stop();
+    }
 
     stream_telemetry(current_sensors);
 }
 
 void Controller::trigger_abort() {
     abort_entry_time = k_uptime_get();
-    change_state(&AbortState::get());
+    change_state(SystemState_STATE_ABORT);
 }
 
 static void control_timer_expiry(struct k_timer *t) {
@@ -75,13 +115,12 @@ std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMoto
 
 std::expected<void, Error> Controller::handle_start_sequence(const StartSequenceRequest& req) {
     sequence_start_time = k_uptime_get();
-    change_state(&SequenceState::get());
+    change_state(SystemState_STATE_SEQUENCE);
     return {};
 }
 
-// NEW: Closed Loop Handler
 std::expected<void, Error> Controller::handle_start_closed_loop(const StartClosedLoopRequest& req) {
-    change_state(&ClosedLoopState::get());
+    change_state(SystemState_STATE_CLOSED_LOOP_THROTTLE);
     return {};
 }
 
@@ -91,7 +130,7 @@ std::expected<void, Error> Controller::handle_halt_sequence(const HaltSequenceRe
 }
 
 std::expected<void, Error> Controller::handle_reset_valve_position(const ResetValvePositionRequest& req) {
-    if (current_state->get_state_enum() != SystemState_STATE_IDLE) {
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot reset valve position unless system is IDLE"));
     }
 
@@ -116,7 +155,7 @@ void Controller::stream_telemetry(const Sensors& sensors) {
     packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
     packet.sensors = sensors;
 
-    packet.state = current_state->get_state_enum();
+    packet.state = current_state;
     packet.is_abort = (packet.state == SystemState_STATE_ABORT);
     packet.sequence_number = udp_sequence_number++;
 

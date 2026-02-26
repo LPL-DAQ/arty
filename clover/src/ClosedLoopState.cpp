@@ -1,6 +1,4 @@
 #include "ClosedLoopState.h"
-#include "Controller.h"
-#include "ThrottleValve.h"
 #include "LookupTable.h"
 #include <zephyr/logging/log.h>
 
@@ -10,27 +8,25 @@ void ClosedLoopState::init() {
     LOG_INF("Entering Closed Loop Throttle Mode");
 }
 
-void ClosedLoopState::run(const Sensors& sensors) {
-    // Example implementation using ptc401 as feedback.
-    // The team can change this to use whichever sensor they prefer later.
-    if (!sensors.has_ptc401) {
+ControllerOutput ClosedLoopState::tick(bool has_ptc, float ptc_pressure) {
+    ControllerOutput out;
+
+    if (!has_ptc) {
         LOG_ERR("Lost feedback sensor! Aborting closed loop.");
-        Controller::trigger_abort();
-        return;
+        out.next_state = SystemState_STATE_ABORT;
+        return out;
     }
 
-    float current_pressure = sensors.ptc401;
-
     // Calculate target throttle via lookup table
-    float target_valve_pos = interpolate_throttle(current_pressure);
+    float target_valve_pos = interpolate_throttle(ptc_pressure);
 
-    // Command the valves (Can adjust to just command one valve if needed)
-    FuelValve::tick(target_valve_pos);
-    LoxValve::tick(target_valve_pos);
-}
+    out.set_fuel = true;
+    out.fuel_pos = target_valve_pos;
 
-void ClosedLoopState::end() {
-    FuelValve::stop();
-    LoxValve::stop();
-    LOG_INF("Exited Closed Loop Throttle Mode");
+    out.set_lox = true;
+    out.lox_pos = target_valve_pos;
+
+    out.next_state = SystemState_STATE_CLOSED_LOOP_THROTTLE;
+
+    return out;
 }

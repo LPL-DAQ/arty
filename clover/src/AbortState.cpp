@@ -1,27 +1,25 @@
 #include "AbortState.h"
-#include "Controller.h"
-#include "ThrottleValve.h"
-#include "IdleState.h"
-#include <zephyr/kernel.h>
 
 void AbortState::init() {
-    // Drive valves to nominal safe positions quickly on entry
-    FuelValve::tick(Controller::DEFAULT_FUEL_POS);
-    LoxValve::tick(Controller::DEFAULT_LOX_POS);
+    // Controller handles actuation now
 }
 
-void AbortState::run(const Sensors& sensors) {
-    // Hold safe positions
-    FuelValve::tick(Controller::DEFAULT_FUEL_POS);
-    LoxValve::tick(Controller::DEFAULT_LOX_POS);
+ControllerOutput AbortState::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
+    ControllerOutput out;
+
+    // Drive valves to nominal safe positions
+    out.set_fuel = true;
+    out.fuel_pos = default_fuel;
+
+    out.set_lox = true;
+    out.lox_pos = default_lox;
 
     // Run for ~0.5s before allowing state transition back to idle
-    if (k_uptime_get() - Controller::abort_entry_time > 500) {
-        Controller::change_state(&IdleState::get());
+    if (current_time - entry_time > 500) {
+        out.next_state = SystemState_STATE_IDLE;
+    } else {
+        out.next_state = SystemState_STATE_ABORT;
     }
-}
 
-void AbortState::end() {
-    FuelValve::stop();
-    LoxValve::stop();
+    return out;
 }

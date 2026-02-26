@@ -1,16 +1,13 @@
 #include "IdleState.h"
-#include "ThrottleValve.h"
 
 void IdleState::init() {
-    // Ensure valves are stopped when entering idle
-    FuelValve::stop();
-    LoxValve::stop();
+    // Initial setup if needed (valves are stopped by the output struct)
 }
 
-void IdleState::run(const Sensors& sensors) {
-    // Continuous sensor data collection is handled by Controller::stream_telemetry
-}
-
-void IdleState::end() {
-    // Nothing to clean up
+ControllerOutput IdleState::tick() {
+    ControllerOutput out;
+    out.set_fuel = false; // Tells the Controller to call stop()
+    out.set_lox = false;
+    out.next_state = SystemState_STATE_IDLE;
+    return out;
 }
