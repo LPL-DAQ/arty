@@ -16,7 +16,8 @@
 #include "clover.pb.h"
 #include "guards/SocketGuard.h"
 #include "pts.h"
-#include "sequencer.h"
+// ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
+#include "Controller.h"
 #include "server.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
@@ -40,8 +41,6 @@ K_THREAD_STACK_ARRAY_DEFINE(client_stacks, MAX_OPEN_CLIENTS, CONNECTION_THREAD_S
 
 constexpr int MAX_THREAD_NAME_LENGTH = 10;
 static std::array<std::string, MAX_OPEN_CLIENTS> thread_names;
-static std::array<int, MAX_OPEN_CLIENTS> thread_sockets;
-static std::array<int64_t, MAX_OPEN_CLIENTS> last_pinged;
 K_MUTEX_DEFINE(thread_info_guard);
 
 constexpr int MAX_DATA_CLIENTS = 1;
@@ -147,6 +146,10 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
+        // ADDED: We use cmd_result to capture any domain logic errors returned by the Controller.
+        // If a command (like loading a trace) fails, we bubble this error directly to the response.
+        std::expected<void, Error> cmd_result = {};
+
         // Handle request
         switch (request.which_payload) {
         case Request_subscribe_data_stream_tag: {
@@ -167,6 +170,9 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
                 // Set client port
                 reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
+
+                // ADDED: Break out of loop once a slot is found so we don't accidentally overwrite multiple slots
+                break;
             }
 
             if (!found_data_client_slot) {
@@ -181,34 +187,30 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
         case Request_reset_valve_position_tag: {
-            ResetValvePositionRequest& req = request.payload.reset_valve_position;
-            switch (req.valve) {
-            case Valve_FUEL:
-                LOG_INF("Reset value fuel");
-                break;
-            case Valve_LOX:
-                LOG_INF("Reset valve lox");
-                break;
-            default:
-                LOG_ERR("Bad value.");
-                break;
-            }
+            LOG_INF("Reset valve position");
+            // ADDED: Defer to the static controller to conform to std::expected pattern
+            cmd_result = Controller::handle_reset_valve_position(request.payload.reset_valve_position);
             break;
         }
         case Request_load_motor_sequence_tag: {
             LOG_INF("Open loop motor sequence");
+            // ADDED: Defer to the static controller to parse the protobuf trace.
+            // If the trace has logic errors (e.g. invalid sequence points), it will return an Error.
+            cmd_result = Controller::handle_load_motor_sequence(request.payload.load_motor_sequence);
             break;
         }
-
         case Request_start_sequence_tag: {
             LOG_INF("Start sequence");
+            // ADDED: Kick off the 1ms timer in the Controller.
+            cmd_result = Controller::handle_start_sequence(request.payload.start_sequence);
             break;
         }
         case Request_halt_sequence_tag: {
             LOG_INF("halt seq");
+            // ADDED: Trigger the safe abort mode in the Controller.
+            cmd_result = Controller::handle_halt_sequence(request.payload.halt_sequence);
             break;
         }
-
         default: {
             LOG_ERR(
                 "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);
@@ -217,14 +219,18 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
 
         Response response = Response_init_default;
-        response.has_err = true;
-        // Do not use this for prod code as it may write beyond the err message buffer.
-        strcpy(
-            response.err,
-            "Very long test error message. Very long test error message. Very long test error message. Very long test error message. Very long test error "
-            "message. Very long test error message. Very long test error message. Very long test error message. Very long test error message. Very long test "
-            "error message. Very long test error message. Very long test error message. Very long test error message. Very long test error message. Very long "
-            "test error message.");
+
+        // ADDED: If the Controller rejected the command, we format the Variadic Error
+        // into the Protobuf response and send it back to the Ground Station immediately.
+        if (!cmd_result.has_value()) {
+            response.has_err = true;
+            MaxLengthString<MAX_ERR_MESSAGE_SIZE> err_msg = cmd_result.error().build_message();
+
+            // LEAD FIX: Safely copy the string using copy_buf
+            err_msg.copy_buf(response.err, sizeof(response.err));
+
+            LOG_ERR("Command rejected, returning error to client: %s", response.err);
+        }
 
         // Send message over TCP with varint length prefix.
         bool ok = pb_encode_ex(&pb_output, Response_fields, &response, PB_ENCODE_DELIMITED);
@@ -390,24 +396,14 @@ void serve_data_connections()
 
     // Serve new connections indefinitely
     while (true) {
-        k_mutex_lock(&data_client_info_guard, K_FOREVER);
-        for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-            if (data_client_slot_indexes[i] == -1) {
-                continue;
-            }
+        DataPacket data_packet;
 
-            DataPacket data_packet = DataPacket_init_default;
-            data_packet.time = static_cast<float>(k_cyc_to_ns_floor64(k_cycle_get_64())) / 1e9f;
-            data_packet.sensors.has_pt102 = true;
-            data_packet.sensors.pt102 = 67.67f;
-            data_packet.sensors.has_pt103 = true;
-            data_packet.sensors.pt103 = 67.67f;
-            data_packet.sensors.has_pt202 = true;
-            data_packet.sensors.pt202 = 67.67f;
-            data_packet.sensors.has_pt203 = true;
-            data_packet.sensors.pt203 = 67.67f;
+        // ADDED: Instead of a hardcoded k_sleep loop pumping dummy data, this thread now blocks natively on the
+        // thread-safe Zephyr message queue (telemetry_msgq) defined in Controller.cpp. The 1ms motor control loop
+        // will drop packets into this queue asynchronously. This decouples the real-time control from networking!
+        if (k_msgq_get(&telemetry_msgq, &data_packet, K_FOREVER) == 0) {
 
-            // Encode data packet
+            // Encode data packet exactly ONCE per tick, regardless of how many UDP clients are subscribed
             uint8_t buf[DataPacket_size];
             pb_ostream_t data_packet_ostream = pb_ostream_from_buffer(buf, DataPacket_size);
             bool ok = pb_encode(&data_packet_ostream, DataPacket_fields, &data_packet);
@@ -416,13 +412,22 @@ void serve_data_connections()
                 continue;
             }
 
-            const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
-            if (bytes_sent != data_packet_ostream.bytes_written) {
-                LOG_ERR("Failed to send data packet over UDP: %d", bytes_sent);
+            // Lock the client info guard and broadcast the already-encoded buffer to all subscribed IPs
+            k_mutex_lock(&data_client_info_guard, K_FOREVER);
+            for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
+                if (data_client_slot_indexes[i] == -1) {
+                    continue;
+                }
+
+                const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
+
+                // ADDED: static_cast to size_t to safely compare signed zsock_sendto return with unsigned bytes_written
+                if (static_cast<size_t>(bytes_sent) != data_packet_ostream.bytes_written) {
+                    LOG_ERR("Failed to send data packet over UDP: %d", bytes_sent);
+                }
             }
+            k_mutex_unlock(&data_client_info_guard);
         }
-        k_mutex_unlock(&data_client_info_guard);
-        k_sleep(K_MSEC(3000));
     }
 }
 

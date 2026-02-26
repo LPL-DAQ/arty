@@ -57,7 +57,7 @@ message ResetValvePositionRequest {
 
 
 // Control sequences
-message Trace {
+message ControlTrace {
   required uint32 total_time_ms = 1;
   repeated Segment segments = 2;
 }
@@ -84,8 +84,8 @@ message SineSegment {
 }
 
 message LoadMotorSequenceRequest {
-  optional Trace fuel_trace = 1;
-  optional Trace lox_trace = 2;
+  optional ControlTrace fuel_trace = 1;
+  optional ControlTrace lox_trace = 2;
 }
 
 // StartSequence
@@ -94,8 +94,17 @@ message StartSequenceRequest {}
 // HaltSequence
 message HaltSequenceRequest {}
 
+
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
+
+// Controller State definition
+enum SystemState {
+  STATE_IDLE = 0;
+  STATE_SEQUENCE = 1;
+  STATE_CLOSED_LOOP_THROTTLE = 2;
+  STATE_ABORT = 3;
+}
 
 message DataPacket {
   required float time = 1;
@@ -105,6 +114,11 @@ message DataPacket {
   required ValveStatus lox_valve = 4;
 
   required Sensors sensors = 5;
+
+  // PR 1 Additions: State and Reliability Tracking
+  required SystemState state = 6;
+  required bool is_abort = 7;
+  required uint32 sequence_number = 8;
 }
 
 message ValveStatus {
