@@ -41,16 +41,21 @@ def listen_for_telemetry():
         except Exception as e:
             pass
 
-def send_command(command_type):
+def send_command(command_type, trace_data=None):
     """Packs and sends a TCP request for commands"""
     req = clover_pb2.Request()
 
-    if command_type == "start":
+    # Apply Trace/Sequence mechanisms per PR feedback
+    if command_type == "load":
+        req.load_sequence.file_name = trace_data if trace_data else "default.csv"
+    elif command_type == "start":
         req.start_sequence.SetInParent()
     elif command_type == "halt":
         req.halt_sequence.SetInParent()
+    elif command_type == "open_loop":
+        req.start_throttle_open_loop.trace_name = trace_data if trace_data else "default_open.csv"
     elif command_type == "closed_loop":
-        req.start_throttle_closed_loop.SetInParent()
+        req.start_throttle_closed_loop.trace_name = trace_data if trace_data else "default_closed.csv"
 
     # Commands are over a TCP socket per PR review
     try:
@@ -59,7 +64,9 @@ def send_command(command_type):
         cmd_sock.connect((ZEPHYR_IP, ZEPHYR_PORT))
         cmd_sock.sendall(req.SerializeToString())
         cmd_sock.close()
-        console.print(f"\n[bold cyan][!][/bold cyan] Sent {command_type.upper()} command to {ZEPHYR_IP}:{ZEPHYR_PORT} via TCP\n")
+
+        trace_msg = f" (Trace: {trace_data})" if trace_data else ""
+        console.print(f"\n[bold cyan][!][/bold cyan] Sent {command_type.upper()}{trace_msg} command to {ZEPHYR_IP}:{ZEPHYR_PORT} via TCP\n")
     except Exception as e:
         console.print(f"\n[bold red][!] Failed to send {command_type.upper()} command via TCP: {e}[/bold red]\n")
 
@@ -72,11 +79,17 @@ if __name__ == "__main__":
 
     # Main CLI loop
     while True:
-        cmd = Prompt.ask("\nCommands: [bold]\[start][/bold] [bold]\[halt][/bold] [bold]\[closed_loop][/bold] [bold]\[quit][/bold] \n> ").strip().lower()
+        cmd_input = Prompt.ask("\nCommands: [bold]\[load][/bold] [bold]\[start][/bold] [bold]\[halt][/bold] [bold]\[open_loop][/bold] [bold]\[closed_loop][/bold] [bold]\[quit][/bold] \n> ").strip().lower()
+
+        # Split input to allow specifying traces (e.g., "closed_loop my_trace.csv")
+        parts = cmd_input.split(" ")
+        cmd = parts[0]
+        trace_data = parts[1] if len(parts) > 1 else None
+
         if cmd == "quit":
             console.print("[bold yellow]Exiting...[/bold yellow]")
             break
-        elif cmd in ["start", "halt", "closed_loop"]:
-            send_command(cmd)
+        elif cmd in ["load", "start", "halt", "open_loop", "closed_loop"]:
+            send_command(cmd, trace_data)
         else:
-            console.print("[bold red]Unknown command. Try 'start', 'halt', 'closed_loop', or 'quit'.[/bold red]")
+            console.print("[bold red]Unknown command.[/bold red]")
