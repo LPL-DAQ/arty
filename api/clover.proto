@@ -20,7 +20,7 @@ message Request {
     LoadMotorSequenceRequest load_motor_sequence = 3;
     StartSequenceRequest start_sequence = 4;
     HaltSequenceRequest halt_sequence = 5;
-    StartClosedLoopRequest start_closed_loop = 7; // NEW: Added start closed loop
+    StartThrottleClosedLoopRequest start_throttle_closed_loop = 7; // NEW: Renamed and handles trace
   }
 }
 
@@ -55,7 +55,6 @@ message ResetValvePositionRequest {
   required Valve valve = 1;
   required float new_pos_deg = 2;
 }
-
 
 // Control sequences
 message ControlTrace {
@@ -95,9 +94,10 @@ message StartSequenceRequest {}
 // HaltSequence
 message HaltSequenceRequest {}
 
-// NEW: StartClosedLoop
-message StartClosedLoopRequest {}
-
+// NEW: StartThrottleClosedLoop
+message StartThrottleClosedLoopRequest {
+  optional ControlTrace thrust_trace = 1;
+}
 
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
@@ -119,7 +119,6 @@ message DataPacket {
 
   required Sensors sensors = 5;
 
-  // PR 1 Additions: State and Reliability Tracking
   required SystemState state = 6;
   required bool is_abort = 7;
   required uint32 sequence_number = 8;

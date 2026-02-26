@@ -119,8 +119,7 @@ std::expected<void, Error> Controller::handle_start_sequence(const StartSequence
     return {};
 }
 
-std::expected<void, Error> Controller::handle_start_closed_loop(const StartClosedLoopRequest& req) {
-    change_state(SystemState_STATE_CLOSED_LOOP_THROTTLE);
+std::expected<void, Error> Controller::handle_start_closed_loop(const StartThrottleClosedLoopRequest& req) {    change_state(SystemState_STATE_CLOSED_LOOP_THROTTLE);
     return {};
 }
 

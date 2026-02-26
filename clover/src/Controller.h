@@ -42,8 +42,7 @@ public:
     static std::expected<void, Error> handle_start_sequence(const StartSequenceRequest& req);
     static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_start_closed_loop(const StartClosedLoopRequest& req);
-
+    static std::expected<void, Error> handle_start_closed_loop(const StartThrottleClosedLoopRequest& req);
     static void trigger_abort();
     static void change_state(SystemState new_state);
 
