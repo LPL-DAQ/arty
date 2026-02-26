@@ -1,5 +1,6 @@
 #include "Controller.h"
 #include "SequenceState.h"
+#include "ClosedLoopState.h" // NEW
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
@@ -75,6 +76,12 @@ std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMoto
 std::expected<void, Error> Controller::handle_start_sequence(const StartSequenceRequest& req) {
     sequence_start_time = k_uptime_get();
     change_state(&SequenceState::get());
+    return {};
+}
+
+// NEW: Closed Loop Handler
+std::expected<void, Error> Controller::handle_start_closed_loop(const StartClosedLoopRequest& req) {
+    change_state(&ClosedLoopState::get());
     return {};
 }
 

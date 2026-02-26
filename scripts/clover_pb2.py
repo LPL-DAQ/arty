@@ -13,45 +13,49 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x63lover.proto\"\xdb\x02\n\x07Request\x12<\n\x15subscribe_data_stream\x18\x01 \x01(\x0b\x32\x1b.SubscribeDataStreamRequestH\x00\x12\x31\n\x0fidentify_client\x18\x06 \x01(\x0b\x32\x16.IdentifyClientRequestH\x00\x12:\n\x14reset_valve_position\x18\x02 \x01(\x0b\x32\x1a.ResetValvePositionRequestH\x00\x12\x38\n\x13load_motor_sequence\x18\x03 \x01(\x0b\x32\x19.LoadMotorSequenceRequestH\x00\x12/\n\x0estart_sequence\x18\x04 \x01(\x0b\x32\x15.StartSequenceRequestH\x00\x12-\n\rhalt_sequence\x18\x05 \x01(\x0b\x32\x14.HaltSequenceRequestH\x00\x42\t\n\x07payload\"\x17\n\x08Response\x12\x0b\n\x03\x65rr\x18\x01 \x01(\t\"\x1c\n\x1aSubscribeDataStreamRequest\"4\n\x15IdentifyClientRequest\x12\x1b\n\x06\x63lient\x18\x01 \x02(\x0e\x32\x0b.ClientType\"G\n\x19ResetValvePositionRequest\x12\x15\n\x05valve\x18\x01 \x02(\x0e\x32\x06.Valve\x12\x13\n\x0bnew_pos_deg\x18\x02 \x02(\x02\":\n\x05Trace\x12\x15\n\rtotal_time_ms\x18\x01 \x02(\r\x12\x1a\n\x08segments\x18\x02 \x03(\x0b\x32\x08.Segment\"v\n\x07Segment\x12\x10\n\x08start_ms\x18\x01 \x02(\r\x12\x11\n\tlength_ms\x18\x02 \x02(\r\x12 \n\x06linear\x18\x03 \x01(\x0b\x32\x0e.LinearSegmentH\x00\x12\x1c\n\x04sine\x18\x04 \x01(\x0b\x32\x0c.SineSegmentH\x00\x42\x06\n\x04type\"3\n\rLinearSegment\x12\x11\n\tstart_val\x18\x01 \x02(\x02\x12\x0f\n\x07\x65nd_val\x18\x02 \x02(\x02\"S\n\x0bSineSegment\x12\x0e\n\x06offset\x18\x01 \x02(\x02\x12\x11\n\tamplitude\x18\x02 \x02(\x02\x12\x0e\n\x06period\x18\x03 \x02(\x02\x12\x11\n\tphase_deg\x18\x04 \x02(\x02\"Q\n\x18LoadMotorSequenceRequest\x12\x1a\n\nfuel_trace\x18\x01 \x01(\x0b\x32\x06.Trace\x12\x19\n\tlox_trace\x18\x02 \x01(\x0b\x32\x06.Trace\"\x16\n\x14StartSequenceRequest\"\x15\n\x13HaltSequenceRequest\"\x91\x01\n\nDataPacket\x12\x0c\n\x04time\x18\x01 \x02(\x02\x12\x17\n\x0f\x64\x61ta_queue_size\x18\x02 \x02(\r\x12 \n\nfuel_valve\x18\x03 \x02(\x0b\x32\x0c.ValveStatus\x12\x1f\n\tlox_valve\x18\x04 \x02(\x0b\x32\x0c.ValveStatus\x12\x19\n\x07sensors\x18\x05 \x02(\x0b\x32\x08.Sensors\"p\n\x0bValveStatus\x12\x0f\n\x07\x65nabled\x18\x01 \x02(\x08\x12\x16\n\x0etarget_pos_deg\x18\x02 \x02(\x02\x12\x1f\n\x17\x64river_setpoint_pos_deg\x18\x03 \x02(\x02\x12\x17\n\x0f\x65ncoder_pos_deg\x18\x04 \x02(\x02\"\x85\x01\n\x07Sensors\x12\r\n\x05pt102\x18\x01 \x01(\x02\x12\r\n\x05pt103\x18\x02 \x01(\x02\x12\r\n\x05pt202\x18\x03 \x01(\x02\x12\r\n\x05pt203\x18\x04 \x01(\x02\x12\x0e\n\x06ptf401\x18\x05 \x01(\x02\x12\x0e\n\x06pto401\x18\x06 \x01(\x02\x12\x0e\n\x06ptc401\x18\x07 \x01(\x02\x12\x0e\n\x06ptc402\x18\x08 \x01(\x02*2\n\nClientType\x12\x12\n\x0eUNKNOWN_CLIENT\x10\x01\x12\x07\n\x03GNC\x10\x02\x12\x07\n\x03\x44\x41Q\x10\x03*-\n\x05Valve\x12\x11\n\rUNKNOWN_VALVE\x10\x00\x12\x08\n\x04\x46UEL\x10\x01\x12\x07\n\x03LOX\x10\x02')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x63lover.proto\"\x91\x03\n\x07Request\x12<\n\x15subscribe_data_stream\x18\x01 \x01(\x0b\x32\x1b.SubscribeDataStreamRequestH\x00\x12\x31\n\x0fidentify_client\x18\x06 \x01(\x0b\x32\x16.IdentifyClientRequestH\x00\x12:\n\x14reset_valve_position\x18\x02 \x01(\x0b\x32\x1a.ResetValvePositionRequestH\x00\x12\x38\n\x13load_motor_sequence\x18\x03 \x01(\x0b\x32\x19.LoadMotorSequenceRequestH\x00\x12/\n\x0estart_sequence\x18\x04 \x01(\x0b\x32\x15.StartSequenceRequestH\x00\x12-\n\rhalt_sequence\x18\x05 \x01(\x0b\x32\x14.HaltSequenceRequestH\x00\x12\x34\n\x11start_closed_loop\x18\x07 \x01(\x0b\x32\x17.StartClosedLoopRequestH\x00\x42\t\n\x07payload\"\x17\n\x08Response\x12\x0b\n\x03\x65rr\x18\x01 \x01(\t\"\x1c\n\x1aSubscribeDataStreamRequest\"4\n\x15IdentifyClientRequest\x12\x1b\n\x06\x63lient\x18\x01 \x02(\x0e\x32\x0b.ClientType\"G\n\x19ResetValvePositionRequest\x12\x15\n\x05valve\x18\x01 \x02(\x0e\x32\x06.Valve\x12\x13\n\x0bnew_pos_deg\x18\x02 \x02(\x02\"A\n\x0c\x43ontrolTrace\x12\x15\n\rtotal_time_ms\x18\x01 \x02(\r\x12\x1a\n\x08segments\x18\x02 \x03(\x0b\x32\x08.Segment\"v\n\x07Segment\x12\x10\n\x08start_ms\x18\x01 \x02(\r\x12\x11\n\tlength_ms\x18\x02 \x02(\r\x12 \n\x06linear\x18\x03 \x01(\x0b\x32\x0e.LinearSegmentH\x00\x12\x1c\n\x04sine\x18\x04 \x01(\x0b\x32\x0c.SineSegmentH\x00\x42\x06\n\x04type\"3\n\rLinearSegment\x12\x11\n\tstart_val\x18\x01 \x02(\x02\x12\x0f\n\x07\x65nd_val\x18\x02 \x02(\x02\"S\n\x0bSineSegment\x12\x0e\n\x06offset\x18\x01 \x02(\x02\x12\x11\n\tamplitude\x18\x02 \x02(\x02\x12\x0e\n\x06period\x18\x03 \x02(\x02\x12\x11\n\tphase_deg\x18\x04 \x02(\x02\"_\n\x18LoadMotorSequenceRequest\x12!\n\nfuel_trace\x18\x01 \x01(\x0b\x32\r.ControlTrace\x12 \n\tlox_trace\x18\x02 \x01(\x0b\x32\r.ControlTrace\"\x16\n\x14StartSequenceRequest\"\x15\n\x13HaltSequenceRequest\"\x18\n\x16StartClosedLoopRequest\"\xd9\x01\n\nDataPacket\x12\x0c\n\x04time\x18\x01 \x02(\x02\x12\x17\n\x0f\x64\x61ta_queue_size\x18\x02 \x02(\r\x12 \n\nfuel_valve\x18\x03 \x02(\x0b\x32\x0c.ValveStatus\x12\x1f\n\tlox_valve\x18\x04 \x02(\x0b\x32\x0c.ValveStatus\x12\x19\n\x07sensors\x18\x05 \x02(\x0b\x32\x08.Sensors\x12\x1b\n\x05state\x18\x06 \x02(\x0e\x32\x0c.SystemState\x12\x10\n\x08is_abort\x18\x07 \x02(\x08\x12\x17\n\x0fsequence_number\x18\x08 \x02(\r\"p\n\x0bValveStatus\x12\x0f\n\x07\x65nabled\x18\x01 \x02(\x08\x12\x16\n\x0etarget_pos_deg\x18\x02 \x02(\x02\x12\x1f\n\x17\x64river_setpoint_pos_deg\x18\x03 \x02(\x02\x12\x17\n\x0f\x65ncoder_pos_deg\x18\x04 \x02(\x02\"\x85\x01\n\x07Sensors\x12\r\n\x05pt102\x18\x01 \x01(\x02\x12\r\n\x05pt103\x18\x02 \x01(\x02\x12\r\n\x05pt202\x18\x03 \x01(\x02\x12\r\n\x05pt203\x18\x04 \x01(\x02\x12\x0e\n\x06ptf401\x18\x05 \x01(\x02\x12\x0e\n\x06pto401\x18\x06 \x01(\x02\x12\x0e\n\x06ptc401\x18\x07 \x01(\x02\x12\x0e\n\x06ptc402\x18\x08 \x01(\x02*2\n\nClientType\x12\x12\n\x0eUNKNOWN_CLIENT\x10\x01\x12\x07\n\x03GNC\x10\x02\x12\x07\n\x03\x44\x41Q\x10\x03*-\n\x05Valve\x12\x11\n\rUNKNOWN_VALVE\x10\x00\x12\x08\n\x04\x46UEL\x10\x01\x12\x07\n\x03LOX\x10\x02*b\n\x0bSystemState\x12\x0e\n\nSTATE_IDLE\x10\x00\x12\x12\n\x0eSTATE_SEQUENCE\x10\x01\x12\x1e\n\x1aSTATE_CLOSED_LOOP_THROTTLE\x10\x02\x12\x0f\n\x0bSTATE_ABORT\x10\x03')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'clover_pb2', globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
 
   DESCRIPTOR._options = None
-  _CLIENTTYPE._serialized_start=1394
-  _CLIENTTYPE._serialized_end=1444
-  _VALVE._serialized_start=1446
-  _VALVE._serialized_end=1491
+  _CLIENTTYPE._serialized_start=1567
+  _CLIENTTYPE._serialized_end=1617
+  _VALVE._serialized_start=1619
+  _VALVE._serialized_end=1664
+  _SYSTEMSTATE._serialized_start=1666
+  _SYSTEMSTATE._serialized_end=1764
   _REQUEST._serialized_start=17
-  _REQUEST._serialized_end=364
-  _RESPONSE._serialized_start=366
-  _RESPONSE._serialized_end=389
-  _SUBSCRIBEDATASTREAMREQUEST._serialized_start=391
-  _SUBSCRIBEDATASTREAMREQUEST._serialized_end=419
-  _IDENTIFYCLIENTREQUEST._serialized_start=421
-  _IDENTIFYCLIENTREQUEST._serialized_end=473
-  _RESETVALVEPOSITIONREQUEST._serialized_start=475
-  _RESETVALVEPOSITIONREQUEST._serialized_end=546
-  _TRACE._serialized_start=548
-  _TRACE._serialized_end=606
-  _SEGMENT._serialized_start=608
-  _SEGMENT._serialized_end=726
-  _LINEARSEGMENT._serialized_start=728
-  _LINEARSEGMENT._serialized_end=779
-  _SINESEGMENT._serialized_start=781
-  _SINESEGMENT._serialized_end=864
-  _LOADMOTORSEQUENCEREQUEST._serialized_start=866
-  _LOADMOTORSEQUENCEREQUEST._serialized_end=947
-  _STARTSEQUENCEREQUEST._serialized_start=949
-  _STARTSEQUENCEREQUEST._serialized_end=971
-  _HALTSEQUENCEREQUEST._serialized_start=973
-  _HALTSEQUENCEREQUEST._serialized_end=994
-  _DATAPACKET._serialized_start=997
-  _DATAPACKET._serialized_end=1142
-  _VALVESTATUS._serialized_start=1144
-  _VALVESTATUS._serialized_end=1256
-  _SENSORS._serialized_start=1259
-  _SENSORS._serialized_end=1392
+  _REQUEST._serialized_end=418
+  _RESPONSE._serialized_start=420
+  _RESPONSE._serialized_end=443
+  _SUBSCRIBEDATASTREAMREQUEST._serialized_start=445
+  _SUBSCRIBEDATASTREAMREQUEST._serialized_end=473
+  _IDENTIFYCLIENTREQUEST._serialized_start=475
+  _IDENTIFYCLIENTREQUEST._serialized_end=527
+  _RESETVALVEPOSITIONREQUEST._serialized_start=529
+  _RESETVALVEPOSITIONREQUEST._serialized_end=600
+  _CONTROLTRACE._serialized_start=602
+  _CONTROLTRACE._serialized_end=667
+  _SEGMENT._serialized_start=669
+  _SEGMENT._serialized_end=787
+  _LINEARSEGMENT._serialized_start=789
+  _LINEARSEGMENT._serialized_end=840
+  _SINESEGMENT._serialized_start=842
+  _SINESEGMENT._serialized_end=925
+  _LOADMOTORSEQUENCEREQUEST._serialized_start=927
+  _LOADMOTORSEQUENCEREQUEST._serialized_end=1022
+  _STARTSEQUENCEREQUEST._serialized_start=1024
+  _STARTSEQUENCEREQUEST._serialized_end=1046
+  _HALTSEQUENCEREQUEST._serialized_start=1048
+  _HALTSEQUENCEREQUEST._serialized_end=1069
+  _STARTCLOSEDLOOPREQUEST._serialized_start=1071
+  _STARTCLOSEDLOOPREQUEST._serialized_end=1095
+  _DATAPACKET._serialized_start=1098
+  _DATAPACKET._serialized_end=1315
+  _VALVESTATUS._serialized_start=1317
+  _VALVESTATUS._serialized_end=1429
+  _SENSORS._serialized_start=1432
+  _SENSORS._serialized_end=1565
 # @@protoc_insertion_point(module_scope)

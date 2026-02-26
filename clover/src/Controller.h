@@ -40,6 +40,9 @@ public:
     static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
 
+    // NEW: Handle start closed loop
+    static std::expected<void, Error> handle_start_closed_loop(const StartClosedLoopRequest& req);
+
     static void trigger_abort();
     Controller() = delete; // Explicitly prevent instantiation
 

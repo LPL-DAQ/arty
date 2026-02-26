@@ -20,6 +20,7 @@ message Request {
     LoadMotorSequenceRequest load_motor_sequence = 3;
     StartSequenceRequest start_sequence = 4;
     HaltSequenceRequest halt_sequence = 5;
+    StartClosedLoopRequest start_closed_loop = 7; // NEW: Added start closed loop
   }
 }
 
@@ -93,6 +94,9 @@ message StartSequenceRequest {}
 
 // HaltSequence
 message HaltSequenceRequest {}
+
+// NEW: StartClosedLoop
+message StartClosedLoopRequest {}
 
 
 // Data stream.
