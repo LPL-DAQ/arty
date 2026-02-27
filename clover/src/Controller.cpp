@@ -24,6 +24,7 @@ void Controller::change_state(SystemState new_state) {
         case SystemState_STATE_SEQUENCE: SequenceState::init(); break;
         case SystemState_STATE_ABORT: AbortState::init(); break;
         case SystemState_STATE_CLOSED_LOOP_THROTTLE: ClosedLoopState::init(); break;
+        case SystemState_STATE_CALIBRATION: CalibrationState::init(); break;
         default: break;
     }
 }
@@ -62,6 +63,9 @@ void Controller::tick() {
         case SystemState_STATE_CLOSED_LOOP_THROTTLE:
             out = ClosedLoopState::tick(current_sensors.has_ptc401, current_sensors.ptc401);
             break;
+        case SystemState_STATE_CALIBRATION:
+            // Can make this work over protobuf later
+            out = CalibrationState::tick(k_uptime_get(),ThrottleValve::get_pos_internal(), ThrottleValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
         default:
             out = IdleState::tick();
             break;
