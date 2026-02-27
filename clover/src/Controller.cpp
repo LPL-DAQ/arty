@@ -2,6 +2,7 @@
 #include "IdleState.h"
 #include "SequenceState.h"
 #include "ClosedLoopState.h"
+#include "CalibrationState.h"
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
@@ -65,7 +66,7 @@ void Controller::tick() {
             break;
         case SystemState_STATE_CALIBRATION:
             // Can make this work over protobuf later
-            out = CalibrationState::tick(k_uptime_get(),ThrottleValve::get_pos_internal(), ThrottleValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+            out = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
         default:
             out = IdleState::tick();
             break;

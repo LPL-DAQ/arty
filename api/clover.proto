@@ -108,7 +108,7 @@ enum SystemState {
   STATE_SEQUENCE = 1;
   STATE_CLOSED_LOOP_THROTTLE = 2;
   STATE_ABORT = 3;
-  STATE_CALIBRATION
+  STATE_CALIBRATION = 4;
 }
 
 message DataPacket {
