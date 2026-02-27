@@ -137,25 +137,35 @@ void CalibrationState::end_movement(ControllerOutput& out, uint32_t timestamp) {
     if (power_cycle_timestamp == 0){
         power_cycle_timestamp = timestamp;
     }
-    else if (timestamp - power_cycle_timestamp >= 300) {
+    else if (timestamp - power_cycle_timestamp >= 1000) {
         phase = CalPhase::POWER_OFF;
     }
 }
 
 void CalibrationState::power_off(ControllerOutput& out, uint32_t timestamp) {
-    // TRIGGER MOSFETS TO TURN OFF POWER TO VALVE DRIVERS HERE
+    if (FuelValve::get_power_on()) {
+        FuelValve::power_on(false);
+    }
+    if (LoxValve::get_power_on()) {
+        LoxValve::power_on(false);
+    }
     out.set_fuel = false;
     out.set_lox = false;
-    if (timestamp - power_cycle_timestamp >= 3000) {
+    if (timestamp - power_cycle_timestamp >= 4000) {
         phase = CalPhase::REPOWER;
     }
 }
 
 void CalibrationState::repower(ControllerOutput& out, uint32_t timestamp) {
-    // TRIGGER MOSFETS TO TURN ON POWER TO VALVE DRIVERS HERE
+    if (!FuelValve::get_power_on()) {
+        FuelValve::power_on(true);
+    }
+    if (!LoxValve::get_power_on()) {
+        LoxValve::power_on(true);
+    }
     out.set_fuel = false;
     out.set_lox = false;
-    if (timestamp - power_cycle_timestamp >= 3300) {
+    if (timestamp - power_cycle_timestamp >= 5000) {
         phase = CalPhase::COMPLETE;
     }
 }
