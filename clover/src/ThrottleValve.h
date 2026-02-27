@@ -76,12 +76,14 @@ public:
     static int tick(float target_deg);
     static void stop();
     static void reset_pos(float new_pos);
+    static void power_on(bool on);
 
     static float get_pos_internal();
     static float get_pos_encoder();
     static float get_velocity();
     static float get_acceleration();
     static uint64_t get_nsec_per_pulse();
+    static bool get_power_on();
 };
 
 /// Generates prefix used for log statements from valve kind.
