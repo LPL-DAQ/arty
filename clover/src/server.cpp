@@ -211,6 +211,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             cmd_result = Controller::handle_halt_sequence(request.payload.halt_sequence);
             break;
         }
+        case Request_start_throttle_closed_loop_tag: {
+            LOG_INF("Start throttle closed loop");
+            cmd_result = Controller::handle_start_closed_loop(request.payload.start_throttle_closed_loop);
+            break;
+        }
         default: {
             LOG_ERR(
                 "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);

@@ -10,6 +10,5 @@ target_sources(app PRIVATE Trace.cpp)
 target_sources(app PRIVATE SequenceState.cpp)
 target_sources(app PRIVATE AbortState.cpp)
 target_sources(app PRIVATE IdleState.cpp)
-
-
-
+target_sources(app PRIVATE ClosedLoopState.cpp)
+target_sources(app PRIVATE LookupTable.cpp)
