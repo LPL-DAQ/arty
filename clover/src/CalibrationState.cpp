@@ -1,9 +1,34 @@
 #include "CalibrationState.h"
 
 
+namespace {
+    enum class CalPhase {
+        SEEK_HARDSTOP,
+        BACK_OFF,
+        END_MOVEMENT,
+        POWER_OFF,
+        REPOWER,
+        COMPLETE,
+        ERROR
+    };
+    static CalPhase phase = CalPhase::SEEK_HARDSTOP;
+    float fuel_hardstop_position = 0.0f;
+    bool fuel_found_stop = false;
+    float lox_hardstop_position = 0.0f;
+    bool lox_found_stop = false;
+    float step_size = 0.5f; // in degrees, how much to move per step
+    int num_reps = 2; // number of times to hit the hard
+    int rep_counter = 0;
+    float error_limit = 0.5f;
+    float backup_dist = step_size * 4.0f; // backup distance is twice the step size
+    uint32_t power_cycle_timestamp = 0;
+}
+
+
 
 void CalibrationState::init() {
     // Controller handles actuation now
+    phase = CalPhase::SEEK_HARDSTOP;
     rep_counter = 0;
     fuel_found_stop = false;
     lox_found_stop = false;
@@ -22,37 +47,43 @@ ControllerOutput CalibrationState::tick(uint32_t timestamp, float fuel_pos,float
             seek_hardstop(&out, fuel_pos, fuel_pos_enc, lox_pos, lox_pos_enc);
             break;
         case CalPhase::BACK_OFF:
-            back_off(&out, timestamp, fuel_pos_enc, lox_pos_enc);
+            back_off(&out, fuel_pos_enc, lox_pos_enc);
             break;
         case CalPhase::END_MOVEMENT:
-            end_movement(&out, timestamp, fuel_pos, fuel_pos_enc, lox_pos, lox_pos_enc);
+            end_movement(&out, timestamp);
             break;
         case CalPhase::POWER_OFF:
-            power_off(&out, timestamp, fuel_pos, fuel_pos_enc, lox_pos, lox_pos_enc);
+            power_off(&out, timestamp);
             break;
         case CalPhase::REPOWER:
-            repower(&out, timestamp, fuel_pos, fuel_pos_enc, lox_pos, lox_pos_enc);
+            repower(&out, timestamp);
             break;
         case CalPhase::COMPLETE:
-             complete(&out, timestamp, fuel_pos, fuel_pos_enc, lox_pos, lox_pos_enc);
-            break;
+            complete(&out);
+            return out;
         case CalPhase::ERROR:
-             error(&out, timestamp, fuel_pos, fuel_pos_enc, lox_pos, lox_pos_enc);
-             break;
+            error(&out, timestamp);
+            break;
         default:
             break;
     }
-    if (rep_counter >= num_reps) {
-        phase = CalPhase::StartPowerCycle;
-    }
     out.next_state = SystemState_STATE_CALIBRATION;
-
+    return out;
 }
 void CalibrationState::seek_hardstop(ControllerOutput* out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
     out.set_fuel = true;
     out.set_lox = true;
+
+    /***
+     detection will likely need fiddling
+     ideas:
+     - encoder velocity
+     - a counter so that it needs to be in this error for several ticks
+
+    */
+
     if (!fuel_found_stop && std::abs(fuel_pos - fuel_pos_enc) <= error_limit) {
-            out.fuel_valve_target = fuel_pos + step_size / motion_tracker; // move towards stop, but slow down in later loops
+            out.fuel_valve_target = fuel_pos + step_size / (rep_counter+1); // move towards stop, but slow down in later loops
     } else { // when it reaches
         fuel_found_stop = true;
         fuel_hardstop_position = fuel_pos_enc;
@@ -60,7 +91,7 @@ void CalibrationState::seek_hardstop(ControllerOutput* out, float fuel_pos,float
     }
     // if loxside hasnt reached
     if (!lox_found_stop && std::abs(lox_pos - lox_pos_enc) <= error_limit) {
-        out.lox_valve_target = lox_pos + step_size / motion_tracker;
+        out.lox_valve_target = lox_pos + step_size / (rep_counter+1); // move towards stop, but slow down in later loops
     } else { // when it reaches
         lox_found_stop = true;
         lox_hardstop_position = lox_pos_enc;
@@ -72,21 +103,27 @@ void CalibrationState::seek_hardstop(ControllerOutput* out, float fuel_pos,float
         out.lox_valve_target = lox_pos_enc;
         fuel_found_stop = false;
         lox_found_stop = false;
-        phase = CalPhase::BackOff;
         rep_counter++;
+        if (rep_counter >= num_reps) {
+            phase = CalPhase::END_MOVEMENT;
+        } else {
+            phase = CalPhase::BACK_OFF;
+        }
     }
 
 }
 
 
-void CalibrationState::back_off(ControllerOutput* out, uint32_t timestamp ,float fuel_pos_enc,float lox_pos_enc) {
+void CalibrationState::back_off(ControllerOutput* out ,float fuel_pos_enc,float lox_pos_enc) {
     // if moving away from hardstop
-    out.fuel_valve_target = fuel_pos_enc - step_size / motion_tracker;
-    out.lox_valve_target = lox_pos_enc - step_size / motion_tracker;
+    out.set_fuel = true;
+    out.set_lox = true;
+    out.fuel_valve_target = fuel_pos_enc - step_size / (rep_counter+1);
+    out.lox_valve_target = lox_pos_enc - step_size / (rep_counter+1);
     // if both valves have moved away from hardstop enough, move towards it again
-    if (fuel_hardstop_position - fuel_pos_enc  >= backup_step / motion_tracker &&
-            lox_hardstop_position - lox_pos_enc >= backup_step / motion_tracker) {
-        phase = CalPhase::SeekHardstop;
+    if (fuel_hardstop_position - fuel_pos_enc  >= backup_dist / (rep_counter+1) &&
+            lox_hardstop_position - lox_pos_enc >= backup_dist / (rep_counter+1)) {
+        phase = CalPhase::SEEK_HARDSTOP;
     }
 
 }
@@ -100,7 +137,7 @@ void CalibrationState::end_movement(ControllerOutput* out, uint32_t timestamp) {
     if (power_cycle_timestamp == 0){
         power_cycle_timestamp = timestamp;
     }
-    else if (timestamp - pwer_cycle_timestamp >= 300) {
+    else if (timestamp - power_cycle_timestamp >= 300) {
         phase = CalPhase::POWER_OFF;
     }
 }
@@ -109,7 +146,7 @@ void CalibrationState::power_off(ControllerOutput* out, uint32_t timestamp) {
     // TRIGGER MOSFETS TO TURN OFF POWER TO VALVE DRIVERS HERE
     out.set_fuel = false;
     out.set_lox = false;
-    else if (timestamp - pwer_cycle_timestamp >= 3000) {
+    if (timestamp - power_cycle_timestamp >= 3000) {
         phase = CalPhase::REPOWER;
     }
 }
@@ -118,7 +155,7 @@ void CalibrationState::repower(ControllerOutput* out, uint32_t timestamp) {
     // TRIGGER MOSFETS TO TURN ON POWER TO VALVE DRIVERS HERE
     out.set_fuel = false;
     out.set_lox = false;
-    else if (timestamp - pwer_cycle_timestamp >= 3300) {
+    if (timestamp - power_cycle_timestamp >= 3300) {
         phase = CalPhase::COMPLETE;
     }
 }
@@ -127,5 +164,18 @@ void CalibrationState::complete(ControllerOutput* out) {
     out.set_fuel = false;
     out.set_lox = false;
     out.next_state = SystemState_STATE_IDLE;
+
+}
+
+void CalibrationState::error(ControllerOutput* out, uint32_t timestamp) {
+    // In the event of an error, we want to move the valves to a safe position (fully closed)
+    out.set_fuel = false;
+    out.set_lox = false;
+
+    if (power_cycle_timestamp == 0){
+        power_cycle_timestamp = timestamp;
+    }
+
+    // MOSFET CODE TO TURN OFF POWER TO VALVE DRIVERS HERE
 
 }
