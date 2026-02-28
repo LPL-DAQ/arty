@@ -1,0 +1,12 @@
+[project]
+name = "postfacto"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "clickhouse-connect>=0.11.0",
+    "polars>=1.38.1",
+    "pyarrow>=23.0.1",
+    "schedule>=1.2.2",
+]

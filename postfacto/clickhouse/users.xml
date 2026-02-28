@@ -1,0 +1,47 @@
+<clickhouse>
+    <users>
+        <admin>
+            <password_sha256_hex>7f160137f7e9b384b6e8c19e42ab2ca376df6fe6f6a01bf1ba0928ef034f2ca9</password_sha256_hex>
+
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections>1</show_named_collections>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <default_database>lpl</default_database>
+        </admin>
+
+        <writer>
+            <password_sha256_hex>e3fb51909f48f352511249238310316fef73c3c0c1784e23a76b5d029ed5ac2c</password_sha256_hex>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <default_database>lpl</default_database>
+
+            <grants>
+                <query>GRANT SHOW, SELECT, INTROSPECTION ON *.*</query>
+                <query>GRANT INSERT, ALTER, BACKUP, TRUNCATE, OPTIMIZE ON lpl.*</query>
+            </grants>
+        </writer>
+
+        <readonly>
+            <password_sha256_hex>5870fb6bc73cd377fec3bfed9df7c9f66ef29af2d28f290e57dd59c5e4e2e584</password_sha256_hex>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <default_database>lpl</default_database>
+
+            <grants>
+                <query>GRANT SHOW, SELECT, INTROSPECTION ON *.*</query>
+            </grants>
+        </readonly>
+    </users>
+</clickhouse>
