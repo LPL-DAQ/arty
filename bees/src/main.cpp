@@ -1,11 +1,18 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 
+/* Place test data in external flash (EXTMEM) */
+#include <extmem.h>
+
 static const device* rcc_dev = DEVICE_DT_GET(DT_NODELABEL(rcc));
 static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_gpios);
 
 int main(void)
 {
+    if (extmem_enable_mmap() != 0) {
+        printk("EXTMEM init failed!\n");
+    }
+
     int my_var = rcc_dev->state->init_res;
     if(my_var == 111) {
         k_sleep(K_MSEC(1000));
