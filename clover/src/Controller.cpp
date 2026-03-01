@@ -30,23 +30,31 @@ void Controller::change_state(SystemState new_state) {
     }
 }
 
-void Controller::init() {
+int Controller::controller_init() {
     change_state(SystemState_STATE_IDLE);
     k_timer_start(&control_loop_timer, K_MSEC(1), K_MSEC(1));
+    LOG_INF("Initializing Controller...");
+    return 0;
 }
 
+int tick_count = 0; // temp for testing
 void Controller::tick() {
-    pt_readings raw_pts = pts_get_last_reading();
+    tick_count++;
+    if (tick_count % 2000 == 0) {
+        LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
+    }
+
+    // pt_readings raw_pts = pts_get_last_reading();
     Sensors current_sensors = Sensors_init_default;
 
-    current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
-    current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
-    current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
-    current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
-    current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
-    current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
-    current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
-    current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
+    // current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
+    // current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
+    // current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
+    // current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
+    // current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
+    // current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
+    // current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
+    // current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
 
     ControllerOutput out;
 
@@ -67,6 +75,7 @@ void Controller::tick() {
         case SystemState_STATE_CALIBRATION:
             // Can make this work over protobuf later
             out = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+            break;
         default:
             out = IdleState::tick();
             break;
@@ -139,19 +148,38 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
     }
 
     switch (req.valve) {
+
+        // this is giving a double -> float warning rn but deal w that later
         case Valve_FUEL:
-            LOG_INF("Resetting fuel valve position to 0");
-            FuelValve::reset_pos(0.0f);
+            LOG_INF("Resetting fuel valve position to %f", req.new_pos_deg);
+            FuelValve::reset_pos(req.new_pos_deg);
             break;
         case Valve_LOX:
-            LOG_INF("Resetting lox valve position to 0");
-            LoxValve::reset_pos(0.0f);
+            LOG_INF("Resetting lox valve position to %f", req.new_pos_deg);
+            LoxValve::reset_pos(req.new_pos_deg);
             break;
         default:
             return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
     }
 
     return {};
+}
+
+std::expected<void, Error> Controller::handle_set_controller_state(const SetControllerStateRequest& req)
+{
+    switch (req.state) {
+        case SystemState_STATE_IDLE:
+        case SystemState_STATE_SEQUENCE:
+        case SystemState_STATE_CLOSED_LOOP_THROTTLE:
+        case SystemState_STATE_ABORT:
+        case SystemState_STATE_CALIBRATION:
+            change_state(req.state);
+            return {};
+
+        default:
+            return std::unexpected(
+                Error::from_cause("Invalid controller state requested"));
+    }
 }
 
 void Controller::stream_telemetry(const Sensors& sensors) {

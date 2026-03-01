@@ -34,7 +34,7 @@ public:
     static inline SystemState current_state = SystemState_STATE_IDLE;
     static SystemState state() { return current_state; }
 
-    static void init();
+    static int controller_init();
     static void tick(); // The 1ms dispatcher called by the timer
 
     // Request handlers
@@ -43,9 +43,19 @@ public:
     static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
     static std::expected<void, Error> handle_start_closed_loop(const StartThrottleClosedLoopRequest& req);
+    static std::expected<void, Error> handle_set_controller_state(const SetControllerStateRequest& req);
+    
     static void trigger_abort();
     static void change_state(SystemState new_state);
+    static int get_state_id(SystemState state) {
 
+        if (state == SystemState_STATE_IDLE) return 0;
+        if (state == SystemState_STATE_SEQUENCE) return 1;
+        if (state == SystemState_STATE_CLOSED_LOOP_THROTTLE) return 2;
+        if (state == SystemState_STATE_ABORT) return 3;
+        if (state == SystemState_STATE_CALIBRATION) return 4;
+        return -1; // Unknown state
+    }
     Controller() = delete; // Explicitly prevent instantiation
 
 private:

@@ -21,6 +21,7 @@ message Request {
     StartSequenceRequest start_sequence = 4;
     HaltSequenceRequest halt_sequence = 5;
     StartThrottleClosedLoopRequest start_throttle_closed_loop = 7; // NEW: Renamed and handles trace
+    SetControllerStateRequest set_controller_state = 8;
   }
 }
 
@@ -94,9 +95,15 @@ message StartSequenceRequest {}
 // HaltSequence
 message HaltSequenceRequest {}
 
+
 // NEW: StartThrottleClosedLoop
 message StartThrottleClosedLoopRequest {
   optional ControlTrace thrust_trace = 1;
+}
+
+// Change Controller State
+message SetControllerStateRequest {
+  required SystemState state = 1;
 }
 
 // Data stream.
