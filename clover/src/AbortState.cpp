@@ -5,7 +5,7 @@ void AbortState::init() {
 }
 
 ControllerOutput AbortState::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
-    ControllerOutput out;
+    ControllerOutput out{};
 
     // Drive valves to nominal safe positions
     out.set_fuel = true;

@@ -86,18 +86,13 @@ void Controller::tick() {
         change_state(out.next_state);
     }
 
-    // --- CENTRALIZED HARDWARE ACTUATION ---
-    if (out.set_fuel) {
-        FuelValve::tick(out.fuel_pos);
-    } else {
-        FuelValve::stop();
-    }
 
-    if (out.set_lox) {
-        LoxValve::tick(out.lox_pos);
-    } else {
-        LoxValve::stop();
-    }
+
+    FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
+
+
+    LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
+
 
     stream_telemetry(current_sensors);
 }

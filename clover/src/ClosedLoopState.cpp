@@ -9,7 +9,7 @@ void ClosedLoopState::init() {
 }
 
 ControllerOutput ClosedLoopState::tick(bool has_ptc, float ptc_pressure) {
-    ControllerOutput out;
+    ControllerOutput out{};
 
     if (!has_ptc) {
         LOG_ERR("Lost feedback sensor! Aborting closed loop.");

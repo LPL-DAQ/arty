@@ -1,4 +1,6 @@
 #include "CalibrationState.h"
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(calibration_state);
 
 
 namespace {
@@ -28,7 +30,7 @@ namespace {
 
 void CalibrationState::init() {
     // Controller handles actuation now
-    phase = CalPhase::SEEK_HARDSTOP;
+    phase = CalPhase::END_MOVEMENT;
     rep_counter = 0;
     fuel_found_stop = false;
     lox_found_stop = false;
@@ -111,6 +113,7 @@ void CalibrationState::seek_hardstop(ControllerOutput& out, float fuel_pos,float
         }
     }
 
+
 }
 
 
@@ -143,28 +146,17 @@ void CalibrationState::end_movement(ControllerOutput& out, uint32_t timestamp) {
 }
 
 void CalibrationState::power_off(ControllerOutput& out, uint32_t timestamp) {
-    if (FuelValve::get_power_on()) {
-        FuelValve::power_on(false);
-    }
-    if (LoxValve::get_power_on()) {
-        LoxValve::power_on(false);
-    }
-    out.set_fuel = false;
-    out.set_lox = false;
+    out.fuel_on = false;
+    out.lox_on = false;
     if (timestamp - power_cycle_timestamp >= 4000) {
         phase = CalPhase::REPOWER;
     }
 }
 
 void CalibrationState::repower(ControllerOutput& out, uint32_t timestamp) {
-    if (!FuelValve::get_power_on()) {
-        FuelValve::power_on(true);
-    }
-    if (!LoxValve::get_power_on()) {
-        LoxValve::power_on(true);
-    }
-    out.set_fuel = false;
-    out.set_lox = false;
+    // while default, this is just explicit for clarity
+    out.fuel_on = true;
+    out.lox_on = true;
     if (timestamp - power_cycle_timestamp >= 5000) {
         phase = CalPhase::COMPLETE;
     }

@@ -48,6 +48,8 @@ private:
 
     inline static k_mutex motor_lock = {};  // Set in init()
     inline static ValveState state = ValveState::STOPPED;
+    inline static ValveState prevState = ValveState::STOPPED;
+
     inline static float velocity = 0;
     inline static float acceleration = 0;
     /// Internal step count of what has been sent to the driver. We use a closed-loop driver so this does not
@@ -73,7 +75,8 @@ public:
 
     static int init();
 
-    static int tick(float target_deg);
+    static int tick(bool on, bool set_pos, float target_deg);
+    static void move(float target_deg);
     static void stop();
     static void reset_pos(float new_pos);
     static void power_on(bool on);
@@ -269,7 +272,9 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
         LOG_ERR("%s Failed to put direction GPIO in default low: err %d", kind_to_prefix(kind), err);
         return err;
     }
+    // err = gpio_pin_configure_dt(&ena_gpio, GPIO_OUTPUT_ACTIVE);
     err = gpio_pin_configure_dt(&ena_gpio, GPIO_OUTPUT_ACTIVE);
+
     if (err) {
         LOG_ERR("%s Failed to put enable GPIO in default high: err %d", kind_to_prefix(kind), err);
         return err;
@@ -320,50 +325,83 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(float target_deg)
+int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(bool on, bool set_pos, float target_deg)
 {
+    prevState = state;
+    if (!on) {
+        state = ValveState::OFF;
+    } else if (set_pos) {
+        state = ValveState::RUNNING;
+    } else {
+        state = ValveState::STOPPED;
+    }
+
+    switch (state) {
+        case ValveState::OFF:
+            power_on(false);
+            break;
+        case ValveState::STOPPED:
+            stop();
+            break;
+        case ValveState::RUNNING:
+            move(target_deg);
+    }
+
     LOG_MODULE_DECLARE(throttle_valve);
 
-    constexpr float CONTROL_TIME = 0.001;
 
-    float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME;
-
-    // If target velocity would require excessive acceleration, clamp it.
-    float required_acceleration = (target_velocity - velocity) / CONTROL_TIME;
-    if (required_acceleration > MAX_ACCELERATION) {
-        target_velocity = velocity + CONTROL_TIME * MAX_ACCELERATION;
-    }
-    else if (required_acceleration < -MAX_ACCELERATION) {
-        target_velocity = velocity - CONTROL_TIME * MAX_ACCELERATION;
-    }
-
-    // Clamp velocity
-    target_velocity = std::clamp(target_velocity, -MAX_VELOCITY, MAX_VELOCITY);
-
-    // Based on velocity, calculate pulse interval. Must divide by two as each counter trigger
-    // only toggles pulse, so two triggers are needed for full step on rising edge.
-    auto usec_per_pulse = static_cast<uint64_t>(1e6 / static_cast<double>(std::abs(target_velocity)) * static_cast<double>(DEG_PER_STEP) / 2.0);
-
-    // Set true values for acceleration and velocity.
-    acceleration = (target_velocity - velocity) / CONTROL_TIME;
-    velocity = target_velocity;
-
-    // Schedule pulses.
-    uint32_t ticks = std::min(counter_us_to_ticks(control_counter, usec_per_pulse), counter_get_max_top_value(control_counter));
-    counter_top_cfg pulse_counter_config{.ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
-    int err = counter_set_top_value(control_counter, &pulse_counter_config);
-    if (err) [[unlikely]] {
-        LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);
-    }
-
-    // Ensure timer is running
-    err = counter_start(control_counter);
-    if (err) [[unlikely]] {
-        LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
-    }
-
-    state = ThrottleValve::ValveState::RUNNING;
     return 0;
+}
+
+template <
+    ValveKind kind,
+    gpio_dt_spec pul_dt_init,
+    gpio_dt_spec dir_dt_init,
+    gpio_dt_spec ena_dt_init,
+    gpio_dt_spec enc_a_dt_init,
+    gpio_dt_spec enc_b_dt_init,
+    const device* control_counter_dt_init>
+void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::move(float target_deg)
+{
+    // power_on(true);
+    // constexpr float CONTROL_TIME = 0.001;
+
+    // float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME;
+
+    // // If target velocity would require excessive acceleration, clamp it.
+    // float required_acceleration = (target_velocity - velocity) / CONTROL_TIME;
+    // if (required_acceleration > MAX_ACCELERATION) {
+    //     target_velocity = velocity + CONTROL_TIME * MAX_ACCELERATION;
+    // }
+    // else if (required_acceleration < -MAX_ACCELERATION) {
+    //     target_velocity = velocity - CONTROL_TIME * MAX_ACCELERATION;
+    // }
+
+    // // Clamp velocity
+    // target_velocity = std::clamp(target_velocity, -MAX_VELOCITY, MAX_VELOCITY);
+
+    // // Based on velocity, calculate pulse interval. Must divide by two as each counter trigger
+    // // only toggles pulse, so two triggers are needed for full step on rising edge.
+    // auto usec_per_pulse = static_cast<uint64_t>(1e6 / static_cast<double>(std::abs(target_velocity)) * static_cast<double>(DEG_PER_STEP) / 2.0);
+
+    // // Set true values for acceleration and velocity.
+    // acceleration = (target_velocity - velocity) / CONTROL_TIME;
+    // velocity = target_velocity;
+
+    // // Schedule pulses.
+    // uint32_t ticks = std::min(counter_us_to_ticks(control_counter, usec_per_pulse), counter_get_max_top_value(control_counter));
+    // counter_top_cfg pulse_counter_config{.ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
+    // int err = counter_set_top_value(control_counter, &pulse_counter_config);
+    // if (err) [[unlikely]] {
+    //     LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);
+    // }
+
+    // // Ensure timer is running
+    // err = counter_start(control_counter);
+    // if (err) [[unlikely]] {
+    //     LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
+    // }
+
 }
 
 template <
@@ -376,6 +414,7 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::stop()
 {
+    power_on(true);
     k_mutex_lock(&motor_lock, K_FOREVER);
     counter_stop(control_counter);
     acceleration = 0;
@@ -429,13 +468,16 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
 
     // HIGH is ON
     if (on) {
-        gpio_pin_set_dt(&ena_gpio, 1);
-        state = ValveState::RUNNING;
-
+        if (prevState == ValveState::OFF) {
+            LOG_INF("%s Powering on valve driver", kind_to_prefix(kind));
+            gpio_pin_set_dt(&ena_gpio, 1);
+        }
     }
     else {
-        gpio_pin_set_dt(&ena_gpio, 0);
-        state = ValveState::STOPPED;
+        if (prevState != ValveState::OFF) {
+            LOG_INF("%s Powering off valve driver", kind_to_prefix(kind));
+            gpio_pin_set_dt(&ena_gpio, 0);
+        }
     }
 
     k_mutex_unlock(&motor_lock);
