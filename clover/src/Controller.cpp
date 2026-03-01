@@ -39,6 +39,8 @@ int Controller::controller_init() {
 
 int tick_count = 0; // temp for testing
 void Controller::tick() {
+    DataPacket packet = DataPacket_init_default;
+
     tick_count++;
     if (tick_count % 2000 == 0) {
         LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
@@ -72,11 +74,14 @@ void Controller::tick() {
         case SystemState_STATE_CLOSED_LOOP_THROTTLE:
             out = ClosedLoopState::tick(current_sensors.has_ptc401, current_sensors.ptc401);
             break;
-        case SystemState_STATE_CALIBRATION:
+        case SystemState_STATE_CALIBRATION: {
             // Can make this work over protobuf later
-            out = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+            packet.has_calibration_data = true;
+            packet.calibration_data = cal_data;
+            out = cal_out;
             break;
-        default:
+        } default:
             out = IdleState::tick();
             break;
     }
@@ -89,12 +94,31 @@ void Controller::tick() {
 
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
-
-
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
 
+    // telementary
+    packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+    packet.sensors = current_sensors;
 
-    stream_telemetry(current_sensors);
+    packet.state = current_state;
+    packet.is_abort = (packet.state == SystemState_STATE_ABORT);
+    packet.sequence_number = udp_sequence_number++;
+
+    packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
+
+    packet.fuel_valve.enabled = true;
+    packet.fuel_valve.target_pos_deg = FuelValve::get_pos_internal();
+    packet.fuel_valve.driver_setpoint_pos_deg = FuelValve::get_pos_internal();
+    packet.fuel_valve.encoder_pos_deg = FuelValve::get_pos_encoder();
+
+    packet.lox_valve.enabled = true;
+    packet.lox_valve.target_pos_deg = LoxValve::get_pos_internal();
+    packet.lox_valve.driver_setpoint_pos_deg = LoxValve::get_pos_internal();
+    packet.lox_valve.encoder_pos_deg = LoxValve::get_pos_encoder();
+
+    if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
+        printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
+    }
 }
 
 void Controller::trigger_abort() {
@@ -174,31 +198,5 @@ std::expected<void, Error> Controller::handle_set_controller_state(const SetCont
         default:
             return std::unexpected(
                 Error::from_cause("Invalid controller state requested"));
-    }
-}
-
-void Controller::stream_telemetry(const Sensors& sensors) {
-    DataPacket packet = DataPacket_init_default;
-    packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
-    packet.sensors = sensors;
-
-    packet.state = current_state;
-    packet.is_abort = (packet.state == SystemState_STATE_ABORT);
-    packet.sequence_number = udp_sequence_number++;
-
-    packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
-
-    packet.fuel_valve.enabled = true;
-    packet.fuel_valve.target_pos_deg = FuelValve::get_pos_internal();
-    packet.fuel_valve.driver_setpoint_pos_deg = FuelValve::get_pos_internal();
-    packet.fuel_valve.encoder_pos_deg = FuelValve::get_pos_encoder();
-
-    packet.lox_valve.enabled = true;
-    packet.lox_valve.target_pos_deg = LoxValve::get_pos_internal();
-    packet.lox_valve.driver_setpoint_pos_deg = LoxValve::get_pos_internal();
-    packet.lox_valve.encoder_pos_deg = LoxValve::get_pos_encoder();
-
-    if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
-        printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
     }
 }

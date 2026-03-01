@@ -130,6 +130,10 @@ message DataPacket {
   required SystemState state = 6;
   required bool is_abort = 7;
   required uint32 sequence_number = 8;
+
+  optional CalibrationData calibration_data = 9;
+
+
 }
 
 message ValveStatus {
@@ -148,4 +152,23 @@ message Sensors {
   optional float pto401 = 6;
   optional float ptc401 = 7;
   optional float ptc402 = 8;
+}
+
+
+message CalibrationData {
+  required float fuel_pos = 1;
+  required float fuel_pos_enc = 2;
+  required bool fuel_found_hardstop = 3;
+  required float fuel_hardstop_pos = 4;
+  required float lox_pos = 5;
+  required float lox_pos_enc = 6;
+  required bool lox_found_hardstop = 7;
+  required float lox_hardstop_pos = 8;
+
+  required int32 cal_phase = 9;
+  required int32 rep_count = 10;
+
+  required float fuel_err = 11;
+  required float lox_err = 12;
+
 }

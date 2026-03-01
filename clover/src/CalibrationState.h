@@ -11,8 +11,7 @@ namespace CalibrationState {
 
 
 
-    void init();
-
+    void init(float fuel_pos_enc, float lox_pos_enc);
     void seek_hardstop(ControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc);
     void back_off(ControllerOutput& out ,float fuel_pos_enc,float lox_pos_enc);
     void end_movement(ControllerOutput& out, uint32_t timestamp);
@@ -20,8 +19,9 @@ namespace CalibrationState {
     void repower(ControllerOutput& out, uint32_t timestamp);
     void complete(ControllerOutput& out);
     void error(ControllerOutput& out, uint32_t timestamp);
+    int get_phase_id();
 
-    ControllerOutput tick(uint32_t timestamp,float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+    std::pair<ControllerOutput, CalibrationData> tick(uint32_t timestamp);
 }
 
 #endif // APP_CALIBRATION_STATE_H
