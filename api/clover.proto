@@ -171,4 +171,7 @@ message CalibrationData {
   required float fuel_err = 11;
   required float lox_err = 12;
 
+  required float fuel_forward_target = 13;
+  required float lox_forward_target = 14;
+
 }

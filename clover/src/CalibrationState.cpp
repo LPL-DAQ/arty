@@ -46,7 +46,7 @@ void CalibrationState::init(float fuel_pos_enc, float lox_pos_enc) {
 
 
 
-std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t timestamp) {
+std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
     ControllerOutput out{};
     CalibrationData data{};
 
@@ -87,6 +87,8 @@ std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t tim
     data.fuel_err = fuel_pos - fuel_pos_enc;
     data.lox_err = lox_pos - lox_pos_enc;
     data.cal_phase = get_phase_id();
+    data.fuel_forward_target = out.fuel_pos;
+    data.lox_forward_target = out.lox_pos;
 
     return std::make_pair(out, data);
 }
@@ -104,7 +106,7 @@ void CalibrationState::seek_hardstop(ControllerOutput& out, float fuel_pos,float
 
     if (!fuel_found_stop && std::abs(fuel_pos - fuel_pos_enc) <= error_limit) {
             out.fuel_pos = fuel_forward_start_position + step_size / (rep_counter+1); // move towards stop, but slow down in later loops
-    } else { // when it reaches
+        } else { // when it reaches
         fuel_found_stop = true;
         fuel_hardstop_position = fuel_pos_enc;
         out.fuel_pos = fuel_pos_enc; // hold position once we find the hardstop

@@ -25,7 +25,7 @@ void Controller::change_state(SystemState new_state) {
         case SystemState_STATE_SEQUENCE: SequenceState::init(); break;
         case SystemState_STATE_ABORT: AbortState::init(); break;
         case SystemState_STATE_CLOSED_LOOP_THROTTLE: ClosedLoopState::init(); break;
-        case SystemState_STATE_CALIBRATION: CalibrationState::init(); break;
+        case SystemState_STATE_CALIBRATION: CalibrationState::init(FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder()); break;
         default: break;
     }
 }

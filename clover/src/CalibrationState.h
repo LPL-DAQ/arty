@@ -20,8 +20,7 @@ namespace CalibrationState {
     void complete(ControllerOutput& out);
     void error(ControllerOutput& out, uint32_t timestamp);
     int get_phase_id();
-
-    std::pair<ControllerOutput, CalibrationData> tick(uint32_t timestamp);
+    std::pair<ControllerOutput, CalibrationData> tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc);
 }
 
 #endif // APP_CALIBRATION_STATE_H
