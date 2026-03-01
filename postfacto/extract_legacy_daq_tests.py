@@ -6,8 +6,22 @@ from pathlib import Path
 
 import clickhouse_connect
 import polars as pl
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from google.oauth2 import service_account
 
 PERSISTENT_DATA_PATH = Path('/var/extract_legacy_daq_tests.pickle')
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SERVICE_ACCOUNT_FILE = 'service_account.json'
+
+CLICKHOUSE_HOST = os.environ['CLICKHOUSE_HOST']
+CLICKHOUSE_USER = os.environ['CLICKHOUSE_USER']
+CLICKHOUSE_PASSWORD = os.environ['CLICKHOUSE_PASSWORD']
+SHEETS_ID = os.environ['SHEETS_ID']
+SHEETS_SERVICE_ACCOUNT_FILE = os.environ['SHEETS_SERVICE_ACCOUNT_FILE']
 
 
 def commit_last_processed_time(new_time: datetime.datetime):
@@ -16,9 +30,14 @@ def commit_last_processed_time(new_time: datetime.datetime):
         pickle.dump(new_time, f)
 
 
-client = clickhouse_connect.get_client(
-    host='localhost', username='admin', password=os.environ['CLICKHOUSE_ADMIN_PASSWORD']
+# Make clickhouse client
+clickhouse_client = clickhouse_connect.get_client(
+    host=CLICKHOUSE_HOST, username=CLICKHOUSE_USER, password=CLICKHOUSE_PASSWORD
 )
+
+# Make google sheets client
+sheets_creds = service_account.Credentials.from_service_account_file(SHEETS_SERVICE_ACCOUNT_FILE)
+sheets_service = build('sheets', 'v4', credentials=sheets_creds)
 
 # Restore persistent state
 if PERSISTENT_DATA_PATH.exists():
@@ -28,18 +47,20 @@ if PERSISTENT_DATA_PATH.exists():
 else:
     print('No persistent datetime found, setting it to the last known test datapoint.')
 
-    df = client.query_df_arrow('SELECT max(`time`) FROM sensors', dataframe_library='polars')
+    df = clickhouse_client.query_df_arrow(
+        'SELECT max(`time`) FROM sensors', dataframe_library='polars'
+    )
     last_processed_date = df[0, 'max(time)']
 
     print(f'Found last processed datetime from max test datapoint: {last_processed_date}')
 
 # Process data points.
 while True:
-    events = client.query_df_arrow(
+    events = clickhouse_client.query_df_arrow(
         "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= {t1:DateTime64(9, 'America/Los_Angeles')} AND `time` <= {t2:DateTime64(9, 'America/Los_Angeles')} ORDER BY `time`",
         parameters={
             't1': last_processed_date.timestamp(),
-            't2': (last_processed_date + datetime.timedelta(minutes=5)).timestamp(),
+            't2': (last_processed_date + datetime.timedelta(minutes=60)).timestamp(),
         },
         dataframe_library='polars',
     )
@@ -47,7 +68,7 @@ while True:
     if events.height == 0:
         print(f'No new events found after {last_processed_date}')
         print('Checking for events after a long time jump...')
-        gapped_events = client.query_df_arrow(
+        gapped_events = clickhouse_client.query_df_arrow(
             "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= {t:DateTime64(9, 'America/Los_Angeles')} ORDER BY `time` LIMIT 1",
             parameters={'t': last_processed_date.timestamp()},
             dataframe_library='polars',
@@ -141,23 +162,45 @@ while True:
         t0 = lox_open_events[-1, 'time']
         test_type = 'lox_flow' if fuel_open_events.is_empty() else 'dual_flow'
 
-    # Insert new test entry!
-    test_id = uuid.uuid4()
-    client.insert(
-        'tests',
-        [[test_id, 'atlas', test_type, t0]],
-        column_names=['id', 'system', 'type', 't0'],
-    )
-    print(f'Created new test entry with ID {test_id}')
-
     # Insert corresponding sensor data block
-    sensors = client.query_df_arrow(
+    test_id = str(uuid.uuid4())
+    sensors = clickhouse_client.query_df_arrow(
         "SELECT `time`, `sensor`, `system`, `value`, `event` FROM raw_sensors WHERE `system` == 'atlas' AND `time` >= {t1:DateTime64(9, 'America/Los_Angeles')} AND `time` <= {t2:DateTime64(9, 'America/Los_Angeles')} ORDER BY `sensor`, `time`",
         parameters={'t1': seq_start_time.timestamp(), 't2': seq_end_time.timestamp()},
         dataframe_library='polars',
-    ).with_columns(test_id=pl.lit(str(test_id)))
-    client.insert_df_arrow('sensors', sensors)
+    ).with_columns(test_id=pl.lit(test_id))
+    # clickhouse_client.insert_df_arrow('sensors', sensors)
     print(f'Inserted sensor data:\n{sensors}')
 
-    last_processed_date = last_event_time
-    commit_last_processed_time(last_processed_date)
+    aborted = not events.filter(pl.col('event') == 'abort').is_empty()
+    start_time = sensors.select(pl.min('time'))[0, 'time']
+    end_time = sensors.select(pl.max('time'))[0, 'time']
+
+    # Insert new test into spreadsheet
+    values = [
+        [
+            test_id,  # test_id
+            t0.timestamp(),  # t0_timestamp
+            aborted,  # aborted
+            'extract_legacy_daq_tests',  # source
+            start_time.timestamp(),  # start_timestamp
+            end_time.timestamp(),  # end_timestamp
+        ]
+    ]
+    result = (
+        sheets_service.spreadsheets()
+        .values()
+        .get(
+            spreadsheetId=SHEETS_ID,
+            range='raw_tests!A1:G',
+            valueInputOptions='RAW',
+            body={'values': values},
+        )
+        .execute()
+    )
+    print(f'Inserted new test: {result}')
+
+    # last_processed_date = last_event_time
+    # commit_last_processed_time(last_processed_date)
+
+    timme.sleep(1000000000)

@@ -1,22 +1,30 @@
 services:
-  db:
-    build: ./clickhouse
-    ulimits:
-      nofile: 262144
-    network_mode: host
-    cap_add:
-      - NET_ADMIN
-      - IPC_LOCK
-    restart: always
-    environment:
-      CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS: 1
-    volumes:
-      - db-data:/var/lib/clickhouse
-      - db-logs:/var/log/clickhouse-server
+  # db:
+  #   build: ./clickhouse
+  #   ulimits:
+  #     nofile: 262144
+  #   network_mode: host
+  #   cap_add:
+  #     - NET_ADMIN
+  #     - IPC_LOCK
+  #   restart: always
+  #   environment:
+  #     CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS: 1
+  #   volumes:
+  #     - db-data:/var/lib/clickhouse
+  #     - db-logs:/var/log/clickhouse-server
   # hub:
   #   image: quay.io/jupyterhub/jupyterhub@sha256:2e72ddcdc280ab1ab113333331e984456723acfc31eb873a1621f9be74c58100
   #   network_mode: host
   #   restart: always
+  extract-legacy-daq-tests:
+    build:
+      context: .
+      dockerfile: services.Dockerfile
+      args:
+        SCRIPT_FILE: extract_legacy_daq_tests.py
+    network_mode: host
+    restart: always
 volumes:
   db-data:
     driver: local
