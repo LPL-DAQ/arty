@@ -1,5 +1,6 @@
 #include "CalibrationState.h"
 #include <zephyr/logging/log.h>
+#include <array>
 LOG_MODULE_REGISTER(calibration_state);
 
 
@@ -13,6 +14,47 @@ namespace {
         COMPLETE,
         ERROR
     };
+
+    constexpr size_t VEL_WINDOW = 4;
+
+    struct VelocityHistory {
+        std::array<float, VEL_WINDOW> samples{};
+        size_t count = 0;
+        size_t index = 0;
+
+        void reset() {
+            samples.fill(0.0f);
+            count = 0;
+            index = 0;
+        }
+
+        void push(float v) {
+            samples[index] = v;
+            index = (index + 1) % VEL_WINDOW;
+            if (count < VEL_WINDOW) {
+                count++;
+            }
+        }
+
+        float average() const {
+            if (count == 0) {
+                return 0.0f;
+            }
+
+            float sum = 0.0f;
+            for (size_t i = 0; i < count; i++) {
+                sum += samples[i];
+            }
+            return sum / static_cast<float>(count);
+        }
+
+        size_t num_samples() const {
+            return count;
+        }
+    };
+
+    static VelocityHistory fuel_vel_history;
+    static VelocityHistory lox_vel_history;
     static CalPhase phase = CalPhase::SEEK_HARDSTOP;
     float fuel_target_position = 0.0f;
     float fuel_hardstop_position = 0.0f;
@@ -46,6 +88,8 @@ void CalibrationState::init(float fuel_pos_enc, float lox_pos_enc) {
 
     fuel_target_position = fuel_pos_enc;
     lox_target_position = lox_pos_enc;
+    fuel_vel_history.reset();
+    lox_vel_history.reset();
 }
 
 
@@ -54,9 +98,14 @@ std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t tim
     ControllerOutput out{};
     CalibrationData data{};
 
+    float fuel_vel_avg = fuel_vel_history.num_samples() > 0 ? fuel_vel_history.average() : fuel_vel;
+    float lox_vel_avg  = lox_vel_history.num_samples() > 0 ? lox_vel_history.average()  : lox_vel;
+
+
     switch (phase) {
         case CalPhase::SEEK_HARDSTOP:
-            seek_hardstop(out, fuel_pos, fuel_pos_enc, fuel_vel, lox_pos, lox_pos_enc, lox_vel);
+            seek_hardstop(out, fuel_pos, fuel_pos_enc, fuel_vel_avg,
+                            lox_pos, lox_pos_enc, lox_vel_avg);
             break;
         case CalPhase::BACK_OFF:
             back_off(out, fuel_pos_enc, lox_pos_enc);
@@ -93,8 +142,11 @@ std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t tim
     data.cal_phase = get_phase_id();
     data.fuel_target_position = fuel_target_position;
     data.lox_target_position = lox_target_position;
-    data.fuel_velocity_error = target_vel / fuel_vel;
-    data.lox_velocity_error = target_vel / lox_vel;
+    data.fuel_velocity_error = target_vel / (fuel_vel_avg + 1e-6f);
+    data.lox_velocity_error = target_vel / (lox_vel_avg + 1e-6f);
+
+        fuel_vel_history.push(fuel_vel);
+    lox_vel_history.push(lox_vel);
 
     return std::make_pair(out, data);
 }
@@ -112,9 +164,10 @@ void CalibrationState::seek_hardstop(ControllerOutput& out, float fuel_pos,float
 
     if (!fuel_found_stop
         // && std::abs(fuel_pos - fuel_pos_enc) <= pos_error_limit
-        && std::abs(target_vel / (fuel_vel + 1e-6f)) >= vel_err_mag_limit) {
+        && (std::abs(target_vel / (fuel_vel + 1e-6f)) <= vel_err_mag_limit || fuel_vel_history.num_samples() < VEL_WINDOW)) {
             fuel_target_position += step_size / (rep_counter+1);
             out.fuel_pos = fuel_target_position; // move towards stop, but slow down in later loops
+
     } else { // when it reaches
         fuel_found_stop = true;
         fuel_hardstop_position = fuel_pos_enc;
@@ -139,10 +192,14 @@ void CalibrationState::seek_hardstop(ControllerOutput& out, float fuel_pos,float
         rep_counter++;
         if (rep_counter >= num_reps) {
             phase = CalPhase::END_MOVEMENT;
+            fuel_vel_history.reset();
+            lox_vel_history.reset();
         } else {
             phase = CalPhase::BACK_OFF;
             fuel_target_position = fuel_hardstop_position;
             lox_target_position = lox_hardstop_position;
+            fuel_vel_history.reset();
+            lox_vel_history.reset();
         }
     }
 }
@@ -159,10 +216,12 @@ void CalibrationState::back_off(ControllerOutput& out ,float fuel_pos_enc,float 
     // if both valves have moved away from hardstop enough, move towards it again
     if (fuel_hardstop_position - fuel_pos_enc  >= backup_dist / (rep_counter+1)
     // && lox_hardstop_position - lox_pos_enc >= backup_dist / (rep_counter+1)
-) {
+        ) {
         phase = CalPhase::SEEK_HARDSTOP;
         fuel_target_position = fuel_pos_enc;
         lox_target_position = lox_pos_enc;
+        fuel_vel_history.reset();
+        lox_vel_history.reset();
     }
 
 }
