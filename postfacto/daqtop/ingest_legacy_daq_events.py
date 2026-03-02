@@ -55,7 +55,9 @@ def next_data_dir(curr_dir: Path):
 
 
 client = clickhouse_connect.get_client(
-    host=os.environ['CLICKHOUSE_HOST'], username=os.environ['CLICKHOUSE_USERNAME'], password=os.environ['CLICKHOUSE_PASSWORD']
+    host=os.environ['CLICKHOUSE_HOST'],
+    username=os.environ['CLICKHOUSE_USERNAME'],
+    password=os.environ['CLICKHOUSE_PASSWORD'],
 )
 
 done_file = False
@@ -129,4 +131,3 @@ while True:
     client.insert_df_arrow('raw_sensors', df)
 
     save_progress(progress)
-
