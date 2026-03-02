@@ -1,0 +1,5 @@
+board:
+  name: vn300_teensy
+  vendor: lpl
+  socs:
+    - name: mimxrt1062
