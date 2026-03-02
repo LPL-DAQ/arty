@@ -1,22 +1,11 @@
 #ifndef ARTY_PTS_H
 #define ARTY_PTS_H
 
-#include <zephyr/devicetree.h>
+#include "Error.h"
 
-/*
- * The following macro magic is used to generate a struct to hold the result of one PT reading. If the device tree has:
- *     ...
- *     names = "pt201", "pt202", "pt203", "pt204";
- *     io-channels = <&adc1 7>, <&adc1 8>, <&adc1 12>, <&adc1 11>;
- *     ...
- *
- * We will generate the following:
- * struct pt_readings {
- *     float pt201;
- *     float pt202;
- *     ...
- * }
- */
+#include <expected>
+#include <zephyr/devicetree.h>
+#include <stdint.h>
 
 #define USER_NODE DT_PATH(zephyr_user)
 
@@ -31,14 +20,23 @@ struct pt_config {
     float range;
 };
 
+struct pts_metrics {
+    uint32_t last_latency_us;
+};
+
 constexpr int NUM_PTS = DT_PROP_LEN(USER_NODE, io_channels);
 extern pt_config pt_configs[NUM_PTS];
 
-
-int pts_init();
+// --- Existing API ---
+std::expected<void, Error> pts_init();
 pt_readings pts_sample();
 pt_readings pts_get_last_reading();
-int pts_set_bias(int index, float bias);
-int pts_set_range(int index, float range);
+std::expected<void, Error> pts_set_bias(int index, float bias);
+std::expected<void, Error> pts_set_range(int index, float range);
+
+// --- Async API ---
+void pts_request_async();
+bool pts_try_collect(pt_readings* out);
+pts_metrics pts_get_metrics();
 
 #endif  // ARTY_PTS_H

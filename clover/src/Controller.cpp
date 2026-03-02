@@ -3,7 +3,6 @@
 #include "SequenceState.h"
 #include "ClosedLoopState.h"
 #include "CalibrationState.h"
-#include "IdleState.h"
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
@@ -14,6 +13,7 @@ LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
+// Forward declaration matching the definition at the bottom
 static void control_timer_expiry(struct k_timer *t);
 K_TIMER_DEFINE(control_loop_timer, control_timer_expiry, NULL);
 
@@ -31,14 +31,14 @@ void Controller::change_state(SystemState new_state) {
     }
 }
 
-int Controller::controller_init() {
+std::expected<void, Error> Controller::controller_init() {
+    LOG_INF("Initializing Controller...");
     change_state(SystemState_STATE_IDLE);
     k_timer_start(&control_loop_timer, K_MSEC(1), K_MSEC(1));
-    LOG_INF("Initializing Controller...");
-    return 0;
+    return {};
 }
 
-int tick_count = 0; // temp for testing
+int tick_count = 0;
 void Controller::tick() {
     DataPacket packet = DataPacket_init_default;
 
@@ -47,21 +47,9 @@ void Controller::tick() {
         LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
     }
 
-    // pt_readings raw_pts = pts_get_last_reading();
     Sensors current_sensors = Sensors_init_default;
-
-    // current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
-    // current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
-    // current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
-    // current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
-    // current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
-    // current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
-    // current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
-    // current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
-
     ControllerOutput out;
 
-    // --- PROCEDURAL LOGIC DISPATCHER ---
     switch(current_state) {
         case SystemState_STATE_IDLE:
             out = IdleState::tick();
@@ -76,37 +64,44 @@ void Controller::tick() {
             out = ClosedLoopState::tick(current_sensors.has_ptc401, current_sensors.ptc401);
             break;
         case SystemState_STATE_CALIBRATION: {
-            // Can make this work over protobuf later
-            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
+            auto [cal_out, cal_data] = CalibrationState::tick(
+                k_uptime_get(),
+                FuelValve::get_pos_internal(),
+                LoxValve::get_pos_internal(),
+                FuelValve::get_pos_encoder(),
+                LoxValve::get_pos_encoder(),
+                FuelValve::get_encoder_velocity(),
+                LoxValve::get_encoder_velocity()
+            );
             packet.has_calibration_data = true;
             packet.calibration_data = cal_data;
             out = cal_out;
             break;
-        } default:
+        }
+        default:
             out = IdleState::tick();
             break;
     }
 
-    // Handle Logic-Requested State Transitions
     if (out.next_state != current_state) {
         change_state(out.next_state);
     }
 
-    if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.fuel_pos, FuelValve::get_pos_encoder(), FuelValve::get_pos_internal());
-    }
+   if (tick_count % 500 == 0) {
+    LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ",
+            static_cast<double>(out.fuel_pos),
+            static_cast<double>(FuelValve::get_pos_encoder()),
+            static_cast<double>(FuelValve::get_pos_internal()));
+}
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
 
-    // telementary
     packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
     packet.sensors = current_sensors;
-
     packet.state = current_state;
     packet.is_abort = (packet.state == SystemState_STATE_ABORT);
     packet.sequence_number = udp_sequence_number++;
-
     packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
 
     packet.fuel_valve.enabled = true;
@@ -120,7 +115,8 @@ void Controller::tick() {
     packet.lox_valve.encoder_pos_deg = LoxValve::get_pos_encoder();
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
-        printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
+        // Using LOG_WRN instead of printk for consistency
+        LOG_WRN("Telemetry queue full, packet dropped");
     }
 }
 
@@ -140,11 +136,11 @@ std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMoto
 
     if (req.has_fuel_trace) {
         auto result = fuel_trace.load(req.fuel_trace);
-        if (!result) return std::unexpected(result.error().context("%s", "Invalid fuel trace"));
+        if (!result) return std::unexpected(result.error().context("Invalid fuel trace"));
     }
     if (req.has_lox_trace) {
         auto result = lox_trace.load(req.lox_trace);
-        if (!result) return std::unexpected(result.error().context("%s", "Invalid lox trace"));
+        if (!result) return std::unexpected(result.error().context("Invalid lox trace"));
     }
     return {};
 }
@@ -155,7 +151,8 @@ std::expected<void, Error> Controller::handle_start_sequence(const StartSequence
     return {};
 }
 
-std::expected<void, Error> Controller::handle_start_closed_loop(const StartThrottleClosedLoopRequest& req) {    change_state(SystemState_STATE_CLOSED_LOOP_THROTTLE);
+std::expected<void, Error> Controller::handle_start_closed_loop(const StartThrottleClosedLoopRequest& req) {
+    change_state(SystemState_STATE_CLOSED_LOOP_THROTTLE);
     return {};
 }
 
@@ -170,18 +167,16 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
     }
 
     switch (req.valve) {
-
-        // this is giving a double -> float warning rn but deal w that later
         case Valve_FUEL:
-            LOG_INF("Resetting fuel valve position to %f", req.new_pos_deg);
+            LOG_INF("Resetting fuel valve position to %f", static_cast<double>(req.new_pos_deg));
             FuelValve::reset_pos(req.new_pos_deg);
             break;
         case Valve_LOX:
-            LOG_INF("Resetting lox valve position to %f", req.new_pos_deg);
+            LOG_INF("Resetting lox valve position to %f", static_cast<double>(req.new_pos_deg));
             LoxValve::reset_pos(req.new_pos_deg);
             break;
         default:
-            return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
+            return std::unexpected(Error::from_cause("Unknown valve identifier"));
     }
 
     return {};
@@ -197,20 +192,18 @@ std::expected<void, Error> Controller::handle_set_controller_state(const SetCont
         case SystemState_STATE_CALIBRATION:
             change_state(req.state);
             return {};
-
         default:
-            return std::unexpected(
-                Error::from_cause("Invalid controller state requested"));
+            return std::unexpected(Error::from_cause("Invalid controller state requested"));
     }
 }
 
 int Controller::get_state_id(SystemState state) {
-        if (state == SystemState_STATE_IDLE) return 0;
-        if (state == SystemState_STATE_SEQUENCE) return 1;
-        if (state == SystemState_STATE_CLOSED_LOOP_THROTTLE) return 2;
-        if (state == SystemState_STATE_ABORT) return 3;
-        if (state == SystemState_STATE_CALIBRATION) return 4;
-        return -1; // Unknown state
+    switch (state) {
+        case SystemState_STATE_IDLE: return 0;
+        case SystemState_STATE_SEQUENCE: return 1;
+        case SystemState_STATE_CLOSED_LOOP_THROTTLE: return 2;
+        case SystemState_STATE_ABORT: return 3;
+        case SystemState_STATE_CALIBRATION: return 4;
+        default: return -1;
+    }
 }
-
-
