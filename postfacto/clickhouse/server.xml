@@ -5,4 +5,5 @@
         <errorlog remove="remove" />
         <level>information</level>
     </logger>
+    <postgresql_port>9005</postgresql_port>
 </clickhouse>
