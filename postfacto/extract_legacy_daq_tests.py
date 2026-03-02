@@ -1,18 +1,14 @@
 import datetime
 import os
 import pickle
+import time
 import uuid
 from pathlib import Path
-import time
 
 import clickhouse_connect
 import polars as pl
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 PERSISTENT_DATA_PATH = Path('/var/extract_legacy_daq_tests.pickle')
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
