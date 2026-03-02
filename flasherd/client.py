@@ -10,7 +10,7 @@ def launch_flasherd_command(logger, command_req: flasherd_pb2.RunCommandRequest,
     binaries should map binary_name to the dev container path to binaries to stream beforehand.
     """
 
-    with grpc.insecure_channel('localhost:6767') as channel:
+    with grpc.insecure_channel('host.docker.internal:6767') as channel:
         stub = flasherd_pb2_grpc.FlasherdStub(channel)
         reqs = []
 
@@ -24,7 +24,7 @@ def launch_flasherd_command(logger, command_req: flasherd_pb2.RunCommandRequest,
         logger.info(f'Launching command `{command_name}` with args: {[(arg.regular if arg.HasField("regular") else f"{arg.binary} (binary)") for arg in command_req.args]}')
         if len(binaries) != 0:
             logger.info(f'Binaries: {binaries}')
-            
+
         try:
             for resp in stub.RunCommand((req for req in reqs)):
                 if resp.HasField('stdout'):
@@ -37,7 +37,7 @@ def launch_flasherd_command(logger, command_req: flasherd_pb2.RunCommandRequest,
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE:
                 logger.error('Failed to connect to flasherd, it might not be running.')
-                
+
                 # Bail out without printing a massive stacktrace; this keeps the advice that "it might not be running" more apparent to end user.
                 sys.exit(1)
             else:
