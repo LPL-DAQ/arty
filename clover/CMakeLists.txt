@@ -24,7 +24,7 @@ zephyr_nanopb_sources(app ../api/clover.proto)
 # -----------------------------------------------------------------------
 find_program(PYTHON3 python3 REQUIRED)
 
-file(GLOB LOOKUP_TABLE_CSVS "${CMAKE_CURRENT_SOURCE_DIR}/tables/*.csv")
+file(GLOB LOOKUP_TABLE_CSVS "${CMAKE_CURRENT_SOURCE_DIR}/../tables/*.csv")
 
 set(GENERATED_LOOKUP_HEADERS "")
 
@@ -35,11 +35,11 @@ foreach(CSV_FILE ${LOOKUP_TABLE_CSVS})
     add_custom_command(
         OUTPUT  ${OUT_HEADER}
         COMMAND ${PYTHON3}
-                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_lookup_table.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/gen_lookup_table.py
                 ${CSV_FILE}
                 ${OUT_HEADER}
         DEPENDS ${CSV_FILE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_lookup_table.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/gen_lookup_table.py
         COMMENT "Generating lookup table header from ${CSV_NAME}.csv"
         VERBATIM
     )
@@ -47,8 +47,3 @@ foreach(CSV_FILE ${LOOKUP_TABLE_CSVS})
     list(APPEND GENERATED_LOOKUP_HEADERS ${OUT_HEADER})
     message(STATUS "Registered lookup table: ${CSV_NAME}.csv -> ${CSV_NAME}_table.h")
 endforeach()
-
-add_custom_target(lookup_tables_generated DEPENDS ${GENERATED_LOOKUP_HEADERS})
-add_dependencies(app lookup_tables_generated)
-
-add_subdirectory(src)
