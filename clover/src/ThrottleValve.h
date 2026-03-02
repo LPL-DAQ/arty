@@ -363,6 +363,8 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::move(float target_deg)
 {
+    LOG_MODULE_DECLARE(throttle_valve);
+
     power_on(true);
     constexpr float CONTROL_TIME = 0.001;
 
@@ -391,6 +393,7 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     // Schedule pulses.
     uint32_t ticks = std::min(counter_us_to_ticks(control_counter, usec_per_pulse), counter_get_max_top_value(control_counter));
     counter_top_cfg pulse_counter_config{.ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
+
     int err = counter_set_top_value(control_counter, &pulse_counter_config);
     if (err) [[unlikely]] {
         LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);

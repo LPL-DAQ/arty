@@ -91,7 +91,9 @@ void Controller::tick() {
         change_state(out.next_state);
     }
 
-
+    if (tick_count % 500 == 0) {
+        LOG_INF("Controller output - cmd_fuel_pos: %f | cmd_lox_pos: %f | fuel_pos: %f | lox_pos: %f", out.fuel_pos, out.lox_pos, FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
+    }
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
@@ -200,3 +202,14 @@ std::expected<void, Error> Controller::handle_set_controller_state(const SetCont
                 Error::from_cause("Invalid controller state requested"));
     }
 }
+
+int Controller::get_state_id(SystemState state) {
+        if (state == SystemState_STATE_IDLE) return 0;
+        if (state == SystemState_STATE_SEQUENCE) return 1;
+        if (state == SystemState_STATE_CLOSED_LOOP_THROTTLE) return 2;
+        if (state == SystemState_STATE_ABORT) return 3;
+        if (state == SystemState_STATE_CALIBRATION) return 4;
+        return -1; // Unknown state
+}
+
+

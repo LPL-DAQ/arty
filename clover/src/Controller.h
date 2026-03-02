@@ -49,15 +49,7 @@ public:
 
     static void trigger_abort();
     static void change_state(SystemState new_state);
-    static int get_state_id(SystemState state) {
-
-        if (state == SystemState_STATE_IDLE) return 0;
-        if (state == SystemState_STATE_SEQUENCE) return 1;
-        if (state == SystemState_STATE_CLOSED_LOOP_THROTTLE) return 2;
-        if (state == SystemState_STATE_ABORT) return 3;
-        if (state == SystemState_STATE_CALIBRATION) return 4;
-        return -1; // Unknown state
-    }
+    static int get_state_id(SystemState state) ;
     Controller() = delete; // Explicitly prevent instantiation
 
 private:
