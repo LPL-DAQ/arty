@@ -100,11 +100,6 @@ message StartThrottleClosedLoopRequest {
   optional ControlTrace thrust_trace = 1;
 }
 
-// NEW: StartThrottleClosedLoop
-message StartThrottleClosedLoopRequest {
-  optional ControlTrace thrust_trace = 1;
-}
-
 // Change Controller State
 message SetControllerStateRequest {
   required SystemState state = 1;
