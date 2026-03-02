@@ -1,0 +1,2 @@
+board_set_flasher_ifnset(tycmd_flasherd)
+board_finalize_runner_args(tycmd_flasherd)
