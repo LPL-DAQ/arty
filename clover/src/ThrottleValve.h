@@ -363,44 +363,44 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::move(float target_deg)
 {
-    // power_on(true);
-    // constexpr float CONTROL_TIME = 0.001;
+    power_on(true);
+    constexpr float CONTROL_TIME = 0.001;
 
-    // float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME;
+    float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME;
 
-    // // If target velocity would require excessive acceleration, clamp it.
-    // float required_acceleration = (target_velocity - velocity) / CONTROL_TIME;
-    // if (required_acceleration > MAX_ACCELERATION) {
-    //     target_velocity = velocity + CONTROL_TIME * MAX_ACCELERATION;
-    // }
-    // else if (required_acceleration < -MAX_ACCELERATION) {
-    //     target_velocity = velocity - CONTROL_TIME * MAX_ACCELERATION;
-    // }
+    // If target velocity would require excessive acceleration, clamp it.
+    float required_acceleration = (target_velocity - velocity) / CONTROL_TIME;
+    if (required_acceleration > MAX_ACCELERATION) {
+        target_velocity = velocity + CONTROL_TIME * MAX_ACCELERATION;
+    }
+    else if (required_acceleration < -MAX_ACCELERATION) {
+        target_velocity = velocity - CONTROL_TIME * MAX_ACCELERATION;
+    }
 
-    // // Clamp velocity
-    // target_velocity = std::clamp(target_velocity, -MAX_VELOCITY, MAX_VELOCITY);
+    // Clamp velocity
+    target_velocity = std::clamp(target_velocity, -MAX_VELOCITY, MAX_VELOCITY);
 
-    // // Based on velocity, calculate pulse interval. Must divide by two as each counter trigger
-    // // only toggles pulse, so two triggers are needed for full step on rising edge.
-    // auto usec_per_pulse = static_cast<uint64_t>(1e6 / static_cast<double>(std::abs(target_velocity)) * static_cast<double>(DEG_PER_STEP) / 2.0);
+    // Based on velocity, calculate pulse interval. Must divide by two as each counter trigger
+    // only toggles pulse, so two triggers are needed for full step on rising edge.
+    auto usec_per_pulse = static_cast<uint64_t>(1e6 / static_cast<double>(std::abs(target_velocity)) * static_cast<double>(DEG_PER_STEP) / 2.0);
 
-    // // Set true values for acceleration and velocity.
-    // acceleration = (target_velocity - velocity) / CONTROL_TIME;
-    // velocity = target_velocity;
+    // Set true values for acceleration and velocity.
+    acceleration = (target_velocity - velocity) / CONTROL_TIME;
+    velocity = target_velocity;
 
-    // // Schedule pulses.
-    // uint32_t ticks = std::min(counter_us_to_ticks(control_counter, usec_per_pulse), counter_get_max_top_value(control_counter));
-    // counter_top_cfg pulse_counter_config{.ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
-    // int err = counter_set_top_value(control_counter, &pulse_counter_config);
-    // if (err) [[unlikely]] {
-    //     LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);
-    // }
+    // Schedule pulses.
+    uint32_t ticks = std::min(counter_us_to_ticks(control_counter, usec_per_pulse), counter_get_max_top_value(control_counter));
+    counter_top_cfg pulse_counter_config{.ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
+    int err = counter_set_top_value(control_counter, &pulse_counter_config);
+    if (err) [[unlikely]] {
+        LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);
+    }
 
-    // // Ensure timer is running
-    // err = counter_start(control_counter);
-    // if (err) [[unlikely]] {
-    //     LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
-    // }
+    // Ensure timer is running
+    err = counter_start(control_counter);
+    if (err) [[unlikely]] {
+        LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
+    }
 
 }
 
