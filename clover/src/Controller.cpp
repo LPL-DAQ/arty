@@ -26,7 +26,7 @@ void Controller::change_state(SystemState new_state) {
         case SystemState_STATE_SEQUENCE: SequenceState::init(); break;
         case SystemState_STATE_ABORT: AbortState::init(); break;
         case SystemState_STATE_CLOSED_LOOP_THROTTLE: ClosedLoopState::init(); break;
-        case SystemState_STATE_CALIBRATION: CalibrationState::init(FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder()); break;
+        case SystemState_STATE_CALIBRATION: CalibrationState::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder()); break;
         default: break;
     }
 }
@@ -87,13 +87,18 @@ void Controller::tick() {
             break;
     }
 
-    // Handle Logic-Requested State Transitions
-    if (out.next_state != current_state) {
-        change_state(out.next_state);
+    change_state(out.next_state);
+
+    if (out.reset_fuel) {
+        FuelValve::reset_pos(out.reset_fuel_pos);
+    }
+    if (out.reset_lox) {
+        LoxValve::reset_pos(out.reset_lox_pos);
     }
 
+
     if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.fuel_pos, FuelValve::get_pos_encoder(), FuelValve::get_pos_internal());
+        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
     }
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);

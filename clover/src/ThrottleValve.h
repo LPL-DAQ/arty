@@ -445,16 +445,16 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     LOG_MODULE_DECLARE(throttle_valve);
 
     k_mutex_lock(&motor_lock, K_FOREVER);
-    if (state != ValveState::STOPPED) {
-        k_mutex_unlock(&motor_lock);
-        LOG_ERR("Cannot reset to position open when motor is stopped.");
-        return;
-    }
+    // if (state != ValveState::STOPPED) {
+        // k_mutex_unlock(&motor_lock);
+        //     LOG_ERR("Cannot reset to position open when motor is stopped.");
+        //     return;
+        // }
 
-    int new_steps = static_cast<int>(std::round(new_pos / DEG_PER_STEP));
-    steps = new_steps;
-    int new_encoder_count = static_cast<int>(std::round(new_pos / DEG_PER_ENCODER_COUNT));
-    encoder_count = new_encoder_count;
+        int new_steps = static_cast<int>(std::round(new_pos / DEG_PER_STEP));
+        steps = new_steps;
+        int new_encoder_count = static_cast<int>(std::round(new_pos / DEG_PER_ENCODER_COUNT));
+        encoder_count = new_encoder_count;
 
     k_mutex_unlock(&motor_lock);
 }
