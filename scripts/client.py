@@ -8,8 +8,8 @@ import clover_pb2 # Your generated protobuf file
 
 # Configuration from your prj.conf
 ZEPHYR_IP = "169.254.99.99"
-ZEPHYR_PORT = 5000  # <--- Verify this matches the port in your server.cpp!
-LOCAL_PORT = 5001   # Port your python script listens on for incoming telemetry
+ZEPHYR_PORT = 19690  # <--- Verify this matches the port in your server.cpp!
+LOCAL_PORT = 19691   # Port your python script listens on for incoming telemetry
 
 console = Console()
 
