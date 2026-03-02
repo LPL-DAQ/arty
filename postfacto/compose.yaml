@@ -25,6 +25,14 @@ services:
         SCRIPT_FILE: extract_legacy_daq_tests.py
     network_mode: host
     restart: always
+  sync-tests:
+    build:
+      context: .
+      dockerfile: services.Dockerfile
+      args:
+        SCRIPT_FILE: sync_tests.py
+    network_mode: host
+    restart: always
 volumes:
   db-data:
     driver: local

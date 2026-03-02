@@ -3,6 +3,7 @@ import os
 import pickle
 import uuid
 from pathlib import Path
+import time
 
 import clickhouse_connect
 import polars as pl
@@ -56,18 +57,17 @@ else:
 
 # Process data points.
 while True:
+    time.sleep(5)
+
     events = clickhouse_client.query_df_arrow(
-        "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= {t1:DateTime64(9, 'America/Los_Angeles')} AND `time` <= {t2:DateTime64(9, 'America/Los_Angeles')} ORDER BY `time`",
+        "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= fromUnixTimestamp64Nano({t1:Int64}) ORDER BY `time` LIMIT 500",
         parameters={
-            't1': last_processed_date.timestamp(),
-            't2': (last_processed_date + datetime.timedelta(minutes=60)).timestamp(),
+            't1': int(last_processed_date.timestamp() * 1e9),
         },
         dataframe_library='polars',
     )
 
     if events.height == 0:
-        print(f'No new events found after {last_processed_date}')
-        print('Checking for events after a long time jump...')
         gapped_events = clickhouse_client.query_df_arrow(
             "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= {t:DateTime64(9, 'America/Los_Angeles')} ORDER BY `time` LIMIT 1",
             parameters={'t': last_processed_date.timestamp()},
@@ -77,10 +77,6 @@ while True:
             print('Later event block found. Updating last processed date to start from this range.')
             last_processed_date = gapped_events[0, 'time']
             commit_last_processed_time(last_processed_date)
-        else:
-            print('No later event block found.')
-
-        # time.sleep(3)
         continue
 
     # Sequence either goes ignition -> ignition_terminated OR ignition -> abort -> terminated.
@@ -127,6 +123,14 @@ while True:
     seq_end_time += datetime.timedelta(seconds=10)
     seq_start_time = ignition_time
 
+    if seq_end_time - seq_start_time > datetime.timedelta(minutes=3):
+        print(
+            f"Found sequence but it seems wrong ({seq_start_time} to {seq_end_time}), let's skip this start..."
+        )
+        last_processed_date = seq_start_time + datetime.timedelta(milliseconds=1)
+        commit_last_processed_time(last_processed_date)
+        continue
+
     print(f'Test sequence discovered, from {seq_start_time} to {seq_end_time}')
 
     # Discover T=0 based on the sequencer events found. This also affects the detected test type.
@@ -165,14 +169,16 @@ while True:
     # Insert corresponding sensor data block
     test_id = str(uuid.uuid4())
     sensors = clickhouse_client.query_df_arrow(
-        "SELECT `time`, `sensor`, `system`, `value`, `event` FROM raw_sensors WHERE `system` == 'atlas' AND `time` >= {t1:DateTime64(9, 'America/Los_Angeles')} AND `time` <= {t2:DateTime64(9, 'America/Los_Angeles')} ORDER BY `sensor`, `time`",
+        "SELECT `time`, `sensor`, `value`, `event` FROM raw_sensors WHERE `system` == 'atlas' AND `time` >= {t1:DateTime64(9, 'America/Los_Angeles')} AND `time` <= {t2:DateTime64(9, 'America/Los_Angeles')} ORDER BY `sensor`, `time`",
         parameters={'t1': seq_start_time.timestamp(), 't2': seq_end_time.timestamp()},
         dataframe_library='polars',
     ).with_columns(test_id=pl.lit(test_id))
-    # clickhouse_client.insert_df_arrow('sensors', sensors)
+    clickhouse_client.insert_df_arrow('sensors', sensors)
     print(f'Inserted sensor data:\n{sensors}')
 
-    aborted = not events.filter(pl.col('event') == 'abort').is_empty()
+    aborted = not sensors.filter(
+        (pl.col('sensor') == 'event') & (pl.col('event') == 'abort')
+    ).is_empty()
     start_time = sensors.select(pl.min('time'))[0, 'time']
     end_time = sensors.select(pl.max('time'))[0, 'time']
 
@@ -190,17 +196,15 @@ while True:
     result = (
         sheets_service.spreadsheets()
         .values()
-        .get(
+        .append(
             spreadsheetId=SHEETS_ID,
             range='raw_tests!A1:G',
-            valueInputOptions='RAW',
+            valueInputOption='RAW',
             body={'values': values},
         )
         .execute()
     )
     print(f'Inserted new test: {result}')
 
-    # last_processed_date = last_event_time
-    # commit_last_processed_time(last_processed_date)
-
-    timme.sleep(1000000000)
+    last_processed_date = last_event_time
+    commit_last_processed_time(last_processed_date)
