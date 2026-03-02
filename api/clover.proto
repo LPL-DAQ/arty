@@ -95,6 +95,10 @@ message StartSequenceRequest {}
 // HaltSequence
 message HaltSequenceRequest {}
 
+// NEW: StartThrottleClosedLoop
+message StartThrottleClosedLoopRequest {
+  optional ControlTrace thrust_trace = 1;
+}
 
 // NEW: StartThrottleClosedLoop
 message StartThrottleClosedLoopRequest {

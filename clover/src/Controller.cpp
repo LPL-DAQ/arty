@@ -3,6 +3,7 @@
 #include "SequenceState.h"
 #include "ClosedLoopState.h"
 #include "CalibrationState.h"
+#include "IdleState.h"
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
