@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+menuconfig VN300
+        bool "VectorNav VN-300 IMU driver"
+        help
+          Enable the VN-300 IMU/GNSS driver over UART.
+
+if VN300
+
+module = VN300
+module-str = vn300
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # VN300

@@ -1,0 +1,13 @@
+identifier: vn300_teensy
+name: VN300 Teensy Board
+vendor: LPL
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio
+  - uart
+  - serial
