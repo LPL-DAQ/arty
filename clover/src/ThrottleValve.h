@@ -34,6 +34,7 @@ private:
     enum class ValveState {
         STOPPED,
         RUNNING,
+        OFF,
     };
 
     constexpr static gpio_dt_spec pul_gpio = pul_dt_init;
@@ -47,6 +48,8 @@ private:
 
     inline static k_mutex motor_lock = {};  // Set in init()
     inline static ValveState state = ValveState::STOPPED;
+    inline static ValveState prevState = ValveState::STOPPED;
+
     inline static float velocity = 0;
     inline static float acceleration = 0;
     /// Internal step count of what has been sent to the driver. We use a closed-loop driver so this does not
@@ -56,6 +59,9 @@ private:
     inline static volatile uint64_t last_pulse_cycle = 0;
     /// CPU cycles since last time pulse interrupt was called.
     inline static volatile uint64_t pulse_interval_cycles = 0;
+
+    inline static float current_encoder_position = 0.0f;
+    inline static float previous_encoder_position = 0.0f;
 
     static void control_pulse_isr(const device*, void*);
 
@@ -72,15 +78,19 @@ public:
 
     static int init();
 
-    static int tick(float target_deg);
+    static int tick(bool on, bool set_pos, float target_deg);
+    static void move(float target_deg);
     static void stop();
     static void reset_pos(float new_pos);
+    static void power_on(bool on);
 
     static float get_pos_internal();
     static float get_pos_encoder();
     static float get_velocity();
+    static float get_encoder_velocity();
     static float get_acceleration();
     static uint64_t get_nsec_per_pulse();
+    static bool get_power_on();
 };
 
 /// Generates prefix used for log statements from valve kind.
@@ -266,7 +276,9 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
         LOG_ERR("%s Failed to put direction GPIO in default low: err %d", kind_to_prefix(kind), err);
         return err;
     }
+    // err = gpio_pin_configure_dt(&ena_gpio, GPIO_OUTPUT_ACTIVE);
     err = gpio_pin_configure_dt(&ena_gpio, GPIO_OUTPUT_ACTIVE);
+
     if (err) {
         LOG_ERR("%s Failed to put enable GPIO in default high: err %d", kind_to_prefix(kind), err);
         return err;
@@ -317,10 +329,47 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(float target_deg)
+int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(bool on, bool set_pos, float target_deg)
+{
+    previous_encoder_position = current_encoder_position;
+    current_encoder_position = get_pos_encoder();
+
+    LOG_MODULE_DECLARE(throttle_valve);
+    prevState = state;
+    if (!on) {
+        state = ValveState::OFF;
+    } else if (set_pos) {
+        state = ValveState::RUNNING;
+    } else {
+        state = ValveState::STOPPED;
+    }
+
+    switch (state) {
+        case ValveState::OFF:
+            power_on(false);
+            break;
+        case ValveState::STOPPED:
+            stop();
+            break;
+        case ValveState::RUNNING:
+            move(target_deg);
+    }
+    return 0;
+}
+
+template <
+    ValveKind kind,
+    gpio_dt_spec pul_dt_init,
+    gpio_dt_spec dir_dt_init,
+    gpio_dt_spec ena_dt_init,
+    gpio_dt_spec enc_a_dt_init,
+    gpio_dt_spec enc_b_dt_init,
+    const device* control_counter_dt_init>
+void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::move(float target_deg)
 {
     LOG_MODULE_DECLARE(throttle_valve);
 
+    power_on(true);
     constexpr float CONTROL_TIME = 0.001;
 
     float target_velocity = (target_deg - get_pos_internal()) / CONTROL_TIME;
@@ -348,6 +397,7 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
     // Schedule pulses.
     uint32_t ticks = std::min(counter_us_to_ticks(control_counter, usec_per_pulse), counter_get_max_top_value(control_counter));
     counter_top_cfg pulse_counter_config{.ticks = ticks, .callback = control_pulse_isr, .user_data = nullptr, .flags = 0};
+
     int err = counter_set_top_value(control_counter, &pulse_counter_config);
     if (err) [[unlikely]] {
         LOG_ERR("%s Failed to set pulse counter top value: err %d", kind_to_prefix(kind), err);
@@ -359,8 +409,6 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
         LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
     }
 
-    state = ThrottleValve::ValveState::RUNNING;
-    return 0;
 }
 
 template <
@@ -373,6 +421,7 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::stop()
 {
+    power_on(true);
     k_mutex_lock(&motor_lock, K_FOREVER);
     counter_stop(control_counter);
     acceleration = 0;
@@ -410,6 +459,39 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     k_mutex_unlock(&motor_lock);
 }
 
+/// turns on or off the driver, using ena as logic to a MOSFET slide switch
+template <
+    ValveKind kind,
+    gpio_dt_spec pul_dt_init,
+    gpio_dt_spec dir_dt_init,
+    gpio_dt_spec ena_dt_init,
+    gpio_dt_spec enc_a_dt_init,
+    gpio_dt_spec enc_b_dt_init,
+    const device* control_counter_dt_init>
+void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::power_on(bool on)
+{
+    LOG_MODULE_DECLARE(throttle_valve);
+    k_mutex_lock(&motor_lock, K_FOREVER);
+
+    // HIGH is ON
+    if (on) {
+        if (prevState == ValveState::OFF) {
+            LOG_INF("%s Powering on valve driver", kind_to_prefix(kind));
+            gpio_pin_set_dt(&ena_gpio, 1);
+        }
+    }
+    else {
+        if (prevState != ValveState::OFF) {
+            LOG_INF("%s Powering off valve driver", kind_to_prefix(kind));
+            gpio_pin_set_dt(&ena_gpio, 0);
+        }
+    }
+
+    k_mutex_unlock(&motor_lock);
+}
+
+
+
 /// Get internal motor position via how many pulses we sent to the controller.
 template <
     ValveKind kind,
@@ -439,7 +521,7 @@ float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, 
 }
 
 /// Get the current velocity in deg/s. It is only updated per call to
-/// throttle_valve_move.
+/// throttle_valve_move. NOT A MEASUREMENT OF ENCODER
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
@@ -452,6 +534,23 @@ float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, 
 {
     return velocity;
 }
+
+
+/// Get the current velocity in deg/s. It is only updated per call to
+/// throttle_valve_move. NOT A MEASUREMENT OF ENCODER
+template <
+    ValveKind kind,
+    gpio_dt_spec pul_dt_init,
+    gpio_dt_spec dir_dt_init,
+    gpio_dt_spec ena_dt_init,
+    gpio_dt_spec enc_a_dt_init,
+    gpio_dt_spec enc_b_dt_init,
+    const device* control_counter_dt_init>
+float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_encoder_velocity()
+{
+    return (previous_encoder_position - current_encoder_position) / 0.001f; // CONTROL_TIME
+}
+
 
 /// Get the current acceleration in deg/s^2. It is only updated per call to
 /// throttle_valve_move.
@@ -480,6 +579,23 @@ template <
 uint64_t ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_nsec_per_pulse()
 {
     return k_cyc_to_ns_near64(pulse_interval_cycles);
+}
+
+/// Get power status
+template <
+    ValveKind kind,
+    gpio_dt_spec pul_dt_init,
+    gpio_dt_spec dir_dt_init,
+    gpio_dt_spec ena_dt_init,
+    gpio_dt_spec enc_a_dt_init,
+    gpio_dt_spec enc_b_dt_init,
+    const device* control_counter_dt_init>
+bool ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_power_on()
+{
+    if (state == ValveState::OFF) {
+        return false;
+    }
+    return true;
 }
 
 typedef ThrottleValve<

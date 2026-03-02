@@ -21,6 +21,7 @@ message Request {
     StartSequenceRequest start_sequence = 4;
     HaltSequenceRequest halt_sequence = 5;
     StartThrottleClosedLoopRequest start_throttle_closed_loop = 7; // NEW: Renamed and handles trace
+    SetControllerStateRequest set_controller_state = 8;
   }
 }
 
@@ -99,6 +100,16 @@ message StartThrottleClosedLoopRequest {
   optional ControlTrace thrust_trace = 1;
 }
 
+// NEW: StartThrottleClosedLoop
+message StartThrottleClosedLoopRequest {
+  optional ControlTrace thrust_trace = 1;
+}
+
+// Change Controller State
+message SetControllerStateRequest {
+  required SystemState state = 1;
+}
+
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
 
@@ -108,6 +119,7 @@ enum SystemState {
   STATE_SEQUENCE = 1;
   STATE_CLOSED_LOOP_THROTTLE = 2;
   STATE_ABORT = 3;
+  STATE_CALIBRATION = 4;
 }
 
 message DataPacket {
@@ -122,6 +134,10 @@ message DataPacket {
   required SystemState state = 6;
   required bool is_abort = 7;
   required uint32 sequence_number = 8;
+
+  optional CalibrationData calibration_data = 9;
+
+
 }
 
 message ValveStatus {
@@ -140,4 +156,27 @@ message Sensors {
   optional float pto401 = 6;
   optional float ptc401 = 7;
   optional float ptc402 = 8;
+}
+
+
+message CalibrationData {
+  required float fuel_pos = 1;
+  required float fuel_pos_enc = 2;
+  required bool fuel_found_hardstop = 3;
+  required float fuel_hardstop_pos = 4;
+  required float lox_pos = 5;
+  required float lox_pos_enc = 6;
+  required bool lox_found_hardstop = 7;
+  required float lox_hardstop_pos = 8;
+
+  required int32 cal_phase = 9;
+  required int32 rep_count = 10;
+
+  required float fuel_err = 11;
+  required float lox_err = 12;
+
+  required float fuel_target_position = 13;
+  required float lox_target_position = 14;
+  required float fuel_velocity_error = 15;
+  required float lox_velocity_error = 16;
 }

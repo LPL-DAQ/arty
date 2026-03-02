@@ -14,8 +14,10 @@ typedef SystemState SystemState;
 struct ControllerOutput {
     bool set_fuel = false;
     float fuel_pos = 0.0f;
+    bool fuel_on = true;
     bool set_lox = false;
     float lox_pos = 0.0f;
+    bool lox_on = true;
     SystemState next_state = SystemState_STATE_IDLE;
 };
 
@@ -34,7 +36,7 @@ public:
     static inline SystemState current_state = SystemState_STATE_IDLE;
     static SystemState state() { return current_state; }
 
-    static void init();
+    static int controller_init();
     static void tick(); // The 1ms dispatcher called by the timer
 
     // Request handlers
@@ -43,9 +45,11 @@ public:
     static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
     static std::expected<void, Error> handle_start_closed_loop(const StartThrottleClosedLoopRequest& req);
+    static std::expected<void, Error> handle_set_controller_state(const SetControllerStateRequest& req);
+
     static void trigger_abort();
     static void change_state(SystemState new_state);
-
+    static int get_state_id(SystemState state) ;
     Controller() = delete; // Explicitly prevent instantiation
 
 private:

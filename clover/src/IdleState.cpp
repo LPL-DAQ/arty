@@ -5,7 +5,7 @@ void IdleState::init() {
 }
 
 ControllerOutput IdleState::tick() {
-    ControllerOutput out;
+    ControllerOutput out{};
     out.set_fuel = false; // Tells the Controller to call stop()
     out.set_lox = false;
     out.next_state = SystemState_STATE_IDLE;

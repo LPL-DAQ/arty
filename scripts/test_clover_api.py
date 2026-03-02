@@ -97,6 +97,13 @@ def handle_command_stream():
         resp = send_request(sock, req)
         print(f'Got resp: {resp}')
 
+        req = clover_api.Request()
+        req.set_controller_state.state = clover_api.SystemState.STATE_CALIBRATION
+        resp = send_request(sock, req)
+        print(f'Got resp: {resp}')
+
+
+
         while True:
             time.sleep(1000)
 

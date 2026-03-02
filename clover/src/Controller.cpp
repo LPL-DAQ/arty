@@ -1,8 +1,9 @@
 #include "Controller.h"
 #include "IdleState.h"
-#include "IdleState.h"
 #include "SequenceState.h"
 #include "ClosedLoopState.h"
+#include "CalibrationState.h"
+#include "IdleState.h"
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
@@ -25,27 +26,38 @@ void Controller::change_state(SystemState new_state) {
         case SystemState_STATE_SEQUENCE: SequenceState::init(); break;
         case SystemState_STATE_ABORT: AbortState::init(); break;
         case SystemState_STATE_CLOSED_LOOP_THROTTLE: ClosedLoopState::init(); break;
+        case SystemState_STATE_CALIBRATION: CalibrationState::init(FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder()); break;
         default: break;
     }
 }
 
-void Controller::init() {
+int Controller::controller_init() {
     change_state(SystemState_STATE_IDLE);
     k_timer_start(&control_loop_timer, K_MSEC(1), K_MSEC(1));
+    LOG_INF("Initializing Controller...");
+    return 0;
 }
 
+int tick_count = 0; // temp for testing
 void Controller::tick() {
-    pt_readings raw_pts = pts_get_last_reading();
+    DataPacket packet = DataPacket_init_default;
+
+    tick_count++;
+    if (tick_count % 2000 == 0) {
+        LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
+    }
+
+    // pt_readings raw_pts = pts_get_last_reading();
     Sensors current_sensors = Sensors_init_default;
 
-    current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
-    current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
-    current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
-    current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
-    current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
-    current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
-    current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
-    current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
+    // current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
+    // current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
+    // current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
+    // current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
+    // current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
+    // current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
+    // current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
+    // current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
 
     ControllerOutput out;
 
@@ -63,7 +75,14 @@ void Controller::tick() {
         case SystemState_STATE_CLOSED_LOOP_THROTTLE:
             out = ClosedLoopState::tick(current_sensors.has_ptc401, current_sensors.ptc401);
             break;
-        default:
+        case SystemState_STATE_CALIBRATION: {
+            // Can make this work over protobuf later
+            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
+            packet.has_calibration_data = true;
+            packet.calibration_data = cal_data;
+            out = cal_out;
+            break;
+        } default:
             out = IdleState::tick();
             break;
     }
@@ -73,54 +92,35 @@ void Controller::tick() {
         change_state(out.next_state);
     }
 
-    // --- CENTRALIZED HARDWARE ACTUATION ---
-    if (out.set_fuel) {
-        FuelValve::tick(out.fuel_pos);
-    } else {
-        FuelValve::stop();
+    if (tick_count % 500 == 0) {
+        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.fuel_pos, FuelValve::get_pos_encoder(), FuelValve::get_pos_internal());
     }
 
-    if (out.set_lox) {
-        LoxValve::tick(out.lox_pos);
-    } else {
-        LoxValve::stop();
-    }
+    FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
+    LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
 
-    stream_telemetry(current_sensors);
-}
+    // telementary
+    packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+    packet.sensors = current_sensors;
 
-void Controller::run_idle(const Sensors& sensors) {
-    // Continuous sensor data collection (handled in stream_telemetry)
-}
+    packet.state = current_state;
+    packet.is_abort = (packet.state == SystemState_STATE_ABORT);
+    packet.sequence_number = udp_sequence_number++;
 
-void Controller::run_sequence(const Sensors& sensors) {
-    float current_time_ms = k_uptime_get() - sequence_start_time;
+    packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
 
-    // Sample the traces
-    auto f_target = fuel_trace.sample(current_time_ms);
-    auto l_target = lox_trace.sample(current_time_ms);
+    packet.fuel_valve.enabled = true;
+    packet.fuel_valve.target_pos_deg = FuelValve::get_pos_internal();
+    packet.fuel_valve.driver_setpoint_pos_deg = FuelValve::get_pos_internal();
+    packet.fuel_valve.encoder_pos_deg = FuelValve::get_pos_encoder();
 
-    // LEAD FIX: If sample fails (e.g. past end of trace or error), sequence is over
-    if (!f_target || !l_target) {
-        _state = SystemState_STATE_IDLE;
-        FuelValve::stop();
-        LoxValve::stop();
-        return;
-    }
+    packet.lox_valve.enabled = true;
+    packet.lox_valve.target_pos_deg = LoxValve::get_pos_internal();
+    packet.lox_valve.driver_setpoint_pos_deg = LoxValve::get_pos_internal();
+    packet.lox_valve.encoder_pos_deg = LoxValve::get_pos_encoder();
 
-    // LEAD FIX: Pass the raw float values using the dereference operator
-    FuelValve::tick(*f_target);
-    LoxValve::tick(*l_target);
-}
-
-void Controller::run_abort(const Sensors& sensors) {
-    // Drive valves to nominal safe positions quickly
-    FuelValve::tick(DEFAULT_FUEL_POS);
-    LoxValve::tick(DEFAULT_LOX_POS);
-
-    // Run for ~0.5s before allowing state transition
-    if (k_uptime_get() - abort_entry_time > 500) {
-        _state = SystemState_STATE_IDLE;
+    if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
+        printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
     }
 }
 
@@ -170,13 +170,15 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
     }
 
     switch (req.valve) {
+
+        // this is giving a double -> float warning rn but deal w that later
         case Valve_FUEL:
-            LOG_INF("Resetting fuel valve position to 0");
-            FuelValve::reset_pos(0.0f);
+            LOG_INF("Resetting fuel valve position to %f", req.new_pos_deg);
+            FuelValve::reset_pos(req.new_pos_deg);
             break;
         case Valve_LOX:
-            LOG_INF("Resetting lox valve position to 0");
-            LoxValve::reset_pos(0.0f);
+            LOG_INF("Resetting lox valve position to %f", req.new_pos_deg);
+            LoxValve::reset_pos(req.new_pos_deg);
             break;
         default:
             return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
@@ -185,28 +187,30 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
     return {};
 }
 
-void Controller::stream_telemetry(const Sensors& sensors) {
-    DataPacket packet = DataPacket_init_default;
-    packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
-    packet.sensors = sensors;
+std::expected<void, Error> Controller::handle_set_controller_state(const SetControllerStateRequest& req)
+{
+    switch (req.state) {
+        case SystemState_STATE_IDLE:
+        case SystemState_STATE_SEQUENCE:
+        case SystemState_STATE_CLOSED_LOOP_THROTTLE:
+        case SystemState_STATE_ABORT:
+        case SystemState_STATE_CALIBRATION:
+            change_state(req.state);
+            return {};
 
-    packet.state = current_state->get_state_enum();
-    packet.is_abort = (packet.state == SystemState_STATE_ABORT);
-    packet.sequence_number = udp_sequence_number++;
-
-    packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
-
-    packet.fuel_valve.enabled = true;
-    packet.fuel_valve.target_pos_deg = FuelValve::get_pos_internal();
-    packet.fuel_valve.driver_setpoint_pos_deg = FuelValve::get_pos_internal();
-    packet.fuel_valve.encoder_pos_deg = FuelValve::get_pos_encoder();
-
-    packet.lox_valve.enabled = true;
-    packet.lox_valve.target_pos_deg = LoxValve::get_pos_internal();
-    packet.lox_valve.driver_setpoint_pos_deg = LoxValve::get_pos_internal();
-    packet.lox_valve.encoder_pos_deg = LoxValve::get_pos_encoder();
-
-    if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
-        printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
+        default:
+            return std::unexpected(
+                Error::from_cause("Invalid controller state requested"));
     }
 }
+
+int Controller::get_state_id(SystemState state) {
+        if (state == SystemState_STATE_IDLE) return 0;
+        if (state == SystemState_STATE_SEQUENCE) return 1;
+        if (state == SystemState_STATE_CLOSED_LOOP_THROTTLE) return 2;
+        if (state == SystemState_STATE_ABORT) return 3;
+        if (state == SystemState_STATE_CALIBRATION) return 4;
+        return -1; // Unknown state
+}
+
+
