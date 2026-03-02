@@ -76,7 +76,7 @@ void Controller::tick() {
             break;
         case SystemState_STATE_CALIBRATION: {
             // Can make this work over protobuf later
-            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
             packet.has_calibration_data = true;
             packet.calibration_data = cal_data;
             out = cal_out;
@@ -92,7 +92,7 @@ void Controller::tick() {
     }
 
     if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_fuel_pos: %f | cmd_lox_pos: %f | fuel_pos: %f | lox_pos: %f", out.fuel_pos, out.lox_pos, FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
+        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.fuel_pos, FuelValve::get_pos_encoder(), FuelValve::get_pos_internal());
     }
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);

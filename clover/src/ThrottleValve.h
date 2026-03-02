@@ -60,6 +60,9 @@ private:
     /// CPU cycles since last time pulse interrupt was called.
     inline static volatile uint64_t pulse_interval_cycles = 0;
 
+    inline static float current_encoder_position = 0.0f;
+    inline static float previous_encoder_position = 0.0f;
+
     static void control_pulse_isr(const device*, void*);
 
     inline static volatile int encoder_count = 0;
@@ -84,6 +87,7 @@ public:
     static float get_pos_internal();
     static float get_pos_encoder();
     static float get_velocity();
+    static float get_encoder_velocity();
     static float get_acceleration();
     static uint64_t get_nsec_per_pulse();
     static bool get_power_on();
@@ -327,6 +331,10 @@ template <
     const device* control_counter_dt_init>
 int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(bool on, bool set_pos, float target_deg)
 {
+    previous_encoder_position = current_encoder_position;
+    current_encoder_position = get_pos_encoder();
+
+    LOG_MODULE_DECLARE(throttle_valve);
     prevState = state;
     if (!on) {
         state = ValveState::OFF;
@@ -346,10 +354,6 @@ int ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, en
         case ValveState::RUNNING:
             move(target_deg);
     }
-
-    LOG_MODULE_DECLARE(throttle_valve);
-
-
     return 0;
 }
 
@@ -517,7 +521,7 @@ float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, 
 }
 
 /// Get the current velocity in deg/s. It is only updated per call to
-/// throttle_valve_move.
+/// throttle_valve_move. NOT A MEASUREMENT OF ENCODER
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
@@ -530,6 +534,23 @@ float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, 
 {
     return velocity;
 }
+
+
+/// Get the current velocity in deg/s. It is only updated per call to
+/// throttle_valve_move. NOT A MEASUREMENT OF ENCODER
+template <
+    ValveKind kind,
+    gpio_dt_spec pul_dt_init,
+    gpio_dt_spec dir_dt_init,
+    gpio_dt_spec ena_dt_init,
+    gpio_dt_spec enc_a_dt_init,
+    gpio_dt_spec enc_b_dt_init,
+    const device* control_counter_dt_init>
+float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::get_encoder_velocity()
+{
+    return (previous_encoder_position - current_encoder_position) / 0.001f; // CONTROL_TIME
+}
+
 
 /// Get the current acceleration in deg/s^2. It is only updated per call to
 /// throttle_valve_move.

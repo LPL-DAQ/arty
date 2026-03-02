@@ -173,5 +173,6 @@ message CalibrationData {
 
   required float fuel_target_position = 13;
   required float lox_target_position = 14;
-
+  required float fuel_velocity_error = 15;
+  required float lox_velocity_error = 16;
 }
