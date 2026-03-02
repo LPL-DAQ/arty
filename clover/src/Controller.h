@@ -6,7 +6,7 @@
 #include <expected>
 #include "pts.h"
 #include "Trace.h"
-#include <zephyr/kernel.h> // Needed for msgq
+#include <zephyr/kernel.h>
 
 typedef SystemState SystemState;
 
@@ -24,9 +24,15 @@ public:
     // Define nominal safe positions
     static constexpr float DEFAULT_FUEL_POS = 81.0f;
     static constexpr float DEFAULT_LOX_POS = 74.0f;
-public:
-    // Removed constructor/singleton. All methods are now static.
-    static SystemState state() { return _state; }
+
+    // Shared tracking variables
+    static inline uint32_t abort_entry_time = 0;
+    static inline uint32_t sequence_start_time = 0;
+    static inline Trace fuel_trace;
+    static inline Trace lox_trace;
+
+    static inline SystemState current_state = SystemState_STATE_IDLE;
+    static SystemState state() { return current_state; }
 
     static void init();
     static void tick(); // The 1ms dispatcher called by the timer
