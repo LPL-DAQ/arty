@@ -1,0 +1,8 @@
+<clickhouse>
+    <logger>
+        <console>true</console>
+        <log remove="remove" />
+        <errorlog remove="remove" />
+        <level>information</level>
+    </logger>
+</clickhouse>
