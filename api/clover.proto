@@ -12,16 +12,37 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
+// next tag: 21
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
     IdentifyClientRequest identify_client = 6;
+    IsNotAbortedRequest is_not_aborted_request = 20;
+
+    // Sensors
+    ConfigureAnalogSensorBiasRequest configure_analog_sensors_bias = 17;
+
+    // Actuators
     ResetValvePositionRequest reset_valve_position = 2;
-    LoadMotorSequenceRequest load_motor_sequence = 3;
-    StartSequenceRequest start_sequence = 4;
-    HaltSequenceRequest halt_sequence = 5;
-    StartThrottleClosedLoopRequest start_throttle_closed_loop = 7; // NEW: Renamed and handles trace
-    SetControllerStateRequest set_controller_state = 8;
+    PowerOffValveRequest power_off_valve = 18;
+    PowerOnValveRequest power_on_valve = 19;
+
+    // Transitions (VALVE_SEQ, THRUST_SEQ) -> ABORT
+    AbortRequest abort = 10;
+    // Transitions (CALIBRATE_VALVE, VALVE_SEQ, THRUST_SEQ, ABORT) -> IDLE
+    HaltRequest halt = 11;
+    // Transitions (VALVE_PRIMED, THRUST_PRIMED) -> IDLE
+    UnprimeRequest unprime = 12;
+    // Transitions IDLE -> CALIBRATE_VALVE
+    CalibrateValveRequest calibrate_valve = 9;
+    // Transitions IDLE -> VALVE_PRIMED
+    LoadValveSequenceRequest load_motor_sequence = 13;
+    // Transitions VALVE_PRIMED -> VALVE_SEQ
+    StartValveSequenceRequest start_valve_sequence = 15;
+    // Transitions IDLE -> THRUST_PRIMED
+    LoadThrustSequenceRequest load_thrust_sequence = 14;
+    // Transiitons THRUST_PRIMED -> THRUST_SEQ
+    StartThrustSequenceRequest start_thrust_sequence = 16;
   }
 }
 
@@ -30,10 +51,13 @@ message Response {
   optional string err = 1;
 }
 
-// Subscribe client IP to data stream
+// Subscribe client IP to data stream.
 message SubscribeDataStreamRequest {}
 
-// Names client
+// Errors if the state is ABORT. Otherwise, returns OK.
+message IsNotAbortedRequest {}
+
+// Names client.
 message IdentifyClientRequest {
   required ClientType client = 1;
 }
@@ -44,18 +68,78 @@ enum ClientType {
   DAQ = 3;
 }
 
-// Throttle valve control
+// Configures bias for a PT or TC.
+message ConfigureAnalogSensorBiasRequest {
+  required AnalogSensor sensor = 1;
+  required float bias = 2;
+}
+
+enum AnalogSensor {
+  UNKNOWN_ANALOG_SENSOR = 0;
+  PT102 = 1;
+  PT103 = 2;
+  PT202 = 3;
+  PT203 = 4;
+  PTF401 = 5;
+  PTO401 = 6;
+  PTC401 = 7;
+  PTC402 = 8;
+  TC102 = 9;
+  TC102_5 = 10;
+}
+
+// Reset the valve's position.
+message ResetValvePositionRequest {
+  required Valve valve = 1;
+  required float new_pos_deg = 2;
+}
+
 enum Valve {
   UNKNOWN_VALVE = 0;
   FUEL = 1;
   LOX = 2;
 }
 
-// ResetValvePosition
-message ResetValvePositionRequest {
+// Turn on stepper motor.
+message PowerOnValveRequest {
   required Valve valve = 1;
-  required float new_pos_deg = 2;
 }
+
+// Turn off stepper motor.
+message PowerOffValveRequest {
+  required Valve valve = 1;
+}
+
+// Abort an active control sequence into a safe state.
+message AbortRequest {}
+
+// Halt all actuators.
+message HaltRequest {}
+
+// Unprime a request.
+message UnprimeRequest {}
+
+// Enter valve calibration mode.
+message CalibrateValveRequest {
+  required Valve valve = 1;
+}
+
+// Load a valve motor sequence. At least one trace must be set.
+message LoadValveSequenceRequest {
+  optional ControlTrace fuel_trace_deg = 1;
+  optional ControlTrace lox_trace_deg = 2;
+}
+
+// Start a loaded valve motor sequence.
+message StartValveSequenceRequest {}
+
+// Load a thrust sequence.
+message LoadThrustSequenceRequest {
+  required ControlTrace thrust_trace_lbf = 1;
+}
+
+// Start a loaded thrust sequence.
+message StartThrustSequenceRequest {}
 
 // Control sequences
 message ControlTrace {
@@ -89,78 +173,99 @@ message LoadMotorSequenceRequest {
   optional ControlTrace lox_trace = 2;
 }
 
-// StartSequence
-message StartSequenceRequest {}
-
-// HaltSequence
-message HaltSequenceRequest {}
-
-// NEW: StartThrottleClosedLoop
-message StartThrottleClosedLoopRequest {
-  optional ControlTrace thrust_trace = 1;
-}
-
-// Change Controller State
-message SetControllerStateRequest {
-  required SystemState state = 1;
-}
-
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
 
 // Controller State definition
 enum SystemState {
-  STATE_IDLE = 0;
-  STATE_SEQUENCE = 1;
-  STATE_CLOSED_LOOP_THROTTLE = 2;
-  STATE_ABORT = 3;
-  STATE_CALIBRATION = 4;
+  STATE_UNKNOWN = 0;
+  STATE_IDLE = 1;
+  STATE_CALIBRATE_VALVE = 2;
+  STATE_VALVE_PRIMED = 3;
+  STATE_VALVE_SEQ = 4;
+  STATE_THRUST_PRIMED = 5;
+  STATE_THRUST_SEQ = 6;
+  STATE_ABORT = 7;
 }
 
+// next tag: 15
 message DataPacket {
-  required float time = 1;
+  // Time since chip start in nanoseconds.
+  required uint64 time_ns = 1;
+
+  // Controller metrics
+
+  // Current controller state
+  required SystemState state = 6;
+
+  // Size of pending queue of data packets to send.
   required uint32 data_queue_size = 2;
 
+  // Counts up for each data packet sent.
+  required uint64 sequence_number = 8;
+
+  // Time required to execute one tick of the controller.
+  required float controller_tick_time_ns = 12;
+
+  required bool gnc_connected = 15;
+  required float gnc_last_pinged_ns = 16;
+
+  required bool daq_conneted = 17;
+  required float daq_last_pinged_ns = 18;
+
+  // Peripherals
+  required AnalogSensors analog_sensors = 5;
+
+  // Actuators
   required ValveStatus fuel_valve = 3;
   required ValveStatus lox_valve = 4;
 
-  required Sensors sensors = 5;
+  oneof state_data {
+    // IDLE, VALVE_PRIMED, THRUST_PRIMED
+    IdleData idle_data = 13;
 
-  required SystemState state = 6;
-  required bool is_abort = 7;
-  required uint32 sequence_number = 8;
+    // ABORT
+    AbortData abort_data = 14;
+    
+    // VALVE_CALIBRATION
+    ValveCalibrationData valve_calibration_data = 9;
+    
+    // VALVE_SEQ
+    ValveSequenceData valve_sequence_data = 10;
 
-  optional CalibrationData calibration_data = 9;
-
-
+    // THRUST_SEQ
+    ThrustSequenceData thrust_sequence_data = 11;
+  }
 }
 
 message ValveStatus {
-  required bool enabled = 1;
-  required float target_pos_deg = 2;
-  required float driver_setpoint_pos_deg = 3;
-  required float encoder_pos_deg = 4;
+  required float target_pos_deg = 1;
+  required float driver_setpoint_pos_deg = 2;
+  required float encoder_pos_deg = 3;
+  required bool is_on = 4;
 }
 
-message Sensors {
-  optional float pt102 = 1;
-  optional float pt103 = 2;
-  optional float pt202 = 3;
-  optional float pt203 = 4;
-  optional float ptf401 = 5;
-  optional float pto401 = 6;
-  optional float ptc401 = 7;
-  optional float ptc402 = 8;
+message AnalogSensors {
+  required float pt102 = 1;
+  required float pt103 = 2;
+  required float pt202 = 3;
+  required float pt203 = 4;
+  required float ptf401 = 5;
+  required float pto401 = 6;
+  required float ptc401 = 7;
+  required float ptc402 = 8;
+  required float tc102 = 9;
+  required float tc102_5 = 10;
+  required float adc_read_time_ns = 11;
 }
 
+message IdleData {}
 
-message CalibrationData {
-  required float fuel_pos = 1;
-  required float fuel_pos_enc = 2;
+message AbortData {}
+
+message ValveCalibrationData {
   required bool fuel_found_hardstop = 3;
   required float fuel_hardstop_pos = 4;
-  required float lox_pos = 5;
-  required float lox_pos_enc = 6;
   required bool lox_found_hardstop = 7;
   required float lox_hardstop_pos = 8;
 
@@ -169,9 +274,10 @@ message CalibrationData {
 
   required float fuel_err = 11;
   required float lox_err = 12;
+}
 
-  required float fuel_target_position = 13;
-  required float lox_target_position = 14;
-  required float fuel_velocity_error = 15;
-  required float lox_velocity_error = 16;
+message ValveSequenceData {}
+
+// TODO
+message ThrustSequenceData {
 }
