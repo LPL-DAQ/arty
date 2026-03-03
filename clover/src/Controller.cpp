@@ -48,7 +48,6 @@ void Controller::step_control_loop(k_work*) {
     tick_count++;
     if (tick_count % 2000 == 0) {
         LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
-
     }
 
     pt_readings raw_pts = pts_sample();
@@ -81,7 +80,7 @@ void Controller::step_control_loop(k_work*) {
             break;
         case SystemState_STATE_CALIBRATION: {
             // Can make this work over protobuf later
-            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
+            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
             packet.has_calibration_data = true;
             packet.calibration_data = cal_data;
             out = cal_out;
@@ -89,6 +88,10 @@ void Controller::step_control_loop(k_work*) {
         } default:
             out = IdleState::tick();
             break;
+    }
+
+    if (tick_count % 500 == 0) {
+        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
     }
 
     change_state(out.next_state);
