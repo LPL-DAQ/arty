@@ -11,7 +11,7 @@ const uint8_t extmem_test_table[1024] = {1};
 int extmem_enable_mmap(void)
 {
     const struct device *flash =
-        DEVICE_DT_GET(DT_NODELABEL(w25q128jv));
+        DEVICE_DT_GET(DT_NODELABEL(mx25l25645g));
 
     if (!device_is_ready(flash)) {
         printk("QSPI not ready\n");
