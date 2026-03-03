@@ -1,10 +1,10 @@
-#include "SequenceState.h"
+#include "StateValveSeq.h"
 
-void SequenceState::init() {
+void StateValveSeq::init() {
     // Timer is reset in handle_start_sequence before entering
 }
 
-ControllerOutput SequenceState::tick(uint32_t current_time, uint32_t start_time, Trace& fuel_trace, Trace& lox_trace) {
+std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t current_time, uint32_t start_time, Trace& fuel_trace, Trace& lox_trace) {
     ControllerOutput out;
     out.next_state = SystemState_STATE_SEQUENCE; // Assume we stay in this state by default
 

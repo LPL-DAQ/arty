@@ -168,10 +168,6 @@ message SineSegment {
   required float phase_deg = 4;
 }
 
-message LoadMotorSequenceRequest {
-  optional ControlTrace fuel_trace = 1;
-  optional ControlTrace lox_trace = 2;
-}
 
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
@@ -226,10 +222,10 @@ message DataPacket {
 
     // ABORT
     AbortData abort_data = 14;
-    
+
     // VALVE_CALIBRATION
     ValveCalibrationData valve_calibration_data = 9;
-    
+
     // VALVE_SEQ
     ValveSequenceData valve_sequence_data = 10;
 

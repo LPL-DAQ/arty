@@ -44,14 +44,19 @@ public:
     static void tick(); // The 1ms dispatcher called by the timer
 
     // Request handlers
-    static std::expected<void, Error> handle_load_motor_sequence(const LoadMotorSequenceRequest& req);
-    static std::expected<void, Error> handle_start_sequence(const StartSequenceRequest& req);
-    static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
+    static std::expected<void, Error> handle_load_valve_sequence(const LoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_valve_sequence(const StartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_thrust_sequence(const LoadThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_start_thrust_sequence(const StartThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_abort(const AbortRequest& req);
+    static std::expected<void, Error> handle_unprime(const UnprimeRequest& req);
+    static std::expected<void, Error> handle_calibrate_valve(const CalibrateValveRequest& req);
+
+    static std::expected<void, Error> handle_halt(const HaltRequest& req);
+
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_start_closed_loop(const StartThrottleClosedLoopRequest& req);
     static std::expected<void, Error> handle_set_controller_state(const SetControllerStateRequest& req);
 
-    static void trigger_abort();
     static void change_state(SystemState new_state);
     static int get_state_id(SystemState state) ;
     Controller() = delete; // Explicitly prevent instantiation

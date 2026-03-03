@@ -1,13 +1,23 @@
 #include "Controller.h"
-#include "IdleState.h"
-#include "SequenceState.h"
-#include "ClosedLoopState.h"
-#include "CalibrationState.h"
-#include "IdleState.h"
-#include "AbortState.h"
+#include "StateIdle.h"
+#include "StateCalibrateValve.h"
+#include "StateAbort.h"
 #include "ThrottleValve.h"
 #include "pts.h"
 // #include "sntp_imp.h"
+
+/**
+
+  STATE_UNKNOWN = 0;
+  STATE_IDLE = 1;
+  STATE_CALIBRATE_VALVE = 2;
+  STATE_VALVE_PRIMED = 3;
+  STATE_VALVE_SEQ = 4;
+  STATE_THRUST_PRIMED = 5;
+  STATE_THRUST_SEQ = 6;
+  STATE_ABORT = 7;
+
+*/
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -24,11 +34,13 @@ void Controller::change_state(SystemState new_state) {
 
     current_state = new_state;
     switch(current_state) {
-        case SystemState_STATE_IDLE: IdleState::init(); break;
-        case SystemState_STATE_SEQUENCE: SequenceState::init(); break;
-        case SystemState_STATE_ABORT: AbortState::init(); break;
-        case SystemState_STATE_CLOSED_LOOP_THROTTLE: ClosedLoopState::init(); break;
-        case SystemState_STATE_CALIBRATION: CalibrationState::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder()); break;
+        case SystemState_STATE_IDLE: StateIdle::init(); break;
+        case SystemState_STATE_CALIBRATION: StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder()); break;
+        case SystemState_STATE_VALVE_PRIMED: StateValvePrimed::init(); break;
+        case SystemState_STATE_VALVE_SEQ: StateValveSeq::init(); break;
+        case SystemState_STATE_THRUST_PRIMED: StateThrustPrimed::init(); break;
+        case SystemState_STATE_THRUST_SEQ: StateThrustSeq::init(); break;
+        case SystemState_STATE_ABORT: StateAbort::init(); break;
         default: break;
     }
 }
@@ -67,28 +79,63 @@ void Controller::tick() {
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch(current_state) {
-        case SystemState_STATE_IDLE:
-            out = IdleState::tick();
+        case SystemState_STATE_IDLE:{
+            auto [idle_out, idle_data] = StateIdle::tick();
+            packet.has_idle_data = true;
+            packet.idle_data = idle_data;
+            out = idle_out;
             break;
-        case SystemState_STATE_SEQUENCE:
-            out = SequenceState::tick(k_uptime_get(), sequence_start_time, fuel_trace, lox_trace);
-            break;
-        case SystemState_STATE_ABORT:
-            out = AbortState::tick(k_uptime_get(), abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
-            break;
-        case SystemState_STATE_CLOSED_LOOP_THROTTLE:
-            out = ClosedLoopState::tick(current_sensors.has_ptc401, current_sensors.ptc401);
-            break;
+        }
         case SystemState_STATE_CALIBRATION: {
             // Can make this work over protobuf later
-            auto [cal_out, cal_data] = CalibrationState::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
+            auto [cal_out, cal_data] = StateCalibrateValve::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
             packet.has_calibration_data = true;
             packet.calibration_data = cal_data;
             out = cal_out;
             break;
-        } default:
-            out = IdleState::tick();
+        }
+        case SystemState_STATE_VALVE_PRIMED:{
+            auto [primed_out, primed_data] = StateValvePrimed::tick(k_uptime_get(), sequence_start_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+            packet.has_idle_data = true;
+            packet.idle_data = primed_data;
+            out = primed_out;
             break;
+        }
+        case SystemState_STATE_VALVE_SEQ:{
+            auto [seq_out, seq_data] = StateValveSeq::tick(k_uptime_get(), sequence_start_time, fuel_trace, lox_trace);
+            packet.has_valve_sequence_data = true;
+            packet.valve_sequence_data = seq_data;
+            out = seq_out;
+            break;
+        }
+        case SystemState_STATE_THRUST_PRIMED:{
+            auto [thrust_primed_out, thrust_primed_data] = StateThrustPrimed::tick(k_uptime_get(), sequence_start_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+            packet.has_idle_data = true;
+            packet.idle_data = thrust_primed_data;
+            out = thrust_primed_out;
+            break;
+        }
+        case SystemState_STATE_THRUST_SEQ:{
+            auto [thrust_out, thrust_data] = StateThrustSeq::tick(current_sensors.has_ptc401, current_sensors.ptc401);
+            packet.has_thrust_sequence_data = true;
+            packet.thrust_sequence_data = thrust_data;
+            out = thrust_out;
+            break;
+        }
+        case SystemState_STATE_ABORT:{
+            auto [abort_out, abort_data] = StateAbort::tick(k_uptime_get(), abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+            packet.has_abort_data = true;
+            packet.abort_data = abort_data;
+            out = abort_out;
+            break;
+        }
+         default:{
+            auto [idle_out, idle_data] = StateIdle::tick();
+            packet.has_idle_data = true;
+            packet.idle_data = idle_data;
+            out = idle_out;
+            break;
+         }
     }
 
     change_state(out.next_state);
@@ -99,9 +146,6 @@ void Controller::tick() {
     if (out.reset_lox) {
         LoxValve::reset_pos(out.reset_lox_pos);
     }
-
-
-
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
@@ -131,16 +175,36 @@ void Controller::tick() {
     }
 }
 
-void Controller::trigger_abort() {
-    abort_entry_time = k_uptime_get();
-    change_state(SystemState_STATE_ABORT);
-}
 
 static void control_timer_expiry(struct k_timer *t) {
     Controller::tick();
 }
 
-std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMotorSequenceRequest& req) {
+
+std::expected<void, Error> Controller::handle_abort(const AbortRequest& req) {
+    abort_entry_time = k_uptime_get();
+    change_state(SystemState_STATE_ABORT);
+    LOG_INF("Received abort request");
+
+}
+std::expected<void, Error> Controller::handle_unprime(const UnprimeRequest& req) {
+    change_state(SystemState_STATE_IDLE);
+    LOG_INF("Received unprime request");
+}
+
+std::expected<void, Error> Controller::handle_load_thrust_sequence(const LoadThrustSequenceRequest& req) {
+    change_state(SystemState_STATE_THRUST_PRIMED);
+    LOG_INF("Received load thrust sequence request");
+}
+std::expected<void, Error> Controller::handle_start_thrust_sequence(const StartThrustSequenceRequest& req) {
+    change_state(SystemState_STATE_THRUST_SEQ);
+    LOG_INF("Received start thrust sequence request");
+}
+
+
+std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValveSequenceRequest& req) {
+    LOG_INF("Received open loop valve sequence request");
+    change_state(SystemState_STATE_VALVE_PRIMED);
     if (!req.has_fuel_trace && !req.has_lox_trace) {
         return std::unexpected(Error::from_cause("No sequences provided in load request"));
     }
@@ -156,22 +220,28 @@ std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMoto
     return {};
 }
 
-std::expected<void, Error> Controller::handle_start_sequence(const StartSequenceRequest& req) {
+std::expected<void, Error> Controller::handle_start_valve_sequence(const StartValveSequenceRequest& req) {
+    LOG_INF("Received start valve sequence request");
+
     sequence_start_time = k_uptime_get();
-    change_state(SystemState_STATE_SEQUENCE);
+    change_state(SystemState_STATE_VALVE_SEQ);
     return {};
 }
 
-std::expected<void, Error> Controller::handle_start_closed_loop(const StartThrottleClosedLoopRequest& req) {    change_state(SystemState_STATE_CLOSED_LOOP_THROTTLE);
+std::expected<void, Error> Controller::handle_halt(const HaltRequest& req) {
+    LOG_INF("Received halt request");
+    change_state(SystemState_STATE_IDLE);
     return {};
 }
-
-std::expected<void, Error> Controller::handle_halt_sequence(const HaltSequenceRequest& req) {
-    trigger_abort();
+std::expected<void, Error> Controller::handle_calibrate_valve(const CalibrateValveRequest& req) {
+    LOG_INF("Received calibrate valve request");
+    change_state(SystemState_STATE_CALIBRATION);
     return {};
 }
 
 std::expected<void, Error> Controller::handle_reset_valve_position(const ResetValvePositionRequest& req) {
+    LOG_INF("Received reset valve request");
+
     if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot reset valve position unless system is IDLE"));
     }
@@ -196,12 +266,16 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
 
 std::expected<void, Error> Controller::handle_set_controller_state(const SetControllerStateRequest& req)
 {
+    LOG_INF("Received set controller state request");
+
     switch (req.state) {
         case SystemState_STATE_IDLE:
-        case SystemState_STATE_SEQUENCE:
-        case SystemState_STATE_CLOSED_LOOP_THROTTLE:
-        case SystemState_STATE_ABORT:
         case SystemState_STATE_CALIBRATION:
+        case SystemState_STATE_VALVE_PRIMED:
+        case SystemState_STATE_VALVE_SEQ:
+        case SystemState_STATE_THRUST_PRIMED:
+        case SystemState_STATE_THRUST_SEQ:
+        case SystemState_STATE_ABORT:
             change_state(req.state);
             return {};
 
@@ -212,11 +286,13 @@ std::expected<void, Error> Controller::handle_set_controller_state(const SetCont
 }
 
 int Controller::get_state_id(SystemState state) {
-        if (state == SystemState_STATE_IDLE) return 0;
-        if (state == SystemState_STATE_SEQUENCE) return 1;
-        if (state == SystemState_STATE_CLOSED_LOOP_THROTTLE) return 2;
-        if (state == SystemState_STATE_ABORT) return 3;
-        if (state == SystemState_STATE_CALIBRATION) return 4;
+        if (state == SystemState_STATE_IDLE) return 1;
+        if (state == SystemState_STATE_CALIBRATION) return 2;
+        if (state == SystemState_STATE_VALVE_PRIMED) return 3;
+        if (state == SystemState_STATE_VALVE_SEQ) return 4;
+        if (state == SystemState_STATE_THRUST_PRIMED) return 5;
+        if (state == SystemState_STATE_THRUST_SEQ) return 6;
+        if (state == SystemState_STATE_ABORT) return 7;
         return -1; // Unknown state
 }
 

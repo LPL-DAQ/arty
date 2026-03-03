@@ -1,4 +1,4 @@
-#include "CalibrationState.h"
+#include "StateCalibrateValve.h"
 #include <zephyr/logging/log.h>
 #include <array>
 LOG_MODULE_REGISTER(calibration_state);
@@ -102,9 +102,9 @@ void CalibrationState::init(float fuel_pos, float fuel_pos_enc, float lox_pos, f
 
 
 
-std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc, float fuel_vel, float lox_vel) {
+std::pair<ControllerOutput, ValveCalibrationData> CalibrationState::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc, float fuel_vel, float lox_vel) {
     ControllerOutput out{};
-    CalibrationData data{};
+    ValveCalibrationData data{};
 
     float fuel_vel_avg = fuel_vel_history.num_samples() > 0 ? fuel_vel_history.average() : fuel_vel;
     float lox_vel_avg  = lox_vel_history.num_samples() > 0 ? lox_vel_history.average()  : lox_vel;
