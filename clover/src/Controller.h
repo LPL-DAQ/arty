@@ -18,6 +18,10 @@ struct ControllerOutput {
     bool set_lox = false;
     float lox_pos = 0.0f;
     bool lox_on = true;
+    float reset_fuel_pos = 0.0f;
+    bool reset_fuel = false;
+    float reset_lox_pos = 0.0f;
+    bool reset_lox = false;
     SystemState next_state = SystemState_STATE_IDLE;
 };
 
