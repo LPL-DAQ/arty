@@ -163,8 +163,6 @@ void CalibrationState::seek_hardstop(ControllerOutput& out, float fuel_pos,float
     out.set_fuel = true;
     out.set_lox = true;
 
-
-
     if (!lox_found_stop
         && std::abs(lox_pos - (lox_starting_error + lox_pos_enc)) <= pos_error_limit
     ) {
@@ -203,8 +201,6 @@ void CalibrationState::seek_hardstop(ControllerOutput& out, float fuel_pos,float
     out.next_state = SystemState_STATE_CALIBRATION;
 }
 
-
-
 void CalibrationState::end_movement(ControllerOutput& out, uint32_t timestamp) {
     FuelValve::reset_pos(fuel_hardstop_position);
     LoxValve::reset_pos(lox_hardstop_position);
@@ -218,7 +214,6 @@ void CalibrationState::end_movement(ControllerOutput& out, uint32_t timestamp) {
         phase = CalPhase::POWER_OFF;
     }
     out.next_state = SystemState_STATE_CALIBRATION;
-
 }
 
 void CalibrationState::power_off(ControllerOutput& out, uint32_t timestamp) {
@@ -259,11 +254,11 @@ void CalibrationState::complete(ControllerOutput& out, uint32_t timestamp) {
 
 
     // should be idle, but this is for testing
+    out.next_state = SystemState_STATE_CALIBRATION;
     if (timestamp - power_cycle_timestamp >= 6500) {
         out.next_state = SystemState_STATE_IDLE;
         phase = CalPhase::COMPLETE;
     }
-    out.next_state = SystemState_STATE_CALIBRATION;
 
 
 }
