@@ -1,9 +1,7 @@
 import json
 import os
 import time
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import clickhouse_connect
 import polars as pl
@@ -18,17 +16,15 @@ count = 0
 
 def load_progress():
     if not PERSISTENT_PATH.exists():
-        return {'dir': Path(), 'bytes_read': 0, 'col_names': [], 'dir_mtime': datetime.now()}
+        return {'dir': Path(), 'bytes_read': 0, 'col_names': []}
     with open(PERSISTENT_PATH) as f:
         p = json.load(f)
         p['dir'] = Path(p['dir'])
-        p['dir_mtime'] = datetime.fromtimestamp(p['dir_mtime'], tz=ZoneInfo('America/Los_Angeles'))
         return p
 
 
 def save_progress(p):
     p['dir'] = str(p['dir'])
-    p['dir_mtime'] = p['dir_mtime'].timestamp()
     with open(PERSISTENT_PATH, 'w') as f:
         json.dump(p, f)
 
@@ -70,9 +66,6 @@ while True:
 
             done_file = False
             file_waiting = False
-            progress['dir_mtime'] = datetime.fromtimestamp(
-                progress['dir'].stat().st_mtime, tz=ZoneInfo('America/Los_Angeles')
-            )
             progress['bytes_read'] = 0
             data_path = progress['dir'].joinpath('testData.txt')
 
@@ -110,7 +103,7 @@ while True:
 
     # Push to database
     df = pl.read_csv(buf, has_header=False, new_columns=progress['col_names']).with_columns(
-        time=progress['dir_mtime'] + pl.duration(seconds=pl.col('time'))
+        time=pl.from_epoch('time')
     )
     rows = df.height
     df = (
@@ -118,6 +111,7 @@ while True:
         .drop_nulls('value')
         .with_columns(system=pl.lit('atlas'), source=pl.lit('dac_legacy'))
     )
+    print(f'Inserting:\n{df}')
     client.insert_df_arrow('raw_sensors', df)
 
     save_progress(progress)
