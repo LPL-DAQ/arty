@@ -1,5 +1,6 @@
 # improved CLI
 
+import argparse
 import socket
 import threading
 import sys
@@ -54,8 +55,7 @@ console = Console()
 latest_packet: clover_pb2.DataPacket | None = None
 packet_lock = threading.Lock()
 
-data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-data_sock.bind(("0.0.0.0", LOCAL_PORT))
+data_sock = None
 
 # Telemetry
 def listen_for_telemetry():
@@ -513,22 +513,30 @@ def route_command(cmd: str) -> bool:
 
 
 def main():
+    global data_sock
     t = THEME
 
+    parser = argparse.ArgumentParser(description="Clover ground station CLI")
+    parser.add_argument("--no-data", action="store_true",
+                        help="Skip binding the UDP telemetry port (for second instances)")
+    args = parser.parse_args()
+
+    telemetry_info = f"Listen port: {LOCAL_PORT}" if not args.no_data else "Telemetry: disabled"
     console.print(Panel.fit(
         f"[{t['header']}] {t['icon_fire']}  CLOVER GROUND STATION  {t['icon_fire']} [/{t['header']}]\n"
-        f"[{t['muted']}]Target: {ZEPHYR_IP}:{ZEPHYR_PORT}  |  Listen port: {LOCAL_PORT}[/{t['muted']}]",
+        f"[{t['muted']}]Target: {ZEPHYR_IP}:{ZEPHYR_PORT}  |  {telemetry_info}[/{t['muted']}]",
         border_style=t["panel_border"],
         padding=(1, 4),
     ))
 
-    # auto-subscribe on startup
-    console.print(f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]")
-    cmd_subscribe_data_stream()
-
-    # start telemetry listener on start up
-    listener = threading.Thread(target=listen_for_telemetry, daemon=True)
-    listener.start()
+    if not args.no_data:
+        data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        data_sock.bind(("0.0.0.0", LOCAL_PORT))
+        # auto-subscribe on startup
+        console.print(f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]")
+        cmd_subscribe_data_stream()
+        # start telemetry listener
+        threading.Thread(target=listen_for_telemetry, daemon=True).start()
 
     print_menu()
 
