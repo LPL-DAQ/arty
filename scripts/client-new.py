@@ -1,9 +1,13 @@
 # improved CLI
+# changes made AFTER .proto file updates
 
+import argparse
 import socket
 import threading
 import sys
 import time
+import csv
+import pathlib
 from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
 from rich.panel import Panel
@@ -15,24 +19,29 @@ from rich.rule import Rule
 from rich.columns import Columns
 from rich import box
 import clover_pb2
+from rich.console import Group
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+import clickhouse_connect
+import polars as pl
 
 
 THEME = {
-    "primary":      "bold cyan",
+    "primary":      "bold gold1",
     "success":      "bold green",
     "warning":      "bold yellow",
     "danger":       "bold red",
-    "info":         "bold blue",
+    "info":         "bold gold1",
     "muted":        "dim white",
-    "header":       "bold white on dark_blue",
-    "panel_border": "cyan",
+    "header":       "bold white on dark_red",
+    "panel_border": "dark_red",
     "icon_fire":    "🔥",
     "icon_ok":      "✅",
     "icon_warn":    "⚠️ ",
     "icon_stop":    "🛑",
     "icon_live":    "📡",
     "icon_fuel":    "🟡",
-    "icon_lox":     "🔵",
+    "icon_lox":     "🔴",
     "icon_valve":   "🔧",
     "icon_seq":     "▶️ ",
     "icon_loop":    "🔄",
@@ -41,20 +50,47 @@ THEME = {
 }
 
 # Network
-ZEPHYR_IP   = "169.254.99.99"
+ZEPHYR_IP = "169.254.99.99"  # real board
+#ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 5000
 LOCAL_PORT  = 5001
+
+# ── ClickHouse config ────────────────────────────────────────────────────────
+CH_HOST     = "172.233.143.186"
+CH_USER     = "writer"
+CH_PASSWORD = "ce8XpzhRGhsvBxCPHDTcvh6DMWhb3jyxgmQMNLrsKaCqtZvKf2"
+CH_DATABASE = "lpl"
+
+# CSV columns mirror the unpivoted ClickHouse raw_sensors schema exactly:
+#   time   — nanosecond-epoch Int64  (ClickHouse 'time')
+#   sensor — field name string       (ClickHouse 'sensor')
+#   value  — Float64 reading         (ClickHouse 'value')
+#   event  — state label for gnc_state rows, else ''  (ClickHouse 'event')
+#   system — always 'atlas'          (ClickHouse 'system')
+#   source — always 'gnc'            (ClickHouse 'source')
+# PROTO CHANGE: time is now time_ns (nanoseconds), updated comment above.
+CSV_COLUMNS = ["time", "sensor", "value", "event", "system", "source"]
+
+# CSV filename is generated at exit time so it reflects when the session ended.
+# Format: raw_sensors_YYYYMMDD_HHMMSS.csv
 
 
 console = Console()
 latest_packet: clover_pb2.DataPacket | None = None
 packet_lock = threading.Lock()
 
-data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-data_sock.bind(("0.0.0.0", LOCAL_PORT))
-pyt
+data_sock = None
 
-# Telemetry
+_packet_buffer: list = []
+_buffer_lock   = threading.Lock()
+
+# All received packets are accumulated in memory; CSV is written once on exit.
+_csv_store: list = []           # list of (recv_time: float, pkt: DataPacket)
+_csv_store_lock = threading.Lock()
+
+
+# ── Telemetry listener ───────────────────────────────────────────────────────
+
 def listen_for_telemetry():
     """Background thread — receives UDP DataPackets and stores latest."""
     global latest_packet
@@ -63,51 +99,354 @@ def listen_for_telemetry():
             data, _ = data_sock.recvfrom(4096)
             packet = clover_pb2.DataPacket()
             packet.ParseFromString(data)
+            recv_time = time.time()
             with packet_lock:
                 latest_packet = packet
+            with _buffer_lock:
+                _packet_buffer.append((recv_time, packet))
+            with _csv_store_lock:
+                _csv_store.append((recv_time, packet))
         except Exception:
             pass
 
 
-def print_live_status():
-    """Print a single-line live status bar from the latest packet."""
+# update SystemState with (0–7); range 8
+_STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(8)}
+
+
+# ── Data flattening ──────────────────────────────────────────────────────────
+
+def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
+    """
+    Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
+
+    PROTO CHANGES applied here:
+      - pkt.time   → pkt.time_ns  (field renamed; now nanoseconds uint64)
+      - pkt.sensors (old Sensors message) → pkt.analog_sensors (new AnalogSensors)
+      - AnalogSensors fields are now required (no HasField checks needed)
+      - Two new TC sensors added: tc102, tc102_5
+      - adc_read_time_ns added as a timing metric
+      - ValveStatus lost 'enabled', gained 'is_on' (is_on stored as float 0/1)
+      - pkt.is_abort removed — abort is now a SystemState (STATE_ABORT)
+      - controller_tick_time_ns added as a timing metric
+    """
+    s = pkt.analog_sensors
+    f = pkt.fuel_valve
+    l = pkt.lox_valve
+    return {
+        'time':                     int(pkt.time_ns),
+        'gnc_state':                float(pkt.state),
+        'gnc_data_queue_size':      float(pkt.data_queue_size),
+        'gnc_sequence_number':      float(pkt.sequence_number),
+        'gnc_controller_tick_ns':   float(pkt.controller_tick_time_ns),  # new field
+        'gnc_pt102':                float(s.pt102),
+        'gnc_pt103':                float(s.pt103),
+        'gnc_pt202':                float(s.pt202),
+        'gnc_pt203':                float(s.pt203),
+        'gnc_ptf401':               float(s.ptf401),
+        'gnc_pto401':               float(s.pto401),
+        'gnc_ptc401':               float(s.ptc401),
+        'gnc_ptc402':               float(s.ptc402),
+        'gnc_tc102':                float(s.tc102),      # new sensor
+        'gnc_tc102_5':              float(s.tc102_5),    # new sensor
+        'gnc_adc_read_time_ns':     float(s.adc_read_time_ns),  # new timing
+        # Fuel valve
+        'gnc_fuel_target':          float(f.target_pos_deg),
+        'gnc_fuel_driver':          float(f.driver_setpoint_pos_deg),
+        'gnc_fuel_encoder':         float(f.encoder_pos_deg),
+        'gnc_fuel_is_on':           float(f.is_on),      # PROTO CHANGE: was 'enabled'
+        # LOX valve — same changes as fuel
+        'gnc_lox_target':           float(l.target_pos_deg),
+        'gnc_lox_driver':           float(l.driver_setpoint_pos_deg),
+        'gnc_lox_encoder':          float(l.encoder_pos_deg),
+        'gnc_lox_is_on':            float(l.is_on),      # PROTO CHANGE: was 'enabled'
+    }
+
+
+def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[dict]:
+    """
+    Expand one DataPacket into multiple CSV rows (one per sensor/field),
+    matching the unpivoted schema written to ClickHouse raw_sensors.
+    """
+    wide = _packet_to_row(recv_time, pkt)
+    ts   = wide['time']
+    rows = []
+
+    for sensor, raw_value in wide.items():
+        if sensor == 'time' or raw_value is None:
+            continue
+
+        value = float(raw_value)
+        # event column: state label for gnc_state rows, empty string otherwise
+        event = _STATE_NAMES.get(raw_value, '') if sensor == 'gnc_state' else ''
+
+        rows.append({
+            "time":   ts,
+            "sensor": sensor,
+            "value":  value,
+            "event":  event,
+            "system": "atlas", # change if not atlas 
+            "source": "gnc",   # leave as all GNC for now
+        })
+
+    return rows
+
+
+def _write_csv_on_exit():
+    """Write all accumulated telemetry to a single CSV file at exit time."""
+    with _csv_store_lock:
+        snapshot = list(_csv_store)
+
+    if not snapshot:
+        console.print(
+            f"  [{THEME['muted']}]No telemetry received — CSV not written.[/{THEME['muted']}]"
+        )
+        return
+
+    exit_ts  = time.strftime('%Y%m%d_%H%M%S')
+    csv_path = pathlib.Path(f"raw_sensors_{exit_ts}.csv")
+
+    total_rows = 0
+    with open(csv_path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        for recv_time, pkt in snapshot:
+            try:
+                for row in _packet_to_csv_rows(recv_time, pkt):
+                    writer.writerow(row)
+                    total_rows += 1
+            except Exception as e:
+                console.print(f"  [bold red]CSV row error:[/bold red] {e}")
+
+    console.print(
+        f"\n  {THEME['icon_ok']} [bold green]CSV saved →[/bold green] "
+        f"[dim]{csv_path.resolve()}[/dim]\n"
+        f"  [{THEME['muted']}]{total_rows:,} rows from {len(snapshot):,} packets[/{THEME['muted']}]"
+    )
+
+
+# ── ClickHouse flush ─────────────────────────────────────────────────────────
+
+def _flush_loop():
+    """Background thread — drains the packet buffer into ClickHouse every second."""
+    ch = clickhouse_connect.get_client(
+        host=CH_HOST,
+        username=CH_USER,
+        password=CH_PASSWORD,
+        database=CH_DATABASE,
+    )
+    while True:
+        time.sleep(1.0)
+        with _buffer_lock:
+            if not _packet_buffer:
+                continue
+            batch = list(_packet_buffer)
+            _packet_buffer.clear()
+
+        try:
+            rows = [_packet_to_row(t, p) for t, p in batch]
+            df = (
+                pl.DataFrame(rows)
+                .unpivot(index=['time'], variable_name='sensor', value_name='value')
+                .drop_nulls('value')
+                .with_columns(
+                    # time_ns in nanoseconds
+                    pl.from_epoch('time', time_unit='ns').alias('time'),
+                    pl.col('value').cast(pl.Float64),
+                    pl.when(pl.col('sensor') == 'gnc_state')
+                      .then(pl.col('value').map_elements(
+                          lambda v: _STATE_NAMES.get(v, ''), return_dtype=pl.String))
+                      .otherwise(pl.lit(''))
+                      .alias('event'),
+                    pl.lit('atlas').alias('system'),
+                    pl.lit('gnc').alias('source'),
+                )
+            )
+            ch.insert_df_arrow('raw_sensors', df)
+        except Exception as e:
+            console.print(f"  [bold red]ClickHouse insert error:[/bold red] {e}")
+
+
+# ── Live status display ──────────────────────────────────────────────────────
+
+STATE_COLORS = {
+    "STATE_UNKNOWN":        "dim white",
+    "STATE_IDLE":           "green",
+    "STATE_CALIBRATE_VALVE":"magenta",
+    "STATE_VALVE_PRIMED":   "cyan",
+    "STATE_VALVE_SEQ":      "gold1",
+    "STATE_THRUST_PRIMED":  "cyan",
+    "STATE_THRUST_SEQ":     "yellow",
+    "STATE_ABORT":          "bold red",
+}
+
+
+def _build_status_renderable():
+    """Build a rich renderable for the current telemetry snapshot."""
     with packet_lock:
         pkt = latest_packet
 
     t = THEME
+
     if pkt is None:
-        console.print(f"  {t['icon_live']} [{t['muted']}]No telemetry yet...[/{t['muted']}]")
-        return
+        return Panel(
+            f"[{t['muted']}]Waiting for telemetry...[/{t['muted']}]",
+            title=f"[{t['primary']}]{t['icon_live']} LIVE STATUS[/{t['primary']}]",
+            border_style=t["panel_border"],
+        )
+
+    state_name  = clover_pb2.SystemState.Name(pkt.state)
+    state_color = STATE_COLORS.get(state_name, "white")
+
+    # abort is now STATE_ABORT in state enum
+    is_abort  = (state_name == "STATE_ABORT")
+    abort_str = f"[bold red]{t['icon_stop']} ABORT[/bold red]" if is_abort else "[green]nominal[/green]"
+
+    # ── Header ────────────────────────────────────────────────
+    hdr = Table.grid(padding=(0, 3))
+    for _ in range(5):
+        hdr.add_column()
+    hdr.add_row(
+        Text(f"{t['icon_live']} LIVE",       style="bold green"),
+        Text(f"State: {state_name}",          style=state_color),
+        # in nanoseconds
+        Text(f"t = {pkt.time_ns / 1e9:.3f} s", style="white"),
+        Text(f"seq #{pkt.sequence_number}",   style=t["muted"]),
+        Text(f"queue: {pkt.data_queue_size}", style=t["muted"]),
+    )
+    header_panel = Panel(hdr, border_style=t["panel_border"], padding=(0, 1),
+                         subtitle=abort_str)
+
+    # ── Valve table ───────────────────────────────────────────
+    vt = Table(box=box.SIMPLE_HEAD, show_header=True,
+               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    vt.add_column("Valve",     style="bold white", no_wrap=True)
+    vt.add_column("On",        no_wrap=True)
+    vt.add_column("Target °",  style="white", no_wrap=True)
+    vt.add_column("Driver °",  style="white", no_wrap=True)
+    vt.add_column("Encoder °", style="white", no_wrap=True)
+
+    for label, icon, color, v in [
+        ("FUEL", t["icon_fuel"], "gold1",    pkt.fuel_valve),
+        ("LOX",  t["icon_lox"],  "dark_red", pkt.lox_valve),
+    ]:
+        vt.add_row(
+            f"{icon} [{color}]{label}[/{color}]",
+            "[green]YES[/green]" if v.is_on else "[red]NO[/red]",
+            f"{v.target_pos_deg:.2f}",
+            f"{v.driver_setpoint_pos_deg:.2f}",
+            f"{v.encoder_pos_deg:.2f}",
+        )
+
+    # ── Sensor table ──────────────────────────────────────────
+    #               Added TC-102, TC-102.5, ADC read time rows
+    st = Table(box=box.SIMPLE_HEAD, show_header=True,
+               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    st.add_column("Sensor", style="bold white", no_wrap=True)
+    st.add_column("Value",  style="white",      no_wrap=True)
+
+    s = pkt.analog_sensors
+    for name, val in [
+        ("PT-102",        s.pt102),
+        ("PT-103",        s.pt103),
+        ("PT-202",        s.pt202),
+        ("PT-203",        s.pt203),
+        ("PT-F401",       s.ptf401),
+        ("PT-O401",       s.pto401),
+        ("PT-C401",       s.ptc401),
+        ("PT-C402",       s.ptc402),
+        ("TC-102",        s.tc102),       # new sensor
+        ("TC-102.5",      s.tc102_5),     # new sensor
+        ("ADC t (ns)",    s.adc_read_time_ns),  # new timing
+    ]:
+        val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
+        st.add_row(name, val_str)
+
+    bottom = Columns([
+        Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",   border_style=t["panel_border"]),
+        Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]",  border_style=t["panel_border"]),
+    ])
+
+    return Group(header_panel, bottom)
+
+
+def cmd_live_status():
+    """Stream full telemetry panel at 5 Hz (200 ms). Press Enter to return to menu."""
+    stop = threading.Event()
+
+    def _wait_for_enter():
+        try:
+            sys.stdin.readline()
+        except Exception:
+            pass
+        stop.set()
+
+    console.print(f"  [{THEME['muted']}]Live view — press Enter to return to menu[/{THEME['muted']}]")
+    threading.Thread(target=_wait_for_enter, daemon=True).start()
+
+    try:
+        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
+            while not stop.is_set():
+                time.sleep(0.2)
+                live.update(_build_status_renderable())
+    except KeyboardInterrupt:
+        pass
+
+
+_TOOLBAR_STATE_TAGS = {
+    "STATE_UNKNOWN":        ("ansiwhite",  "UNKNOWN"),
+    "STATE_IDLE":           ("ansigreen",  "IDLE"),
+    "STATE_CALIBRATE_VALVE":("ansimagenta","CAL_VALVE"),
+    "STATE_VALVE_PRIMED":   ("ansicyan",   "VLV_PRIMED"),
+    "STATE_VALVE_SEQ":      ("ansiyellow", "VLV_SEQ"),
+    "STATE_THRUST_PRIMED":  ("ansicyan",   "THR_PRIMED"),
+    "STATE_THRUST_SEQ":     ("ansiyellow", "THR_SEQ"),
+    "STATE_ABORT":          ("ansired",    "ABORT"),
+}
+
+
+def get_toolbar():
+    """Compact live telemetry for the prompt_toolkit bottom toolbar."""
+    with packet_lock:
+        pkt = latest_packet
+
+    if pkt is None:
+        return HTML(" <b>📡</b> No telemetry yet...")
 
     state_name = clover_pb2.SystemState.Name(pkt.state)
+    tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ("ansiwhite", state_name))
 
-    # Color-code system state
-    state_color = {
-        "STATE_IDLE":                 "green",
-        "STATE_SEQUENCE":             "cyan",
-        "STATE_CLOSED_LOOP_THROTTLE": "yellow",
-        "STATE_ABORT":                "bold red",
-        "STATE_CALIBRATION":          "magenta",
-    }.get(state_name, "white")
 
-    row = Table.grid(padding=(0, 2))
-    row.add_column()
-    row.add_column()
-    row.add_column()
-    row.add_column()
-    row.add_column()
+    is_abort   = (state_name == "STATE_ABORT")
+    abort_html = "  <ansired><b>🛑 ABORT</b></ansired>" if is_abort else ""
 
-    row.add_row(
-        Text(f"{t['icon_live']} LIVE", style="bold green"),
-        Text(f"State: {state_name}", style=state_color),
-        Text(f"t={pkt.time:.2f}s", style="white"),
-        Text(f"{t['icon_fuel']} Fuel: {pkt.fuel_valve.encoder_pos_deg:.1f}°", style="yellow"),
-        Text(f"{t['icon_lox']} LOX: {pkt.lox_valve.encoder_pos_deg:.1f}°",  style="blue"),
+
+    s = pkt.analog_sensors
+    sensor_parts = [
+        f"{lbl}: {val:.1f}"
+        for lbl, val in [
+            ("PT-F401", s.ptf401), ("PT-O401", s.pto401),
+            ("PT-C401", s.ptc401), ("PT-C402", s.ptc402),
+            ("TC-102",  s.tc102),  ("TC-102.5", s.tc102_5),  # new sensors
+        ]
+        if val != 0.0
+    ]
+    sensor_html = ("  │  " + "  ".join(sensor_parts)) if sensor_parts else ""
+
+    f = pkt.fuel_valve
+    l = pkt.lox_valve
+    return HTML(
+        # 1e9 for seconds display
+        f" 📡 <{tag}><b>{short}</b></{tag}>"
+        f"  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}"
+        f"  │  🟡 drv={f.driver_setpoint_pos_deg:.1f}°  enc={f.encoder_pos_deg:.1f}°"
+        f"  │  🔴 drv={l.driver_setpoint_pos_deg:.1f}°  enc={l.encoder_pos_deg:.1f}°"
+        + sensor_html
+        + abort_html
     )
-    console.print(Panel(row, border_style=t["panel_border"], padding=(0, 1)))
 
 
-# TCP
+# ── TCP sender ───────────────────────────────────────────────────────────────
 
 def send_request(req: clover_pb2.Request, label: str) -> bool:
     """Serialize and send a Request over TCP. Returns True on success."""
@@ -133,17 +472,17 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 #     return True
 
 
-# Commands
+# ── Command implementations ──────────────────────────────────────────────────
 
 def cmd_subscribe_data_stream():
-    """Request #1 — Subscribe to telemetry data stream."""
+    """Subscribe to telemetry data stream."""
     req = clover_pb2.Request()
     req.subscribe_data_stream.SetInParent()
     send_request(req, "SUBSCRIBE_DATA_STREAM")
 
 
 def cmd_identify_client():
-    """Request #6 — Identify client as GNC"""
+    """Identify client as GNC."""
     t = THEME
     console.print(f"\n  {t['icon_id']} [{t['primary']}]Client identity: GNC[/{t['primary']}]")
     req = clover_pb2.Request()
@@ -151,30 +490,157 @@ def cmd_identify_client():
     send_request(req, "IDENTIFY_CLIENT (GNC)")
 
 
+def cmd_is_not_aborted():
+    """PROTO CHANGE: new request — check that system is not in ABORT state."""
+    req = clover_pb2.Request()
+    req.is_not_aborted_request.SetInParent()
+    send_request(req, "IS_NOT_ABORTED")
+
+
+def cmd_configure_sensor_bias():
+    """PROTO CHANGE: new request — set analog bias for a PT or TC sensor."""
+    t = THEME
+    console.print(f"\n  [{t['primary']}]Configure Analog Sensor Bias[/{t['primary']}]")
+
+    sensors = [
+        ("1",  "PT-102",   clover_pb2.PT102),
+        ("2",  "PT-103",   clover_pb2.PT103),
+        ("3",  "PT-202",   clover_pb2.PT202),
+        ("4",  "PT-203",   clover_pb2.PT203),
+        ("5",  "PT-F401",  clover_pb2.PTF401),
+        ("6",  "PT-O401",  clover_pb2.PTO401),
+        ("7",  "PT-C401",  clover_pb2.PTC401),
+        ("8",  "PT-C402",  clover_pb2.PTC402),
+        ("9",  "TC-102",   clover_pb2.TC102),
+        ("10", "TC-102.5", clover_pb2.TC102_5),
+    ]
+    for num, name, _ in sensors:
+        console.print(f"    [{num:>2}] {name}")
+
+    choice = Prompt.ask("  Select sensor", choices=[s[0] for s in sensors])
+    _, sensor_name, sensor_val = next(s for s in sensors if s[0] == choice)
+
+    bias = FloatPrompt.ask(f"  Bias value for {sensor_name}")
+
+    req = clover_pb2.Request()
+    req.configure_analog_sensors_bias.sensor = sensor_val
+    req.configure_analog_sensors_bias.bias   = bias
+    send_request(req, f"CONFIGURE_SENSOR_BIAS ({sensor_name} bias={bias:.4f})")
+
+
 def cmd_reset_valve_position():
-    """Request #2 — Reset a valve to a specified degree position."""
+    """Reset a valve to a specified degree position."""
     t = THEME
     console.print(f"\n  {t['icon_valve']} [{t['primary']}]Reset Valve Position[/{t['primary']}]")
     console.print("    [1] FUEL")
     console.print("    [2] LOX")
 
-    choice = Prompt.ask("  Select valve", choices=["1", "2"])
-    valve = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
     valve_name = "FUEL" if choice == "1" else "LOX"
-
-    pos = FloatPrompt.ask(f"  New position for {valve_name} valve (degrees)")
+    pos       = FloatPrompt.ask(f"  New position for {valve_name} valve (degrees)")
 
     req = clover_pb2.Request()
-    req.reset_valve_position.valve = valve
+    req.reset_valve_position.valve      = valve
     req.reset_valve_position.new_pos_deg = pos
     send_request(req, f"RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)")
 
 
+def cmd_power_on_valve():
+    """PROTO CHANGE: new request — power on (enable stepper motor) for a valve."""
+    t = THEME
+    console.print(f"\n  [{t['primary']}]Power ON Valve[/{t['primary']}]")
+    console.print("    [1] FUEL")
+    console.print("    [2] LOX")
+
+    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    valve_name = "FUEL" if choice == "1" else "LOX"
+
+    req = clover_pb2.Request()
+    req.power_on_valve.valve = valve
+    send_request(req, f"POWER_ON_VALVE ({valve_name})")
+
+
+def cmd_power_off_valve():
+    """Power off (disable stepper motor) for a valve."""
+    t = THEME
+    console.print(f"\n  [{t['primary']}]Power OFF Valve[/{t['primary']}]")
+    console.print("    [1] FUEL")
+    console.print("    [2] LOX")
+
+    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    valve_name = "FUEL" if choice == "1" else "LOX"
+
+    req = clover_pb2.Request()
+    req.power_off_valve.valve = valve
+    send_request(req, f"POWER_OFF_VALVE ({valve_name})")
+
+
+def cmd_abort():
+    """Abort active sequence into safe state."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f"\n  {t['icon_stop']} [{t['danger']}]ABORT — stop active sequence immediately?[/{t['danger']}]",
+        default=True,
+    )
+    if not confirmed:
+        console.print(f"  [{t['muted']}]Cancelled.[/{t['muted']}]")
+        return
+    req = clover_pb2.Request()
+    req.abort.SetInParent()
+    send_request(req, "ABORT")
+
+
+def cmd_halt():
+    """Halt all actuators."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f"\n  {t['icon_stop']} [{t['danger']}]HALT — stop all actuators immediately?[/{t['danger']}]",
+        default=True,
+    )
+    if not confirmed:
+        console.print(f"  [{t['muted']}]Cancelled.[/{t['muted']}]")
+        return
+    req = clover_pb2.Request()
+    req.halt.SetInParent()
+    send_request(req, "HALT")
+
+
+def cmd_unprime():
+    """Unprime (VALVE_PRIMED/THRUST_PRIMED → IDLE)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f"\n  [{t['warning']}]UNPRIME — cancel loaded sequence and return to IDLE?[/{t['warning']}]",
+        default=False,
+    )
+    if not confirmed:
+        console.print(f"  [{t['muted']}]Cancelled.[/{t['muted']}]")
+        return
+    req = clover_pb2.Request()
+    req.unprime.SetInParent()
+    send_request(req, "UNPRIME")
+
+
+def cmd_calibrate_valve():
+    """enter valve calibration mode (IDLE → CALIBRATE_VALVE)."""
+    t = THEME
+    console.print(f"\n  {t['icon_valve']} [{t['primary']}]Calibrate Valve[/{t['primary']}]")
+    console.print("    [1] FUEL")
+    console.print("    [2] LOX")
+
+    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    valve_name = "FUEL" if choice == "1" else "LOX"
+
+    req = clover_pb2.Request()
+    req.calibrate_valve.valve = valve
+    send_request(req, f"CALIBRATE_VALVE ({valve_name})")
+
+
 def _build_control_trace() -> clover_pb2.ControlTrace:
-    """
-    Interactively build a ControlTrace with one or more segments.
-    Returns a populated ControlTrace protobuf object.
-    """
+    """Interactively build a ControlTrace with one or more segments."""
     t = THEME
     total_time = IntPrompt.ask("  Total trace duration (ms)")
 
@@ -219,117 +685,105 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
     return trace
 
 
-def cmd_load_motor_sequence():
-    """Request #3 — Load a motor sequence (fuel and/or LOX traces)."""
+def cmd_load_valve_sequence():
+    """
+    Load a valve sequence (IDLE → VALVE_PRIMED). At least one trace required.
+    New field names: fuel_trace_deg, lox_trace_deg
+    """
     t = THEME
-    console.print(f"\n  {t['icon_seq']} [{t['primary']}]Load Motor Sequence[/{t['primary']}]")
-    console.print(f"  [{t['muted']}]You can define a control trace for FUEL, LOX, or both.[/{t['muted']}]")
+    console.print(f"\n  {t['icon_seq']} [{t['primary']}]Load Valve Sequence[/{t['primary']}]")
+    console.print(f"  [{t['muted']}]Define a control trace for FUEL, LOX, or both. At least one required.[/{t['muted']}]")
 
     req = clover_pb2.Request()
 
-    do_fuel = Confirm.ask("  Configure FUEL trace?", default=True)
+    do_fuel = Confirm.ask("  Configure FUEL trace (degrees)?", default=True)
     if do_fuel:
         console.print(f"\n  {t['icon_fuel']} [{t['warning']}]FUEL trace setup:[/{t['warning']}]")
         fuel_trace = _build_control_trace()
-        req.load_motor_sequence.fuel_trace.CopyFrom(fuel_trace)
+        # renamed fuel_trace_deg
+        req.load_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
 
-    do_lox = Confirm.ask("\n  Configure LOX trace?", default=True)
+    do_lox = Confirm.ask("\n  Configure LOX trace (degrees)?", default=True)
     if do_lox:
         console.print(f"\n  {t['icon_lox']} [{t['info']}]LOX trace setup:[/{t['info']}]")
         lox_trace = _build_control_trace()
-        req.load_motor_sequence.lox_trace.CopyFrom(lox_trace)
+        # renamed lox_trace_deg
+        req.load_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
 
     if not do_fuel and not do_lox:
-        console.print(f"  [{t['warning']}]No traces configured — nothing sent.[/{t['warning']}]")
+        console.print(f"  [{t['danger']}]At least one trace is required — nothing sent.[/{t['danger']}]")
         return
 
-    send_request(req, "LOAD_MOTOR_SEQUENCE")
+    send_request(req, "LOAD_VALVE_SEQUENCE")
 
 
-def cmd_start_sequence():
-    """Request #4 — Start the loaded sequence."""
+def cmd_start_valve_sequence():
+    """Replacement of start_sequence"""
     t = THEME
     confirmed = Confirm.ask(
-        f"\n  {t['icon_fire']} [{t['warning']}]START SEQUENCE — are you sure?[/{t['warning']}]",
+        f"\n  {t['icon_fire']} [{t['warning']}]START VALVE SEQUENCE — are you sure?[/{t['warning']}]",
         default=False,
     )
     if not confirmed:
-        console.print(f"  [{t['muted']}]Aborted.[/{t['muted']}]")
+        console.print(f"  [{t['muted']}]Cancelled.[/{t['muted']}]")
         return
     req = clover_pb2.Request()
-    req.start_sequence.SetInParent()
-    send_request(req, "START_SEQUENCE")
+    req.start_valve_sequence.SetInParent()
+    send_request(req, "START_VALVE_SEQUENCE")
 
 
-def cmd_halt_sequence():
-    """Request #5 — Halt immediately (abort command)"""
+def cmd_load_thrust_sequence():
+    """
+    Load a thrust sequence (IDLE → THRUST_PRIMED).
+    Thrust trace is in lbf
+    """
+    t = THEME
+    console.print(f"\n  {t['icon_loop']} [{t['primary']}]Load Thrust Sequence[/{t['primary']}]")
+    console.print(f"  [{t['muted']}]Thrust trace values are in lbf.[/{t['muted']}]")
+
+    thrust_trace = _build_control_trace()
+
+    req = clover_pb2.Request()
+    req.load_thrust_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
+    send_request(req, "LOAD_THRUST_SEQUENCE")
+
+
+def cmd_start_thrust_sequence():
+    """Start thrust sequence."""
     t = THEME
     confirmed = Confirm.ask(
-        f"\n  {t['icon_stop']} [{t['danger']}]HALT / ABORT — stop all sequences immediately?[/{t['danger']}]",
-        default=True,
+        f"\n  {t['icon_fire']} [{t['warning']}]START THRUST SEQUENCE — are you sure?[/{t['warning']}]",
+        default=False,
     )
     if not confirmed:
-        console.print(f"  [{t['muted']}]Aborted.[/{t['muted']}]")
+        console.print(f"  [{t['muted']}]Cancelled.[/{t['muted']}]")
         return
     req = clover_pb2.Request()
-    req.halt_sequence.SetInParent()
-    send_request(req, "HALT_SEQUENCE")
+    req.start_thrust_sequence.SetInParent()
+    send_request(req, "START_THRUST_SEQUENCE")
 
 
-def cmd_start_throttle_closed_loop():
-    """Request #7 — Start closed-loop throttle control with an optional thrust trace."""
-    t = THEME
-    console.print(f"\n  {t['icon_loop']} [{t['primary']}]Start Throttle Closed Loop[/{t['primary']}]")
+# ── Menu ─────────────────────────────────────────────────────────────────────
 
-    do_trace = Confirm.ask("  Include a thrust trace?", default=False)
-    req = clover_pb2.Request()
-
-    if do_trace:
-        console.print(f"\n  [{t['info']}]Thrust trace setup:[/{t['info']}]")
-        thrust_trace = _build_control_trace()
-        req.start_throttle_closed_loop.thrust_trace.CopyFrom(thrust_trace)
-    else:
-        req.start_throttle_closed_loop.SetInParent()
-
-    send_request(req, "START_THROTTLE_CLOSED_LOOP")
-
-
-def cmd_set_controller_state():
-    """Request #8 — Manually set the controller system state."""
-    t = THEME
-    console.print(f"\n  [{t['primary']}]Set Controller State:[/{t['primary']}]")
-
-    states = [
-        ("0", "STATE_IDLE",                 clover_pb2.STATE_IDLE),
-        ("1", "STATE_SEQUENCE",             clover_pb2.STATE_SEQUENCE),
-        ("2", "STATE_CLOSED_LOOP_THROTTLE", clover_pb2.STATE_CLOSED_LOOP_THROTTLE),
-        ("3", "STATE_ABORT",                clover_pb2.STATE_ABORT),
-        ("4", "STATE_CALIBRATION",          clover_pb2.STATE_CALIBRATION),
-    ]
-    for num, name, _ in states:
-        console.print(f"    [{num}] {name}")
-
-    choice = Prompt.ask("  Select state", choices=[s[0] for s in states])
-    _, state_name, state_val = next(s for s in states if s[0] == choice)
-
-    req = clover_pb2.Request()
-    req.set_controller_state.state = state_val
-    send_request(req, f"SET_CONTROLLER_STATE ({state_name})")
-
-
-# options
-
+# changed options based on updated .proto file
 MENU_ITEMS = [
-    ("sub",    "subscribe",       "Subscribe to data stream",              cmd_subscribe_data_stream),
-    ("id",     "identify",        "Identify this client",                  cmd_identify_client),
-    ("reset",  "reset",           "Reset valve position",                  cmd_reset_valve_position),
-    ("load",   "load",            "Load motor sequence (fuel/LOX traces)", cmd_load_motor_sequence),
-    ("start",  "start",           "Start sequence",                        cmd_start_sequence),
-    ("halt",   "halt",            "HALT / Abort immediately",              cmd_halt_sequence),
-    ("cl",     "closedloop",      "Start throttle closed loop",            cmd_start_throttle_closed_loop),
-    ("state",  "state",           "Set controller state",                  cmd_set_controller_state),
-    ("status", "status",          "Print latest telemetry snapshot",       None),  # handled inline
-    ("quit",   "quit",            "Exit",                                  None),  # handled inline
+    ("sub",   "subscribe",  "Subscribe to data stream",                        cmd_subscribe_data_stream),
+    ("id",    "identify",   "Identify this client (GNC)",                      cmd_identify_client),
+    ("check", "check",      "Check system is not aborted",                     cmd_is_not_aborted),
+    ("bias",  "bias",       "Configure analog sensor bias",                    cmd_configure_sensor_bias),
+    ("reset", "reset",      "Reset valve position",                            cmd_reset_valve_position),
+    ("pon",   "poweron",    "Power ON valve (enable stepper)",                 cmd_power_on_valve),
+    ("poff",  "poweroff",   "Power OFF valve (disable stepper)",               cmd_power_off_valve),
+    ("cal",   "calibrate",  "Calibrate valve  (IDLE → CALIBRATE_VALVE)",       cmd_calibrate_valve),
+    ("lvseq", "loadvalve",  "Load valve sequence  (IDLE → VALVE_PRIMED)",      cmd_load_valve_sequence),
+    ("svseq", "startvalve", "Start valve sequence (VALVE_PRIMED → VALVE_SEQ)", cmd_start_valve_sequence),
+    ("ltseq", "loadthrust", "Load thrust sequence (IDLE → THRUST_PRIMED)",     cmd_load_thrust_sequence),
+    ("stseq", "startthrust","Start thrust sequence (THRUST_PRIMED → THRUST_SEQ)", cmd_start_thrust_sequence),
+    ("unprime","unprime",   "Unprime  (VALVE/THRUST_PRIMED → IDLE)",           cmd_unprime),
+    ("abort", "abort",      "ABORT active sequence → safe state",              cmd_abort),
+    ("halt",  "halt",       "HALT all actuators",                              cmd_halt),
+    ("status","status",     "Live telemetry dashboard (Enter to exit)",        None),
+    ("quit",  "quit",       "Exit",                                            None),
 ]
 
 
@@ -346,24 +800,31 @@ def print_menu():
         border_style=t["panel_border"],
         padding=(0, 2),
     )
-    table.add_column("CMD",         style="bold white",     no_wrap=True)
+    table.add_column("CMD",         style="bold white", no_wrap=True)
     table.add_column("Description", style="white")
 
     icons = {
         "sub":    THEME["icon_live"],
         "id":     THEME["icon_id"],
+        "check":  "🔍",
+        "bias":   "⚙️ ",
         "reset":  THEME["icon_valve"],
-        "load":   THEME["icon_seq"],
-        "start":  THEME["icon_fire"],
+        "pon":    "🟢",
+        "poff":   "⚫",
+        "cal":    "📐",
+        "lvseq":  THEME["icon_seq"],
+        "svseq":  THEME["icon_fire"],
+        "ltseq":  THEME["icon_loop"],
+        "stseq":  THEME["icon_fire"],
+        "unprime":"↩️ ",
+        "abort":  THEME["icon_stop"],
         "halt":   THEME["icon_stop"],
-        "cl":     THEME["icon_loop"],
-        "state":  "🎛️ ",
         "status": THEME["icon_live"],
         "quit":   THEME["icon_quit"],
     }
 
     for key, alias, desc, _ in MENU_ITEMS:
-        table.add_row(f"{icons.get(key,'')} {key}", desc)
+        table.add_row(f"{icons.get(key, '')} {key}", desc)
 
     console.print(table)
 
@@ -377,7 +838,7 @@ def route_command(cmd: str) -> bool:
         return False
 
     if cmd in ("status", "s"):
-        print_live_status()
+        cmd_live_status()
         return True
 
     if cmd in ("help", "h", "menu", "?", ""):
@@ -393,35 +854,50 @@ def route_command(cmd: str) -> bool:
     return True
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 def main():
+    global data_sock
     t = THEME
 
+    parser = argparse.ArgumentParser(description="Clover ground station CLI")
+    parser.add_argument("--no-data", action="store_true",
+                        help="Skip binding the UDP telemetry port (for second instances)")
+    args = parser.parse_args()
+
+    telemetry_info = f"Listen port: {LOCAL_PORT}" if not args.no_data else "Telemetry: disabled"
     console.print(Panel.fit(
-        f"[{t['header']}] {t['icon_fire']}  CLOVER GROUND STATION  {t['icon_fire']} [/{t['header']}]\n"
-        f"[{t['muted']}]Target: {ZEPHYR_IP}:{ZEPHYR_PORT}  |  Listen port: {LOCAL_PORT}[/{t['muted']}]",
+        f"[{t['header']}] {t['icon_fire']}  CLOVER CLI INFO  {t['icon_fire']} [/{t['header']}]\n"
+        f"[{t['muted']}]Target: {ZEPHYR_IP}:{ZEPHYR_PORT}  |  {telemetry_info}[/{t['muted']}]",
         border_style=t["panel_border"],
         padding=(1, 4),
     ))
 
-    # auto-subscribe on startup
-    console.print(f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]")
-    cmd_subscribe_data_stream()
-
-    # start telemetry listener on start up
-    listener = threading.Thread(target=listen_for_telemetry, daemon=True)
-    listener.start()
+    if not args.no_data:
+        data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        data_sock.bind(("0.0.0.0", LOCAL_PORT))
+        console.print(f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]")
+        cmd_subscribe_data_stream()
+        threading.Thread(target=listen_for_telemetry, daemon=True).start()
+        threading.Thread(target=_flush_loop, daemon=True).start()
 
     print_menu()
 
+    session = PromptSession(bottom_toolbar=get_toolbar, refresh_interval=0.1)
+
     while True:
         try:
-            cmd = Prompt.ask(f"\n  [{t['primary']}]CMD[/{t['primary']}]")
+            cmd = session.prompt("\n  CMD> ")
         except (KeyboardInterrupt, EOFError):
             console.print(f"\n  {t['icon_stop']} [{t['warning']}]Exiting.[/{t['warning']}]\n")
             break
 
         if not route_command(cmd):
             break
+
+    # Write CSV on exit — filename uses timestamp at exit: raw_sensors_YYYYMMDD_HHMMSS.csv
+    if not args.no_data:
+        _write_csv_on_exit()
 
 
 if __name__ == "__main__":
