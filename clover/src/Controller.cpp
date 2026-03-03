@@ -36,11 +36,9 @@ void Controller::change_state(SystemState new_state) {
     }
 }
 
-int Controller::controller_init() {
-    change_state(SystemState_STATE_IDLE);
-    k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
-    LOG_INF("Initializing Controller...");
-    return 0;
+static void controller_step_control_loop(struct k_work *work)
+{
+    Controller::step_control_loop(work);
 }
 
 int tick_count = 0; // temp for testing
@@ -50,8 +48,7 @@ void Controller::step_control_loop(k_work*) {
     tick_count++;
     if (tick_count % 2000 == 0) {
         LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
-        // timespec t = get_system_time();
-        // LOG_INF("Time: %f", t.tv_sec + t.tv_nsec / 1e9);
+
     }
 
     pt_readings raw_pts = pts_sample();
@@ -103,9 +100,6 @@ void Controller::step_control_loop(k_work*) {
         LoxValve::reset_pos(out.reset_lox_pos);
     }
 
-
-
-
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
 
@@ -134,7 +128,7 @@ void Controller::step_control_loop(k_work*) {
     }
 }
 
-K_WORK_DEFINE(control_loop, step_control_loop);
+K_WORK_DEFINE(control_loop, controller_step_control_loop);
 
 // ISR that schedules a control iteration in the work queue.
 static void control_loop_schedule(k_timer* timer)
@@ -142,15 +136,20 @@ static void control_loop_schedule(k_timer* timer)
     k_work_submit(&control_loop);
 }
 
-K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr
-);
+K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
+
+int Controller::controller_init() {
+    change_state(SystemState_STATE_IDLE);
+    k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
+    LOG_INF("Initializing Controller...");
+    return 0;
+}
 
 void Controller::trigger_abort() {
     abort_entry_time = k_uptime_get();
     change_state(SystemState_STATE_ABORT);
 }
-
 
 std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMotorSequenceRequest& req) {
     if (!req.has_fuel_trace && !req.has_lox_trace) {
