@@ -1,15 +1,15 @@
 #include <zephyr/kernel.h>
 #include <zephyr/net/sntp.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/posix/time.h>
+#include <time.h>
 
 LOG_MODULE_REGISTER(hotfire_sntp_static, LOG_LEVEL_INF);
 
 // This is the static IP of the laptop running Chrony
-#define CHRONY_SERVER_IP "192.168.1.100"
+#define CHRONY_SERVER_IP "169.254.88.88"
 #define SNTP_TIMEOUT_MS 5000
 
-bool syncTime() {
+bool sync_time() {
     struct sntp_time ts;
     struct timespec tspec;
 
@@ -22,7 +22,7 @@ bool syncTime() {
         tspec.tv_sec = ts.seconds;
         tspec.tv_nsec = (uint32_t)(((uint64_t)ts.fraction * 1000000000ULL) >> 32);
 
-        clock_settime(CLOCK_REALTIME, &tspec);
+        sys_clock_settime(CLOCK_REALTIME, &tspec);
         LOG_INF("System clock updated.");
         return true;
     } else {
@@ -31,28 +31,30 @@ bool syncTime() {
     }
 }
 
-int main(void) {
+int sntp_init() {
     LOG_INF("Booting");
 
     // Give the network stack a brief moment to initialize the physical Ethernet link
     k_sleep(K_SECONDS(2));
 
     // Keep trying until it successfully gets the time from the Laptop
-    while (!syncTime()) {
-        LOG_WRN("Retrying SNTP sync in 2 seconds...");
-        k_sleep(K_SECONDS(2));
+    while (!sync_time()) {
+        LOG_WRN("Retrying SNTP sync in 0.2 seconds...");
+        k_sleep(K_MSEC(200));
     }
 
     struct timespec tspec;
 
     /* Main loop */
-    while (1) {
-        clock_gettime(CLOCK_REALTIME, &tspec);
-        LOG_INF("Timestamp: %lld.%09ld", (long long)tspec.tv_sec, tspec.tv_nsec);
+    sys_clock_gettime(CLOCK_REALTIME, &tspec);
 
-        // Simulating a 10Hz loop
-        k_sleep(K_MSEC(100));
-    }
+    LOG_INF("Timestamp: %lld.%09ld", (long long)tspec.tv_sec, tspec.tv_nsec);
 
     return 0;
+}
+
+timespec get_system_time() {
+    struct timespec tspec;
+    sys_clock_gettime(CLOCK_REALTIME, &tspec);
+    return tspec;
 }

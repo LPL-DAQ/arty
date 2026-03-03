@@ -7,6 +7,8 @@
 #include "AbortState.h"
 #include "ThrottleValve.h"
 #include "pts.h"
+// #include "sntp_imp.h"
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -42,10 +44,12 @@ int tick_count = 0; // temp for testing
 void Controller::tick() {
     DataPacket packet = DataPacket_init_default;
 
-    tick_count++;
-    if (tick_count % 2000 == 0) {
-        LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
-    }
+    // tick_count++;
+    // if (tick_count % 2000 == 0) {
+    // //     LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
+    //     timespec t = get_system_time();
+    //     LOG_INF("Time: %f", t.tv_sec + t.tv_nsec / 1e9);
+    // }
 
     // pt_readings raw_pts = pts_get_last_reading();
     Sensors current_sensors = Sensors_init_default;
@@ -97,9 +101,7 @@ void Controller::tick() {
     }
 
 
-    if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
-    }
+
 
     FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
