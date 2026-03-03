@@ -131,3 +131,5 @@ while True:
     client.insert_df_arrow('raw_sensors', df)
 
     save_progress(progress)
+    time.sleep(5)
+

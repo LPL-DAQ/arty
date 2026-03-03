@@ -123,3 +123,5 @@ while True:
     save_progress(progress)
 
     print(f'Ingested {rows} lines')
+    
+    time.sleep(5)
