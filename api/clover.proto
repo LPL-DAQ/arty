@@ -36,7 +36,7 @@ message Request {
     // Transitions IDLE -> CALIBRATE_VALVE
     CalibrateValveRequest calibrate_valve = 9;
     // Transitions IDLE -> VALVE_PRIMED
-    LoadValveSequenceRequest load_motor_sequence = 13;
+    LoadValveSequenceRequest load_valve_sequence = 13;
     // Transitions VALVE_PRIMED -> VALVE_SEQ
     StartValveSequenceRequest start_valve_sequence = 15;
     // Transitions IDLE -> THRUST_PRIMED
@@ -168,10 +168,6 @@ message SineSegment {
   required float phase_deg = 4;
 }
 
-message LoadMotorSequenceRequest {
-  optional ControlTrace fuel_trace = 1;
-  optional ControlTrace lox_trace = 2;
-}
 
 // Data stream.
 // Delivered in individual packets on a regular interval, only from clover to external listeners.
@@ -210,7 +206,7 @@ message DataPacket {
   required bool gnc_connected = 15;
   required float gnc_last_pinged_ns = 16;
 
-  required bool daq_conneted = 17;
+  required bool daq_connected = 17;
   required float daq_last_pinged_ns = 18;
 
   // Peripherals
@@ -226,10 +222,10 @@ message DataPacket {
 
     // ABORT
     AbortData abort_data = 14;
-    
+
     // VALVE_CALIBRATION
     ValveCalibrationData valve_calibration_data = 9;
-    
+
     // VALVE_SEQ
     ValveSequenceData valve_sequence_data = 10;
 

@@ -2,10 +2,10 @@
 #define APP_CONTROLLER_H
 
 #include "Error.h"
-#include "clover.pb.h"
-#include <expected>
-#include "pts.h"
 #include "Trace.h"
+#include "clover.pb.h"
+#include "pts.h"
+#include <expected>
 #include <zephyr/kernel.h>
 
 typedef SystemState SystemState;
@@ -38,30 +38,37 @@ public:
     static inline Trace lox_trace;
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
-    static SystemState state() { return current_state; }
+    static SystemState state()
+    {
+        return current_state;
+    }
 
-    static int controller_init();
-    static void controller_step_control_loop(k_work* work); // The 1ms dispatcher called by the timer
+    static int init();
+    static void controller_step_control_loop(k_work* work);  // The 1ms dispatcher called by the timer
     static void control_loop_schedule(k_timer* timer);
 
     static void step_control_loop(k_work*);
 
     // Request handlers
-    static std::expected<void, Error> handle_load_motor_sequence(const LoadMotorSequenceRequest& req);
-    static std::expected<void, Error> handle_start_sequence(const StartSequenceRequest& req);
-    static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
-    static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_start_closed_loop(const StartThrottleClosedLoopRequest& req);
-    static std::expected<void, Error> handle_set_controller_state(const SetControllerStateRequest& req);
+    static std::expected<void, Error> handle_load_valve_sequence(const LoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_valve_sequence(const StartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_thrust_sequence(const LoadThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_start_thrust_sequence(const StartThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_abort(const AbortRequest& req);
+    static std::expected<void, Error> handle_unprime(const UnprimeRequest& req);
+    static std::expected<void, Error> handle_calibrate_valve(const CalibrateValveRequest& req);
 
-    static void trigger_abort();
+    static std::expected<void, Error> handle_halt(const HaltRequest& req);
+
+    static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
+
     static void change_state(SystemState new_state);
-    static int get_state_id(SystemState state) ;
-    Controller() = delete; // Explicitly prevent instantiation
+    static int get_state_id(SystemState state);
+    Controller() = delete;  // Explicitly prevent instantiation
 
 private:
     static inline uint32_t udp_sequence_number = 0;
-    static void stream_telemetry(const Sensors& sensors);
+    static void stream_telemetry(const AnalogSensors& sensors);
 };
 
 // Expose the Message Queue for the Server to read from
