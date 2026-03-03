@@ -7,10 +7,10 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
+#include "Controller.h"
 #include "ThrottleValve.h"
 #include "pts.h"
 #include "server.h"
-#include "Controller.h"
 #include "sntp_imp.h"
 
 extern "C" {
@@ -82,11 +82,11 @@ int main(void)
     serve_connections();
 
     LOG_INF("Initializing Controller");
-    err = Controller::controller_init();
+    err = Controller::init();
     if (err) {
         LOG_ERR("Failed to initialize Controller");
         return 0;
     }
-    
+
     k_sleep(K_FOREVER);
 }

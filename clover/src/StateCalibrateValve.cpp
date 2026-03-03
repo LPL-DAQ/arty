@@ -98,8 +98,6 @@ std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint
     data.fuel_err = fuel_pos - (fuel_pos_enc+ fuel_starting_error);
     data.lox_err = lox_pos - (lox_pos_enc + lox_starting_error);
     data.cal_phase = get_phase_id();
-    data.fuel_target_position = fuel_target_position;
-    data.lox_target_position = lox_target_position;
 
 
     return std::make_pair(out, data);

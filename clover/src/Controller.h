@@ -2,10 +2,10 @@
 #define APP_CONTROLLER_H
 
 #include "Error.h"
-#include "clover.pb.h"
-#include <expected>
-#include "pts.h"
 #include "Trace.h"
+#include "clover.pb.h"
+#include "pts.h"
+#include <expected>
 #include <zephyr/kernel.h>
 
 typedef SystemState SystemState;
@@ -38,10 +38,13 @@ public:
     static inline Trace lox_trace;
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
-    static SystemState state() { return current_state; }
+    static SystemState state()
+    {
+        return current_state;
+    }
 
-    static int controller_init();
-    static void controller_step_control_loop(k_work* work); // The 1ms dispatcher called by the timer
+    static int init();
+    static void controller_step_control_loop(k_work* work);  // The 1ms dispatcher called by the timer
     static void control_loop_schedule(k_timer* timer);
 
     static void step_control_loop(k_work*);
@@ -60,8 +63,8 @@ public:
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
 
     static void change_state(SystemState new_state);
-    static int get_state_id(SystemState state) ;
-    Controller() = delete; // Explicitly prevent instantiation
+    static int get_state_id(SystemState state);
+    Controller() = delete;  // Explicitly prevent instantiation
 
 private:
     static inline uint32_t udp_sequence_number = 0;
