@@ -17,6 +17,22 @@ services:
   #   image: quay.io/jupyterhub/jupyterhub@sha256:2e72ddcdc280ab1ab113333331e984456723acfc31eb873a1621f9be74c58100
   #   network_mode: host
   #   restart: always
+  extract-legacy-daq-tests:
+    build:
+      context: .
+      dockerfile: services.Dockerfile
+      args:
+        SCRIPT_FILE: extract_legacy_daq_tests.py
+    network_mode: host
+    restart: always
+  sync-tests:
+    build:
+      context: .
+      dockerfile: services.Dockerfile
+      args:
+        SCRIPT_FILE: sync_tests.py
+    network_mode: host
+    restart: always
 volumes:
   db-data:
     driver: local

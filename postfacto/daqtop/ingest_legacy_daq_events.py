@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -22,18 +22,15 @@ def load_progress():
             'dir': Path(),
             'bytes_read': 0,
             'col_names': [],
-            'dir_mtime': datetime.now(),
         }
     with open(PERSISTENT_PATH) as f:
         p = json.load(f)
         p['dir'] = Path(p['dir'])
-        p['dir_mtime'] = datetime.fromtimestamp(p['dir_mtime'], tz=ZoneInfo('America/Los_Angeles'))
         return p
 
 
 def save_progress(p):
     p['dir'] = str(p['dir'])
-    p['dir_mtime'] = p['dir_mtime'].timestamp()
     with open(PERSISTENT_PATH, 'w') as f:
         json.dump(p, f)
 
@@ -55,7 +52,9 @@ def next_data_dir(curr_dir: Path):
 
 
 client = clickhouse_connect.get_client(
-    host=os.environ['CLICKHOUSE_HOST'], username=os.environ['CLICKHOUSE_USERNAME'], password=os.environ['CLICKHOUSE_PASSWORD']
+    host=os.environ['CLICKHOUSE_HOST'],
+    username=os.environ['CLICKHOUSE_USERNAME'],
+    password=os.environ['CLICKHOUSE_PASSWORD'],
 )
 
 done_file = False
@@ -73,9 +72,6 @@ while True:
 
             done_file = False
             file_waiting = False
-            progress['dir_mtime'] = datetime.fromtimestamp(
-                progress['dir'].stat().st_mtime, tz=ZoneInfo('America/Los_Angeles')
-            )
             progress['bytes_read'] = 0
             data_path = progress['dir'].joinpath('testData_log.txt')
         else:
@@ -108,7 +104,7 @@ while True:
     for line in buf.decode().strip().split('\n'):
         line = line.strip()
         right_space = line.rfind(' ')
-        time_sec = progress['dir_mtime'] + timedelta(seconds=float(line[right_space + 1 :]))
+        time_sec = datetime.fromtimestamp(float(line[right_space + 1 :]), tz=ZoneInfo('America/Los_Angeles'))
 
         left_space = line.find(' ')
         source = line[:left_space]
@@ -129,4 +125,5 @@ while True:
     client.insert_df_arrow('raw_sensors', df)
 
     save_progress(progress)
+    time.sleep(5)
 

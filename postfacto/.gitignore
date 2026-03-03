@@ -1,2 +1,4 @@
 .env
 db_config
+config
+service_account.json
