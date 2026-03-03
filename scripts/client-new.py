@@ -15,24 +15,27 @@ from rich.rule import Rule
 from rich.columns import Columns
 from rich import box
 import clover_pb2
+from rich.console import Group
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
 
 
 THEME = {
-    "primary":      "bold cyan",
+    "primary":      "bold gold1",
     "success":      "bold green",
     "warning":      "bold yellow",
     "danger":       "bold red",
-    "info":         "bold blue",
+    "info":         "bold gold1",
     "muted":        "dim white",
-    "header":       "bold white on dark_blue",
-    "panel_border": "cyan",
+    "header":       "bold white on dark_red",
+    "panel_border": "dark_red",
     "icon_fire":    "🔥",
     "icon_ok":      "✅",
     "icon_warn":    "⚠️ ",
     "icon_stop":    "🛑",
     "icon_live":    "📡",
     "icon_fuel":    "🟡",
-    "icon_lox":     "🔵",
+    "icon_lox":     "🔴",
     "icon_valve":   "🔧",
     "icon_seq":     "▶️ ",
     "icon_loop":    "🔄",
@@ -41,7 +44,8 @@ THEME = {
 }
 
 # Network
-ZEPHYR_IP   = "169.254.99.99"
+# ZEPHYR_IP = "169.254.99.99"  # real board
+ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 5000
 LOCAL_PORT  = 5001
 
@@ -52,7 +56,6 @@ packet_lock = threading.Lock()
 
 data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 data_sock.bind(("0.0.0.0", LOCAL_PORT))
-pyt
 
 # Telemetry
 def listen_for_telemetry():
@@ -69,42 +72,158 @@ def listen_for_telemetry():
             pass
 
 
-def print_live_status():
-    """Print a single-line live status bar from the latest packet."""
+STATE_COLORS = {
+    "STATE_IDLE":                 "green",
+    "STATE_SEQUENCE":             "gold1",
+    "STATE_CLOSED_LOOP_THROTTLE": "yellow",
+    "STATE_ABORT":                "bold red",
+    "STATE_CALIBRATION":          "magenta",
+}
+
+
+def _build_status_renderable():
+    """Build a rich renderable for the current telemetry snapshot."""
     with packet_lock:
         pkt = latest_packet
 
     t = THEME
+
     if pkt is None:
-        console.print(f"  {t['icon_live']} [{t['muted']}]No telemetry yet...[/{t['muted']}]")
-        return
+        return Panel(
+            f"[{t['muted']}]Waiting for telemetry...[/{t['muted']}]",
+            title=f"[{t['primary']}]{t['icon_live']} LIVE STATUS[/{t['primary']}]",
+            border_style=t["panel_border"],
+        )
+
+    state_name  = clover_pb2.SystemState.Name(pkt.state)
+    state_color = STATE_COLORS.get(state_name, "white")
+    abort_str   = f"[bold red]{t['icon_stop']} ABORT[/bold red]" if pkt.is_abort else "[green]nominal[/green]"
+
+    # ── Header ────────────────────────────────────────────────
+    hdr = Table.grid(padding=(0, 3))
+    for _ in range(5):
+        hdr.add_column()
+    hdr.add_row(
+        Text(f"{t['icon_live']} LIVE",      style="bold green"),
+        Text(f"State: {state_name}",         style=state_color),
+        Text(f"t = {pkt.time:.3f} s",        style="white"),
+        Text(f"seq #{pkt.sequence_number}",  style=t["muted"]),
+        Text(f"queue: {pkt.data_queue_size}", style=t["muted"]),
+    )
+    header_panel = Panel(hdr, border_style=t["panel_border"], padding=(0, 1),
+                         subtitle=abort_str)
+
+    # ── Valve table ───────────────────────────────────────────
+    vt = Table(box=box.SIMPLE_HEAD, show_header=True,
+               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    vt.add_column("Valve",     style="bold white", no_wrap=True)
+    vt.add_column("Enabled",   no_wrap=True)
+    vt.add_column("Target °",  style="white", no_wrap=True)
+    vt.add_column("Driver °",  style="white", no_wrap=True)
+    vt.add_column("Encoder °", style="white", no_wrap=True)
+
+    for label, icon, color, v in [
+        ("FUEL", t["icon_fuel"], "gold1",    pkt.fuel_valve),
+        ("LOX",  t["icon_lox"],  "dark_red", pkt.lox_valve),
+    ]:
+        vt.add_row(
+            f"{icon} [{color}]{label}[/{color}]",
+            "[green]YES[/green]" if v.enabled else "[red]NO[/red]",
+            f"{v.target_pos_deg:.2f}",
+            f"{v.driver_setpoint_pos_deg:.2f}",
+            f"{v.encoder_pos_deg:.2f}",
+        )
+
+    # ── Sensor table ──────────────────────────────────────────
+    st = Table(box=box.SIMPLE_HEAD, show_header=True,
+               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    st.add_column("Sensor", style="bold white", no_wrap=True)
+    st.add_column("Value",  style="white",      no_wrap=True)
+
+    s = pkt.sensors
+    for name, val in [
+        ("PT-102",  s.pt102),  ("PT-103",  s.pt103),
+        ("PT-202",  s.pt202),  ("PT-203",  s.pt203),
+        ("PT-F401", s.ptf401), ("PT-O401", s.pto401),
+        ("PT-C401", s.ptc401), ("PT-C402", s.ptc402),
+    ]:
+        val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
+        st.add_row(name, val_str)
+
+    bottom = Columns([
+        Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",   border_style=t["panel_border"]),
+        Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]",  border_style=t["panel_border"]),
+    ])
+
+    return Group(header_panel, bottom)
+
+
+def cmd_live_status():
+    """Stream full telemetry panel at ~10 Hz. Press Enter to return to menu."""
+    stop = threading.Event()
+
+    def _wait_for_enter():
+        try:
+            sys.stdin.readline()
+        except Exception:
+            pass
+        stop.set()
+
+    console.print(f"  [{THEME['muted']}]Live view — press Enter to return to menu[/{THEME['muted']}]")
+    threading.Thread(target=_wait_for_enter, daemon=True).start()
+
+    try:
+        with Live(_build_status_renderable(), refresh_per_second=10, screen=False) as live:
+            while not stop.is_set():
+                time.sleep(0.1)
+                live.update(_build_status_renderable())
+    except KeyboardInterrupt:
+        pass
+
+
+_TOOLBAR_STATE_TAGS = {
+    "STATE_IDLE":                 ("ansigreen",  "STATE_IDLE"),
+    "STATE_SEQUENCE":             ("ansiyellow", "STATE_SEQUENCE"),
+    "STATE_CLOSED_LOOP_THROTTLE": ("ansiyellow", "STATE_CLT"),
+    "STATE_ABORT":                ("ansired",    "STATE_ABORT"),
+    "STATE_CALIBRATION":          ("ansired",    "STATE_CAL"),
+}
+
+
+def get_toolbar():
+    """Compact live telemetry for the prompt_toolkit bottom toolbar."""
+    with packet_lock:
+        pkt = latest_packet
+
+    if pkt is None:
+        return HTML(" <b>📡</b> No telemetry yet...")
 
     state_name = clover_pb2.SystemState.Name(pkt.state)
+    tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ("ansiwhite", state_name))
 
-    # Color-code system state
-    state_color = {
-        "STATE_IDLE":                 "green",
-        "STATE_SEQUENCE":             "cyan",
-        "STATE_CLOSED_LOOP_THROTTLE": "yellow",
-        "STATE_ABORT":                "bold red",
-        "STATE_CALIBRATION":          "magenta",
-    }.get(state_name, "white")
+    abort_html = "  <ansired><b>🛑 ABORT</b></ansired>" if pkt.is_abort else ""
 
-    row = Table.grid(padding=(0, 2))
-    row.add_column()
-    row.add_column()
-    row.add_column()
-    row.add_column()
-    row.add_column()
+    s = pkt.sensors
+    sensor_parts = [
+        f"{lbl}: {val:.1f}"
+        for lbl, val in [
+            ("PT-F401", s.ptf401), ("PT-O401", s.pto401),
+            ("PT-C401", s.ptc401), ("PT-C402", s.ptc402),
+        ]
+        if val != 0.0
+    ]
+    sensor_html = ("  │  " + "  ".join(sensor_parts)) if sensor_parts else ""
 
-    row.add_row(
-        Text(f"{t['icon_live']} LIVE", style="bold green"),
-        Text(f"State: {state_name}", style=state_color),
-        Text(f"t={pkt.time:.2f}s", style="white"),
-        Text(f"{t['icon_fuel']} Fuel: {pkt.fuel_valve.encoder_pos_deg:.1f}°", style="yellow"),
-        Text(f"{t['icon_lox']} LOX: {pkt.lox_valve.encoder_pos_deg:.1f}°",  style="blue"),
+    f = pkt.fuel_valve
+    l = pkt.lox_valve
+    return HTML(
+        f" 📡 <{tag}><b>{short}</b></{tag}>"
+        f"  │  t={pkt.time:.2f}s  seq#{pkt.sequence_number}"
+        f"  │  🟡 drv={f.driver_setpoint_pos_deg:.1f}°  enc={f.encoder_pos_deg:.1f}°"
+        f"  │  🔴 drv={l.driver_setpoint_pos_deg:.1f}°  enc={l.encoder_pos_deg:.1f}°"
+        + sensor_html
+        + abort_html
     )
-    console.print(Panel(row, border_style=t["panel_border"], padding=(0, 1)))
 
 
 # TCP
@@ -328,7 +447,7 @@ MENU_ITEMS = [
     ("halt",   "halt",            "HALT / Abort immediately",              cmd_halt_sequence),
     ("cl",     "closedloop",      "Start throttle closed loop",            cmd_start_throttle_closed_loop),
     ("state",  "state",           "Set controller state",                  cmd_set_controller_state),
-    ("status", "status",          "Print latest telemetry snapshot",       None),  # handled inline
+    ("status", "status",          "Live telemetry dashboard (Ctrl+C to exit)", None),  # handled inline
     ("quit",   "quit",            "Exit",                                  None),  # handled inline
 ]
 
@@ -377,7 +496,7 @@ def route_command(cmd: str) -> bool:
         return False
 
     if cmd in ("status", "s"):
-        print_live_status()
+        cmd_live_status()
         return True
 
     if cmd in ("help", "h", "menu", "?", ""):
@@ -413,9 +532,11 @@ def main():
 
     print_menu()
 
+    session = PromptSession(bottom_toolbar=get_toolbar, refresh_interval=0.1)
+
     while True:
         try:
-            cmd = Prompt.ask(f"\n  [{t['primary']}]CMD[/{t['primary']}]")
+            cmd = session.prompt("\n  CMD> ")
         except (KeyboardInterrupt, EOFError):
             console.print(f"\n  {t['icon_stop']} [{t['warning']}]Exiting.[/{t['warning']}]\n")
             break
