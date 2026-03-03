@@ -11,6 +11,7 @@
 #include "pts.h"
 #include "server.h"
 #include "Controller.h"
+#include "sntp_imp.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -73,6 +74,13 @@ int main(void)
     // err = pts_init();
     // if (err) {
     //     LOG_ERR("Failed to initialize PTs");
+    //     return 0;
+    // }
+
+    // LOG_INF("initializing SNTP");
+    // err = sntp_init();
+    // if (err) {
+    //     LOG_ERR("Failed to initialize SNTP");
     //     return 0;
     // }
 
