@@ -19,6 +19,8 @@ import clover_pb2
 from rich.console import Group
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
+import clickhouse_connect
+import polars as pl
 
 
 THEME = {
@@ -50,12 +52,21 @@ ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 5000
 LOCAL_PORT  = 5001
 
+# ── ClickHouse config ────────────────────────────────────────────────────────
+CH_HOST     = "172.233.143.186"
+CH_USER     = "writer"
+CH_PASSWORD = "ce8XpzhRGhsvBxCPHDTcvh6DMWhb3jyxgmQMNLrsKaCqtZvKf2"
+CH_DATABASE = "lpl"
+
 
 console = Console()
 latest_packet: clover_pb2.DataPacket | None = None
 packet_lock = threading.Lock()
 
 data_sock = None
+
+_packet_buffer: list = []
+_buffer_lock   = threading.Lock()
 
 # Telemetry
 def listen_for_telemetry():
@@ -66,10 +77,80 @@ def listen_for_telemetry():
             data, _ = data_sock.recvfrom(4096)
             packet = clover_pb2.DataPacket()
             packet.ParseFromString(data)
+            recv_time = time.time()
             with packet_lock:
                 latest_packet = packet
+            with _buffer_lock:
+                _packet_buffer.append((recv_time, packet))
         except Exception:
             pass
+
+
+_STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(5)}
+
+
+def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
+    """Flatten one DataPacket into a wide dict of numeric sensors."""
+    s = pkt.sensors
+    f = pkt.fuel_valve
+    l = pkt.lox_valve
+    return {
+        'time':             int(recv_time * 1_000_000),
+        'gnc_state':        float(pkt.state),
+        'gnc_pt102':        s.pt102  if s.HasField('pt102')  else None,
+        'gnc_pt103':        s.pt103  if s.HasField('pt103')  else None,
+        'gnc_pt202':        s.pt202  if s.HasField('pt202')  else None,
+        'gnc_pt203':        s.pt203  if s.HasField('pt203')  else None,
+        'gnc_ptf401':       s.ptf401 if s.HasField('ptf401') else None,
+        'gnc_pto401':       s.pto401 if s.HasField('pto401') else None,
+        'gnc_ptc401':       s.ptc401 if s.HasField('ptc401') else None,
+        'gnc_ptc402':       s.ptc402 if s.HasField('ptc402') else None,
+        'gnc_fuel_target':  float(f.target_pos_deg),
+        'gnc_fuel_driver':  float(f.driver_setpoint_pos_deg),
+        'gnc_fuel_encoder': float(f.encoder_pos_deg),
+        'gnc_lox_target':   float(l.target_pos_deg),
+        'gnc_lox_driver':   float(l.driver_setpoint_pos_deg),
+        'gnc_lox_encoder':  float(l.encoder_pos_deg),
+    }
+
+
+def _flush_loop():
+    """Background thread — drains the packet buffer into ClickHouse every second."""
+    ch = clickhouse_connect.get_client(
+        host=CH_HOST,
+        username=CH_USER,
+        password=CH_PASSWORD,
+        database=CH_DATABASE,
+    )
+    while True:
+        time.sleep(1.0)
+        with _buffer_lock:
+            if not _packet_buffer:
+                continue
+            batch = list(_packet_buffer)
+            _packet_buffer.clear()
+
+        try:
+            rows = [_packet_to_row(t, p) for t, p in batch]
+            df = (
+                pl.DataFrame(rows)
+                .unpivot(index=['time'], variable_name='sensor', value_name='value')
+                .drop_nulls('value')
+                .with_columns(
+                    pl.from_epoch('time', time_unit='us').alias('time'),
+                    pl.col('value').cast(pl.Float64),
+                    pl.when(pl.col('sensor') == 'gnc_state')
+                      .then(pl.col('value').map_elements(
+                          lambda v: _STATE_NAMES.get(v, ''), return_dtype=pl.String))
+                      .otherwise(pl.lit(''))
+                      .alias('event'),
+                    pl.lit('atlas').alias('system'),
+                    pl.lit('gnc').alias('source'),
+                )
+            )
+            ch.insert_df_arrow('raw_sensors', df)
+        except Exception as e:
+            console.print(f"  [bold red]ClickHouse insert error:[/bold red] {e}")
 
 
 STATE_COLORS = {
@@ -537,6 +618,7 @@ def main():
         cmd_subscribe_data_stream()
         # start telemetry listener
         threading.Thread(target=listen_for_telemetry, daemon=True).start()
+        threading.Thread(target=_flush_loop, daemon=True).start()
 
     print_menu()
 
