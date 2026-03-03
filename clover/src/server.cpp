@@ -192,35 +192,44 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             cmd_result = Controller::handle_reset_valve_position(request.payload.reset_valve_position);
             break;
         }
-        case Request_load_motor_sequence_tag: {
-            LOG_INF("Open loop motor sequence");
-            // ADDED: Defer to the static controller to parse the protobuf trace.
-            // If the trace has logic errors (e.g. invalid sequence points), it will return an Error.
-            cmd_result = Controller::handle_load_motor_sequence(request.payload.load_motor_sequence);
+        case Request_calibrate_valve_tag: {
+            LOG_INF("Calibrate valve");
+            cmd_result = Controller::handle_calibrate_valve(request.payload.calibrate_valve);
             break;
         }
-        case Request_start_sequence_tag: {
-            LOG_INF("Start sequence");
-            // ADDED: Kick off the 1ms timer in the Controller.
-            cmd_result = Controller::handle_start_sequence(request.payload.start_sequence);
+        case Request_load_valve_sequence_tag: {
+            LOG_INF("Load valve sequence");
+            cmd_result = Controller::handle_load_valve_sequence(request.payload.load_valve_sequence);
             break;
         }
-        case Request_halt_sequence_tag: {
-            LOG_INF("halt seq");
-            // ADDED: Trigger the safe abort mode in the Controller.
-            cmd_result = Controller::handle_halt_sequence(request.payload.halt_sequence);
+        case Request_start_valve_sequence_tag: {
+            LOG_INF("Start valve sequence");
+            cmd_result = Controller::handle_start_valve_sequence(request.payload.start_valve_sequence);
             break;
         }
-        case Request_start_throttle_closed_loop_tag: {
-            LOG_INF("Start throttle closed loop");
-            cmd_result = Controller::handle_start_closed_loop(request.payload.start_throttle_closed_loop);
+        case Request_load_thrust_sequence_tag: {
+            LOG_INF("Load thrust sequence");
+            cmd_result = Controller::handle_load_thrust_sequence(request.payload.load_thrust_sequence);
             break;
         }
-        case Request_set_controller_state_tag: {
-            LOG_INF("Set controller state");
-            cmd_result =
-                Controller::handle_set_controller_state(
-                    request.payload.set_controller_state);
+        case Request_start_thrust_sequence_tag: {
+            LOG_INF("Start thrust sequence");
+            cmd_result = Controller::handle_start_thrust_sequence(request.payload.start_thrust_sequence);
+            break;
+        }
+        case Request_abort_tag: {
+            LOG_INF("Abort");
+            cmd_result = Controller::handle_abort(request.payload.abort);
+            break;
+        }
+        case Request_unprime_tag: {
+            LOG_INF("Unprime");
+            cmd_result = Controller::handle_unprime(request.payload.unprime);
+            break;
+        }
+        case Request_halt_tag: {
+            LOG_INF("Halt");
+            cmd_result = Controller::handle_halt(request.payload.halt);
             break;
         }
         default: {

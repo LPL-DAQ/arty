@@ -36,7 +36,7 @@ message Request {
     // Transitions IDLE -> CALIBRATE_VALVE
     CalibrateValveRequest calibrate_valve = 9;
     // Transitions IDLE -> VALVE_PRIMED
-    LoadValveSequenceRequest load_motor_sequence = 13;
+    LoadValveSequenceRequest load_valve_sequence = 13;
     // Transitions VALVE_PRIMED -> VALVE_SEQ
     StartValveSequenceRequest start_valve_sequence = 15;
     // Transitions IDLE -> THRUST_PRIMED
@@ -206,7 +206,7 @@ message DataPacket {
   required bool gnc_connected = 15;
   required float gnc_last_pinged_ns = 16;
 
-  required bool daq_conneted = 17;
+  required bool daq_connected = 17;
   required float daq_last_pinged_ns = 18;
 
   // Peripherals

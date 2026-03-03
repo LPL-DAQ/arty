@@ -55,7 +55,6 @@ public:
     static std::expected<void, Error> handle_halt(const HaltRequest& req);
 
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_set_controller_state(const SetControllerStateRequest& req);
 
     static void change_state(SystemState new_state);
     static int get_state_id(SystemState state) ;
@@ -63,7 +62,7 @@ public:
 
 private:
     static inline uint32_t udp_sequence_number = 0;
-    static void stream_telemetry(const Sensors& sensors);
+    static void stream_telemetry(const AnalogSensors& sensors);
 };
 
 // Expose the Message Queue for the Server to read from

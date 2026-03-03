@@ -27,7 +27,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(bool has_pt
     out.set_lox = true;
     out.lox_pos = target_valve_pos;
 
-    out.next_state = SystemState_STATE_CLOSED_LOOP_THROTTLE;
+    out.next_state = SystemState_STATE_THRUST_SEQ;
 
     return {out, data};
 }

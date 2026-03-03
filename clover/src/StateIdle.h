@@ -3,7 +3,7 @@
 
 #include "Controller.h"
 
-namespace IdleState {
+namespace StateIdle {
     void init();
     std::pair<ControllerOutput, IdleData> tick();
 }
