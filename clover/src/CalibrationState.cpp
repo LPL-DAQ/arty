@@ -116,7 +116,6 @@ std::pair<ControllerOutput, CalibrationData> CalibrationState::tick(uint32_t tim
                             lox_pos, lox_pos_enc, lox_vel_avg);
             break;
         case CalPhase::BACK_OFF:
-            back_off(out, fuel_pos_enc, lox_pos_enc);
             break;
         case CalPhase::END_MOVEMENT:
             end_movement(out, timestamp);
@@ -327,8 +326,8 @@ void CalibrationState::measure(ControllerOutput& out, float fuel_pos,float fuel_
     if (fuel_found_stop && lox_found_stop) {
         fuel_target_position = fuel_hardstop_position;
         lox_target_position = lox_hardstop_position;
-        LOG_INF("err: %f, pos %f, enc %f",  std::abs(lox_pos - (lox_starting_error + lox_pos_enc)), lox_pos, lox_pos_enc);
-        LOG_INF("Fuel hardstop at %f, Lox hardstop at %f", fuel_hardstop_position, lox_hardstop_position);
+        // LOG_INF("err: %f, pos %f, enc %f",  std::abs(lox_pos - (lox_starting_error + lox_pos_enc)), lox_pos, lox_pos_enc);
+        // LOG_INF("Fuel hardstop at %f, Lox hardstop at %f", fuel_hardstop_position, lox_hardstop_position);
         out.next_state = SystemState_STATE_IDLE;
 
     }
