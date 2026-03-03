@@ -41,7 +41,8 @@ public:
     static SystemState state() { return current_state; }
 
     static int controller_init();
-    static void tick(); // The 1ms dispatcher called by the timer
+    static void step_control_loop(k_work* work); // The 1ms dispatcher called by the timer
+    static void control_loop_schedule(k_timer* timer);
 
     // Request handlers
     static std::expected<void, Error> handle_load_motor_sequence(const LoadMotorSequenceRequest& req);

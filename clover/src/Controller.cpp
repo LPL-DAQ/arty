@@ -17,6 +17,11 @@ LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
 
+
+constexpr uint64_t
+    NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
+
+
 void Controller::change_state(SystemState new_state) {
     if (current_state == new_state) return;
 
@@ -33,6 +38,7 @@ void Controller::change_state(SystemState new_state) {
 
 int Controller::controller_init() {
     change_state(SystemState_STATE_IDLE);
+    k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
     LOG_INF("Initializing Controller...");
     return 0;
 }
@@ -129,6 +135,7 @@ void Controller::step_control_loop(k_work*) {
 }
 
 K_WORK_DEFINE(control_loop, step_control_loop);
+
 // ISR that schedules a control iteration in the work queue.
 static void control_loop_schedule(k_timer* timer)
 {
