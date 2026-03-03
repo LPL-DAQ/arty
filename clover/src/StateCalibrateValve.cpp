@@ -59,7 +59,7 @@ void StateCalibrateValve::init(float fuel_pos, float fuel_pos_enc, float lox_pos
 
 
 
-std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc, float fuel_vel, float lox_vel) {
+std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
     ControllerOutput out{};
     ValveCalibrationData data{};
 
@@ -197,7 +197,7 @@ void StateCalibrateValve::complete(ControllerOutput& out, uint32_t timestamp) {
 
 
     // should be idle, but this is for testing
-    out.next_state = SystemState_STATE_CALIBRATION;
+    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
     if (timestamp - power_cycle_timestamp >= 6500) {
         out.next_state = SystemState_STATE_IDLE;
         phase = CalPhase::COMPLETE;

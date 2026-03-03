@@ -9,11 +9,8 @@
 namespace StateCalibrateValve {
 
 
-
-
     void init( float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
     void seek_hardstop(ControllerOutput& out, float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
-    void back_off(ControllerOutput& out ,float fuel_pos_enc,float lox_pos_enc);
     void end_movement(ControllerOutput& out, uint32_t timestamp);
     void power_off(ControllerOutput& out, uint32_t timestamp);
     void repower(ControllerOutput& out, uint32_t timestamp);

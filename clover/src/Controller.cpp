@@ -69,14 +69,14 @@ void Controller::step_control_loop(k_work*) {
     // pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
 
-    current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
-    current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
-    current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
-    current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
-    current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
-    current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
-    current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
-    current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
+    current_sensors.ptc401 = raw_pts.ptc401;
+    current_sensors.pto401 = raw_pts.pto401;
+    current_sensors.pt202  = raw_pts.pt202;
+    current_sensors.pt102  = raw_pts.pt102;
+    current_sensors.pt103  = raw_pts.pt103;
+    current_sensors.ptf401 = raw_pts.ptf401;
+    current_sensors.ptc402 = raw_pts.ptc402;
+    current_sensors.pt203  = raw_pts.pt203;
 
     ControllerOutput out;
 
@@ -90,7 +90,7 @@ void Controller::step_control_loop(k_work*) {
         }
         case SystemState_STATE_CALIBRATE_VALVE: {
             // Can make this work over protobuf later
-            auto [cal_out, cal_data] = StateCalibrateValve::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder(), FuelValve::get_encoder_velocity(), LoxValve::get_encoder_velocity());
+            auto [cal_out, cal_data] = StateCalibrateValve::tick(k_uptime_get(),FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
             packet.state_data.valve_calibration_data = cal_data;
             out = cal_out;
             break;
