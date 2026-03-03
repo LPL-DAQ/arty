@@ -137,6 +137,10 @@ void Controller::step_control_loop(k_work*) {
         LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
     }
 
+    if (tick_count % 500 == 0) {
+        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
+    }
+
     change_state(out.next_state);
 
     if (out.reset_fuel) {
