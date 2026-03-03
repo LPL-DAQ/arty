@@ -63,17 +63,18 @@ int main(void)
         return 0;
     }
 
-    // LOG_INF("Initializing Controller");
-    // err = Controller::controller_init();
-    // if (err) {
-    //     LOG_ERR("Failed to initialize Controller");
-    //     return 0;
-    // }
+
 
     LOG_INF("Initializing Pts");
     err = pts_init();
     if (err) {
         LOG_ERR("Failed to initialize PTs");
+        return 0;
+    }
+    LOG_INF("Initializing Controller");
+    err = Controller::controller_init();
+    if (err) {
+        LOG_ERR("Failed to initialize Controller");
         return 0;
     }
 

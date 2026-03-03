@@ -16,8 +16,6 @@ LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
-static void control_timer_expiry(struct k_timer *t);
-K_TIMER_DEFINE(control_loop_timer, control_timer_expiry, NULL);
 
 void Controller::change_state(SystemState new_state) {
     if (current_state == new_state) return;
@@ -35,33 +33,32 @@ void Controller::change_state(SystemState new_state) {
 
 int Controller::controller_init() {
     change_state(SystemState_STATE_IDLE);
-    k_timer_start(&control_loop_timer, K_MSEC(1), K_MSEC(1));
     LOG_INF("Initializing Controller...");
     return 0;
 }
 
 int tick_count = 0; // temp for testing
-void Controller::tick() {
+void Controller::step_control_loop(k_work*) {
     DataPacket packet = DataPacket_init_default;
 
-    // tick_count++;
-    // if (tick_count % 2000 == 0) {
-    // //     LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
-    //     timespec t = get_system_time();
-    //     LOG_INF("Time: %f", t.tv_sec + t.tv_nsec / 1e9);
-    // }
+    tick_count++;
+    if (tick_count % 2000 == 0) {
+        LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
+        // timespec t = get_system_time();
+        // LOG_INF("Time: %f", t.tv_sec + t.tv_nsec / 1e9);
+    }
 
-    // pt_readings raw_pts = pts_get_last_reading();
+    pt_readings raw_pts = pts_sample();
     Sensors current_sensors = Sensors_init_default;
 
-    // current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
-    // current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
-    // current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
-    // current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
-    // current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
-    // current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
-    // current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
-    // current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
+    current_sensors.has_ptc401 = true; current_sensors.ptc401 = raw_pts.ptc401;
+    current_sensors.has_pto401 = true; current_sensors.pto401 = raw_pts.pto401;
+    current_sensors.has_pt202  = true; current_sensors.pt202  = raw_pts.pt202;
+    current_sensors.has_pt102  = true; current_sensors.pt102  = raw_pts.pt102;
+    current_sensors.has_pt103  = true; current_sensors.pt103  = raw_pts.pt103;
+    current_sensors.has_ptf401 = true; current_sensors.ptf401 = raw_pts.ptf401;
+    current_sensors.has_ptc402 = true; current_sensors.ptc402 = raw_pts.ptc402;
+    current_sensors.has_pt203  = true; current_sensors.pt203  = raw_pts.pt203;
 
     ControllerOutput out;
 
@@ -107,7 +104,7 @@ void Controller::tick() {
     LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
 
     // telementary
-    packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+    packet.time = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC; // replace with ntp timestamp later
     packet.sensors = current_sensors;
 
     packet.state = current_state;
@@ -131,14 +128,22 @@ void Controller::tick() {
     }
 }
 
+K_WORK_DEFINE(control_loop, step_control_loop);
+// ISR that schedules a control iteration in the work queue.
+static void control_loop_schedule(k_timer* timer)
+{
+    k_work_submit(&control_loop);
+}
+
+K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr
+);
+
+
 void Controller::trigger_abort() {
     abort_entry_time = k_uptime_get();
     change_state(SystemState_STATE_ABORT);
 }
 
-static void control_timer_expiry(struct k_timer *t) {
-    Controller::tick();
-}
 
 std::expected<void, Error> Controller::handle_load_motor_sequence(const LoadMotorSequenceRequest& req) {
     if (!req.has_fuel_trace && !req.has_lox_trace) {
