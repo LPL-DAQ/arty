@@ -137,10 +137,6 @@ void Controller::step_control_loop(k_work*) {
         LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
     }
 
-    if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
-    }
-
     change_state(out.next_state);
 
     if (out.reset_fuel) {
@@ -173,25 +169,7 @@ void Controller::step_control_loop(k_work*) {
     }
 }
 
-K_WORK_DEFINE(control_loop, controller_step_control_loop);
-
-// ISR that schedules a control iteration in the work queue.
-static void control_loop_schedule(k_timer* timer)
-{
-    k_work_submit(&control_loop);
-}
-
-K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
-
-
-int Controller::controller_init() {
-    change_state(SystemState_STATE_IDLE);
-    k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
-    LOG_INF("Initializing Controller...");
-    return 0;
-}
-
-std::expected<void, Error> Controller::handle_abort(const AbortRequest& req) {
+void Controller::trigger_abort() {
     abort_entry_time = k_uptime_get();
     change_state(SystemState_STATE_ABORT);
     LOG_INF("Received abort request");

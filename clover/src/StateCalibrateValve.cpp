@@ -142,7 +142,6 @@ void StateCalibrateValve::seek_hardstop(ControllerOutput& out, float fuel_pos,fl
 }
 
 
-
 void StateCalibrateValve::end_movement(ControllerOutput& out, uint32_t timestamp) {
     FuelValve::reset_pos(fuel_hardstop_position);
     LoxValve::reset_pos(lox_hardstop_position);
