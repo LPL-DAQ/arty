@@ -456,9 +456,7 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
     """Serialize and send a Request over TCP. Returns True on success."""
     try:
 
-        payload = req.SerializeToString()
-        payload = _VarintBytes(len(payload)) + payload
-        sock.sendall(payload)
+        sock.sendall(req.SerializeToString())
         console.print(
             f"\n  {THEME['icon_ok']} [{THEME['success']}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME['success']}]\n"
         )
