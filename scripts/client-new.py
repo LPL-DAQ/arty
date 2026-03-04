@@ -52,8 +52,8 @@ THEME = {
 # Network
 ZEPHYR_IP = "169.254.99.99"  # real board
 #ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
-ZEPHYR_PORT = 5000
-LOCAL_PORT  = 5001
+ZEPHYR_PORT = 19690
+LOCAL_PORT  = 19691
 
 # ── ClickHouse config ────────────────────────────────────────────────────────
 CH_HOST     = "172.233.143.186"
@@ -88,7 +88,9 @@ _buffer_lock   = threading.Lock()
 _csv_store: list = []           # list of (recv_time: float, pkt: DataPacket)
 _csv_store_lock = threading.Lock()
 
-
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(2.0)
+sock.connect((ZEPHYR_IP, ZEPHYR_PORT))
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 def listen_for_telemetry():
@@ -449,13 +451,11 @@ def get_toolbar():
 # ── TCP sender ───────────────────────────────────────────────────────────────
 
 def send_request(req: clover_pb2.Request, label: str) -> bool:
+    global sock
     """Serialize and send a Request over TCP. Returns True on success."""
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2.0)
-        sock.connect((ZEPHYR_IP, ZEPHYR_PORT))
+
         sock.sendall(req.SerializeToString())
-        sock.close()
         console.print(
             f"\n  {THEME['icon_ok']} [{THEME['success']}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME['success']}]\n"
         )

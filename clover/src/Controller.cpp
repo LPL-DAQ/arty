@@ -88,11 +88,6 @@ void Controller::step_control_loop(k_work*)
 {
     DataPacket packet = DataPacket_init_default;
 
-    tick_count++;
-    if (tick_count % 2000 == 0) {
-        LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
-    }
-
     pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
 
@@ -159,10 +154,6 @@ void Controller::step_control_loop(k_work*)
         out = idle_out;
         break;
     }
-    }
-
-    if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ", out.lox_pos, LoxValve::get_pos_encoder(), LoxValve::get_pos_internal());
     }
 
     change_state(out.next_state);
@@ -249,6 +240,7 @@ std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValv
 
 std::expected<void, Error> Controller::handle_start_valve_sequence(const StartValveSequenceRequest& req)
 {
+    
     LOG_INF("Received start valve sequence request");
 
     sequence_start_time = k_uptime_get();
