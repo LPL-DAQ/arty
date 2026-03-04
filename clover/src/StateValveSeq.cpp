@@ -1,12 +1,13 @@
-#include "SequenceState.h"
+#include "StateValveSeq.h"
 
-void SequenceState::init() {
+void StateValveSeq::init() {
     // Timer is reset in handle_start_sequence before entering
 }
 
-ControllerOutput SequenceState::tick(uint32_t current_time, uint32_t start_time, Trace& fuel_trace, Trace& lox_trace) {
+std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t current_time, uint32_t start_time, Trace& fuel_trace, Trace& lox_trace) {
     ControllerOutput out;
-    out.next_state = SystemState_STATE_SEQUENCE; // Assume we stay in this state by default
+    ValveSequenceData data{};
+    out.next_state = SystemState_STATE_VALVE_SEQ; // Assume we stay in this state by default
 
     float dt = current_time - start_time;
     auto f_target = fuel_trace.sample(dt);
@@ -15,7 +16,7 @@ ControllerOutput SequenceState::tick(uint32_t current_time, uint32_t start_time,
     // If sample fails (e.g. past end of trace or error), sequence is over
     if (!f_target || !l_target) {
         out.next_state = SystemState_STATE_IDLE;
-        return out;
+        return std::make_pair(out, data);
     }
 
     // Pass the raw float values back to the controller
@@ -24,6 +25,5 @@ ControllerOutput SequenceState::tick(uint32_t current_time, uint32_t start_time,
 
     out.set_lox = true;
     out.lox_pos = *l_target;
-
-    return out;
+    return std::make_pair(out, data);
 }

@@ -1,11 +1,12 @@
-#include "AbortState.h"
+#include "StateValvePrimed.h"
 
-void AbortState::init() {
+void StateValvePrimed::init() {
     // Controller handles actuation now
 }
 
-ControllerOutput AbortState::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
+std::pair<ControllerOutput, IdleData> StateValvePrimed::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
     ControllerOutput out{};
+    IdleData data{};
 
     // Drive valves to nominal safe positions
     out.set_fuel = true;
@@ -21,5 +22,5 @@ ControllerOutput AbortState::tick(uint32_t current_time, uint32_t entry_time, fl
         out.next_state = SystemState_STATE_ABORT;
     }
 
-    return out;
+    return std::make_pair(out, data);
 }
