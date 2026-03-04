@@ -5,7 +5,7 @@
 
 namespace StateThrustSeq {
     void init();
-    std::pair<ControllerOutput, ThrustSequenceData> tick(bool has_ptc, float ptc_pressure);
+    std::pair<ControllerOutput, ThrustSequenceData> tick(const AnalogSensors& sensors, float target_thrust_lbf, float target_of);
 }
 
 #endif // APP_STATE_THRUST_SEQ_H

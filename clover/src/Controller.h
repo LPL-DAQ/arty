@@ -36,6 +36,7 @@ public:
     static inline uint32_t sequence_start_time = 0;
     static inline Trace fuel_trace;
     static inline Trace lox_trace;
+    static inline Trace thrust_trace;
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
     static SystemState state()
