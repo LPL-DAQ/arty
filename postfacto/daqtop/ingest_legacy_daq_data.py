@@ -103,7 +103,7 @@ while True:
 
     # Push to database
     df = pl.read_csv(buf, has_header=False, new_columns=progress['col_names']).with_columns(
-        time=pl.from_epoch('time')
+        time=pl.from_epoch(pl.col('time') * 1e9, time_unit='ns')
     )
     rows = df.height
     df = (
