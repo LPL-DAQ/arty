@@ -106,6 +106,7 @@ void Controller::step_control_loop(k_work*)
     switch (current_state) {
     case SystemState_STATE_IDLE: {
         auto [idle_out, idle_data] = StateIdle::tick();
+        packet.which_state_data = DataPacket_idle_data_tag;
         packet.state_data.idle_data = idle_data;
         out = idle_out;
         break;
@@ -114,42 +115,49 @@ void Controller::step_control_loop(k_work*)
         // Can make this work over protobuf later
         auto [cal_out, cal_data] = StateCalibrateValve::tick(
             k_uptime_get(), FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
+        packet.which_state_data = DataPacket_valve_calibration_data_tag;
         packet.state_data.valve_calibration_data = cal_data;
         out = cal_out;
         break;
     }
     case SystemState_STATE_VALVE_PRIMED: {
         auto [primed_out, primed_data] = StateValvePrimed::tick(k_uptime_get(), sequence_start_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+        packet.which_state_data = DataPacket_idle_data_tag;
         packet.state_data.idle_data = primed_data;
         out = primed_out;
         break;
     }
     case SystemState_STATE_VALVE_SEQ: {
         auto [seq_out, seq_data] = StateValveSeq::tick(k_uptime_get(), sequence_start_time, fuel_trace, lox_trace);
+        packet.which_state_data = DataPacket_valve_sequence_data_tag;
         packet.state_data.valve_sequence_data = seq_data;
         out = seq_out;
         break;
     }
     case SystemState_STATE_THRUST_PRIMED: {
         auto [thrust_primed_out, thrust_primed_data] = StateThrustPrimed::tick(k_uptime_get(), sequence_start_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+        packet.which_state_data = DataPacket_idle_data_tag;
         packet.state_data.idle_data = thrust_primed_data;
         out = thrust_primed_out;
         break;
     }
     case SystemState_STATE_THRUST_SEQ: {
         auto [thrust_out, thrust_data] = StateThrustSeq::tick(true, current_sensors.ptc401);
+        packet.which_state_data = DataPacket_thrust_sequence_data_tag;
         packet.state_data.thrust_sequence_data = thrust_data;
         out = thrust_out;
         break;
     }
     case SystemState_STATE_ABORT: {
         auto [abort_out, abort_data] = StateAbort::tick(k_uptime_get(), abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+        packet.which_state_data = DataPacket_abort_data_tag;
         packet.state_data.abort_data = abort_data;
         out = abort_out;
         break;
     }
     default: {
         auto [idle_out, idle_data] = StateIdle::tick();
+        packet.which_state_data = DataPacket_idle_data_tag;
         packet.state_data.idle_data = idle_data;
         out = idle_out;
         break;

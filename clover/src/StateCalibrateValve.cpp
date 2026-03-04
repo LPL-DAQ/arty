@@ -28,7 +28,7 @@ namespace {
     float step_size = 0.002f; // in degrees, how much to move per step
     int num_reps = 1; // number of times to hit the hard
     int rep_counter = 0;
-    float pos_error_limit = 10.0f; // positional error limit
+    float pos_error_limit = 0.2f; // positional error limit
     float backup_dist = 5.0f;
     float fuel_starting_error = 0.0f;
     float lox_starting_error = 0.0f;
@@ -53,11 +53,7 @@ void StateCalibrateValve::init(float fuel_pos, float fuel_pos_enc, float lox_pos
 
     fuel_starting_error = fuel_pos - fuel_pos_enc;
     lox_starting_error = lox_pos - lox_pos_enc;
-
-
 }
-
-
 
 std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
     ControllerOutput out{};
@@ -199,7 +195,6 @@ void StateCalibrateValve::complete(ControllerOutput& out, uint32_t timestamp) {
         out.next_state = SystemState_STATE_IDLE;
         phase = CalPhase::COMPLETE;
     }
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
 
 
 }
