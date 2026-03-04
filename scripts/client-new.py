@@ -19,6 +19,7 @@ from rich.rule import Rule
 from rich.columns import Columns
 from rich import box
 import clover_pb2
+from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -187,7 +188,7 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
             "sensor": sensor,
             "value":  value,
             "event":  event,
-            "system": "atlas", # change if not atlas 
+            "system": "atlas", # change if not atlas
             "source": "gnc",   # leave as all GNC for now
         })
 
@@ -455,7 +456,9 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
     """Serialize and send a Request over TCP. Returns True on success."""
     try:
 
-        sock.sendall(req.SerializeToString())
+        payload = req.SerializeToString()
+        payload = _VarintBytes(len(payload)) + payload
+        sock.sendall(payload)
         console.print(
             f"\n  {THEME['icon_ok']} [{THEME['success']}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME['success']}]\n"
         )
