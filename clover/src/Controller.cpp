@@ -1,10 +1,10 @@
 #include "Controller.h"
 #include "StateAbort.h"
+#include "StateCalibrateValve.h"
 #include "StateIdle.h"
 #include "StateThrustSeq.h"
 #include "StateValveSeq.h"
 #include "ThrottleValve.h"
-#include "StateCalibrateValve.h"
 #include "pts.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -21,68 +21,68 @@ void Controller::change_state(SystemState new_state)
         return;
 
     switch (new_state) {
-        case SystemState_STATE_IDLE:
-            current_state = new_state;
-            StateIdle::init();
+    case SystemState_STATE_IDLE:
+        current_state = new_state;
+        StateIdle::init();
 
-            break;
+        break;
 
-        case SystemState_STATE_CALIBRATE_VALVE:
-            if (current_state != SystemState_STATE_IDLE){
-                LOG_ERR("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state));
-                return;
-            }
-            StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
-            current_state = new_state;
-            break;
+    case SystemState_STATE_CALIBRATE_VALVE:
+        if (current_state != SystemState_STATE_IDLE) {
+            LOG_ERR("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state));
+            return;
+        }
+        StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+        current_state = new_state;
+        break;
 
-        case SystemState_STATE_VALVE_PRIMED:
-            if (current_state != SystemState_STATE_IDLE){
-                LOG_ERR("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state));
-                return;
-            }
-            StateIdle::init();
-            current_state = new_state;
-            break;
+    case SystemState_STATE_VALVE_PRIMED:
+        if (current_state != SystemState_STATE_IDLE) {
+            LOG_ERR("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state));
+            return;
+        }
+        StateIdle::init();
+        current_state = new_state;
+        break;
 
-        case SystemState_STATE_VALVE_SEQ:
-            if (current_state != SystemState_STATE_VALVE_PRIMED){
-                LOG_ERR("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state));
-                return;
-            }
+    case SystemState_STATE_VALVE_SEQ:
+        if (current_state != SystemState_STATE_VALVE_PRIMED) {
+            LOG_ERR("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state));
+            return;
+        }
 
-            // INIT IS IN THE HANDLER
-            current_state = new_state;
-            break;
+        // INIT IS IN THE HANDLER
+        current_state = new_state;
+        break;
 
-        case SystemState_STATE_THRUST_PRIMED:
-            if (current_state != SystemState_STATE_IDLE){
-                LOG_ERR("Cannot switch from %s to Thrust Primed, must be in Idle", get_state_name(current_state));
-                return;
-            }
-            StateIdle::init();
-            current_state = new_state;
-            break;
+    case SystemState_STATE_THRUST_PRIMED:
+        if (current_state != SystemState_STATE_IDLE) {
+            LOG_ERR("Cannot switch from %s to Thrust Primed, must be in Idle", get_state_name(current_state));
+            return;
+        }
+        StateIdle::init();
+        current_state = new_state;
+        break;
 
-        case SystemState_STATE_THRUST_SEQ:
-            if (current_state != SystemState_STATE_THRUST_PRIMED){
-                LOG_ERR("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state));
-                return;
-            }
-            StateThrustSeq::init();
-            current_state = new_state;
-            break;
+    case SystemState_STATE_THRUST_SEQ:
+        if (current_state != SystemState_STATE_THRUST_PRIMED) {
+            LOG_ERR("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state));
+            return;
+        }
+        StateThrustSeq::init();
+        current_state = new_state;
+        break;
 
-        case SystemState_STATE_ABORT:
-            if (current_state != SystemState_STATE_THRUST_SEQ && current_state != SystemState_STATE_VALVE_SEQ){
-                LOG_ERR("Cannot switch from %s to Abort, must be in Valve Seq or Thrust Seq", get_state_name(current_state));
-                return;
-            }
-            StateAbort::init();
-            current_state = new_state;
-            break;
-        default:
-            break;
+    case SystemState_STATE_ABORT:
+        if (current_state != SystemState_STATE_THRUST_SEQ && current_state != SystemState_STATE_VALVE_SEQ) {
+            LOG_ERR("Cannot switch from %s to Abort, must be in Valve Seq or Thrust Seq", get_state_name(current_state));
+            return;
+        }
+        StateAbort::init();
+        current_state = new_state;
+        break;
+    default:
+        break;
     }
     LOG_INF("Changed State to %s", get_state_name(current_state));
 }
@@ -109,11 +109,6 @@ int tick_count = 0;  // temp for testing
 void Controller::step_control_loop(k_work*)
 {
     DataPacket packet = DataPacket_init_default;
-
-    tick_count++;
-    if (tick_count % 2000 == 0) {
-        LOG_INF("Controller tick: %d | State: %s   ", tick_count, get_state_name(current_state));
-    }
 
     pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
@@ -193,11 +188,6 @@ void Controller::step_control_loop(k_work*)
     }
     }
 
-
-
-    if (tick_count % 500 == 0) {
-        LOG_INF("Controller output - cmd_pos: %f | pos_e %f | pos_i: %f ",(double)out.lox_pos, (double)LoxValve::get_pos_encoder(), (double)LoxValve::get_pos_internal());
-    }
     change_state(out.next_state);
 
     if (out.reset_fuel) {
@@ -262,17 +252,16 @@ std::expected<void, Error> Controller::handle_start_thrust_sequence(const StartT
 std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValveSequenceRequest& req)
 {
 
-
     LOG_INF("Received open loop valve sequence request");
     bool has_fuel = req.has_fuel_trace_deg;
-    bool has_lox =req.has_lox_trace_deg;
+    bool has_lox = req.has_lox_trace_deg;
     if (!has_fuel && !has_lox) {
         return std::unexpected(Error::from_cause("No sequences provided in load request"));
     }
 
     change_state(SystemState_STATE_VALVE_PRIMED);
 
-    if (has_fuel && has_lox){
+    if (has_fuel && has_lox) {
 
         auto result = StateValveSeq::get_fuel_trace().load(req.fuel_trace_deg);
         if (!result)
@@ -280,24 +269,20 @@ std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValv
         result = StateValveSeq::get_lox_trace().load(req.lox_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        StateValveSeq::init(true, true, req.fuel_trace_deg.total_time_ms,req.lox_trace_deg.total_time_ms);
-
+        StateValveSeq::init(true, true, req.fuel_trace_deg.total_time_ms, req.lox_trace_deg.total_time_ms);
     }
     else if (has_fuel) {
         auto result = StateValveSeq::get_fuel_trace().load(req.fuel_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid fuel trace"));
-        StateValveSeq::init(true, false, req.fuel_trace_deg.total_time_ms,-1.0f);
-
+        StateValveSeq::init(true, false, req.fuel_trace_deg.total_time_ms, -1.0f);
     }
     else if (has_lox) {
         auto result = StateValveSeq::get_lox_trace().load(req.lox_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        StateValveSeq::init(true, false,-1.0f, req.fuel_trace_deg.total_time_ms);
-
+        StateValveSeq::init(true, false, -1.0f, req.fuel_trace_deg.total_time_ms);
     }
-
 
     return {};
 }
