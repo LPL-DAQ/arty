@@ -53,11 +53,7 @@ void StateCalibrateValve::init(float fuel_pos, float fuel_pos_enc, float lox_pos
 
     fuel_starting_error = fuel_pos - fuel_pos_enc;
     lox_starting_error = lox_pos - lox_pos_enc;
-
-
 }
-
-
 
 std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
     ControllerOutput out{};
@@ -199,7 +195,6 @@ void StateCalibrateValve::complete(ControllerOutput& out, uint32_t timestamp) {
         out.next_state = SystemState_STATE_IDLE;
         phase = CalPhase::COMPLETE;
     }
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
 
 
 }
