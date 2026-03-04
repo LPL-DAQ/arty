@@ -276,4 +276,9 @@ message ValveSequenceData {}
 
 // TODO
 message ThrustSequenceData {
+  required float predicted_thrust = 1;
+  required float predicted_of = 2;
+  required float mdot_fuel = 3;
+  required float mdot_lox = 4;
+  required float target_thrust = 5;
 }
