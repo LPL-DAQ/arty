@@ -42,17 +42,19 @@ static uint32_t low_ptc_start_time_ms = 0;
 
 float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
-    float dP = std::max(0.0f, p_inj_fuel - p_ch);
+    // TODO: Shoudl max be 0.1 or 0.0
+    float dP = std::max(0.1f, p_inj_fuel - p_ch);
     return 0.06309f * FUEL_CV_INJ * std::sqrt(dP * FUEL_SG);
 }
 
 float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
 {
     float dP_psi = std::max(0.0f, p_inj_lox - p_ch);
+    float dP_Pa = dP_psi * PSI_TO_PA;
     float p_inj_safe = std::max(0.0f, p_inj_lox);
     float K_var = (K_SLOPE * p_inj_safe) + K_OFFSET;
     float rho_syn = 1141.0f + (ALPHA * p_inj_safe);
-    return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_psi * PSI_TO_PA);
+    return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
 } // namespace
@@ -102,10 +104,10 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     float mdot_f_safe = std::max(mdot_f, 0.001f);
 
     // 5. Calculate O/F
-    float of_actual = mdot_lox / mdot_f_safe;
+    float predicted_of = mdot_lox / mdot_f_safe;
 
     // 6. Clamp O/F for lookup
-    float of_safe = std::clamp(of_actual, MIN_SAFE_OF, MAX_SAFE_OF);
+    float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
     // 7. Predict Isp using chamber pressure and O/F
     float predicted_isp = interp2D(isp_pc_axis, isp_pc_len,
@@ -119,17 +121,14 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     // Clamp requested O/F into safe range as well
     float target_of_safe = std::clamp(target_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
-    // 9. Interpolate requested valve positions from MPrime tables
-
-
-    // 10. Compute PID
+    // 9. Compute PID
     float dt = SEC_PER_CONTROL_TICK;
     float thrust_error = target_thrust_lbf - predicted_thrust;
     float change_alpha_cmd = THRUST_KP  * thrust_error;
     change_alpha_cmd *= dt;
     float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
 
-    // 11. Integrate PID to get alpha
+    // 10. Integrate PID to get alpha
     if(alpha == -1.0f){
         // Initialize alpha to starting guess based on Mprime
         alpha = (target_thrust_lbf - thrust_axis[0]) / (thrust_axis[thrust_axis_len - 1] - thrust_axis[0]);
@@ -138,7 +137,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     alpha = std::clamp(alpha, 0.0f, 1.0f);
 
 
-    // 12. Plug alpha into Mprime contour
+    // 11. Plug alpha into Mprime contour
     float thrust_from_alpha = alpha * (thrust_axis[thrust_axis_len - 1] - thrust_axis[0]) + thrust_axis[0];
     float fuel_valve_cmd = interp2D(thrust_axis, thrust_axis_len,
                                     of_axis, of_axis_len,
@@ -152,7 +151,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
 
     // Populate telemetry data
     data.predicted_thrust = predicted_thrust;
-    data.predicted_of = of_actual;
+    data.predicted_of = predicted_of;
     data.mdot_fuel = mdot_f;
     data.mdot_lox = mdot_lox;
     data.target_thrust = target_thrust_lbf;
