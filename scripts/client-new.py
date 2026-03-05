@@ -3,6 +3,7 @@
 
 import argparse
 import math
+import struct
 import socket
 import threading
 import sys
@@ -730,6 +731,28 @@ def _save_sequence(subdir: pathlib.Path, prefix: str, msg):
     console.print(f"  [{t['success']}]Saved → {filename}[/{t['success']}]")
 
 
+def _f32(v: float) -> float:
+    """Round a Python float to float32 precision (matches firmware storage/arithmetic)."""
+    return struct.unpack('f', struct.pack('f', v))[0]
+
+
+def _sine_sample_f32(offset: float, amplitude: float, period: float,
+                     phase_deg: float, t_ms: int) -> float:
+    """
+    Replicate firmware's float32 sine sample:
+      offset + amplitude * sin(t / period * TAU + phase_deg / 360 * TAU)
+    where TAU = 2.0f * pi_v<float> and every operation is float32.
+    """
+    TAU  = _f32(2.0 * math.pi)
+    o    = _f32(offset)
+    a    = _f32(amplitude)
+    per  = _f32(period)
+    ph   = _f32(phase_deg)
+    t    = _f32(float(t_ms))
+    arg  = _f32(_f32(t / per) * TAU + _f32(ph / _f32(360.0)) * TAU)
+    return _f32(o + _f32(a * _f32(math.sin(arg))))
+
+
 def _build_control_trace() -> clover_pb2.ControlTrace:
     """Interactively build a ControlTrace with one or more segments."""
     t = THEME
@@ -773,7 +796,7 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
                 console.print(f"    [{t['muted']}]Offset auto-set to {offset:.4f} for continuity[/{t['muted']}]")
             else:
                 offset = FloatPrompt.ask("    Offset (baseline)")
-            end_val = offset + amplitude * math.sin(2 * math.pi * length_ms / period + phase_rad)
+            end_val = _sine_sample_f32(offset, amplitude, period, phase_deg, length_ms)
             seg.sine.offset    = offset
             seg.sine.amplitude = amplitude
             seg.sine.period    = period
