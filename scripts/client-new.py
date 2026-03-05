@@ -2,6 +2,7 @@
 # changes made AFTER .proto file updates
 
 import argparse
+import math
 import socket
 import threading
 import sys
@@ -699,9 +700,11 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
     trace = clover_pb2.ControlTrace()
     trace.total_time_ms = total_time
 
+    cursor_ms  = 0
+    cursor_val: float | None = None  # unknown until first segment
     while True:
-        console.print(f"\n  [{t['primary']}]─── Add a segment ───[/{t['primary']}]")
-        start_ms  = IntPrompt.ask("    Segment start time (ms)")
+        pos_str = f"{cursor_val:.2f}" if cursor_val is not None else "?"
+        console.print(f"\n  [{t['primary']}]─── Add a segment (t={cursor_ms} ms, pos={pos_str}) ───[/{t['primary']}]")
         length_ms = IntPrompt.ask("    Segment length (ms)")
 
         console.print("    Segment type:")
@@ -710,25 +713,38 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
         seg_type = Prompt.ask("    Choose", choices=["1", "2"], default="1")
 
         seg = trace.segments.add()
-        seg.start_ms  = start_ms
+        seg.start_ms  = cursor_ms
         seg.length_ms = length_ms
+        cursor_ms += length_ms
 
         if seg_type == "1":
-            start_val = FloatPrompt.ask("    Start value")
-            end_val   = FloatPrompt.ask("    End value")
+            if cursor_val is not None:
+                console.print(f"    [{t['muted']}]Start value locked to {cursor_val:.2f}[/{t['muted']}]")
+                start_val = cursor_val
+            else:
+                start_val = FloatPrompt.ask("    Start value")
+            end_val = FloatPrompt.ask("    End value")
             seg.linear.start_val = start_val
             seg.linear.end_val   = end_val
+            cursor_val = end_val
             console.print(f"    [{t['success']}]Linear segment: {start_val} → {end_val}[/{t['success']}]")
         else:
-            offset    = FloatPrompt.ask("    Offset (baseline)")
             amplitude = FloatPrompt.ask("    Amplitude")
             period    = FloatPrompt.ask("    Period (ms)")
             phase_deg = FloatPrompt.ask("    Phase (degrees)", default=0.0)
+            phase_rad = math.radians(phase_deg)
+            if cursor_val is not None:
+                offset = cursor_val - amplitude * math.sin(phase_rad)
+                console.print(f"    [{t['muted']}]Offset auto-set to {offset:.4f} for continuity[/{t['muted']}]")
+            else:
+                offset = FloatPrompt.ask("    Offset (baseline)")
+            end_val = offset + amplitude * math.sin(2 * math.pi * length_ms / period + phase_rad)
             seg.sine.offset    = offset
             seg.sine.amplitude = amplitude
             seg.sine.period    = period
             seg.sine.phase_deg = phase_deg
-            console.print(f"    [{t['success']}]Sine segment: offset={offset}, amp={amplitude}, T={period}ms[/{t['success']}]")
+            cursor_val = end_val
+            console.print(f"    [{t['success']}]Sine segment: offset={offset:.4f}, amp={amplitude}, T={period}ms → ends at {end_val:.2f}[/{t['success']}]")
 
         another = Confirm.ask("  Add another segment?", default=False)
         if not another:
