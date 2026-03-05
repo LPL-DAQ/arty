@@ -122,4 +122,4 @@ while True:
 
     print(f'Ingested {rows} lines')
     
-    time.sleep(5)t
+    time.sleep(5)
