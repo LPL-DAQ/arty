@@ -4,8 +4,14 @@
 #include "Controller.h"
 
 namespace StateThrustSeq {
-    void init();
-    std::pair<ControllerOutput, ThrustSequenceData> tick(bool has_ptc, float ptc_pressure);
+    static inline Trace trace;
+
+    void init(float total_time_ms);
+    std::pair<ControllerOutput, ThrustSequenceData> tick(const AnalogSensors& sensors, uint32_t current_time, uint32_t start_time);
+
+
+    Trace& get_trace();
+
 }
 
 #endif // APP_STATE_THRUST_SEQ_H
