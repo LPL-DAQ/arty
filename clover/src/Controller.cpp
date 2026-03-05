@@ -86,7 +86,7 @@ int Controller::init()
 void Controller::step_control_loop(k_work*)
 {
     DataPacket packet = DataPacket_init_default;
-    }
+    
 
     pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
