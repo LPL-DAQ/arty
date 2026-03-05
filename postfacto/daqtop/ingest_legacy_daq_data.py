@@ -58,7 +58,7 @@ while True:
     progress = load_progress()
 
     # Find next file to parse through, if necessary.
-    if done_file or progress['dir'] == Path() or len(progress['col_names']) == 0:
+    if done_file or progress['dir'] == Path() or len(progress['col_names']) <= 1:
         prev_dir = progress['dir']
         progress['dir'] = next_data_dir(progress['dir'])
         if progress['dir'] is not None:
