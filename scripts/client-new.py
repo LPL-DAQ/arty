@@ -232,14 +232,22 @@ def _write_csv_on_exit():
 
 def _flush_loop():
     """Background thread — drains the packet buffer into ClickHouse every second."""
-    ch = clickhouse_connect.get_client(
-        host=CH_HOST,
-        username=CH_USER,
-        password=CH_PASSWORD,
-        database=CH_DATABASE,
-    )
+    ch = None
     while True:
         time.sleep(1.0)
+
+        if ch is None:
+            try:
+                ch = clickhouse_connect.get_client(
+                    host=CH_HOST,
+                    username=CH_USER,
+                    password=CH_PASSWORD,
+                    database=CH_DATABASE,
+                )
+            except Exception as e:
+                console.print(f"  [bold red]ClickHouse connect error:[/bold red] {e}")
+                continue
+
         with _buffer_lock:
             if not _packet_buffer:
                 continue
@@ -267,7 +275,8 @@ def _flush_loop():
             )
             ch.insert_df_arrow('raw_sensors', df)
         except Exception as e:
-            console.print(f"  [bold red]ClickHouse insert error:[/bold red] {e}")
+            console.print(f"  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}")
+            ch = None
 
 
 # ── Live status display ──────────────────────────────────────────────────────
