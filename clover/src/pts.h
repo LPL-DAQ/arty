@@ -6,6 +6,20 @@
 #include <expected>
 #include <zephyr/devicetree.h>
 #include <stdint.h>
+/*
+ * The following macro magic is used to generate a struct to hold the result of one PT reading. If the device tree has:
+ *     ...
+ *     names = "pt201", "pt202", "pt203", "pt204";
+ *     io-channels = <&adc1 7>, <&adc1 8>, <&adc1 12>, <&adc1 11>;
+ *     ...
+ *
+ * We will generate the following:
+ * struct pt_readings {
+ *     float pt201;
+ *     float pt202;
+ *     ...
+ * }
+ */
 
 #define USER_NODE DT_PATH(zephyr_user)
 

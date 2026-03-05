@@ -115,7 +115,6 @@ void Controller::tick() {
     packet.lox_valve.encoder_pos_deg = LoxValve::get_pos_encoder();
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
-        // Using LOG_WRN instead of printk for consistency
         LOG_WRN("Telemetry queue full, packet dropped");
     }
 }

@@ -22,9 +22,10 @@ struct ControllerOutput {
 
 class Controller {
 public:
+      // Define nominal safe positions
     static constexpr float DEFAULT_FUEL_POS = 81.0f;
     static constexpr float DEFAULT_LOX_POS = 74.0f;
-
+    // Shared tracking variables
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
     static inline Trace fuel_trace;
@@ -34,8 +35,8 @@ public:
     static SystemState state() { return current_state; }
 
     static std::expected<void, Error> controller_init();
-    static void tick();
-
+    static void tick(); // The 1ms dispatcher called by the timer
+    // Request handlers
     static std::expected<void, Error> handle_load_motor_sequence(const LoadMotorSequenceRequest& req);
     static std::expected<void, Error> handle_start_sequence(const StartSequenceRequest& req);
     static std::expected<void, Error> handle_halt_sequence(const HaltSequenceRequest& req);
@@ -46,7 +47,7 @@ public:
     static void trigger_abort();
     static void change_state(SystemState new_state);
     static int get_state_id(SystemState state);
-    Controller() = delete;
+    Controller() = delete; // Explicitly prevent instantiation
 
 private:
     static inline uint32_t udp_sequence_number = 0;

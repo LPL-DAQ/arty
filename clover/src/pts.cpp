@@ -63,9 +63,9 @@ pt_config pt_configs[NUM_PTS] = {
     {.scale = 2000.0f / pts_adc_ranges()[6], .bias = -28.0f,  .range = 2000.0f},
     {.scale = 1000.0f / pts_adc_ranges()[7], .bias = -13.0f,  .range = 1000.0f},
 };
-
 static pt_readings pts_process_raw()
 {
+    // Averaging readings
     float readings_by_idx[NUM_PTS] = {0};
     for (int i = 0; i < NUM_PTS; ++i) {
         for (int j = 0; j < CONFIG_PT_SAMPLES; ++j) {
@@ -87,7 +87,9 @@ static pt_readings pts_process_raw()
     return readings;
 }
 
+/// Initialize PT sensors by initializing the ADC they're all connected to.
 std::expected<void, Error> pts_init()
+{
 {
     LOG_INF("Initializing ADC sequence");
     adc_sequence_init_dt(&adc_channels[0], &sequence);

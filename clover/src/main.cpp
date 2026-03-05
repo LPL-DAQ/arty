@@ -70,6 +70,13 @@ int main(void)
         return 0;
     }
 
+    // LOG_INF("Initializing Pts");
+    // err = pts_init();
+    // if (err) {
+    //     LOG_ERR("Failed to initialize PTs");
+    //     return 0;
+    // }
+
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();

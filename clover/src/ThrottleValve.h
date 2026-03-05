@@ -135,11 +135,13 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     if (prev_pul_state < 0) [[unlikely]] {
         prev_pul_state = 0;
     }
-
+    // Switch direction, if we must. Positive velocity -> dir gpio should be high. Negative velocity -> dir gpio should
+    // be low.
     if ((!prev_dir_state && velocity > 0) || (prev_dir_state && velocity < 0)) {
         gpio_pin_toggle_dt(&dir_gpio);
         return;
     }
+    // About to switch low -> high. This is a rising edge, so count a step.
     if (!prev_pul_state) {
         if (!prev_dir_state) {
             steps = steps - 1;
@@ -163,7 +165,7 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     const device*, struct gpio_callback*, gpio_port_pins_t)
 {
     constexpr int8_t ENCODER_STEP_TABLE[4][4] = {
-        {0, +1, -1, 0},
+    {0, +1, -1, 0},
         {-1, 0, 0, +1},
         {+1, 0, 0, -1},
         {0, -1, +1, 0},
@@ -370,6 +372,9 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
 
     target_velocity = std::clamp(target_velocity, -MAX_VELOCITY, MAX_VELOCITY);
 
+
+    // Based on velocity, calculate pulse interval. Must divide by two as each counter trigger
+    // only toggles pulse, so two triggers are needed for full step on rising edge.
     auto usec_per_pulse = static_cast<uint64_t>(1e6 / static_cast<double>(std::abs(target_velocity)) * static_cast<double>(DEG_PER_STEP) / 2.0);
 
     acceleration = (target_velocity - velocity) / CONTROL_TIME;
@@ -408,6 +413,9 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     k_mutex_unlock(&motor_lock);
 }
 
+
+/// Reset internal and encoder positions to a new value without moving the motor. The current physical valve position
+/// will be set as the input new position.
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
@@ -464,6 +472,7 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     k_mutex_unlock(&motor_lock);
 }
 
+/// Get internal motor position via how many pulses we sent to the controller.
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
@@ -503,6 +512,8 @@ float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, 
     return velocity;
 }
 
+/// Get the current velocity in deg/s. It is only updated per call to
+/// throttle_valve_move. NOT A MEASUREMENT OF ENCODER
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
@@ -516,6 +527,8 @@ float ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, 
     return (previous_encoder_position - current_encoder_position) / 0.001f;
 }
 
+/// Get the current acceleration in deg/s^2. It is only updated per call to
+/// throttle_valve_move.
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,
