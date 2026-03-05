@@ -58,7 +58,7 @@ while True:
     progress = load_progress()
 
     # Find next file to parse through, if necessary.
-    if done_file or progress['dir'] == Path():
+    if done_file or progress['dir'] == Path() or len(progress['col_names']) == 0:
         prev_dir = progress['dir']
         progress['dir'] = next_data_dir(progress['dir'])
         if progress['dir'] is not None:
@@ -75,6 +75,10 @@ while True:
                 cols = f.readline()
                 progress['bytes_read'] += len(cols)
                 progress['col_names'] = cols.strip().lower().split(',')
+                if len(progress['col_names']) == 0:
+                    print(f'Data dir has empty columns, lets wait a bit longer...')
+                    time.sleep(0.1)
+                    continue
         else:
             progress['dir'] = prev_dir
     data_path = progress['dir'].joinpath('testData.txt')
@@ -118,4 +122,4 @@ while True:
 
     print(f'Ingested {rows} lines')
     
-    time.sleep(5)
+    time.sleep(5)t
