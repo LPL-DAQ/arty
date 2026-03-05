@@ -465,23 +465,61 @@ def get_toolbar():
 
 # ── TCP sender ───────────────────────────────────────────────────────────────
 
+def _recv_response() -> clover_pb2.Response:
+    """Read a varint-length-prefixed Response from the TCP socket."""
+    length = 0
+    shift = 0
+    while True:
+        b = sock.recv(1)
+        if not b:
+            raise ConnectionError("Connection closed while reading response length")
+        byte = b[0]
+        length |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            break
+        shift += 7
+
+    data = b""
+    while len(data) < length:
+        chunk = sock.recv(length - len(data))
+        if not chunk:
+            raise ConnectionError("Connection closed while reading response body")
+        data += chunk
+
+    resp = clover_pb2.Response()
+    resp.ParseFromString(data)
+    return resp
+
+
 def send_request(req: clover_pb2.Request, label: str) -> bool:
     global sock
-    """Serialize and send a Request over TCP. Returns True on success."""
+    """Serialize and send a Request over TCP, then read and display the Response."""
     try:
-
         payload = req.SerializeToString()
         payload = _VarintBytes(len(payload)) + payload
         sock.sendall(payload)
+    except Exception as e:
+        console.print(
+            f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
+        )
+        return False
+
+    try:
+        resp = _recv_response()
+        if resp.HasField("err"):
+            console.print(
+                f"\n  {THEME['icon_warn']} [{THEME['danger']}]{label} rejected: {resp.err}[/{THEME['danger']}]\n"
+            )
+            return False
         console.print(
             f"\n  {THEME['icon_ok']} [{THEME['success']}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME['success']}]\n"
         )
         return True
     except Exception as e:
         console.print(
-            f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
+            f"\n  {THEME['icon_warn']} [{THEME['warning']}]{label} sent but no response: {e}[/{THEME['warning']}]\n"
         )
-        return False
+        return True
 
 # comment out to test in terminal without real data
 # def send_request(req, label):
