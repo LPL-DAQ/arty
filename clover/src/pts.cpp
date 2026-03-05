@@ -92,7 +92,7 @@ static pt_readings pts_process_raw()
 
 /// Initialize PT sensors by initializing the ADC they're all connected to.
 std::expected<void, Error> pts_init()
-{
+
 {
     // Initializes resolution and oversampling from device tree. Let's assume all channels share those properties. Also
     // initializes `channels` with just one channel, so we overwrite that later to sample all channels at once.
@@ -139,10 +139,8 @@ pt_readings pts_sample()
 
 pt_readings pts_get_last_reading()
 {
-    if (k_uptime_get() - last_read_uptime < 100) {
-        return last_reading;
-    }
-    return pts_sample();
+    return last_reading;
+
 }
 
 float pts_get_adc_read_time_ns()
