@@ -695,10 +695,7 @@ def _save_sequence(subdir: pathlib.Path, prefix: str, msg):
 def _build_control_trace() -> clover_pb2.ControlTrace:
     """Interactively build a ControlTrace with one or more segments."""
     t = THEME
-    total_time = IntPrompt.ask("  Total trace duration (ms)")
-
     trace = clover_pb2.ControlTrace()
-    trace.total_time_ms = total_time
 
     cursor_ms  = 0
     cursor_val: float | None = None  # unknown until first segment
@@ -750,6 +747,8 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
         if not another:
             break
 
+    trace.total_time_ms = cursor_ms
+    console.print(f"  [{THEME['muted']}]Total trace duration: {cursor_ms} ms[/{THEME['muted']}]")
     return trace
 
 
