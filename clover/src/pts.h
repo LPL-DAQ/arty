@@ -38,6 +38,7 @@ extern pt_config pt_configs[NUM_PTS];
 int pts_init();
 pt_readings pts_sample();
 pt_readings pts_get_last_reading();
+float pts_get_adc_read_time_ns();
 int pts_set_bias(int index, float bias);
 int pts_set_range(int index, float range);
 

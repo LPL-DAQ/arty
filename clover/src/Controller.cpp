@@ -121,6 +121,7 @@ void Controller::step_control_loop(k_work*)
     current_sensors.ptf401 = raw_pts.ptf401;
     current_sensors.ptc402 = raw_pts.ptc402;
     current_sensors.pt203 = raw_pts.pt203;
+    current_sensors.adc_read_time_ns = pts_get_adc_read_time_ns();
 
     ControllerOutput out;
 
@@ -201,7 +202,7 @@ void Controller::step_control_loop(k_work*)
     LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
 
     // telementary
-    packet.time_ns = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;  // units may be off
+    packet.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
     packet.state = current_state;
     packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
     packet.sequence_number = udp_sequence_number++;

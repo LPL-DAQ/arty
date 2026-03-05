@@ -346,24 +346,25 @@ def _build_status_renderable():
     st = Table(box=box.SIMPLE_HEAD, show_header=True,
                header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
     st.add_column("Sensor", style="bold white", no_wrap=True)
-    st.add_column("Value",  style="white",      no_wrap=True)
+    st.add_column("Value",  style="white",      no_wrap=True, justify="right")
+    st.add_column("Unit",   style=t["muted"],   no_wrap=True)
 
     s = pkt.analog_sensors
-    for name, val in [
-        ("PT-102",        s.pt102),
-        ("PT-103",        s.pt103),
-        ("PT-202",        s.pt202),
-        ("PT-203",        s.pt203),
-        ("PT-F401",       s.ptf401),
-        ("PT-O401",       s.pto401),
-        ("PT-C401",       s.ptc401),
-        ("PT-C402",       s.ptc402),
-        ("TC-102",        s.tc102),       # new sensor
-        ("TC-102.5",      s.tc102_5),     # new sensor
-        ("ADC t (ns)",    s.adc_read_time_ns),  # new timing
+    for name, val, unit in [
+        ("PT-102",     s.pt102,            "psi"),
+        ("PT-103",     s.pt103,            "psi"),
+        ("PT-202",     s.pt202,            "psi"),
+        ("PT-203",     s.pt203,            "psi"),
+        ("PT-F401",    s.ptf401,           "psi"),
+        ("PT-O401",    s.pto401,           "psi"),
+        ("PT-C401",    s.ptc401,           "psi"),
+        ("PT-C402",    s.ptc402,           "psi"),
+        ("TC-102",     s.tc102,            "°C"),
+        ("TC-102.5",   s.tc102_5,          "°C"),
+        ("ADC t",      s.adc_read_time_ns, "ns"),
     ]:
         val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
-        st.add_row(name, val_str)
+        st.add_row(name, val_str, unit)
 
     bottom = Columns([
         Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",   border_style=t["panel_border"]),
