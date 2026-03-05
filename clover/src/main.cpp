@@ -18,13 +18,6 @@ extern "C" {
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
-//static void send_str(const struct device *uart, const char *s)
-//{
-    //while (*s) {
-        //uart_poll_out(uart, *s++);
-    //}
-//}
-
 
 int main(void)
 {
@@ -40,13 +33,6 @@ int main(void)
     if (!device_is_ready(uart)) {
         return 0;
     }
-
-
-    //while (1) {
-        //send_str(uart, "uart_poll_out test\r\n");
-        //LOG_INF("log inf test");
-        //k_sleep(K_SECONDS(1));
-    //}
 
     LOG_INF("Initializing fuel throttle valve");
     int err = FuelValve::init();
