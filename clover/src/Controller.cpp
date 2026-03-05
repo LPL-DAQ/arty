@@ -83,16 +83,6 @@ int Controller::init()
     return 0;
 }
 
-int tick_count = 0;  // temp for testing
-void Controller::step_control_loop(k_work*)
-{
-    DataPacket packet = DataPacket_init_default;
-
-    tick_count++;
-    if (tick_count % 2000 == 0) {
-        LOG_INF("Controller tick: %d | State: %d   ", tick_count, get_state_id(current_state));
-    }
-
     pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
 
