@@ -107,6 +107,7 @@ int Controller::init()
 int tick_count = 0;  // temp for testing
 void Controller::step_control_loop(k_work*)
 {
+    float current_time = k_uptime_get();
     DataPacket packet = DataPacket_init_default;
 
     tick_count++;
@@ -140,7 +141,7 @@ void Controller::step_control_loop(k_work*)
     case SystemState_STATE_CALIBRATE_VALVE: {
         // Can make this work over protobuf later
         auto [cal_out, cal_data] = StateCalibrateValve::tick(
-            k_uptime_get(), FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
+            current_time, FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
         packet.which_state_data = DataPacket_valve_calibration_data_tag;
         packet.state_data.valve_calibration_data = cal_data;
         out = cal_out;
@@ -155,7 +156,7 @@ void Controller::step_control_loop(k_work*)
         break;
     }
     case SystemState_STATE_VALVE_SEQ: {
-        auto [seq_out, seq_data] = StateValveSeq::tick(k_uptime_get(), sequence_start_time);
+        auto [seq_out, seq_data] = StateValveSeq::tick(current_time, sequence_start_time);
         packet.which_state_data = DataPacket_valve_sequence_data_tag;
         packet.state_data.valve_sequence_data = seq_data;
         out = seq_out;
@@ -170,14 +171,14 @@ void Controller::step_control_loop(k_work*)
         break;
     }
     case SystemState_STATE_THRUST_SEQ: {
-        auto [thrust_out, thrust_data] = StateThrustSeq::tick(current_sensors, k_uptime_get(), sequence_start_time);
+        auto [thrust_out, thrust_data] = StateThrustSeq::tick(current_sensors, current_time, sequence_start_time);
         packet.which_state_data = DataPacket_thrust_sequence_data_tag;
         packet.state_data.thrust_sequence_data = thrust_data;
         out = thrust_out;
         break;
     }
     case SystemState_STATE_ABORT: {
-        auto [abort_out, abort_data] = StateAbort::tick(k_uptime_get(), abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+        auto [abort_out, abort_data] = StateAbort::tick(current_time, abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
         packet.which_state_data = DataPacket_abort_data_tag;
         packet.state_data.abort_data = abort_data;
         out = abort_out;
@@ -214,7 +215,6 @@ void Controller::step_control_loop(k_work*)
     packet.state = current_state;
     packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
     packet.sequence_number = udp_sequence_number++;
-    packet.controller_tick_time_ns = 0;  // WRONG
     packet.gnc_connected = true;         // WRONG
     packet.gnc_last_pinged_ns = 0;       // WRONG
     packet.daq_connected = true;         // WRONG
@@ -223,6 +223,9 @@ void Controller::step_control_loop(k_work*)
     packet.analog_sensors = current_sensors;
     packet.fuel_valve = ValveStatus_init_default;  // BAD
     packet.lox_valve = ValveStatus_init_default;   // BAD
+    packet.controller_tick_time_ns = k_uptime_get() - current_time;
+
+
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
         printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
