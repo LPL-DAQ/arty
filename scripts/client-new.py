@@ -137,7 +137,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     f = pkt.fuel_valve
     l = pkt.lox_valve
     return {
-        'time':                     int(pkt.time_ns),
+        'time':                     int(recv_time * 1e6),
         'gnc_state':                float(pkt.state),
         'gnc_data_queue_size':      float(pkt.data_queue_size),
         'gnc_sequence_number':      float(pkt.sequence_number),
@@ -261,8 +261,7 @@ def _flush_loop():
                 .unpivot(index=['time'], variable_name='sensor', value_name='value')
                 .drop_nulls('value')
                 .with_columns(
-                    # time_ns in nanoseconds
-                    pl.from_epoch('time', time_unit='ns').alias('time'),
+                    pl.from_epoch('time', time_unit='us').alias('time'),
                     pl.col('value').cast(pl.Float64),
                     pl.when(pl.col('sensor') == 'gnc_state')
                       .then(pl.col('value').map_elements(
