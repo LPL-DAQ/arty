@@ -197,8 +197,8 @@ void Controller::step_control_loop(k_work*)
         LoxValve::reset_pos(out.reset_lox_pos);
     }
 
-    FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
-    LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
+    FuelValve::tick(out.fuel_on && fuel_powered, out.set_fuel, out.fuel_pos);
+    LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
 
     // telementary
     packet.time_ns = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;  // units may be off
@@ -212,8 +212,18 @@ void Controller::step_control_loop(k_work*)
     packet.daq_last_pinged_ns = 0;       // WRONG
 
     packet.analog_sensors = current_sensors;
-    packet.fuel_valve = ValveStatus_init_default;  // BAD
-    packet.lox_valve = ValveStatus_init_default;   // BAD
+    packet.fuel_valve = {
+        .target_pos_deg          = out.fuel_pos,
+        .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
+        .encoder_pos_deg         = FuelValve::get_pos_encoder(),
+        .is_on                   = FuelValve::get_power_on(),
+    };
+    packet.lox_valve = {
+        .target_pos_deg          = out.lox_pos,
+        .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
+        .encoder_pos_deg         = LoxValve::get_pos_encoder(),
+        .is_on                   = LoxValve::get_power_on(),
+    };
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
         printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
@@ -334,6 +344,38 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
     }
 
+    return {};
+}
+
+std::expected<void, Error> Controller::handle_power_on_valve(const PowerOnValveRequest& req)
+{
+    LOG_INF("Received power on valve request");
+    switch (req.valve) {
+    case Valve_FUEL:
+        fuel_powered = true;
+        break;
+    case Valve_LOX:
+        lox_powered = true;
+        break;
+    default:
+        return std::unexpected(Error::from_cause("Unknown valve identifier provided to power on command"));
+    }
+    return {};
+}
+
+std::expected<void, Error> Controller::handle_power_off_valve(const PowerOffValveRequest& req)
+{
+    LOG_INF("Received power off valve request");
+    switch (req.valve) {
+    case Valve_FUEL:
+        fuel_powered = false;
+        break;
+    case Valve_LOX:
+        lox_powered = false;
+        break;
+    default:
+        return std::unexpected(Error::from_cause("Unknown valve identifier provided to power off command"));
+    }
     return {};
 }
 

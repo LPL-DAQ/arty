@@ -232,6 +232,16 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             cmd_result = Controller::handle_halt(request.payload.halt);
             break;
         }
+        case Request_power_on_valve_tag: {
+            LOG_INF("Power on valve");
+            cmd_result = Controller::handle_power_on_valve(request.payload.power_on_valve);
+            break;
+        }
+        case Request_power_off_valve_tag: {
+            LOG_INF("Power off valve");
+            cmd_result = Controller::handle_power_off_valve(request.payload.power_off_valve);
+            break;
+        }
         default: {
             LOG_ERR(
                 "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);
