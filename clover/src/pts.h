@@ -45,6 +45,7 @@ extern pt_config pt_configs[NUM_PTS];
 std::expected<void, Error> pts_init();
 pt_readings pts_sample();
 pt_readings pts_get_last_reading();
+float pts_get_adc_read_time_ns();
 std::expected<void, Error> pts_set_bias(int index, float bias);
 std::expected<void, Error> pts_set_range(int index, float range);
 

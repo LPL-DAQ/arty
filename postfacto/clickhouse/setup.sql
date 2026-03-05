@@ -23,10 +23,14 @@ ORDER BY
 
 CREATE TABLE IF NOT EXISTS lpl.tests (
     `id` UUID,
-    `system` LowCardinality(String),
-    `type` LowCardinality(String),
     `t0` DateTime64(9, 'America/Los_Angeles'),
-    `notes` String
+    `aborted` Bool,
+    `source` LowCardinality(String),
+    `start` DateTime64(9, 'America/Los_Angeles'),
+    `end` DateTime64(9, 'America/Los_Angeles'),
+    `test_type` LowCardinality(String),
+    `notes` String,
+    `tags` JSON
 ) ENGINE = MergeTree()
 ORDER BY
-    (`system`, `type`, `t0`);
+    (`t0`);

@@ -8,6 +8,7 @@
 
 #define USER_NODE DT_PATH(zephyr_user)
 
+// Validate devicetree
 #if !DT_NODE_HAS_PROP(USER_NODE, pt_names)
 #error "pts: Missing `pt-names` property from `zephyr-user` node."
 #endif
@@ -22,6 +23,7 @@
 
 #define CONFIG_PT_SAMPLES 1
 
+// Trailing comma needed as we are using preprocessor to instantiate each element of an array.
 #define ARTY_PTS_DT_SPEC_AND_COMMA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
 static constexpr struct adc_dt_spec adc_channels[NUM_PTS] = {
     DT_FOREACH_PROP_ELEM(USER_NODE, io_channels, ARTY_PTS_DT_SPEC_AND_COMMA)
@@ -36,6 +38,7 @@ uint16_t raw_readings[CONFIG_PT_SAMPLES][NUM_PTS];
 
 static pt_readings last_reading;
 static int64_t last_read_uptime;
+static float last_adc_read_time_ns = 0.0f;
 
 static struct k_poll_signal adc_async_signal = K_POLL_SIGNAL_INITIALIZER(adc_async_signal);
 static bool async_pending = false;
@@ -65,7 +68,7 @@ pt_config pt_configs[NUM_PTS] = {
 };
 static pt_readings pts_process_raw()
 {
-    // Averaging readings
+
     float readings_by_idx[NUM_PTS] = {0};
     for (int i = 0; i < NUM_PTS; ++i) {
         for (int j = 0; j < CONFIG_PT_SAMPLES; ++j) {
@@ -91,12 +94,15 @@ static pt_readings pts_process_raw()
 std::expected<void, Error> pts_init()
 {
 {
+    // Initializes resolution and oversampling from device tree. Let's assume all channels share those properties. Also
+    // initializes `channels` with just one channel, so we overwrite that later to sample all channels at once.
     LOG_INF("Initializing ADC sequence");
     adc_sequence_init_dt(&adc_channels[0], &sequence);
     sequence.buffer = raw_readings;
     sequence.buffer_size = sizeof raw_readings;
     sequence.options = &sequence_options;
 
+    // Configure ADC channels.
     for (int i = 0; i < NUM_PTS; i++) {
         LOG_INF("pt %d: Checking readiness", i);
         if (!adc_is_ready_dt(&adc_channels[i])) {
@@ -113,12 +119,14 @@ std::expected<void, Error> pts_init()
                 .context("failed to set up ADC channel %d during pts_init", i));
         }
 
+        // Request reading for this channel in sequence.
         sequence.channels |= BIT(adc_channels[i].channel_id);
     }
 
     return {};
 }
 
+/// Update PT sample readings.
 pt_readings pts_sample()
 {
     int err = adc_read(adc_channels[0].dev, &sequence);
@@ -135,6 +143,11 @@ pt_readings pts_get_last_reading()
         return last_reading;
     }
     return pts_sample();
+}
+
+float pts_get_adc_read_time_ns()
+{
+    return last_adc_read_time_ns;
 }
 
 std::expected<void, Error> pts_set_bias(int index, float bias)

@@ -94,7 +94,7 @@ std::expected<float, Error> Trace::sample(float time_ms)
         const Segment& seg = control_trace.segments[index];
         if (time_ms_trunc >= seg.start_ms && time_ms_trunc < seg.start_ms + seg.length_ms) {
             last_used_segment_index = index;
-            return sample_segment(seg, time_ms - static_cast<float>(seg.start_ms));
+            return sample_segment(seg, time_ms_trunc - static_cast<float>(seg.start_ms));
         }
     }
 

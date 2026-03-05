@@ -17,6 +17,7 @@ public:
 
     std::expected<void, Error> load(const ControlTrace& trace);
     std::expected<float, Error> sample(float time);
+    float get_total_time_ms();
 };
 
 #endif  // APP_TRACE_H

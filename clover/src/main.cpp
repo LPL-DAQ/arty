@@ -7,10 +7,11 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
+#include "Controller.h"
 #include "ThrottleValve.h"
 #include "pts.h"
 #include "server.h"
-#include "Controller.h"
+#include "sntp_imp.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -63,23 +64,30 @@ int main(void)
         return 0;
     }
 
-    LOG_INF("Initializing Controller");
-    if (auto result = Controller::controller_init(); !result) {
-        LOG_ERR("Failed to initialize Controller: %s",
+    LOG_INF("Initializing Pts");
+    if (auto result = pts_init(); !result) {
+        LOG_ERR("Failed to initialize PTs: %s",
             result.error().build_message().c_str());
         return 0;
     }
 
-    // LOG_INF("Initializing Pts");
-    // err = pts_init();
+    // LOG_INF("initializing SNTP");
+    // err = sntp_init();
     // if (err) {
-    //     LOG_ERR("Failed to initialize PTs");
+    //     LOG_ERR("Failed to initialize SNTP");
     //     return 0;
     // }
 
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();
+
+    LOG_INF("Initializing Controller");
+    err = Controller::init();
+    if (err) {
+        LOG_ERR("Failed to initialize Controller");
+        return 0;
+    }
 
     k_sleep(K_FOREVER);
 }
