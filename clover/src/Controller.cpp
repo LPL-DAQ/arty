@@ -1,4 +1,5 @@
 #include "Controller.h"
+#include "ControllerConfig.h"
 #include "StateAbort.h"
 #include "StateCalibrateValve.h"
 #include "StateIdle.h"
@@ -29,8 +30,6 @@
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
-
-constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'000'000;  // 1 ms
 
 void Controller::change_state(SystemState new_state)
 {
