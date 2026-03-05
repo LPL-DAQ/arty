@@ -38,6 +38,7 @@ static float alpha = -1.0f;
 
 // Track duration of low chamber pressure for abort logic.
 static uint32_t low_ptc_start_time_ms = 0;
+float target_of = 1.2f;
 
 
 float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
@@ -59,25 +60,34 @@ float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
 
 } // namespace
 
-void StateThrustSeq::init()
+void StateThrustSeq::init(float total_time_ms)
 {
     LOG_INF("Entering Closed Loop Throttle Mode");
     low_ptc_start_time_ms = 0;
     alpha = -1.0f;
 }
 
-std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensors& sensors, float target_thrust_lbf, float target_of)
+// needs , float target_thrust_lbf, float target_of from Sample
+std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensors& sensors,uint32_t current_time, uint32_t start_time)
 {
     ControllerOutput out{};
     ThrustSequenceData data{};
 
-    uint32_t now_ms = k_uptime_get();
+    // get desired thrust sample
+    float elapsed_time = current_time - start_time;
+    auto target_result = trace.sample(elapsed_time);
+    if (!target_result) {
+        auto msg = target_result.error().build_message();
+        LOG_ERR("Failed to sample thrust_trace: %s", msg.c_str());
+        return std::make_pair(out,data);
+    }
+    float target_thrust_lbf = *target_result;
 
     // 1. Safety: abort if PTC401 is below threshold for some time
     if (sensors.ptc401 <= PTC401_ABORT_THRESHOLD) {
         if (low_ptc_start_time_ms == 0) {
-            low_ptc_start_time_ms = now_ms;
-        } else if (now_ms - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
+            low_ptc_start_time_ms = current_time;
+        } else if (current_time - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
             // TOOD: Fix float to double cast
             LOG_ERR("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS);
             out.set_fuel = true;
@@ -172,4 +182,8 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     out.next_state = SystemState_STATE_THRUST_SEQ;
 
     return {out, data};
+}
+
+Trace& StateThrustSeq::get_trace(){
+    return trace;
 }

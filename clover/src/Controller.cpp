@@ -68,7 +68,7 @@ void Controller::change_state(SystemState new_state)
                 LOG_ERR("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state));
                 return;
             }
-            StateThrustSeq::init();
+            // INIT IS IN THE HANDLER
             current_state = new_state;
             break;
 
@@ -170,20 +170,7 @@ void Controller::step_control_loop(k_work*)
         break;
     }
     case SystemState_STATE_THRUST_SEQ: {
-        uint32_t now_ms = k_uptime_get();
-        uint32_t elapsed_ms = now_ms - sequence_start_time;
-
-        float target_thrust_lbf = 0.0f;
-        auto target_result = thrust_trace.sample(static_cast<float>(elapsed_ms));
-        if (!target_result) {
-            auto msg = target_result.error().build_message();
-            LOG_ERR("Failed to sample thrust_trace: %s", msg.c_str());
-        } else {
-            target_thrust_lbf = *target_result;
-        }
-
-        float target_of = 1.2f;
-        auto [thrust_out, thrust_data] = StateThrustSeq::tick(current_sensors, target_thrust_lbf, target_of);
+        auto [thrust_out, thrust_data] = StateThrustSeq::tick(current_sensors, k_uptime_get(), sequence_start_time);
         packet.which_state_data = DataPacket_thrust_sequence_data_tag;
         packet.state_data.thrust_sequence_data = thrust_data;
         out = thrust_out;
@@ -261,18 +248,21 @@ std::expected<void, Error> Controller::handle_load_thrust_sequence(const LoadThr
 {
     LOG_INF("Received load thrust sequence request");
 
-    auto result = thrust_trace.load(req.thrust_trace_lbf);
-    if (!result) {
-        return std::unexpected(result.error().context("%s", "Invalid thrust trace"));
-    }
 
     change_state(SystemState_STATE_THRUST_PRIMED);
+
+    auto result = StateThrustSeq::get_trace().load(req.thrust_trace_lbf);
+    if (!result)
+        return std::unexpected(result.error().context("%s", "Invalid thrust  trace"));
+    StateThrustSeq::init(req.thrust_trace_lbf.total_time_ms);
+
     return {};
 }
 
 std::expected<void, Error> Controller::handle_start_thrust_sequence(const StartThrustSequenceRequest& req)
 {
     LOG_INF("Received start thrust sequence request");
+    sequence_start_time = k_uptime_get();
     change_state(SystemState_STATE_THRUST_SEQ);
     return {};
 }
