@@ -36,6 +36,7 @@ uint16_t raw_readings[CONFIG_PT_SAMPLES][NUM_PTS];
 
 static pt_readings last_reading;
 static int64_t last_read_uptime;
+static float last_adc_read_time_ns = 0.0f;
 
 LOG_MODULE_REGISTER(pts, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -95,7 +96,9 @@ int pts_init()
 /// Update PT sample readings.
 pt_readings pts_sample()
 {
+    int64_t t0 = k_uptime_ticks();
     int err = adc_read(adc_channels[0].dev, &sequence);
+    last_adc_read_time_ns = static_cast<float>(k_ticks_to_ns_near64(k_uptime_ticks() - t0));
     if (err) {
         LOG_ERR("Failed to read from ADC: err %d", err);
         return pt_readings{};
@@ -126,6 +129,11 @@ pt_readings pts_get_last_reading()
         return last_reading;
     }
     return pts_sample();
+}
+
+float pts_get_adc_read_time_ns()
+{
+    return last_adc_read_time_ns;
 }
 
 int pts_set_bias(int index, float bias)

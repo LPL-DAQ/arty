@@ -34,6 +34,8 @@ public:
     // Shared tracking variables
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
+    static inline bool fuel_powered = true;
+    static inline bool lox_powered = true;
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
     static SystemState state()
@@ -59,6 +61,9 @@ public:
     static std::expected<void, Error> handle_halt(const HaltRequest& req);
 
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
+    static std::expected<void, Error> handle_power_on_valve(const PowerOnValveRequest& req);
+    static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
+    static std::expected<void, Error> handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req);
 
     static void change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);

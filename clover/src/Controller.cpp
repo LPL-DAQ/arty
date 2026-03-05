@@ -121,6 +121,7 @@ void Controller::step_control_loop(k_work*)
     current_sensors.ptf401 = raw_pts.ptf401;
     current_sensors.ptc402 = raw_pts.ptc402;
     current_sensors.pt203 = raw_pts.pt203;
+    current_sensors.adc_read_time_ns = pts_get_adc_read_time_ns();
 
     ControllerOutput out;
 
@@ -197,11 +198,11 @@ void Controller::step_control_loop(k_work*)
         LoxValve::reset_pos(out.reset_lox_pos);
     }
 
-    FuelValve::tick(out.fuel_on, out.set_fuel, out.fuel_pos);
-    LoxValve::tick(out.lox_on, out.set_lox, out.lox_pos);
+    FuelValve::tick(out.fuel_on && fuel_powered, out.set_fuel, out.fuel_pos);
+    LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
 
     // telementary
-    packet.time_ns = k_uptime_ticks() / (float)CONFIG_SYS_CLOCK_TICKS_PER_SEC;  // units may be off
+    packet.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
     packet.state = current_state;
     packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
     packet.sequence_number = udp_sequence_number++;
@@ -211,11 +212,18 @@ void Controller::step_control_loop(k_work*)
     packet.daq_last_pinged_ns = 0;       // WRONG
 
     packet.analog_sensors = current_sensors;
-    packet.fuel_valve = ValveStatus_init_default;  // BAD
-    packet.lox_valve = ValveStatus_init_default;   // BAD
-    packet.controller_tick_time_ns = k_uptime_get() - current_time;
-
-
+    packet.fuel_valve = {
+        .target_pos_deg          = out.fuel_pos,
+        .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
+        .encoder_pos_deg         = FuelValve::get_pos_encoder(),
+        .is_on                   = FuelValve::get_power_on(),
+    };
+    packet.lox_valve = {
+        .target_pos_deg          = out.lox_pos,
+        .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
+        .encoder_pos_deg         = LoxValve::get_pos_encoder(),
+        .is_on                   = LoxValve::get_power_on(),
+    };
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
         printk("ERROR: Telemetry message queue is full! Packet dropped.\n");
@@ -292,7 +300,7 @@ std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValv
         auto result = StateValveSeq::get_lox_trace().load(req.lox_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        StateValveSeq::init(true, false, -1.0f, req.fuel_trace_deg.total_time_ms);
+        StateValveSeq::init(false, true, -1.0f, req.lox_trace_deg.total_time_ms);
     }
 
     return {};
@@ -345,6 +353,78 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
     }
 
+    return {};
+}
+
+std::expected<void, Error> Controller::handle_power_on_valve(const PowerOnValveRequest& req)
+{
+    LOG_INF("Received power on valve request");
+
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Cannot turn valve on unless system is IDLE"));
+    }
+
+    switch (req.valve) {
+    case Valve_FUEL:
+        LOG_INF("Turning fuel valve on");
+        fuel_powered = true;
+        break;
+    case Valve_LOX:
+        LOG_INF("Turning lox valve on");
+        lox_powered = true;
+        break;
+    default:
+        return std::unexpected(Error::from_cause("Unknown valve identifier provided to power on command"));
+    }
+    return {};
+}
+
+std::expected<void, Error> Controller::handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req)
+{
+    LOG_INF("Received configure analog sensor bias request");
+
+    // Maps AnalogSensor enum to pt_configs[] index (order from tvc_throttle_dev.dts pt-names)
+    int i;
+    switch (req.sensor) {
+    case AnalogSensor_PTC401:  i = 0; break;
+    case AnalogSensor_PTO401:  i = 1; break;
+    case AnalogSensor_PT202:   i = 2; break;
+    case AnalogSensor_PT102:   i = 3; break;
+    case AnalogSensor_PT103:   i = 4; break;
+    case AnalogSensor_PTF401:  i = 5; break;
+    case AnalogSensor_PT203:   i = 6; break;
+    case AnalogSensor_PTC402:  i = 7; break;
+    case AnalogSensor_TC102:
+    case AnalogSensor_TC102_5:
+        return std::unexpected(Error::from_cause("TC sensors are not ADC-sourced and do not support bias configuration"));
+    default:
+        return std::unexpected(Error::from_cause("Unknown analog sensor identifier"));
+    }
+
+    pts_set_bias(i, req.bias);
+    return {};
+}
+
+std::expected<void, Error> Controller::handle_power_off_valve(const PowerOffValveRequest& req)
+{
+    LOG_INF("Received power off valve request");
+
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Cannot turn valve off unless system is IDLE"));
+    }
+
+    switch (req.valve) {
+    case Valve_FUEL:
+        fuel_powered = false;
+        LOG_INF("Turning fuel valve off");
+        break;
+    case Valve_LOX:
+        lox_powered = false;
+        LOG_INF("Turning lox valve off");
+        break;
+    default:
+        return std::unexpected(Error::from_cause("Unknown valve identifier provided to power off command"));
+    }
     return {};
 }
 

@@ -186,6 +186,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_INF("Identify client");
             break;
         }
+        case Request_configure_analog_sensors_bias_tag: {
+            LOG_INF("Configure analog sensor bias");
+            cmd_result = Controller::handle_configure_analog_sensor_bias(request.payload.configure_analog_sensors_bias);
+            break;
+        }
         case Request_reset_valve_position_tag: {
             LOG_INF("Reset valve position");
             // ADDED: Defer to the static controller to conform to std::expected pattern
@@ -230,6 +235,16 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_halt_tag: {
             LOG_INF("Halt");
             cmd_result = Controller::handle_halt(request.payload.halt);
+            break;
+        }
+        case Request_power_on_valve_tag: {
+            LOG_INF("Power on valve");
+            cmd_result = Controller::handle_power_on_valve(request.payload.power_on_valve);
+            break;
+        }
+        case Request_power_off_valve_tag: {
+            LOG_INF("Power off valve");
+            cmd_result = Controller::handle_power_off_valve(request.payload.power_off_valve);
             break;
         }
         default: {
