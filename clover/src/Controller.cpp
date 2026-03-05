@@ -110,7 +110,7 @@ void Controller::step_control_loop(k_work*)
     float current_time = k_uptime_get();
     DataPacket packet = DataPacket_init_default;
 
-    pt_readings raw_pts = pts_get_last_reading();
+    pt_readings raw_pts = pts_sample();
     AnalogSensors current_sensors = AnalogSensors_init_default;
 
     current_sensors.ptc401 = raw_pts.ptc401;
