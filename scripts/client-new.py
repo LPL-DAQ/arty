@@ -8,6 +8,7 @@ import sys
 import time
 import csv
 import pathlib
+from google.protobuf import text_format
 from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
 from rich.panel import Panel
@@ -49,6 +50,9 @@ THEME = {
     "icon_id":      "🪪",
     "icon_quit":    "❌",
 }
+
+VALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
+THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
 ZEPHYR_IP = "169.254.99.99"  # real board
@@ -651,6 +655,42 @@ def cmd_calibrate_valve():
     send_request(req, f"CALIBRATE_VALVE ({valve_name})")
 
 
+def _list_saved_sequences(subdir: pathlib.Path) -> list[pathlib.Path]:
+    if not subdir.exists():
+        return []
+    return sorted(subdir.glob("*.textproto"))
+
+
+def _pick_and_load_sequence(subdir: pathlib.Path, msg_class):
+    """Display saved sequences, prompt user to pick one, return parsed proto."""
+    files = _list_saved_sequences(subdir)
+    t = THEME
+    table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style=t["primary"],
+                  border_style=t["panel_border"], padding=(0, 2))
+    table.add_column("#",    style="bold white", no_wrap=True)
+    table.add_column("Name", style="white")
+    for i, f in enumerate(files, 1):
+        table.add_row(str(i), f.stem)
+    console.print(table)
+
+    choice = Prompt.ask("  Select", choices=[str(i) for i in range(1, len(files) + 1)])
+    chosen = files[int(choice) - 1]
+    msg = msg_class()
+    text_format.Parse(chosen.read_text(), msg)
+    console.print(f"  [{t['success']}]Loaded: {chosen.stem}[/{t['success']}]")
+    return msg
+
+
+def _save_sequence(subdir: pathlib.Path, prefix: str, msg):
+    """Prompt for a name and save a proto message as a .textproto file."""
+    t = THEME
+    subdir.mkdir(parents=True, exist_ok=True)
+    name = Prompt.ask("  Sequence name")
+    filename = subdir / f"{prefix}_{name}.textproto"
+    filename.write_text(text_format.MessageToString(msg))
+    console.print(f"  [{t['success']}]Saved → {filename}[/{t['success']}]")
+
+
 def _build_control_trace() -> clover_pb2.ControlTrace:
     """Interactively build a ControlTrace with one or more segments."""
     t = THEME
@@ -704,6 +744,15 @@ def cmd_load_valve_sequence():
     """
     t = THEME
     console.print(f"\n  {t['icon_seq']} [{t['primary']}]Load Valve Sequence[/{t['primary']}]")
+
+    saved = _list_saved_sequences(VALVE_SEQ_DIR)
+    if saved and Confirm.ask("  Load a saved sequence?", default=True):
+        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadValveSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_valve_sequence.CopyFrom(loaded)
+        send_request(req, "LOAD_VALVE_SEQUENCE")
+        return
+
     console.print(f"  [{t['muted']}]Define a control trace for FUEL, LOX, or both. At least one required.[/{t['muted']}]")
 
     req = clover_pb2.Request()
@@ -712,19 +761,20 @@ def cmd_load_valve_sequence():
     if do_fuel:
         console.print(f"\n  {t['icon_fuel']} [{t['warning']}]FUEL trace setup:[/{t['warning']}]")
         fuel_trace = _build_control_trace()
-        # renamed fuel_trace_deg
         req.load_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
 
     do_lox = Confirm.ask("\n  Configure LOX trace (degrees)?", default=True)
     if do_lox:
         console.print(f"\n  {t['icon_lox']} [{t['info']}]LOX trace setup:[/{t['info']}]")
         lox_trace = _build_control_trace()
-        # renamed lox_trace_deg
         req.load_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
 
     if not do_fuel and not do_lox:
         console.print(f"  [{t['danger']}]At least one trace is required — nothing sent.[/{t['danger']}]")
         return
+
+    if Confirm.ask("  Save this sequence for later?", default=False):
+        _save_sequence(VALVE_SEQ_DIR, "v", req.load_valve_sequence)
 
     send_request(req, "LOAD_VALVE_SEQUENCE")
 
@@ -751,12 +801,25 @@ def cmd_load_thrust_sequence():
     """
     t = THEME
     console.print(f"\n  {t['icon_loop']} [{t['primary']}]Load Thrust Sequence[/{t['primary']}]")
+
+    saved = _list_saved_sequences(THRUST_SEQ_DIR)
+    if saved and Confirm.ask("  Load a saved sequence?", default=True):
+        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrustSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_thrust_sequence.CopyFrom(loaded)
+        send_request(req, "LOAD_THRUST_SEQUENCE")
+        return
+
     console.print(f"  [{t['muted']}]Thrust trace values are in lbf.[/{t['muted']}]")
 
     thrust_trace = _build_control_trace()
 
     req = clover_pb2.Request()
     req.load_thrust_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
+
+    if Confirm.ask("  Save this sequence for later?", default=False):
+        _save_sequence(THRUST_SEQ_DIR, "t", req.load_thrust_sequence)
+
     send_request(req, "LOAD_THRUST_SEQUENCE")
 
 
