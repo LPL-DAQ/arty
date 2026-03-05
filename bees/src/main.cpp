@@ -9,8 +9,16 @@ static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_g
 
 int main(void)
 {
+    if (extmem_write_test_pattern() != 0) {
+        printk("Write test failed!\n");
+    }
+
     if (extmem_enable_mmap() != 0) {
         printk("EXTMEM init failed!\n");
+    }
+
+    if (extmem_test_tables() != 0) {
+        printk("Table test failed!\n");
     }
 
     int my_var = rcc_dev->state->init_res;
@@ -38,8 +46,11 @@ int main(void)
 	}
 
     while(true) {
+        /* Add downloader check here */
+        downloader_task_check_and_run();
+
+        /* Normal firmware behaviour */
         gpio_pin_toggle_dt(&dir_gpio);
         k_sleep(K_MSEC(500));
-        // gpio_pin_set_dt(&dir_gpio, 1);
     }
 }

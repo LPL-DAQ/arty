@@ -105,6 +105,7 @@
 };*/
 
 
+
 &quadspi {
     pinctrl-names = "default";
     pinctrl-0 = <&quadspi_clk_pb2 &quadspi_bk1_ncs_pb10
@@ -115,22 +116,20 @@
     mx25l25645g: qspi-nor-flash@0 {
         compatible = "st,stm32-qspi-nor";
         reg = <0>;
-        size = <DT_SIZE_M(32)>;
+        size = <0x02000000>;
         qspi-max-frequency = <80000000>;
         spi-bus-width = <4>;
         status = "okay";
 
-        /*
         partitions {
             compatible = "fixed-partitions";
             #address-cells = <1>;
             #size-cells = <1>;
 
-            storage_partition: partition@0 {
-                label = "storage";
-                reg = <0x0 DT_SIZE_M(8)>;
+            tables_partition: partition@0 {
+                label = "tables";
+                reg = <0x00000000 0x01000000>;
             };
         };
-        */
     };
 };
