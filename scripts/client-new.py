@@ -95,14 +95,25 @@ _buffer_lock   = threading.Lock()
 _csv_store: list = []           # list of (recv_time: float, pkt: DataPacket)
 _csv_store_lock = threading.Lock()
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(2.0)
-sock.connect((ZEPHYR_IP, ZEPHYR_PORT))
+_last_packet_time: float = 0.0
+_last_packet_lock = threading.Lock()
+
+def _make_tcp_socket() -> socket.socket:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2.0)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)   # start probes after 5s idle
+    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
+    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)    # drop after 3 missed probes
+    s.connect((ZEPHYR_IP, ZEPHYR_PORT))
+    return s
+
+sock = _make_tcp_socket()
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 def listen_for_telemetry():
     """Background thread — receives UDP DataPackets and stores latest."""
-    global latest_packet
+    global latest_packet, _last_packet_time
     while True:
         try:
             data, _ = data_sock.recvfrom(4096)
@@ -111,6 +122,8 @@ def listen_for_telemetry():
             recv_time = time.time()
             with packet_lock:
                 latest_packet = packet
+            with _last_packet_lock:
+                _last_packet_time = recv_time
             with _buffer_lock:
                 _packet_buffer.append((recv_time, packet))
             with _csv_store_lock:
@@ -236,11 +249,36 @@ def _write_csv_on_exit():
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
 
+_STREAM_TIMEOUT = 5.0  # seconds without a packet before we re-subscribe
+
+
+def _reconnect_and_resubscribe():
+    """Replace the global TCP socket and re-issue a subscribe request."""
+    global sock
+    try:
+        sock.close()
+    except Exception:
+        pass
+    try:
+        sock = _make_tcp_socket()
+        cmd_subscribe_data_stream()
+        console.print(f"  [{THEME['warning']}]Reconnected and re-subscribed to data stream.[/{THEME['warning']}]")
+    except Exception as e:
+        console.print(f"  [{THEME['danger']}]Reconnect failed: {e}[/{THEME['danger']}]")
+
+
 def _flush_loop():
     """Background thread — drains the packet buffer into ClickHouse every second."""
     ch = None
     while True:
         time.sleep(1.0)
+
+        # Re-subscribe if no packets received recently
+        with _last_packet_lock:
+            idle = time.time() - _last_packet_time
+        if _last_packet_time > 0 and idle > _STREAM_TIMEOUT:
+            console.print(f"  [{THEME['warning']}]No telemetry for {idle:.1f}s — reconnecting...[/{THEME['warning']}]")
+            _reconnect_and_resubscribe()
 
         if ch is None:
             try:
@@ -495,15 +533,24 @@ def _recv_response() -> clover_pb2.Response:
 def send_request(req: clover_pb2.Request, label: str) -> bool:
     global sock
     """Serialize and send a Request over TCP, then read and display the Response."""
-    try:
-        payload = req.SerializeToString()
-        payload = _VarintBytes(len(payload)) + payload
-        sock.sendall(payload)
-    except Exception as e:
-        console.print(
-            f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
-        )
-        return False
+    payload = _VarintBytes(len(req.SerializeToString())) + req.SerializeToString()
+    for attempt in range(2):
+        try:
+            sock.sendall(payload)
+            break
+        except Exception as e:
+            if attempt == 0:
+                console.print(f"\n  {THEME['icon_warn']} [{THEME['warning']}]Connection lost, reconnecting...[/{THEME['warning']}]")
+                try:
+                    sock = _make_tcp_socket()
+                except Exception as re:
+                    console.print(f"\n  {THEME['icon_warn']} [{THEME['danger']}]Reconnect failed: {re}[/{THEME['danger']}]\n")
+                    return False
+            else:
+                console.print(
+                    f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
+                )
+                return False
 
     try:
         resp = _recv_response()
