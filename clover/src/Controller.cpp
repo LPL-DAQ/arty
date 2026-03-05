@@ -291,7 +291,7 @@ std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValv
         auto result = StateValveSeq::get_lox_trace().load(req.lox_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        StateValveSeq::init(true, false, -1.0f, req.fuel_trace_deg.total_time_ms);
+        StateValveSeq::init(false, true, -1.0f, req.lox_trace_deg.total_time_ms);
     }
 
     return {};
@@ -350,11 +350,18 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
 std::expected<void, Error> Controller::handle_power_on_valve(const PowerOnValveRequest& req)
 {
     LOG_INF("Received power on valve request");
+
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Cannot turn valve on unless system is IDLE"));
+    }
+
     switch (req.valve) {
     case Valve_FUEL:
+        LOG_INF("Turning fuel valve on");
         fuel_powered = true;
         break;
     case Valve_LOX:
+        LOG_INF("Turning lox valve on");
         lox_powered = true;
         break;
     default:
@@ -363,15 +370,48 @@ std::expected<void, Error> Controller::handle_power_on_valve(const PowerOnValveR
     return {};
 }
 
+std::expected<void, Error> Controller::handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req)
+{
+    LOG_INF("Received configure analog sensor bias request");
+
+    // Maps AnalogSensor enum to pt_configs[] index (order from tvc_throttle_dev.dts pt-names)
+    int i;
+    switch (req.sensor) {
+    case AnalogSensor_PTC401:  i = 0; break;
+    case AnalogSensor_PTO401:  i = 1; break;
+    case AnalogSensor_PT202:   i = 2; break;
+    case AnalogSensor_PT102:   i = 3; break;
+    case AnalogSensor_PT103:   i = 4; break;
+    case AnalogSensor_PTF401:  i = 5; break;
+    case AnalogSensor_PT203:   i = 6; break;
+    case AnalogSensor_PTC402:  i = 7; break;
+    case AnalogSensor_TC102:
+    case AnalogSensor_TC102_5:
+        return std::unexpected(Error::from_cause("TC sensors are not ADC-sourced and do not support bias configuration"));
+    default:
+        return std::unexpected(Error::from_cause("Unknown analog sensor identifier"));
+    }
+
+    pts_set_bias(i, req.bias);
+    return {};
+}
+
 std::expected<void, Error> Controller::handle_power_off_valve(const PowerOffValveRequest& req)
 {
     LOG_INF("Received power off valve request");
+
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Cannot turn valve off unless system is IDLE"));
+    }
+
     switch (req.valve) {
     case Valve_FUEL:
         fuel_powered = false;
+        LOG_INF("Turning fuel valve off");
         break;
     case Valve_LOX:
         lox_powered = false;
+        LOG_INF("Turning lox valve off");
         break;
     default:
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to power off command"));

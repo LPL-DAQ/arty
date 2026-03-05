@@ -186,6 +186,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_INF("Identify client");
             break;
         }
+        case Request_configure_analog_sensors_bias_tag: {
+            LOG_INF("Configure analog sensor bias");
+            cmd_result = Controller::handle_configure_analog_sensor_bias(request.payload.configure_analog_sensors_bias);
+            break;
+        }
         case Request_reset_valve_position_tag: {
             LOG_INF("Reset valve position");
             // ADDED: Defer to the static controller to conform to std::expected pattern
