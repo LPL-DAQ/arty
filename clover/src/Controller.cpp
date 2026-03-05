@@ -97,12 +97,12 @@ static void control_loop_schedule(k_timer* timer)
 
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
-int Controller::init()
+static std::expected<void, Error> Controller::init()
 {
     change_state(SystemState_STATE_IDLE);
     k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
     LOG_INF("Initializing Controller...");
-    return 0;
+    return {};
 }
 
 int tick_count = 0;  // temp for testing

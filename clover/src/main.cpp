@@ -64,9 +64,9 @@ int main(void)
         return 0;
     }
 
-    LOG_INF("Initializing Pts");
-    if (auto result = pts_init(); !result) {
-        LOG_ERR("Failed to initialize PTs: %s",
+    LOG_INF("Initializing Controller");
+    if (auto result = Controller::controller_init(); !result) {
+        LOG_ERR("Failed to initialize Controller: %s",
             result.error().build_message().c_str());
         return 0;
     }
