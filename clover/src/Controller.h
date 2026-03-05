@@ -64,7 +64,7 @@ public:
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
 
     static void change_state(SystemState new_state);
-    static int get_state_id(SystemState state);
+    static const char* get_state_name(SystemState state);
     Controller() = delete;  // Explicitly prevent instantiation
 
 private:
