@@ -63,23 +63,11 @@ int main(void)
         return 0;
     }
 
-    // LOG_INF("initializing SNTP");
-    // err = sntp_init();
-    // if (err) {
-    //     LOG_ERR("Failed to initialize SNTP");
-    //     return 0;
-    // }
+
 
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();
-
-    LOG_INF("Initializing Controller");
-    err = Controller::init();
-    if (err) {
-        LOG_ERR("Failed to initialize Controller");
-        return 0;
-    }
 
     k_sleep(K_FOREVER);
 }
