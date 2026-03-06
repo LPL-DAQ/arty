@@ -35,7 +35,7 @@ static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
 
 // Controller state variables
 static float alpha = -1.0f;
-
+static float MAX_Sensor = 1000.0f;
 // Track duration of low chamber pressure for abort logic.
 static uint32_t low_ptc_start_time_ms = 0;
 float target_of = 1.2f;
@@ -103,8 +103,38 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
 
     // 2. Read pressures
     float p_ch = sensors.ptc401;
+    if (p_ch == 0.0f || p_ch == MAX_Sensor) {
+        p_ch = sensors.ptc402;                      // Use backup chamber pressure sensor if primary fails
+        if (p_ch == 0.0f || p_ch == MAX_Sensor){    // abort if both fail
+            out.set_fuel = true;
+            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+            out.set_lox = true;
+            out.lox_pos = Controller::DEFAULT_LOX_POS;
+            out.next_state = SystemState_STATE_ABORT;
+        }
+    }
     float p_inj_fuel = sensors.pt203;
+    if (p_inj_fuel == 0.0f || p_inj_fuel == MAX_Sensor) {
+        p_inj_fuel = (sensors.ptf401 + 21.0f);      // Use backup fuel injector pressure sensor if primary fails, with offset
+        if (p_inj_fuel == 0.0f || p_inj_fuel == MAX_Sensor){    // abort if both fail
+            out.set_fuel = true;
+            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+            out.set_lox = true;
+            out.lox_pos = Controller::DEFAULT_LOX_POS;
+            out.next_state = SystemState_STATE_ABORT;
+        }
+    }
     float p_inj_lox = sensors.pt103;
+    if (p_inj_lox == 0.0f || p_inj_lox == MAX_Sensor) {
+        p_inj_lox = (sensors.pto401 + 41.0f);       // Use backup lox injector pressure sensor if primary fails, with offset
+        if (p_inj_lox == 0.0f || p_inj_lox == MAX_Sensor){  // abort if both fail
+            out.set_fuel = true;
+            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+            out.set_lox = true;
+            out.lox_pos = Controller::DEFAULT_LOX_POS;
+            out.next_state = SystemState_STATE_ABORT;
+        }
+    }
 
     // 3. Calculate mass flows
     float mdot_f = calculate_fuel_mass_flow(p_inj_fuel, p_ch);
