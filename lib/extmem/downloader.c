@@ -11,11 +11,11 @@
 #include "extmem.h"  /* extmem_write_chunk prototype, header has externs */
 
 /* Host-visible RAM symbols. Place in .noinit so host-written values survive resets if needed */
-volatile uint32_t downloader_buf __attribute__((section(".noinit")));
-volatile uint32_t downloader_size __attribute__((section(".noinit")));
-volatile uint32_t downloader_flash_offset __attribute__((section(".noinit")));
-volatile uint32_t downloader_pending __attribute__((section(".noinit")));
-volatile uint32_t downloader_status __attribute__((section(".noinit")));
+volatile uint32_t downloader_buf;
+volatile uint32_t downloader_size;
+volatile uint32_t downloader_flash_offset;
+volatile uint32_t downloader_pending;
+volatile uint32_t downloader_status;
 
 /* Return true if debugger is attached (CoreDebug DHCSR.C_DEBUGEN). */
 static inline bool debugger_is_attached(void)
@@ -31,9 +31,9 @@ static inline bool debugger_is_attached(void)
 void downloader_task_check_and_run(void)
 {
     /* Only allow downloader when debugger is attached */
-    if (!debugger_is_attached()) {
-        return;   /* normal mode: do nothing */
-    }
+    //if (!debugger_is_attached()) {
+        //return;   /* normal mode: do nothing */
+    //}
 
     /* Debugger attached — require explicit request from host */
     if (downloader_pending != 1) {

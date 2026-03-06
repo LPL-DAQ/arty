@@ -5,52 +5,25 @@
 #include <extmem.h>
 
 static const device* rcc_dev = DEVICE_DT_GET(DT_NODELABEL(rcc));
-static gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_gpios);
+static const struct gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), led_test_gpios);
 
-int main(void)
+extern "C" int main(void)
 {
-    if (extmem_write_test_pattern() != 0) {
-        printk("Write test failed!\n");
+    const struct device *flash_dev = DEVICE_DT_GET(DT_NODELABEL(mx25l25645g));
+
+    if (!device_is_ready(flash_dev)) {
+        printk("QSPI Flash device not ready!\n");
+        return -1;
     }
 
-    if (extmem_enable_mmap() != 0) {
-        printk("EXTMEM init failed!\n");
+    if (extmem_init() != 0) {
+        printk("EXTMEM init failed\n");
     }
 
-    if (extmem_test_tables() != 0) {
-        printk("Table test failed!\n");
-    }
-
-    int my_var = rcc_dev->state->init_res;
-    if(my_var == 111) {
-        k_sleep(K_MSEC(1000));
-        return 1;
-    }
-
-    int ret = device_is_ready(rcc_dev);
-    if(!ret) {
-        k_sleep(K_MSEC(1000));
-        return 1;
-    }
-
-    ret = gpio_is_ready_dt(&dir_gpio);
-    if (!ret) {
-        k_sleep(K_MSEC(1000));
-		return 0;
-	}
-
-	ret = gpio_pin_configure_dt(&dir_gpio, GPIO_OUTPUT_ACTIVE);
-	if (ret < 0) {
-        k_sleep(K_MSEC(1000));
-		return 0;
-	}
-
-    while(true) {
-        /* Add downloader check here */
+    while (1) {
         downloader_task_check_and_run();
-
-        /* Normal firmware behaviour */
-        gpio_pin_toggle_dt(&dir_gpio);
         k_sleep(K_MSEC(500));
     }
+
+    return 0;
 }
