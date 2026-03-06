@@ -123,14 +123,28 @@ def listen_for_telemetry():
             packet = clover_pb2.DataPacket()
             packet.ParseFromString(data)
             recv_time = time.time()
-            with packet_lock:
-                latest_packet = packet
-            with _last_packet_lock:
-                _last_packet_time = recv_time
-            with _buffer_lock:
-                _packet_buffer.append((recv_time, packet))
-            with _csv_store_lock:
-                _csv_store.append((recv_time, packet))
+            for lock, name in (
+                (packet_lock,      "packet_lock"),
+                (_last_packet_lock,"_last_packet_lock"),
+                (_buffer_lock,     "_buffer_lock"),
+                (_csv_store_lock,  "_csv_store_lock"),
+            ):
+                t0 = time.monotonic()
+                lock.acquire()
+                wait = time.monotonic() - t0
+                if wait > 0.05:
+                    console.print(f"  [bold yellow]LOCK SLOW: {name} waited {wait:.3f}s[/bold yellow]")
+                try:
+                    if lock is packet_lock:
+                        latest_packet = packet
+                    elif lock is _last_packet_lock:
+                        _last_packet_time = recv_time
+                    elif lock is _buffer_lock:
+                        _packet_buffer.append((recv_time, packet))
+                    else:
+                        _csv_store.append((recv_time, packet))
+                finally:
+                    lock.release()
         except socket.timeout:
             continue  # loop back and re-read data_sock global
         except Exception as e:
