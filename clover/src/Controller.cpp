@@ -104,13 +104,13 @@ static std::expected<void, Error> Controller::init()
     return {};
 }
 
-int tick_count = 0;  // temp for testing
 void Controller::step_control_loop(k_work*)
 {
     float current_time = k_uptime_get();
     DataPacket packet = DataPacket_init_default;
+    
 
-    pt_readings raw_pts = pts_sample();
+    pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
 
     current_sensors.ptc401 = raw_pts.ptc401;
