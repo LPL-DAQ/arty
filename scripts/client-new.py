@@ -176,11 +176,15 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     f = pkt.fuel_valve
     l = pkt.lox_valve
     return {
-        'time':                     int(recv_time * 1e6),
-        'gnc_state':                float(pkt.state),
-        'gnc_data_queue_size':      float(pkt.data_queue_size),
-        'gnc_sequence_number':      float(pkt.sequence_number),
-        'gnc_controller_tick_ns':   float(pkt.controller_tick_time_ns),  # new field
+        'time':                     int(pkt.time_ns),     # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
+        'state':                float(pkt.state),
+        'data_queue_size':      float(pkt.data_queue_size),
+        'sequence_number':      float(pkt.sequence_number),
+        'controller_tick_ns':   float(pkt.controller_tick_time_ns),
+        'gnc_connected':            bool(pkt.gnc_connected),
+        'gnc_last_pinged_ns':       float(pkt.gnc_last_pinged_ns),
+        'daq_connected':            bool(pkt.daq_connected),
+        'daq_last_pinged_ns':       float(pkt.daq_last_pinged_ns),
         'gnc_pt102':                float(s.pt102),
         'gnc_pt103':                float(s.pt103),
         'gnc_pt202':                float(s.pt202),
@@ -202,6 +206,15 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         'gnc_lox_driver':           float(l.driver_setpoint_pos_deg),
         'gnc_lox_encoder':          float(l.encoder_pos_deg),
         'gnc_lox_is_on':            float(l.is_on),      # PROTO CHANGE: was 'enabled'
+        # State data
+        'fuel_found_hardstop':      float(pkt.valve_calibration_data.fuel_found_hardstop),
+        'lox_found_hardstop':       float(pkt.valve_calibration_data.lox_found_hardstop),
+        'fuel_hardstop_pos':        float(pkt.valve_calibration_data.fuel_hardstop_pos),
+        'lox_hardstop_pos':         float(pkt.valve_calibration_data.lox_hardstop_pos),
+        'cal_phase':                float(pkt.valve_calibration_data.cal_phase),
+        'rep_count':                float(pkt.valve_calibration_data.rep_count),
+        'fuel_err':                 float(pkt.valve_calibration_data.fuel_err),
+        'lox_err':                  float(pkt.valve_calibration_data.lox_err),
     }
 
 
@@ -244,7 +257,8 @@ def _write_csv_on_exit():
 
     if remaining and _csv_fh is None:
         # Client exited before the first flush_loop drain (ran very briefly)
-        _csv_path = pathlib.Path(f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv")
+        _csv_path = pathlib.Path("data") / f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+        _csv_path.parent.mkdir(exist_ok=True)
         _csv_fh = open(_csv_path, "w", newline="")
         _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
         _csv_writer.writeheader()
@@ -359,7 +373,8 @@ def _flush_loop():
         if csv_batch:
             global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
             if _csv_fh is None:
-                _csv_path = pathlib.Path(f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv")
+                _csv_path = pathlib.Path("data") / f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+                _csv_path.parent.mkdir(exist_ok=True)
                 _csv_fh = open(_csv_path, "w", newline="")
                 _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
                 _csv_writer.writeheader()
@@ -469,9 +484,33 @@ def _build_status_renderable():
         val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
         st.add_row(name, val_str, unit)
 
+    # ── State data panel ──────────────────────────────────────
+    sd = Table(box=box.SIMPLE_HEAD, show_header=True,
+               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    sd.add_column("Field", style="bold white", no_wrap=True)
+    sd.add_column("Value", style="white",      no_wrap=True, justify="right")
+
+    which = pkt.WhichOneof("state_data")
+    if which == "valve_calibration_data":
+        c = pkt.valve_calibration_data
+        def _hs(found, pos):
+            return f"{pos:.2f}°" if found else f"[{t['muted']}]—[/{t['muted']}]"
+        sd.add_row("fuel hardstop", _hs(c.fuel_found_hardstop, c.fuel_hardstop_pos))
+        sd.add_row("lox hardstop",  _hs(c.lox_found_hardstop,  c.lox_hardstop_pos))
+        sd.add_row("cal phase",     str(c.cal_phase))
+        sd.add_row("rep count",     str(c.rep_count))
+        sd.add_row("fuel err",      f"{c.fuel_err:.4f}")
+        sd.add_row("lox err",       f"{c.lox_err:.4f}")
+    else:
+        sd.add_row(f"[{t['muted']}]no state data[/{t['muted']}]", "")
+
+    left = Group(
+        Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",     border_style=t["panel_border"]),
+        Panel(sd, title=f"[{t['primary']}]State Data[/{t['primary']}]", border_style=t["panel_border"]),
+    )
     bottom = Columns([
-        Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",   border_style=t["panel_border"]),
-        Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]",  border_style=t["panel_border"]),
+        left,
+        Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]", border_style=t["panel_border"]),
     ])
 
     return Group(header_panel, bottom)
