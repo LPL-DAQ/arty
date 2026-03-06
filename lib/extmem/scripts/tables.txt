@@ -1,0 +1,63 @@
+# =====================================================
+# TABLE FILE FORMAT
+# =====================================================
+# Each table must start with [TABLE]
+#
+# Required fields:
+#   ID    = Numeric table ID used by firmware
+#   NAME  = Human-readable table name (for documentation only)
+#   TYPE  = Data type (u8 / i16 / u16 / u32 / f32)
+#
+# TYPE description:
+#   u8   = unsigned 8-bit integer
+#   i16  = signed 16-bit integer
+#   u16  = unsigned 16-bit integer
+#   u32  = unsigned 32-bit integer
+#   f32  = 32-bit float
+#
+# After TYPE, each line represents one value.
+# Blank lines and lines starting with "#" are ignored.
+# =====================================================
+
+
+# -----------------------------------------------------
+# Temperature Calibration Table
+# Unit: Celsius × 10
+# Example: -400 = -40.0°C
+# -----------------------------------------------------
+[TABLE]
+ID=1
+NAME=TemperatureCalibration
+TYPE=i16
+-400
+-300
+-200
+-100
+0
+100
+200
+300
+400
+500
+600
+700
+800
+
+
+# -----------------------------------------------------
+# Voltage Lookup Table
+# Unit: millivolts (mV)
+# -----------------------------------------------------
+[TABLE]
+ID=2
+NAME=VoltageLookup
+TYPE=u16
+1000
+1050
+1100
+1150
+1200
+1250
+1300
+1350
+1400

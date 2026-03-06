@@ -118,7 +118,8 @@
     status = "okay";
 };*/
 
-/*
+
+
 &quadspi {
     pinctrl-names = "default";
     pinctrl-0 = <&quadspi_clk_pb2 &quadspi_bk1_ncs_pb10
@@ -126,23 +127,27 @@
                  &quadspi_bk1_io2_pe2 &quadspi_bk1_io3_pd13>;
     status = "okay";
 
-    w25q128jv: qspi-nor-flash@0 {
+    mx25l25645g: qspi-nor-flash@0 {
         compatible = "st,stm32-qspi-nor";
         reg = <0>;
-        size = <DT_SIZE_M(128)>;  128 Mbits 
+        /* 0x02000000 = 32MB = 256Mb */
+        size = <DT_SIZE_M(256)>;
         qspi-max-frequency = <80000000>;
         spi-bus-width = <4>;
         status = "okay";
+
+        jedec-id = [c2 20 19];
+        enter-4byte-addr = <0xb7>;
 
         partitions {
             compatible = "fixed-partitions";
             #address-cells = <1>;
             #size-cells = <1>;
 
-            storage_partition: partition@0 {
-                label = "storage";
-                reg = <0x0 DT_SIZE_M(16)>;
+            tables_partition: partition@0 {
+                label = "tables";
+                reg = <0x00000000 0x01000000>;
             };
         };
     };
-};*/
+};
