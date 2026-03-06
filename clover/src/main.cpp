@@ -74,12 +74,6 @@ int main(void)
     LOG_INF("Starting server");
     serve_connections();
 
-    LOG_INF("Initializing Controller");
-    err = Controller::init();
-    if (err) {
-        LOG_ERR("Failed to initialize Controller");
-        return 0;
-    }
 
     k_sleep(K_FOREVER);
 }
