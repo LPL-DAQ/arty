@@ -24,24 +24,27 @@ static constexpr float FUEL_CV_INJ = 0.5f;
 static constexpr float FUEL_SG = 0.806f;
 static constexpr float MIN_SAFE_OF = 0.5f;
 static constexpr float MAX_SAFE_OF = 3.0f;
-static constexpr float PTC401_ABORT_THRESHOLD = 10.0f; //
+static constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
 static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
 // Controller constants
 // TODO: Tune controller constants
-static constexpr float THRUST_KP = 0.0025f;
-static constexpr float MAX_CHANGE_ALPHA = 10.0f;
+static constexpr float THRUST_KP = 0.015f;
+static constexpr float MAX_CHANGE_ALPHA = 20.0f;
 static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
+static constexpr float MIN_ALPHA = 0.0f;
+static constexpr float MAX_ALPHA = 0.84f;
+static constexpr float MIN_VALVE_POS = 25.0f;
+static constexpr float MAX_VALVE_POS = 90.0f;
 
 // Controller state variables
 static float alpha = -1.0f;
-static float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
-static float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
-static float MIN_threshold = 50.0f; // Define a minimum value for sensor validation
+static float MAX_threshold_PT2k = 1900.0f;  // Define a maximum value for sensor validation
+static float MAX_threshold_PT1k = 950.0f;   // Define a maximum value for sensor validation
+static float MIN_threshold = 50.0f;         // Define a minimum value for sensor validation
 // Track duration of low chamber pressure for abort logic.
 static uint32_t low_ptc_start_time_ms = 0;
 float target_of = 1.2f;
-
 
 float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
@@ -60,7 +63,7 @@ float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
     return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
-} // namespace
+}  // namespace
 
 void StateThrustSeq::init(float total_time_ms)
 {
@@ -70,7 +73,7 @@ void StateThrustSeq::init(float total_time_ms)
 }
 
 // needs , float target_thrust_lbf, float target_of from Sample
-std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensors& sensors,uint32_t current_time, uint32_t start_time)
+std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensors& sensors, uint32_t current_time, uint32_t start_time)
 {
     ControllerOutput out{};
     ThrustSequenceData data{};
@@ -81,7 +84,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     if (!target_result) {
         auto msg = target_result.error().build_message();
         LOG_ERR("Failed to sample thrust_trace: %s", msg.c_str());
-        return std::make_pair(out,data);
+        return std::make_pair(out, data);
     }
     float target_thrust_lbf = *target_result;
 
@@ -89,7 +92,8 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     if (sensors.ptc401 <= PTC401_ABORT_THRESHOLD) {
         if (low_ptc_start_time_ms == 0) {
             low_ptc_start_time_ms = current_time;
-        } else if (current_time - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
+        }
+        else if (current_time - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
             // TOOD: Fix float to double cast
             LOG_ERR("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS);
             out.set_fuel = true;
@@ -99,36 +103,40 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
             out.next_state = SystemState_STATE_ABORT;
             return {out, data};
         }
-    } else {
+    }
+    else {
         low_ptc_start_time_ms = 0;
     }
 
     // 2. Read pressures
-    float ptc401_val = sensors.ptc401 - 13.0f; // Adjusted value
-    float pto401_val = sensors.pto401 - 14.0f; // Adjusted value
-    float pt103_val = sensors.pt103 - 30.0f; // Adjusted value
-    float ptf401_val = sensors.ptf401 - 18.7f; // Adjusted value
-    float pt203_val = sensors.pt203 - 28.0f; // Adjusted value
-    float ptc402_val = sensors.ptc402 - 13.0f; // Adjusted value
-    bool pt203_valid = (sensors.pt203 >= MIN_threshold && sensors.pt203 =< MAX_threshold_PT2k);
-    bool ptf401_valid = (sensors.ptf401 >= MIN_threshold && sensors.ptf401 =< MAX_threshold_PT2k);
-    bool pt103_valid = (sensors.pt103 >= MIN_threshold && sensors.pt103 =< MAX_threshold_PT2k);
-    bool pto401_valid = (sensors.pto401 >= MIN_threshold && sensors.pto401 =< MAX_threshold_PT2k);
-    bool ptc401_valid = (sensors.ptc401 >= MIN_threshold && sensors.ptc401 =< MAX_threshold_PT1k);
-    bool ptc402_valid = (sensors.ptc402 >= MIN_threshold && sensors.ptc402 =< MAX_threshold_PT1k);
+    float ptc401_val = sensors.ptc401 - 13.0f;  // Adjusted value
+    float pto401_val = sensors.pto401 - 14.0f;  // Adjusted value
+    float pt103_val = sensors.pt103 - 30.0f;    // Adjusted value
+    float ptf401_val = sensors.ptf401 - 18.7f;  // Adjusted value
+    float pt203_val = sensors.pt203 - 28.0f;    // Adjusted value
+    float ptc402_val = sensors.ptc402 - 13.0f;  // Adjusted value
+    bool pt203_valid = (sensors.pt203 >= MIN_threshold && sensors.pt203 <= MAX_threshold_PT2k);
+    bool ptf401_valid = (sensors.ptf401 >= MIN_threshold && sensors.ptf401 <= MAX_threshold_PT2k);
+    bool pt103_valid = (sensors.pt103 >= MIN_threshold && sensors.pt103 <= MAX_threshold_PT2k);
+    bool pto401_valid = (sensors.pto401 >= MIN_threshold && sensors.pto401 <= MAX_threshold_PT2k);
+    bool ptc401_valid = (sensors.ptc401 >= MIN_threshold && sensors.ptc401 <= MAX_threshold_PT1k);
+    bool ptc402_valid = (sensors.ptc402 >= MIN_threshold && sensors.ptc402 <= MAX_threshold_PT1k);
     float p_inj_fuel;
     float p_inj_lox;
     float p_ch;
     if (ptc401_valid && ptc402_valid) {
         // Both are healthy: Take the average
         p_ch = (ptc401_val + ptc402_val) / 2.0f;
-    } else if (ptc401_valid) {
+    }
+    else if (ptc401_valid) {
         // Only primary is healthy
         p_inj_fuel = ptc401_val;
-    } else if (ptc402_valid) {
+    }
+    else if (ptc402_valid) {
         // Only backup is healthy
         p_inj_fuel = ptc402_val;
-    } else {
+    }
+    else {
         // Both failed: Trigger Abort
         out.set_fuel = true;
         out.fuel_pos = Controller::DEFAULT_FUEL_POS;
@@ -139,13 +147,16 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     if (pt203_valid && ptf401_valid) {
         // Both are healthy: Take the average
         p_inj_fuel = (pt203_val + ptf401_val) / 2.0f;
-    } else if (pt203_valid) {
+    }
+    else if (pt203_valid) {
         // Only primary is healthy
         p_inj_fuel = pt203_val;
-    } else if (ptf401_valid) {
+    }
+    else if (ptf401_valid) {
         // Only backup is healthy
         p_inj_fuel = ptf401_val;
-    } else {
+    }
+    else {
         // Both failed: Trigger Abort
         out.set_fuel = true;
         out.fuel_pos = Controller::DEFAULT_FUEL_POS;
@@ -156,13 +167,16 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     if (pt103_valid && pto401_valid) {
         // Both are healthy: Take the average
         p_inj_lox = (pt103_val + pto401_val) / 2.0f;
-    } else if (pt103_valid) {
+    }
+    else if (pt103_valid) {
         // Only primary is healthy
         p_inj_lox = pt103_val;
-    } else if (pto401_valid) {
+    }
+    else if (pto401_valid) {
         // Only backup is healthy
         p_inj_lox = pto401_val;
-    } else {
+    }
+    else {
         // Both failed: Trigger Abort
         out.set_fuel = true;
         out.fuel_pos = Controller::DEFAULT_FUEL_POS;
@@ -185,10 +199,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
     // 7. Predict Isp using chamber pressure and O/F
-    float predicted_isp = interp2D(isp_pc_axis, isp_pc_len,
-                                   isp_of_axis, isp_of_len,
-                                   isp_data,
-                                   p_ch, of_safe);
+    float predicted_isp = interp2D(isp_pc_axis, isp_pc_len, isp_of_axis, isp_of_len, isp_data, p_ch, of_safe);
 
     // 8. Predict thrust (convert to lbf-equivalent)
     float predicted_thrust = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
@@ -199,30 +210,27 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     // 9. Compute PID
     float dt = SEC_PER_CONTROL_TICK;
     float thrust_error = target_thrust_lbf - predicted_thrust;
-    float change_alpha_cmd = THRUST_KP  * thrust_error;
+    float change_alpha_cmd = THRUST_KP * thrust_error;
     change_alpha_cmd *= dt;
     float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
 
     // 10. Integrate PID to get alpha
-    if(alpha == -1.0f){
+    if (alpha == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
         alpha = (target_thrust_lbf - thrust_axis[0]) / (thrust_axis[thrust_axis_len - 1] - thrust_axis[0]);
     }
     alpha += clamped_change_alpha_cmd;
-    alpha = std::clamp(alpha, 0.0f, 1.0f);
-
+    alpha = std::clamp(alpha, MIN_ALPHA, MAX_ALPHA);
 
     // 11. Plug alpha into Mprime contour
     float thrust_from_alpha = alpha * (thrust_axis[thrust_axis_len - 1] - thrust_axis[0]) + thrust_axis[0];
-    float fuel_valve_cmd = interp2D(thrust_axis, thrust_axis_len,
-                                    of_axis, of_axis_len,
-                                    fuel_valve_grid,
-                                    thrust_from_alpha, target_of_safe);
+    float fuel_valve_cmd = interp2D(thrust_axis, thrust_axis_len, of_axis, of_axis_len, fuel_valve_grid, thrust_from_alpha, target_of_safe);
 
-    float lox_valve_cmd = interp2D(thrust_axis, thrust_axis_len,
-                                   of_axis, of_axis_len,
-                                   lox_valve_grid,
-                                   thrust_from_alpha, target_of_safe);
+    float lox_valve_cmd = interp2D(thrust_axis, thrust_axis_len, of_axis, of_axis_len, lox_valve_grid, thrust_from_alpha, target_of_safe);
+
+    // 12. Clamp valve commands to safe ranges
+    fuel_valve_cmd = std::clamp(fuel_valve_cmd, MIN_VALVE_POS, MAX_VALVE_POS);
+    lox_valve_cmd = std::clamp(lox_valve_cmd, MIN_VALVE_POS, MAX_VALVE_POS);
 
     // Populate telemetry data
     data.predicted_thrust = predicted_thrust;
@@ -238,7 +246,6 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     data.fuel_valve_cmd = fuel_valve_cmd;
     data.lox_valve_cmd = lox_valve_cmd;
 
-
     // 10. Populate ControllerOutput
     out.set_fuel = true;
     out.fuel_pos = fuel_valve_cmd;
@@ -249,6 +256,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     return {out, data};
 }
 
-Trace& StateThrustSeq::get_trace(){
+Trace& StateThrustSeq::get_trace()
+{
     return trace;
 }

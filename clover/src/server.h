@@ -3,8 +3,12 @@
 
 #include <string>
 
+struct daq_client_status {
+    bool connected;
+    int64_t last_pinged_ms;
+}
+
 void serve_connections();
-int send_fully(int sock, const char* buf, int len);
-int send_string_fully(int sock, const std::string& payload);
+daq_client_status get_daq_client_status();
 
 #endif  // ARTY_SERVER_H

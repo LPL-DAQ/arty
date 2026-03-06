@@ -14,7 +14,7 @@ LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
-void Controller::change_state(SystemState new_state)
+std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
     if (current_state == new_state)
         return;
@@ -28,8 +28,7 @@ void Controller::change_state(SystemState new_state)
 
     case SystemState_STATE_CALIBRATE_VALVE:
         if (current_state != SystemState_STATE_IDLE) {
-            LOG_ERR("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state));
-            return;
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state)));
         }
         StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
         current_state = new_state;
@@ -37,8 +36,7 @@ void Controller::change_state(SystemState new_state)
 
     case SystemState_STATE_VALVE_PRIMED:
         if (current_state != SystemState_STATE_IDLE) {
-            LOG_ERR("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state));
-            return;
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state)));
         }
         StateIdle::init();
         current_state = new_state;
@@ -46,8 +44,7 @@ void Controller::change_state(SystemState new_state)
 
     case SystemState_STATE_VALVE_SEQ:
         if (current_state != SystemState_STATE_VALVE_PRIMED) {
-            LOG_ERR("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state));
-            return;
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state)));
         }
 
         // INIT IS IN THE HANDLER
@@ -56,26 +53,23 @@ void Controller::change_state(SystemState new_state)
 
     case SystemState_STATE_THRUST_PRIMED:
         if (current_state != SystemState_STATE_IDLE) {
-            LOG_ERR("Cannot switch from %s to Thrust Primed, must be in Idle", get_state_name(current_state));
-            return;
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Primed, must be in Idle", get_state_name(current_state)));
         }
         StateIdle::init();
         current_state = new_state;
         break;
 
-        case SystemState_STATE_THRUST_SEQ:
-            if (current_state != SystemState_STATE_THRUST_PRIMED){
-                LOG_ERR("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state));
-                return;
-            }
-            // INIT IS IN THE HANDLER
-            current_state = new_state;
-            break;
+    case SystemState_STATE_THRUST_SEQ:
+        if (current_state != SystemState_STATE_THRUST_PRIMED) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state))) return;
+        }
+        // INIT IS IN THE HANDLER
+        current_state = new_state;
+        break;
 
     case SystemState_STATE_ABORT:
         if (current_state != SystemState_STATE_THRUST_SEQ && current_state != SystemState_STATE_VALVE_SEQ) {
-            LOG_ERR("Cannot switch from %s to Abort, must be in Valve Seq or Thrust Seq", get_state_name(current_state));
-            return;
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq or Thrust Seq", get_state_name(current_state)));
         }
         StateAbort::init();
         current_state = new_state;
@@ -84,6 +78,8 @@ void Controller::change_state(SystemState new_state)
         break;
     }
     LOG_INF("Changed State to %s", get_state_name(current_state));
+
+    return {};
 }
 
 K_WORK_DEFINE(control_loop, Controller::step_control_loop);
@@ -98,7 +94,10 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 static std::expected<void, Error> Controller::init()
 {
-    change_state(SystemState_STATE_IDLE);
+    auto ret = change_state(SystemState_STATE_IDLE);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to idle"));
+    }
     k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
     LOG_INF("Initializing Controller...");
     return {};
@@ -108,7 +107,6 @@ void Controller::step_control_loop(k_work*)
 {
     float current_time = k_uptime_get();
     DataPacket packet = DataPacket_init_default;
-    
 
     pt_readings raw_pts = pts_get_last_reading();
     AnalogSensors current_sensors = AnalogSensors_init_default;
@@ -122,6 +120,8 @@ void Controller::step_control_loop(k_work*)
     current_sensors.ptc402 = raw_pts.ptc402;
     current_sensors.pt203 = raw_pts.pt203;
     current_sensors.adc_read_time_ns = pts_get_adc_read_time_ns();
+
+    daq_client_status daq_status = get_daq_client_status();
 
     ControllerOutput out;
 
@@ -189,7 +189,10 @@ void Controller::step_control_loop(k_work*)
     }
     }
 
-    change_state(out.next_state);
+    auto ret = change_state(out.next_state);
+    if (!ret.has_value()) {
+        LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
+    }
 
     if (out.reset_fuel) {
         FuelValve::reset_pos(out.reset_fuel_pos);
@@ -201,28 +204,29 @@ void Controller::step_control_loop(k_work*)
     FuelValve::tick(out.fuel_on && fuel_powered, out.set_fuel, out.fuel_pos);
     LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
 
-    // telementary
+    // telemetry
     packet.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
     packet.state = current_state;
     packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
     packet.sequence_number = udp_sequence_number++;
-    packet.gnc_connected = true;         // WRONG
-    packet.gnc_last_pinged_ns = 0;       // WRONG
-    packet.daq_connected = true;         // WRONG
-    packet.daq_last_pinged_ns = 0;       // WRONG
+    packet.gnc_connected = true;
+    packet.gnc_last_pinged_ns = 0;
+
+    packet.daq_connected = daq_status.connected;
+    packet.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
 
     packet.analog_sensors = current_sensors;
     packet.fuel_valve = {
-        .target_pos_deg          = out.fuel_pos,
+        .target_pos_deg = out.fuel_pos,
         .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
-        .encoder_pos_deg         = FuelValve::get_pos_encoder(),
-        .is_on                   = FuelValve::get_power_on(),
+        .encoder_pos_deg = FuelValve::get_pos_encoder(),
+        .is_on = FuelValve::get_power_on(),
     };
     packet.lox_valve = {
-        .target_pos_deg          = out.lox_pos,
+        .target_pos_deg = out.lox_pos,
         .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
-        .encoder_pos_deg         = LoxValve::get_pos_encoder(),
-        .is_on                   = LoxValve::get_power_on(),
+        .encoder_pos_deg = LoxValve::get_pos_encoder(),
+        .is_on = LoxValve::get_power_on(),
     };
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
@@ -234,14 +238,20 @@ std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_INF("Received abort request");
     abort_entry_time = k_uptime_get();
-    change_state(SystemState_STATE_ABORT);
+    auto ret = change_state(SystemState_STATE_ABORT);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to abort"));
+    }
     return {};
 }
 
 std::expected<void, Error> Controller::handle_unprime(const UnprimeRequest& req)
 {
     LOG_INF("Received unprime request");
-    change_state(SystemState_STATE_IDLE);
+    auto ret = change_state(SystemState_STATE_IDLE);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to idle"));
+    }
     return {};
 }
 
@@ -249,13 +259,15 @@ std::expected<void, Error> Controller::handle_load_thrust_sequence(const LoadThr
 {
     LOG_INF("Received load thrust sequence request");
 
-
-    change_state(SystemState_STATE_THRUST_PRIMED);
-
     auto result = StateThrustSeq::get_trace().load(req.thrust_trace_lbf);
     if (!result)
-        return std::unexpected(result.error().context("%s", "Invalid thrust  trace"));
+        return std::unexpected(result.error().context("%s", "Invalid thrust trace"));
     StateThrustSeq::init(req.thrust_trace_lbf.total_time_ms);
+
+    auto ret = change_state(SystemState_STATE_THRUST_PRIMED);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
+    }
 
     return {};
 }
@@ -265,6 +277,10 @@ std::expected<void, Error> Controller::handle_start_thrust_sequence(const StartT
     LOG_INF("Received start thrust sequence request");
     sequence_start_time = k_uptime_get();
     change_state(SystemState_STATE_THRUST_SEQ);
+    auto ret = change_state(SystemState_STATE_THRUST_SEQ);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to thrust seq"));
+    }
     return {};
 }
 
@@ -277,8 +293,6 @@ std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValv
     if (!has_fuel && !has_lox) {
         return std::unexpected(Error::from_cause("No sequences provided in load request"));
     }
-
-    change_state(SystemState_STATE_VALVE_PRIMED);
 
     if (has_fuel && has_lox) {
 
@@ -303,6 +317,11 @@ std::expected<void, Error> Controller::handle_load_valve_sequence(const LoadValv
         StateValveSeq::init(false, true, -1.0f, req.lox_trace_deg.total_time_ms);
     }
 
+    auto ret = change_state(SystemState_STATE_VALVE_PRIMED);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
+    }
+
     return {};
 }
 
@@ -311,22 +330,30 @@ std::expected<void, Error> Controller::handle_start_valve_sequence(const StartVa
 
     LOG_INF("Received start valve sequence request");
     sequence_start_time = k_uptime_get();
-    change_state(SystemState_STATE_VALVE_SEQ);
+    auto ret = change_state(SystemState_STATE_VALVE_SEQ);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to valve seq"));
+    }
     return {};
 }
 
 std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
 {
-
     LOG_INF("Received halt request");
-    change_state(SystemState_STATE_IDLE);
-
+    auto ret = change_state(SystemState_STATE_IDLE);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to idle"));
+    }
     return {};
 }
+
 std::expected<void, Error> Controller::handle_calibrate_valve(const CalibrateValveRequest& req)
 {
     LOG_INF("Received calibrate valve request");
-    change_state(SystemState_STATE_CALIBRATE_VALVE);
+    auto ret = change_state(SystemState_STATE_CALIBRATE_VALVE);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to calibrate valve"));
+    }
     return {};
 }
 
@@ -386,14 +413,30 @@ std::expected<void, Error> Controller::handle_configure_analog_sensor_bias(const
     // Maps AnalogSensor enum to pt_configs[] index (order from tvc_throttle_dev.dts pt-names)
     int i;
     switch (req.sensor) {
-    case AnalogSensor_PTC401:  i = 0; break;
-    case AnalogSensor_PTO401:  i = 1; break;
-    case AnalogSensor_PT202:   i = 2; break;
-    case AnalogSensor_PT102:   i = 3; break;
-    case AnalogSensor_PT103:   i = 4; break;
-    case AnalogSensor_PTF401:  i = 5; break;
-    case AnalogSensor_PT203:   i = 6; break;
-    case AnalogSensor_PTC402:  i = 7; break;
+    case AnalogSensor_PTC401:
+        i = 0;
+        break;
+    case AnalogSensor_PTO401:
+        i = 1;
+        break;
+    case AnalogSensor_PT202:
+        i = 2;
+        break;
+    case AnalogSensor_PT102:
+        i = 3;
+        break;
+    case AnalogSensor_PT103:
+        i = 4;
+        break;
+    case AnalogSensor_PTF401:
+        i = 5;
+        break;
+    case AnalogSensor_PT203:
+        i = 6;
+        break;
+    case AnalogSensor_PTC402:
+        i = 7;
+        break;
     case AnalogSensor_TC102:
     case AnalogSensor_TC102_5:
         return std::unexpected(Error::from_cause("TC sensors are not ADC-sourced and do not support bias configuration"));
