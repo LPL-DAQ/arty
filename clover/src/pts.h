@@ -52,6 +52,5 @@ std::expected<void, Error> pts_set_range(int index, float range);
 // --- Async API ---
 void pts_request_async();
 bool pts_try_collect(pt_readings* out);
-pts_metrics pts_get_metrics();
 
 #endif  // ARTY_PTS_H

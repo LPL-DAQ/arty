@@ -214,8 +214,3 @@ bool pts_try_collect(pt_readings* out)
     *out = pts_process_raw();
     return true;
 }
-
-pts_metrics pts_get_metrics()
-{
-    return current_metrics;
-}
