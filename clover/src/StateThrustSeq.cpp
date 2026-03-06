@@ -35,7 +35,9 @@ static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
 
 // Controller state variables
 static float alpha = -1.0f;
-static float MAX_Sensor = 1000.0f;
+static float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
+static float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
+static float MIN_threshold = 50.0f; // Define a minimum value for sensor validation
 // Track duration of low chamber pressure for abort logic.
 static uint32_t low_ptc_start_time_ms = 0;
 float target_of = 1.2f;
@@ -102,38 +104,71 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     }
 
     // 2. Read pressures
-    float p_ch = sensors.ptc401;
-    if (p_ch == 0.0f || p_ch == MAX_Sensor) {
-        p_ch = sensors.ptc402;                      // Use backup chamber pressure sensor if primary fails
-        if (p_ch == 0.0f || p_ch == MAX_Sensor){    // abort if both fail
-            out.set_fuel = true;
-            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
-            out.set_lox = true;
-            out.lox_pos = Controller::DEFAULT_LOX_POS;
-            out.next_state = SystemState_STATE_ABORT;
-        }
+    float ptc401_val = sensors.ptc401 - 13.0f; // Adjusted value
+    float pto401_val = sensors.pto401 - 14.0f; // Adjusted value
+    float pt103_val = sensors.pt103 - 30.0f; // Adjusted value
+    float ptf401_val = sensors.ptf401 - 18.7f; // Adjusted value
+    float pt203_val = sensors.pt203 - 28.0f; // Adjusted value
+    float ptc402_val = sensors.ptc402 - 13.0f; // Adjusted value
+    bool pt203_valid = (sensors.pt203 >= MIN_threshold && sensors.pt203 =< MAX_threshold_PT2k);
+    bool ptf401_valid = (sensors.ptf401 >= MIN_threshold && sensors.ptf401 =< MAX_threshold_PT2k);
+    bool pt103_valid = (sensors.pt103 >= MIN_threshold && sensors.pt103 =< MAX_threshold_PT2k);
+    bool pto401_valid = (sensors.pto401 >= MIN_threshold && sensors.pto401 =< MAX_threshold_PT2k);
+    bool ptc401_valid = (sensors.ptc401 >= MIN_threshold && sensors.ptc401 =< MAX_threshold_PT1k);
+    bool ptc402_valid = (sensors.ptc402 >= MIN_threshold && sensors.ptc402 =< MAX_threshold_PT1k);
+    float p_inj_fuel;
+    float p_inj_lox;
+    float p_ch;
+    if (ptc401_valid && ptc402_valid) {
+        // Both are healthy: Take the average
+        p_ch = (ptc401_val + ptc402_val) / 2.0f;
+    } else if (ptc401_valid) {
+        // Only primary is healthy
+        p_inj_fuel = ptc401_val;
+    } else if (ptc402_valid) {
+        // Only backup is healthy
+        p_inj_fuel = ptc402_val;
+    } else {
+        // Both failed: Trigger Abort
+        out.set_fuel = true;
+        out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+        out.set_lox = true;
+        out.lox_pos = Controller::DEFAULT_LOX_POS;
+        out.next_state = SystemState_STATE_ABORT;
     }
-    float p_inj_fuel = sensors.pt203;
-    if (p_inj_fuel == 0.0f || p_inj_fuel == MAX_Sensor) {
-        p_inj_fuel = (sensors.ptf401 + 21.0f);      // Use backup fuel injector pressure sensor if primary fails, with offset
-        if (p_inj_fuel == 0.0f || p_inj_fuel == MAX_Sensor){    // abort if both fail
-            out.set_fuel = true;
-            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
-            out.set_lox = true;
-            out.lox_pos = Controller::DEFAULT_LOX_POS;
-            out.next_state = SystemState_STATE_ABORT;
-        }
+    if (pt203_valid && ptf401_valid) {
+        // Both are healthy: Take the average
+        p_inj_fuel = (pt203_val + ptf401_val) / 2.0f;
+    } else if (pt203_valid) {
+        // Only primary is healthy
+        p_inj_fuel = pt203_val;
+    } else if (ptf401_valid) {
+        // Only backup is healthy
+        p_inj_fuel = ptf401_val;
+    } else {
+        // Both failed: Trigger Abort
+        out.set_fuel = true;
+        out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+        out.set_lox = true;
+        out.lox_pos = Controller::DEFAULT_LOX_POS;
+        out.next_state = SystemState_STATE_ABORT;
     }
-    float p_inj_lox = sensors.pt103;
-    if (p_inj_lox == 0.0f || p_inj_lox == MAX_Sensor) {
-        p_inj_lox = (sensors.pto401 + 41.0f);       // Use backup lox injector pressure sensor if primary fails, with offset
-        if (p_inj_lox == 0.0f || p_inj_lox == MAX_Sensor){  // abort if both fail
-            out.set_fuel = true;
-            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
-            out.set_lox = true;
-            out.lox_pos = Controller::DEFAULT_LOX_POS;
-            out.next_state = SystemState_STATE_ABORT;
-        }
+    if (pt103_valid && pto401_valid) {
+        // Both are healthy: Take the average
+        p_inj_lox = (pt103_val + pto401_val) / 2.0f;
+    } else if (pt103_valid) {
+        // Only primary is healthy
+        p_inj_lox = pt103_val;
+    } else if (pto401_valid) {
+        // Only backup is healthy
+        p_inj_lox = pto401_val;
+    } else {
+        // Both failed: Trigger Abort
+        out.set_fuel = true;
+        out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+        out.set_lox = true;
+        out.lox_pos = Controller::DEFAULT_LOX_POS;
+        out.next_state = SystemState_STATE_ABORT;
     }
 
     // 3. Calculate mass flows
