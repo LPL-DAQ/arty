@@ -28,6 +28,8 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 import clickhouse_connect
 import polars as pl
+from collections import deque
+import plotext as plt
 
 
 THEME = {
@@ -57,8 +59,8 @@ VALVE_SEQ_DIR = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
-ZEPHYR_IP = "169.254.99.99"  # real board
-# ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
+# ZEPHYR_IP = "169.254.99.99"  # real board
+ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = "0.0.0.0"  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -102,6 +104,10 @@ _csv_rows_written: int = 0
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
 
+_GRAPH_MAXLEN = 300  # ~60 s at 5 Hz
+_graph_history: deque = deque(maxlen=_GRAPH_MAXLEN)
+_graph_lock = threading.Lock()
+
 
 def _make_tcp_socket() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -136,6 +142,7 @@ def listen_for_telemetry():
                 (_last_packet_lock, "_last_packet_lock"),
                 (_buffer_lock, "_buffer_lock"),
                 (_csv_store_lock, "_csv_store_lock"),
+                (_graph_lock, "_graph_lock"),
             ):
                 t0 = time.monotonic()
                 lock.acquire()
@@ -151,8 +158,10 @@ def listen_for_telemetry():
                         _last_packet_time = recv_time
                     elif lock is _buffer_lock:
                         _packet_buffer.append((recv_time, packet))
-                    else:
+                    elif lock is _csv_store_lock:
                         _csv_store.append((recv_time, packet))
+                    else:
+                        _graph_history.append(packet)
                 finally:
                     lock.release()
         except socket.timeout:
@@ -417,6 +426,134 @@ def _flush_loop():
 
 # ── Live status display ──────────────────────────────────────────────────────
 
+def _plotext_panel(title: str) -> Panel:
+    """Wrap the current plotext figure in a rich Panel."""
+    t = THEME
+    return Panel(
+        Text.from_ansi(plt.build()),
+        title=f"[{t['primary']}]{title}[/{t['primary']}]",
+        border_style=t["panel_border"],
+        padding=(0, 0),
+    )
+
+
+def _waiting_panel(title: str) -> Panel:
+    t = THEME
+    return Panel(
+        f"[{t['muted']}]Waiting for data...[/{t['muted']}]",
+        title=f"[{t['primary']}]{title}[/{t['primary']}]",
+        border_style=t["panel_border"],
+    )
+
+
+def _half_width() -> int:
+    return (console.width // 2) - 6
+
+
+def _build_fuel_valve_graph() -> Panel:
+    """Fuel valve driver and encoder positions over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🟡 Fuel Valve")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.fuel_valve.driver_setpoint_pos_deg for p in history], label="Driver",  color=( 50, 100, 220), marker="braille")
+    plt.plot(times, [p.fuel_valve.encoder_pos_deg         for p in history], label="Encoder", color=(255, 220,   0), marker="braille")
+    plt.ylim(-5, 95)
+    plt.xlabel("t (s)")
+    plt.ylabel("deg")
+    return _plotext_panel("🟡 Fuel Valve")
+
+
+def _build_lox_valve_graph() -> Panel:
+    """LOX valve driver and encoder positions over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🔴 LOX Valve")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.lox_valve.driver_setpoint_pos_deg for p in history], label="Driver",  color=(  0, 200, 220), marker="braille")
+    plt.plot(times, [p.lox_valve.encoder_pos_deg         for p in history], label="Encoder", color=(220,  50,  50), marker="braille")
+    plt.ylim(-5, 95)
+    plt.xlabel("t (s)")
+    plt.ylabel("deg")
+    return _plotext_panel("🔴 LOX Valve")
+
+
+def _build_fuel_graph() -> Panel:
+    """Fuel-side pressure sensors (200-series + PTC) over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🟡 Fuel Sensors")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.analog_sensors.pt202   for p in history], label="PT-202",   color=(255, 220,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.pt203   for p in history], label="PT-203",   color=( 50, 200,  50), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptf401  for p in history], label="PTF-401",  color=(255, 140,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc401  for p in history], label="PTC-401",  color=(  0, 200, 220), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc402  for p in history], label="PTC-402",  color=(200,  50, 200), marker="braille")
+    fuel_vals = (
+        [p.analog_sensors.pt202  for p in history] +
+        [p.analog_sensors.pt203  for p in history] +
+        [p.analog_sensors.ptf401 for p in history] +
+        [p.analog_sensors.ptc401 for p in history] +
+        [p.analog_sensors.ptc402 for p in history]
+    )
+    plt.ylim(30, max(fuel_vals) * 1.05 if max(fuel_vals) > 30 else 60)
+    plt.xlabel("t (s)")
+    plt.ylabel("psi")
+    return _plotext_panel("🟡 Fuel Sensors (200s + PTC)")
+
+
+def _build_lox_graph() -> Panel:
+    """LOX-side pressure sensors (100-series + PTC) over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🔴 LOX Sensors")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.analog_sensors.pt102   for p in history], label="PT-102",   color=(255, 220,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.pt103   for p in history], label="PT-103",   color=( 50, 200,  50), marker="braille")
+    plt.plot(times, [p.analog_sensors.pto401  for p in history], label="PTO-401",  color=(255, 140,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc401  for p in history], label="PTC-401",  color=(  0, 200, 220), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc402  for p in history], label="PTC-402",  color=(200,  50, 200), marker="braille")
+    lox_vals = (
+        [p.analog_sensors.pt102  for p in history] +
+        [p.analog_sensors.pt103  for p in history] +
+        [p.analog_sensors.pto401 for p in history] +
+        [p.analog_sensors.ptc401 for p in history] +
+        [p.analog_sensors.ptc402 for p in history]
+    )
+    plt.ylim(30, max(lox_vals) * 1.05 if max(lox_vals) > 30 else 60)
+    plt.xlabel("t (s)")
+    plt.ylabel("psi")
+    return _plotext_panel("🔴 LOX Sensors (100s + PTC)")
+
+
 STATE_COLORS = {
     "STATE_UNKNOWN": "dim white",
     "STATE_IDLE": "green",
@@ -553,7 +690,12 @@ def _build_status_renderable():
         Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]", border_style=t["panel_border"]),
     ])
 
-    return Group(header_panel, bottom)
+    return Group(
+        header_panel,
+        bottom,
+        Columns([_build_fuel_valve_graph(), _build_lox_valve_graph()]),
+        Columns([_build_fuel_graph(),       _build_lox_graph()]),
+    )
 
 
 def cmd_live_status():
