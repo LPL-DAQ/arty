@@ -91,9 +91,12 @@ data_sock = None
 _packet_buffer: list = []
 _buffer_lock   = threading.Lock()
 
-# All received packets are accumulated in memory; CSV is written once on exit.
-_csv_store: list = []           # list of (recv_time: float, pkt: DataPacket)
+_csv_store: list = []           # list of (recv_time: float, pkt: DataPacket); drained each second
 _csv_store_lock = threading.Lock()
+_csv_path: pathlib.Path | None = None   # set on first write
+_csv_fh = None                          # open file handle
+_csv_writer = None                      # csv.DictWriter bound to _csv_fh
+_csv_rows_written: int = 0
 
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
@@ -218,35 +221,38 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
 
 
 def _write_csv_on_exit():
-    """Write all accumulated telemetry to a single CSV file at exit time."""
-    with _csv_store_lock:
-        snapshot = list(_csv_store)
+    """Flush any remaining buffered packets to the CSV file and close it."""
+    global _csv_fh, _csv_writer, _csv_rows_written, _csv_path
 
-    if not snapshot:
-        console.print(
-            f"  [{THEME['muted']}]No telemetry received — CSV not written.[/{THEME['muted']}]"
-        )
+    with _csv_store_lock:
+        remaining = list(_csv_store)
+        _csv_store.clear()
+
+    if remaining and _csv_fh is None:
+        # Client exited before the first flush_loop drain (ran very briefly)
+        _csv_path = pathlib.Path(f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv")
+        _csv_fh = open(_csv_path, "w", newline="")
+        _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+        _csv_writer.writeheader()
+
+    if _csv_fh is None:
+        console.print(f"  [{THEME['muted']}]No telemetry received — CSV not written.[/{THEME['muted']}]")
         return
 
-    exit_ts  = time.strftime('%Y%m%d_%H%M%S')
-    csv_path = pathlib.Path(f"raw_sensors_{exit_ts}.csv")
+    for recv_time, pkt in remaining:
+        try:
+            for row in _packet_to_csv_rows(recv_time, pkt):
+                _csv_writer.writerow(row)
+                _csv_rows_written += 1
+        except Exception as e:
+            console.print(f"  [bold red]CSV row error:[/bold red] {e}")
 
-    total_rows = 0
-    with open(csv_path, "w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        for recv_time, pkt in snapshot:
-            try:
-                for row in _packet_to_csv_rows(recv_time, pkt):
-                    writer.writerow(row)
-                    total_rows += 1
-            except Exception as e:
-                console.print(f"  [bold red]CSV row error:[/bold red] {e}")
-
+    _csv_fh.close()
+    _csv_fh = None
     console.print(
         f"\n  {THEME['icon_ok']} [bold green]CSV saved →[/bold green] "
-        f"[dim]{csv_path.resolve()}[/dim]\n"
-        f"  [{THEME['muted']}]{total_rows:,} rows from {len(snapshot):,} packets[/{THEME['muted']}]"
+        f"[dim]{_csv_path.resolve()}[/dim]\n"
+        f"  [{THEME['muted']}]{_csv_rows_written:,} rows written[/{THEME['muted']}]"
     )
 
 
@@ -327,6 +333,30 @@ def _flush_loop():
         except Exception as e:
             console.print(f"  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}")
             ch = None
+
+        # ── CSV incremental flush ────────────────────────────────────────────
+        with _csv_store_lock:
+            if _csv_store:
+                csv_batch = list(_csv_store)
+                _csv_store.clear()
+            else:
+                csv_batch = []
+
+        if csv_batch:
+            global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
+            if _csv_fh is None:
+                _csv_path = pathlib.Path(f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv")
+                _csv_fh = open(_csv_path, "w", newline="")
+                _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+                _csv_writer.writeheader()
+            try:
+                for recv_time, pkt in csv_batch:
+                    for row in _packet_to_csv_rows(recv_time, pkt):
+                        _csv_writer.writerow(row)
+                        _csv_rows_written += 1
+                _csv_fh.flush()
+            except Exception as e:
+                console.print(f"  [bold red]CSV write error:[/bold red] {e}")
 
 
 # ── Live status display ──────────────────────────────────────────────────────
