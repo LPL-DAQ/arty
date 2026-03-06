@@ -268,6 +268,7 @@ def _reconnect_and_resubscribe():
             pass
         try:
             data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            data_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             data_sock.bind(("0.0.0.0", LOCAL_PORT))
         except Exception as e:
             console.print(f"  [{THEME['danger']}]Failed to recreate UDP socket: {e}[/{THEME['danger']}]")
