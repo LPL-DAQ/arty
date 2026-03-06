@@ -128,8 +128,11 @@ def listen_for_telemetry():
                 _packet_buffer.append((recv_time, packet))
             with _csv_store_lock:
                 _csv_store.append((recv_time, packet))
+        except socket.timeout:
+            continue  # loop back and re-read data_sock global
         except Exception as e:
             console.print(f"  [bold red]listen_for_telemetry error:[/bold red] {type(e).__name__}: {e}")
+            continue
 
 
 # update SystemState with (0–7); range 8
@@ -253,25 +256,12 @@ _STREAM_TIMEOUT = 5.0  # seconds without a packet before we re-subscribe
 
 
 def _reconnect_and_resubscribe():
-    """Replace the global TCP and UDP sockets and re-issue a subscribe request."""
-    global sock, data_sock
+    """Reconnect the TCP socket and re-issue a subscribe request."""
+    global sock
     try:
         sock.close()
     except Exception:
         pass
-    # Recreate the UDP socket — closing the old one unblocks listen_for_telemetry's
-    # recvfrom (raises OSError), so its next iteration picks up the new socket.
-    if data_sock is not None:
-        try:
-            data_sock.close()
-        except Exception:
-            pass
-        try:
-            data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            data_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            data_sock.bind(("0.0.0.0", LOCAL_PORT))
-        except Exception as e:
-            console.print(f"  [{THEME['danger']}]Failed to recreate UDP socket: {e}[/{THEME['danger']}]")
     try:
         sock = _make_tcp_socket()
         cmd_subscribe_data_stream()
@@ -550,7 +540,8 @@ def _recv_response() -> clover_pb2.Response:
 def send_request(req: clover_pb2.Request, label: str) -> bool:
     global sock
     """Serialize and send a Request over TCP, then read and display the Response."""
-    payload = _VarintBytes(len(req.SerializeToString())) + req.SerializeToString()
+    raw = req.SerializeToString()
+    payload = _VarintBytes(len(raw)) + raw
     for attempt in range(2):
         try:
             sock.sendall(payload)
@@ -1090,7 +1081,9 @@ def main():
 
     if not args.no_data:
         data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        data_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         data_sock.bind(("0.0.0.0", LOCAL_PORT))
+        data_sock.settimeout(1.0)
         console.print(f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]")
         cmd_subscribe_data_stream()
         threading.Thread(target=listen_for_telemetry, daemon=True).start()
