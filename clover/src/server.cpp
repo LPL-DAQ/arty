@@ -142,7 +142,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         Request request = Request_init_default;
         bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
         if (!valid) {
-            LOG_INF("Failed to decode next message, this can happen if connection is severed.");
+            LOG_ERR("Failed to decode next message: errno=%d pb_err='%s'", errno, PB_GET_ERROR(&pb_input));
             break;
         }
 
@@ -155,29 +155,27 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
             k_mutex_lock(&data_client_info_guard, K_FOREVER);
-            bool found_data_client_slot = false;
+            // Find a free slot; if none is free (e.g. a stale zombie connection holds it),
+            // evict the oldest subscriber so a live reconnect always succeeds.
+            int target_slot = -1;
             for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-                if (data_client_slot_indexes[i] != -1) {
-                    continue;
+                if (data_client_slot_indexes[i] == -1) {
+                    target_slot = i;
+                    break;
                 }
-                found_data_client_slot = true;
-                data_client_slot_indexes[i] = thread_index;
-
-                int err = getpeername(client_guard.socket, &data_client_addrs[i], &data_client_addr_lens[i]);
-                if (err) {
-                    LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
-                }
-
-                // Set client port
-                reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
-
-                // ADDED: Break out of loop once a slot is found so we don't accidentally overwrite multiple slots
-                break;
+            }
+            if (target_slot == -1) {
+                // All slots occupied by stale connections — evict slot 0.
+                LOG_WRN("All data client slots occupied, evicting slot 0 for new subscriber");
+                target_slot = 0;
             }
 
-            if (!found_data_client_slot) {
-                LOG_ERR("Did not find a data client slot");
+            data_client_slot_indexes[target_slot] = thread_index;
+            int err = getpeername(client_guard.socket, &data_client_addrs[target_slot], &data_client_addr_lens[target_slot]);
+            if (err) {
+                LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
             }
+            reinterpret_cast<sockaddr_in*>(&data_client_addrs[target_slot])->sin_port = htons(19691);
 
             k_mutex_unlock(&data_client_info_guard);
             break;
@@ -274,6 +272,18 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
     }
+
+    // Clear our data client subscription immediately on exit so the slot is available
+    // before the reaper thread wakes up. Without this there is a ~50ms window where a
+    // new subscribe request arrives and finds the slot still occupied by this dying thread.
+    k_mutex_lock(&data_client_info_guard, K_FOREVER);
+    for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
+        if (data_client_slot_indexes[i] == thread_index) {
+            data_client_slot_indexes[i] = -1;
+            data_client_addr_lens[i] = sizeof(sockaddr);
+        }
+    }
+    k_mutex_unlock(&data_client_info_guard);
 }
 
 /// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
@@ -385,6 +395,11 @@ void serve_command_connections()
 
         // Spawn thread to service client connection
         int client_socket = zsock_accept(server_socket, nullptr, nullptr);
+        if (client_socket < 0) {
+            LOG_ERR("zsock_accept failed: errno=%d — releasing slot and retrying", errno);
+            k_sem_give(&num_open_connections);
+            continue;
+        }
         LOG_INF("Spawning thread in slot %d to serve socket %d", connection_index, client_socket);
         k_thread_create(
             &client_threads[connection_index],
@@ -450,17 +465,22 @@ void serve_data_connections()
 
             // Lock the client info guard and broadcast the already-encoded buffer to all subscribed IPs
             k_mutex_lock(&data_client_info_guard, K_FOREVER);
+            bool any_client = false;
             for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
                 if (data_client_slot_indexes[i] == -1) {
                     continue;
                 }
+                any_client = true;
 
                 const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
 
                 // ADDED: static_cast to size_t to safely compare signed zsock_sendto return with unsigned bytes_written
                 if (static_cast<size_t>(bytes_sent) != data_packet_ostream.bytes_written) {
-                    LOG_ERR("Failed to send data packet over UDP: %d", bytes_sent);
+                    LOG_ERR("sendto failed: bytes_sent=%d errno=%d", bytes_sent, errno);
                 }
+            }
+            if (!any_client) {
+                LOG_WRN("Data packet dequeued but no UDP clients subscribed (slot_indexes all -1)");
             }
             k_mutex_unlock(&data_client_info_guard);
         }

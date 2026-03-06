@@ -57,8 +57,8 @@ VALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
-ZEPHYR_IP = "169.254.99.99"  # real board
-#ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
+#ZEPHYR_IP = "169.254.99.99"  # real board
+ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 19690
 LOCAL_PORT  = 19691
 
@@ -128,8 +128,8 @@ def listen_for_telemetry():
                 _packet_buffer.append((recv_time, packet))
             with _csv_store_lock:
                 _csv_store.append((recv_time, packet))
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"  [bold red]listen_for_telemetry error:[/bold red] {type(e).__name__}: {e}")
 
 
 # update SystemState with (0–7); range 8
@@ -278,6 +278,10 @@ def _flush_loop():
             idle = time.time() - _last_packet_time
         if _last_packet_time > 0 and idle > _STREAM_TIMEOUT:
             console.print(f"  [{THEME['warning']}]No telemetry for {idle:.1f}s — reconnecting...[/{THEME['warning']}]")
+            with packet_lock:
+                last_pkt = latest_packet
+            if last_pkt:
+                console.print(f"  [dim]Last packet: seq={last_pkt.sequence_number} queue={last_pkt.data_queue_size} time_ns={last_pkt.time_ns}[/dim]")
             _reconnect_and_resubscribe()
 
         if ch is None:
