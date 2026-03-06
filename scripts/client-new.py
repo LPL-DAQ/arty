@@ -253,12 +253,24 @@ _STREAM_TIMEOUT = 5.0  # seconds without a packet before we re-subscribe
 
 
 def _reconnect_and_resubscribe():
-    """Replace the global TCP socket and re-issue a subscribe request."""
-    global sock
+    """Replace the global TCP and UDP sockets and re-issue a subscribe request."""
+    global sock, data_sock
     try:
         sock.close()
     except Exception:
         pass
+    # Recreate the UDP socket — closing the old one unblocks listen_for_telemetry's
+    # recvfrom (raises OSError), so its next iteration picks up the new socket.
+    if data_sock is not None:
+        try:
+            data_sock.close()
+        except Exception:
+            pass
+        try:
+            data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            data_sock.bind(("0.0.0.0", LOCAL_PORT))
+        except Exception as e:
+            console.print(f"  [{THEME['danger']}]Failed to recreate UDP socket: {e}[/{THEME['danger']}]")
     try:
         sock = _make_tcp_socket()
         cmd_subscribe_data_stream()
