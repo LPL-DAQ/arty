@@ -11,6 +11,9 @@ LOG_MODULE_DECLARE(Controller, LOG_LEVEL_INF);
 
 namespace {
 
+static constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
+static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
+
 // TODO: Should constants be moved to header?
 // Physics constants
 static constexpr float EFFICIENCY = 0.93f;
@@ -109,12 +112,12 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     }
 
     // 2. Read pressures
-    float ptc401_val = sensors.ptc401 - 13.0f;  // Adjusted value
-    float pto401_val = sensors.pto401 - 14.0f;  // Adjusted value
-    float pt103_val = sensors.pt103 - 30.0f;    // Adjusted value
-    float ptf401_val = sensors.ptf401 - 18.7f;  // Adjusted value
-    float pt203_val = sensors.pt203 - 28.0f;    // Adjusted value
-    float ptc402_val = sensors.ptc402 - 13.0f;  // Adjusted value
+    float ptc401_val = sensors.ptc401;  // Adjusted value
+    float pto401_val = sensors.pto401 + LOX_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+    float pt103_val = sensors.pt103;    // Adjusted value
+    float ptf401_val = sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+    float pt203_val = sensors.pt203;    // Adjusted value
+    float ptc402_val = sensors.ptc402;  // Adjusted value
     bool pt203_valid = (sensors.pt203 >= MIN_threshold && sensors.pt203 <= MAX_threshold_PT2k);
     bool ptf401_valid = (sensors.ptf401 >= MIN_threshold && sensors.ptf401 <= MAX_threshold_PT2k);
     bool pt103_valid = (sensors.pt103 >= MIN_threshold && sensors.pt103 <= MAX_threshold_PT2k);
@@ -130,11 +133,11 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     }
     else if (ptc401_valid) {
         // Only primary is healthy
-        p_inj_fuel = ptc401_val;
+        p_ch = ptc401_val;
     }
     else if (ptc402_valid) {
         // Only backup is healthy
-        p_inj_fuel = ptc402_val;
+        p_ch = ptc402_val;
     }
     else {
         // Both failed: Trigger Abort
@@ -143,6 +146,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
         out.set_lox = true;
         out.lox_pos = Controller::DEFAULT_LOX_POS;
         out.next_state = SystemState_STATE_ABORT;
+        return {out, data};
     }
     if (pt203_valid && ptf401_valid) {
         // Both are healthy: Take the average
@@ -163,6 +167,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
         out.set_lox = true;
         out.lox_pos = Controller::DEFAULT_LOX_POS;
         out.next_state = SystemState_STATE_ABORT;
+        return {out, data};
     }
     if (pt103_valid && pto401_valid) {
         // Both are healthy: Take the average
@@ -183,6 +188,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
         out.set_lox = true;
         out.lox_pos = Controller::DEFAULT_LOX_POS;
         out.next_state = SystemState_STATE_ABORT;
+        return {out, data};
     }
 
     // 3. Calculate mass flows

@@ -26,10 +26,8 @@ namespace {
     float lox_hardstop_position = 0.0f;
     bool lox_found_stop = false;
     float step_size = 0.002f; // in degrees, how much to move per step
-    int num_reps = 1; // number of times to hit the hard
     int rep_counter = 0;
     float pos_error_limit = 0.2f; // positional error limit
-    float backup_dist = 5.0f;
     float fuel_starting_error = 0.0f;
     float lox_starting_error = 0.0f;
 
