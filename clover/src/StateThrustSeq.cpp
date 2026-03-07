@@ -205,7 +205,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
     // 7. Predict Isp using chamber pressure and O/F
-    float predicted_isp = interp2D(isp_pc_axis, isp_pc_len, isp_of_axis, isp_of_len, isp_data, p_ch, of_safe);
+    float predicted_isp = IspLookupTable::interp(p_ch, of_safe);
 
     // 8. Predict thrust (convert to lbf-equivalent)
     float predicted_thrust = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
@@ -230,9 +230,8 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
 
     // 11. Plug alpha into Mprime contour
     float thrust_from_alpha = alpha * (thrust_axis[thrust_axis_len - 1] - thrust_axis[0]) + thrust_axis[0];
-    float fuel_valve_cmd = interp2D(thrust_axis, thrust_axis_len, of_axis, of_axis_len, fuel_valve_grid, thrust_from_alpha, target_of_safe);
-
-    float lox_valve_cmd = interp2D(thrust_axis, thrust_axis_len, of_axis, of_axis_len, lox_valve_grid, thrust_from_alpha, target_of_safe);
+    float fuel_valve_cmd = MprimeFuelPosDegLookupTable::interp(thrust_from_alpha, target_of_safe);
+    float lox_valve_cmd = MprimeLoxPosDegLookupTable::interp(thrust_from_alpha, target_of_safe);
 
     // 12. Clamp valve commands to safe ranges
     fuel_valve_cmd = std::clamp(fuel_valve_cmd, MIN_VALVE_POS, MAX_VALVE_POS);
