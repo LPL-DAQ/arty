@@ -43,6 +43,11 @@ constexpr int MAX_THREAD_NAME_LENGTH = 10;
 static std::array<std::string, MAX_OPEN_CLIENTS> thread_names;
 K_MUTEX_DEFINE(thread_info_guard);
 
+/// Tracks when DAQ last pinged (AKA, ID'd itself)
+static int daq_thread_index = -1;
+static int64_t daq_last_pinged_ms = 0;
+K_MUTEX_DEFINE(daq_status_guard);
+
 constexpr int MAX_DATA_CLIENTS = 1;
 static std::array<sockaddr, MAX_DATA_CLIENTS> data_client_addrs;
 static std::array<socklen_t, MAX_DATA_CLIENTS> data_client_addr_lens;
@@ -52,26 +57,6 @@ K_MUTEX_DEFINE(data_client_info_guard);
 /// Synchronizes command/data server threads to ensure they only start accepting connections after startup is fully
 /// done (i.e., when serve_connections() is called).
 K_SEM_DEFINE(allow_serve_connections_sem, 0, 2);
-
-/// Helper that sends a payload completely through an socket
-int send_fully(int sock, const char* buf, int len)
-{
-    int bytes_sent = 0;
-    while (bytes_sent < len) {
-        int ret = zsock_send(sock, buf + bytes_sent, len - bytes_sent, 0);
-        if (ret < 0) {
-            LOG_ERR("Unexpected error while sending response to sock %d: err %d", sock, ret);
-            return ret;
-        }
-        bytes_sent += ret;
-    }
-    return 0;
-}
-
-int send_string_fully(int sock, const std::string& payload)
-{
-    return send_fully(sock, payload.c_str(), std::ssize(payload));
-}
 
 /// Internal callback for pb_istream, used to read from socket to internal buffer and manage count.
 bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t count)
@@ -126,6 +111,33 @@ bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
 pb_istream_t pb_istream_from_socket(int sock)
 {
     return pb_istream_t{.callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(sock), .bytes_left = SIZE_MAX};
+}
+
+static std::expected<void, Error> handle_identify_client(const IdentifyClientRequest& req, int thread_index)
+{
+    switch (req.client) {
+    case ClientType_DAQ:
+        k_mutex_lock(&daq_status_guard, K_FOREVER);
+        daq_thread_index = thread_index;
+        daq_last_pinged_ms = k_uptime_get();
+        k_mutex_unlock(&daq_status_guard);
+        return {};
+
+    case ClientType_GNC:
+        return {};
+
+    default:
+        return std::unexpected(Error::from_cause("Unknown client: %d", req.client));
+    }
+}
+
+daq_client_status get_daq_client_status()
+{
+    k_mutex_lock(&daq_status_guard, K_FOREVER);
+    auto ret = daq_client_status{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
+
+    k_mutex_unlock(&daq_status_guard);
+    return ret;
 }
 
 /// Handles a client connection. Should run in its own thread.
@@ -184,6 +196,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
         case Request_identify_client_tag: {
             LOG_INF("Identify client");
+            cmd_result = handle_identify_client(request.payload.identify_client, thread_index);
+            break;
+        }
+        case Request_configure_analog_sensors_bias_tag: {
+            LOG_INF("Configure analog sensor bias");
+            cmd_result = Controller::handle_configure_analog_sensor_bias(request.payload.configure_analog_sensors_bias);
             break;
         }
         case Request_reset_valve_position_tag: {
@@ -294,6 +312,14 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                         }
                     }
                     k_mutex_unlock(&data_client_info_guard);
+
+                    // Clean up potential DAQ connection
+                    k_mutex_lock(&daq_status_guard, K_FOREVER);
+                    if (daq_thread_index == i) {
+                        daq_thread_index = -1;
+                        daq_last_pinged_ms = k_uptime_get();
+                    }
+                    k_mutex_unlock(&daq_status_guard);
 
                     has_thread[i] = false;
                     freed_threads[i] = true;

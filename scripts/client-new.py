@@ -2,12 +2,14 @@
 # changes made AFTER .proto file updates
 
 import argparse
+import math
 import socket
 import threading
 import sys
 import time
 import csv
 import pathlib
+from google.protobuf import text_format
 from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
 from rich.panel import Panel
@@ -49,6 +51,9 @@ THEME = {
     "icon_id":      "🪪",
     "icon_quit":    "❌",
 }
+
+VALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
+THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
 ZEPHYR_IP = "169.254.99.99"  # real board
@@ -137,7 +142,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     f = pkt.fuel_valve
     l = pkt.lox_valve
     return {
-        'time':                     int(pkt.time_ns),
+        'time':                     int(recv_time * 1e6),
         'gnc_state':                float(pkt.state),
         'gnc_data_queue_size':      float(pkt.data_queue_size),
         'gnc_sequence_number':      float(pkt.sequence_number),
@@ -232,14 +237,22 @@ def _write_csv_on_exit():
 
 def _flush_loop():
     """Background thread — drains the packet buffer into ClickHouse every second."""
-    ch = clickhouse_connect.get_client(
-        host=CH_HOST,
-        username=CH_USER,
-        password=CH_PASSWORD,
-        database=CH_DATABASE,
-    )
+    ch = None
     while True:
         time.sleep(1.0)
+
+        if ch is None:
+            try:
+                ch = clickhouse_connect.get_client(
+                    host=CH_HOST,
+                    username=CH_USER,
+                    password=CH_PASSWORD,
+                    database=CH_DATABASE,
+                )
+            except Exception as e:
+                console.print(f"  [bold red]ClickHouse connect error:[/bold red] {e}")
+                continue
+
         with _buffer_lock:
             if not _packet_buffer:
                 continue
@@ -253,8 +266,7 @@ def _flush_loop():
                 .unpivot(index=['time'], variable_name='sensor', value_name='value')
                 .drop_nulls('value')
                 .with_columns(
-                    # time_ns in nanoseconds
-                    pl.from_epoch('time', time_unit='ns').alias('time'),
+                    pl.from_epoch('time', time_unit='us').alias('time'),
                     pl.col('value').cast(pl.Float64),
                     pl.when(pl.col('sensor') == 'gnc_state')
                       .then(pl.col('value').map_elements(
@@ -267,7 +279,8 @@ def _flush_loop():
             )
             ch.insert_df_arrow('raw_sensors', df)
         except Exception as e:
-            console.print(f"  [bold red]ClickHouse insert error:[/bold red] {e}")
+            console.print(f"  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}")
+            ch = None
 
 
 # ── Live status display ──────────────────────────────────────────────────────
@@ -346,24 +359,25 @@ def _build_status_renderable():
     st = Table(box=box.SIMPLE_HEAD, show_header=True,
                header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
     st.add_column("Sensor", style="bold white", no_wrap=True)
-    st.add_column("Value",  style="white",      no_wrap=True)
+    st.add_column("Value",  style="white",      no_wrap=True, justify="right")
+    st.add_column("Unit",   style=t["muted"],   no_wrap=True)
 
     s = pkt.analog_sensors
-    for name, val in [
-        ("PT-102",        s.pt102),
-        ("PT-103",        s.pt103),
-        ("PT-202",        s.pt202),
-        ("PT-203",        s.pt203),
-        ("PT-F401",       s.ptf401),
-        ("PT-O401",       s.pto401),
-        ("PT-C401",       s.ptc401),
-        ("PT-C402",       s.ptc402),
-        ("TC-102",        s.tc102),       # new sensor
-        ("TC-102.5",      s.tc102_5),     # new sensor
-        ("ADC t (ns)",    s.adc_read_time_ns),  # new timing
+    for name, val, unit in [
+        ("PT-102",     s.pt102,            "psi"),
+        ("PT-103",     s.pt103,            "psi"),
+        ("PT-202",     s.pt202,            "psi"),
+        ("PT-203",     s.pt203,            "psi"),
+        ("PT-F401",    s.ptf401,           "psi"),
+        ("PT-O401",    s.pto401,           "psi"),
+        ("PT-C401",    s.ptc401,           "psi"),
+        ("PT-C402",    s.ptc402,           "psi"),
+        ("TC-102",     s.tc102,            "°C"),
+        ("TC-102.5",   s.tc102_5,          "°C"),
+        ("ADC t",      s.adc_read_time_ns, "ns"),
     ]:
         val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
-        st.add_row(name, val_str)
+        st.add_row(name, val_str, unit)
 
     bottom = Columns([
         Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",   border_style=t["panel_border"]),
@@ -451,23 +465,61 @@ def get_toolbar():
 
 # ── TCP sender ───────────────────────────────────────────────────────────────
 
+def _recv_response() -> clover_pb2.Response:
+    """Read a varint-length-prefixed Response from the TCP socket."""
+    length = 0
+    shift = 0
+    while True:
+        b = sock.recv(1)
+        if not b:
+            raise ConnectionError("Connection closed while reading response length")
+        byte = b[0]
+        length |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            break
+        shift += 7
+
+    data = b""
+    while len(data) < length:
+        chunk = sock.recv(length - len(data))
+        if not chunk:
+            raise ConnectionError("Connection closed while reading response body")
+        data += chunk
+
+    resp = clover_pb2.Response()
+    resp.ParseFromString(data)
+    return resp
+
+
 def send_request(req: clover_pb2.Request, label: str) -> bool:
     global sock
-    """Serialize and send a Request over TCP. Returns True on success."""
+    """Serialize and send a Request over TCP, then read and display the Response."""
     try:
-
         payload = req.SerializeToString()
         payload = _VarintBytes(len(payload)) + payload
         sock.sendall(payload)
+    except Exception as e:
+        console.print(
+            f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
+        )
+        return False
+
+    try:
+        resp = _recv_response()
+        if resp.HasField("err"):
+            console.print(
+                f"\n  {THEME['icon_warn']} [{THEME['danger']}]{label} rejected: {resp.err}[/{THEME['danger']}]\n"
+            )
+            return False
         console.print(
             f"\n  {THEME['icon_ok']} [{THEME['success']}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME['success']}]\n"
         )
         return True
     except Exception as e:
         console.print(
-            f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
+            f"\n  {THEME['icon_warn']} [{THEME['warning']}]{label} sent but no response: {e}[/{THEME['warning']}]\n"
         )
-        return False
+        return True
 
 # comment out to test in terminal without real data
 # def send_request(req, label):
@@ -642,17 +694,52 @@ def cmd_calibrate_valve():
     send_request(req, f"CALIBRATE_VALVE ({valve_name})")
 
 
+def _list_saved_sequences(subdir: pathlib.Path) -> list[pathlib.Path]:
+    if not subdir.exists():
+        return []
+    return sorted(subdir.glob("*.textproto"))
+
+
+def _pick_and_load_sequence(subdir: pathlib.Path, msg_class):
+    """Display saved sequences, prompt user to pick one, return parsed proto."""
+    files = _list_saved_sequences(subdir)
+    t = THEME
+    table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style=t["primary"],
+                  border_style=t["panel_border"], padding=(0, 2))
+    table.add_column("#",    style="bold white", no_wrap=True)
+    table.add_column("Name", style="white")
+    for i, f in enumerate(files, 1):
+        table.add_row(str(i), f.stem)
+    console.print(table)
+
+    choice = Prompt.ask("  Select", choices=[str(i) for i in range(1, len(files) + 1)])
+    chosen = files[int(choice) - 1]
+    msg = msg_class()
+    text_format.Parse(chosen.read_text(), msg)
+    console.print(f"  [{t['success']}]Loaded: {chosen.stem}[/{t['success']}]")
+    return msg
+
+
+def _save_sequence(subdir: pathlib.Path, prefix: str, msg):
+    """Prompt for a name and save a proto message as a .textproto file."""
+    t = THEME
+    subdir.mkdir(parents=True, exist_ok=True)
+    name = Prompt.ask("  Sequence name")
+    filename = subdir / f"{prefix}_{name}.textproto"
+    filename.write_text(text_format.MessageToString(msg))
+    console.print(f"  [{t['success']}]Saved → {filename}[/{t['success']}]")
+
+
 def _build_control_trace() -> clover_pb2.ControlTrace:
     """Interactively build a ControlTrace with one or more segments."""
     t = THEME
-    total_time = IntPrompt.ask("  Total trace duration (ms)")
-
     trace = clover_pb2.ControlTrace()
-    trace.total_time_ms = total_time
 
+    cursor_ms  = 0
+    cursor_val: float | None = None  # unknown until first segment
     while True:
-        console.print(f"\n  [{t['primary']}]─── Add a segment ───[/{t['primary']}]")
-        start_ms  = IntPrompt.ask("    Segment start time (ms)")
+        pos_str = f"{cursor_val:.2f}" if cursor_val is not None else "?"
+        console.print(f"\n  [{t['primary']}]─── Add a segment (t={cursor_ms} ms, pos={pos_str}) ───[/{t['primary']}]")
         length_ms = IntPrompt.ask("    Segment length (ms)")
 
         console.print("    Segment type:")
@@ -661,30 +748,45 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
         seg_type = Prompt.ask("    Choose", choices=["1", "2"], default="1")
 
         seg = trace.segments.add()
-        seg.start_ms  = start_ms
+        seg.start_ms  = cursor_ms
         seg.length_ms = length_ms
+        cursor_ms += length_ms
 
         if seg_type == "1":
-            start_val = FloatPrompt.ask("    Start value")
-            end_val   = FloatPrompt.ask("    End value")
+            if cursor_val is not None:
+                console.print(f"    [{t['muted']}]Start value locked to {cursor_val:.2f}[/{t['muted']}]")
+                start_val = cursor_val
+            else:
+                start_val = FloatPrompt.ask("    Start value")
+            end_val = FloatPrompt.ask("    End value")
             seg.linear.start_val = start_val
             seg.linear.end_val   = end_val
+            cursor_val = end_val
             console.print(f"    [{t['success']}]Linear segment: {start_val} → {end_val}[/{t['success']}]")
         else:
-            offset    = FloatPrompt.ask("    Offset (baseline)")
             amplitude = FloatPrompt.ask("    Amplitude")
             period    = FloatPrompt.ask("    Period (ms)")
             phase_deg = FloatPrompt.ask("    Phase (degrees)", default=0.0)
+            phase_rad = math.radians(phase_deg)
+            if cursor_val is not None:
+                offset = cursor_val - amplitude * math.sin(phase_rad)
+                console.print(f"    [{t['muted']}]Offset auto-set to {offset:.4f} for continuity[/{t['muted']}]")
+            else:
+                offset = FloatPrompt.ask("    Offset (baseline)")
+            end_val = offset + amplitude * math.sin(2 * math.pi * length_ms / period + phase_rad)
             seg.sine.offset    = offset
             seg.sine.amplitude = amplitude
             seg.sine.period    = period
             seg.sine.phase_deg = phase_deg
-            console.print(f"    [{t['success']}]Sine segment: offset={offset}, amp={amplitude}, T={period}ms[/{t['success']}]")
+            cursor_val = end_val
+            console.print(f"    [{t['success']}]Sine segment: offset={offset:.4f}, amp={amplitude}, T={period}ms → ends at {end_val:.2f}[/{t['success']}]")
 
         another = Confirm.ask("  Add another segment?", default=False)
         if not another:
             break
 
+    trace.total_time_ms = cursor_ms
+    console.print(f"  [{THEME['muted']}]Total trace duration: {cursor_ms} ms[/{THEME['muted']}]")
     return trace
 
 
@@ -695,6 +797,15 @@ def cmd_load_valve_sequence():
     """
     t = THEME
     console.print(f"\n  {t['icon_seq']} [{t['primary']}]Load Valve Sequence[/{t['primary']}]")
+
+    saved = _list_saved_sequences(VALVE_SEQ_DIR)
+    if saved and Confirm.ask("  Load a saved sequence?", default=True):
+        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadValveSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_valve_sequence.CopyFrom(loaded)
+        send_request(req, "LOAD_VALVE_SEQUENCE")
+        return
+
     console.print(f"  [{t['muted']}]Define a control trace for FUEL, LOX, or both. At least one required.[/{t['muted']}]")
 
     req = clover_pb2.Request()
@@ -703,19 +814,20 @@ def cmd_load_valve_sequence():
     if do_fuel:
         console.print(f"\n  {t['icon_fuel']} [{t['warning']}]FUEL trace setup:[/{t['warning']}]")
         fuel_trace = _build_control_trace()
-        # renamed fuel_trace_deg
         req.load_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
 
     do_lox = Confirm.ask("\n  Configure LOX trace (degrees)?", default=True)
     if do_lox:
         console.print(f"\n  {t['icon_lox']} [{t['info']}]LOX trace setup:[/{t['info']}]")
         lox_trace = _build_control_trace()
-        # renamed lox_trace_deg
         req.load_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
 
     if not do_fuel and not do_lox:
         console.print(f"  [{t['danger']}]At least one trace is required — nothing sent.[/{t['danger']}]")
         return
+
+    if Confirm.ask("  Save this sequence for later?", default=False):
+        _save_sequence(VALVE_SEQ_DIR, "v", req.load_valve_sequence)
 
     send_request(req, "LOAD_VALVE_SEQUENCE")
 
@@ -742,12 +854,25 @@ def cmd_load_thrust_sequence():
     """
     t = THEME
     console.print(f"\n  {t['icon_loop']} [{t['primary']}]Load Thrust Sequence[/{t['primary']}]")
+
+    saved = _list_saved_sequences(THRUST_SEQ_DIR)
+    if saved and Confirm.ask("  Load a saved sequence?", default=True):
+        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrustSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_thrust_sequence.CopyFrom(loaded)
+        send_request(req, "LOAD_THRUST_SEQUENCE")
+        return
+
     console.print(f"  [{t['muted']}]Thrust trace values are in lbf.[/{t['muted']}]")
 
     thrust_trace = _build_control_trace()
 
     req = clover_pb2.Request()
     req.load_thrust_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
+
+    if Confirm.ask("  Save this sequence for later?", default=False):
+        _save_sequence(THRUST_SEQ_DIR, "t", req.load_thrust_sequence)
+
     send_request(req, "LOAD_THRUST_SEQUENCE")
 
 
