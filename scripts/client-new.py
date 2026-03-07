@@ -55,7 +55,7 @@ THEME = {
     "icon_quit": "❌",
 }
 
-VALVE_SEQ_DIR = pathlib.Path("sequences/valve")
+ALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
@@ -339,19 +339,6 @@ def _flush_loop():
     while True:
         time.sleep(1.0)
 
-        # # Re-subscribe if no packets received recently
-        # with _last_packet_lock:
-        #     idle = time.time() - _last_packet_time
-        # if _last_packet_time > 0 and idle > _STREAM_TIMEOUT:
-        #     console.print(f"  [{THEME['warning']}]No telemetry for {idle:.1f}s — reconnecting...[/{THEME['warning']}]")
-        #     with packet_lock:
-        #         last_pkt = latest_packet
-        #     if last_pkt:
-        #         console.print(f"  [dim]Last packet: seq={last_pkt.sequence_number} queue={last_pkt.data_queue_size} time_ns={last_pkt.time_ns}[/dim]")
-        #     _reconnect_and_resubscribe()
-        #     with _last_packet_lock:
-        #         _last_packet_time = time.time()
-
         if ch is None:
             try:
                 ch = clickhouse_connect.get_client(
@@ -377,18 +364,15 @@ def _flush_loop():
                 .unpivot(index=["time"], variable_name="sensor", value_name="value")
                 .drop_nulls("value")
                 .with_columns(
-                    pl.from_epoch("time", time_unit="us").alias("time"),
-                    pl.col("value").cast(pl.Float64),
-                    pl.when(pl.col("sensor") == "gnc_state")
-                    .then(
-                        pl.col("value").map_elements(
-                            lambda v: _STATE_NAMES.get(v, ""), return_dtype=pl.String
-                        )
-                    )
-                    .otherwise(pl.lit(""))
-                    .alias("event"),
-                    pl.lit("atlas").alias("system"),
-                    pl.lit("gnc").alias("source"),
+                    pl.from_epoch('time', time_unit='us').alias('time'),
+                    pl.col('value').cast(pl.Float64),
+                    pl.when(pl.col('sensor') == 'gnc_state')
+                      .then(pl.col('value').map_elements(
+                          lambda v: _STATE_NAMES.get(v, ''), return_dtype=pl.String))
+                      .otherwise(pl.lit(''))
+                      .alias('event'),
+                    pl.lit('atlas').alias('system'),
+                    pl.lit('gnc').alias('source'),
                 )
             )
             ch.insert_df_arrow("raw_sensors", df)
@@ -643,20 +627,22 @@ def _build_status_renderable():
         padding=(0, 1),
     )
     st.add_column("Sensor", style="bold white", no_wrap=True)
-    st.add_column("Value", style="white", no_wrap=True, justify="right")
-    st.add_column("Unit", style=t["muted"], no_wrap=True)
+    st.add_column("Value",  style="white",      no_wrap=True, justify="right")
+    st.add_column("Unit",   style=t["muted"],   no_wrap=True)
 
     s = pkt.analog_sensors
     for name, val, unit in [
-        ("PT-102", s.pt102, "psi"),
-        ("PT-103", s.pt103, "psi"),
-        ("PT-202", s.pt202, "psi"),
-        ("PT-203", s.pt203, "psi"),
-        ("PTF-401", s.ptf401, "psi"),
-        ("PTO-401", s.pto401, "psi"),
-        ("PTC-401", s.ptc401, "psi"),
-        ("PTC-402", s.ptc402, "psi"),
-        ("ADC t", s.adc_read_time_ns / 1000, "μs"),
+        ("PT-102",     s.pt102,            "psi"),
+        ("PT-103",     s.pt103,            "psi"),
+        ("PT-202",     s.pt202,            "psi"),
+        ("PT-203",     s.pt203,            "psi"),
+        ("PT-F401",    s.ptf401,           "psi"),
+        ("PT-O401",    s.pto401,           "psi"),
+        ("PT-C401",    s.ptc401,           "psi"),
+        ("PT-C402",    s.ptc402,           "psi"),
+        ("TC-102",     s.tc102,            "°C"),
+        ("TC-102.5",   s.tc102_5,          "°C"),
+        ("ADC t",      s.adc_read_time_ns, "ns"),
     ]:
         val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
         st.add_row(name, val_str, unit)
@@ -780,8 +766,6 @@ def get_toolbar():
 
 
 # ── TCP sender ───────────────────────────────────────────────────────────────
-
-
 def _recv_response() -> clover_pb2.Response:
     """Read a varint-length-prefixed Response from the TCP socket."""
     length = 0
@@ -851,7 +835,6 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
             f"\n  {THEME['icon_warn']} [{THEME['warning']}]{label} sent but no response: {e}[/{THEME['warning']}]\n"
         )
         return True
-
 
 # comment out to test in terminal without real data
 # def send_request(req, label):
@@ -1043,14 +1026,9 @@ def _pick_and_load_sequence(subdir: pathlib.Path, msg_class):
     """Display saved sequences, prompt user to pick one, return parsed proto."""
     files = _list_saved_sequences(subdir)
     t = THEME
-    table = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t["primary"],
-        border_style=t["panel_border"],
-        padding=(0, 2),
-    )
-    table.add_column("#", style="bold white", no_wrap=True)
+    table = Table(box=box.SIMPLE_HEAD, show_header=True, header_style=t["primary"],
+                  border_style=t["panel_border"], padding=(0, 2))
+    table.add_column("#",    style="bold white", no_wrap=True)
     table.add_column("Name", style="white")
     for i, f in enumerate(files, 1):
         table.add_row(str(i), f.stem)
@@ -1096,19 +1074,16 @@ def _sine_sample_f32(
     arg = _f32(_f32(t / per) * TAU + _f32(ph / _f32(360.0)) * TAU)
     return _f32(o + _f32(a * _f32(math.sin(arg))))
 
-
 def _build_control_trace() -> clover_pb2.ControlTrace:
     """Interactively build a ControlTrace with one or more segments."""
     t = THEME
     trace = clover_pb2.ControlTrace()
 
-    cursor_ms = 0
+    cursor_ms  = 0
     cursor_val: float | None = None  # unknown until first segment
     while True:
         pos_str = f"{cursor_val:.2f}" if cursor_val is not None else "?"
-        console.print(
-            f"\n  [{t['primary']}]─── Add a segment (t={cursor_ms} ms, pos={pos_str}) ───[/{t['primary']}]"
-        )
+        console.print(f"\n  [{t['primary']}]─── Add a segment (t={cursor_ms} ms, pos={pos_str}) ───[/{t['primary']}]")
         length_ms = IntPrompt.ask("    Segment length (ms)")
 
         console.print("    Segment type:")
@@ -1117,25 +1092,21 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
         seg_type = Prompt.ask("    Choose", choices=["1", "2"], default="1")
 
         seg = trace.segments.add()
-        seg.start_ms = cursor_ms
+        seg.start_ms  = cursor_ms
         seg.length_ms = length_ms
         cursor_ms += length_ms
 
         if seg_type == "1":
             if cursor_val is not None:
-                console.print(
-                    f"    [{t['muted']}]Start value locked to {cursor_val:.2f}[/{t['muted']}]"
-                )
-                start_val = cursor_val
+               console.print(f"    [{t['muted']}]Start value locked to {cursor_val:.2f}[/{t['muted']}]")
+               start_val = cursor_val
             else:
                 start_val = FloatPrompt.ask("    Start value")
             end_val = FloatPrompt.ask("    End value")
             seg.linear.start_val = start_val
-            seg.linear.end_val = end_val
+            seg.linear.end_val   = end_val
             cursor_val = end_val
-            console.print(
-                f"    [{t['success']}]Linear segment: {start_val} → {end_val}[/{t['success']}]"
-            )
+            console.print(f"    [{t['success']}]Linear segment: {start_val} → {end_val}[/{t['success']}]")
         else:
             amplitude = FloatPrompt.ask("    Amplitude")
             period = FloatPrompt.ask("    Period (ms)")
@@ -1154,18 +1125,14 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
             seg.sine.period = period
             seg.sine.phase_deg = phase_deg
             cursor_val = end_val
-            console.print(
-                f"    [{t['success']}]Sine segment: offset={offset:.4f}, amp={amplitude}, T={period}ms → ends at {end_val:.2f}[/{t['success']}]"
-            )
+            console.print(f"    [{t['success']}]Sine segment: offset={offset:.4f}, amp={amplitude}, T={period}ms → ends at {end_val:.2f}[/{t['success']}]")
 
         another = Confirm.ask("  Add another segment?", default=False)
         if not another:
             break
 
     trace.total_time_ms = cursor_ms
-    console.print(
-        f"  [{THEME['muted']}]Total trace duration: {cursor_ms} ms[/{THEME['muted']}]"
-    )
+    console.print(f"  [{THEME['muted']}]Total trace duration: {cursor_ms} ms[/{THEME['muted']}]")
     return trace
 
 
@@ -1175,23 +1142,17 @@ def cmd_load_valve_sequence():
     New field names: fuel_trace_deg, lox_trace_deg
     """
     t = THEME
-    console.print(
-        f"\n  {t['icon_seq']} [{t['primary']}]Load Valve Sequence[/{t['primary']}]"
-    )
+    console.print(f"\n  {t['icon_seq']} [{t['primary']}]Load Valve Sequence[/{t['primary']}]")
 
     saved = _list_saved_sequences(VALVE_SEQ_DIR)
     if saved and Confirm.ask("  Load a saved sequence?", default=True):
-        loaded = _pick_and_load_sequence(
-            VALVE_SEQ_DIR, clover_pb2.LoadValveSequenceRequest
-        )
+        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadValveSequenceRequest)
         req = clover_pb2.Request()
         req.load_valve_sequence.CopyFrom(loaded)
         send_request(req, "LOAD_VALVE_SEQUENCE")
         return
 
-    console.print(
-        f"  [{t['muted']}]Define a control trace for FUEL, LOX, or both. At least one required.[/{t['muted']}]"
-    )
+    console.print(f"  [{t['muted']}]Define a control trace for FUEL, LOX, or both. At least one required.[/{t['muted']}]")
 
     req = clover_pb2.Request()
 
@@ -1244,15 +1205,11 @@ def cmd_load_thrust_sequence():
     Thrust trace is in lbf
     """
     t = THEME
-    console.print(
-        f"\n  {t['icon_loop']} [{t['primary']}]Load Thrust Sequence[/{t['primary']}]"
-    )
+    console.print(f"\n  {t['icon_loop']} [{t['primary']}]Load Thrust Sequence[/{t['primary']}]")
 
     saved = _list_saved_sequences(THRUST_SEQ_DIR)
     if saved and Confirm.ask("  Load a saved sequence?", default=True):
-        loaded = _pick_and_load_sequence(
-            THRUST_SEQ_DIR, clover_pb2.LoadThrustSequenceRequest
-        )
+        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrustSequenceRequest)
         req = clover_pb2.Request()
         req.load_thrust_sequence.CopyFrom(loaded)
         send_request(req, "LOAD_THRUST_SEQUENCE")

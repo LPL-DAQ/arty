@@ -10,7 +10,6 @@
 
 typedef SystemState SystemState;
 
-// The pure data contract returned by every logic module
 struct ControllerOutput {
     bool set_fuel = false;
     float fuel_pos = 0.0f;
@@ -30,7 +29,6 @@ public:
     // Define nominal safe positions
     static constexpr float DEFAULT_FUEL_POS = 81.0f;
     static constexpr float DEFAULT_LOX_POS = 74.0f;
-
     // Shared tracking variables
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
@@ -44,12 +42,11 @@ public:
         return current_state;
     }
 
-    static int init();
+    static std::expected<void, Error> init();
     static void controller_step_control_loop(k_work* work);  // The 1ms dispatcher called by the timer
     static void control_loop_schedule(k_timer* timer);
 
     static void step_control_loop(k_work*);
-
     // Request handlers
     static std::expected<void, Error> handle_load_valve_sequence(const LoadValveSequenceRequest& req);
     static std::expected<void, Error> handle_start_valve_sequence(const StartValveSequenceRequest& req);
@@ -66,7 +63,7 @@ public:
     static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
     static std::expected<void, Error> handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req);
 
-    static void change_state(SystemState new_state);
+    static std::expected<void, Error> change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);
     Controller() = delete;  // Explicitly prevent instantiation
 
@@ -75,7 +72,6 @@ private:
     static void stream_telemetry(const AnalogSensors& sensors);
 };
 
-// Expose the Message Queue for the Server to read from
 extern struct k_msgq telemetry_msgq;
 
 #endif  // APP_CONTROLLER_H

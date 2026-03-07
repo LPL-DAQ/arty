@@ -43,8 +43,8 @@ GNC throttle + TVC flows board.
     };
 
     chosen {
-        zephyr,console = &cdc_acm_uart0;
-    };
+		zephyr,console = &lpuart7;
+        };
 
     example_sensor: example-sensor {
         compatible = "zephyr,example-sensor";
@@ -56,6 +56,10 @@ GNC throttle + TVC flows board.
         led-gpios = <&gpio2 3 GPIO_ACTIVE_HIGH>;
         blink-period-ms = <1000>;
     };
+};
+&lpuart7 {
+	status = "okay";
+	current-speed = <115200>;
 };
 
 // Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html

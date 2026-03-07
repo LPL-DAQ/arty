@@ -276,4 +276,20 @@ message ValveSequenceData {}
 
 // TODO
 message ThrustSequenceData {
+  required float predicted_thrust = 1;
+  required float predicted_of = 2;
+  required float mdot_fuel = 3;
+  required float mdot_lox = 4;
+  required float target_thrust = 5;
+
+  required float thrust_error = 6;
+
+  required float change_alpha_cmd = 7;
+  required float clamped_change_alpha_cmd = 8;
+
+  required float alpha = 9;
+  required float thrust_from_alpha = 10;
+
+  required float fuel_valve_cmd = 11;
+  required float lox_valve_cmd = 12;
 }
