@@ -10,14 +10,14 @@ static bool has_lox;
 static float fuel_total_time;
 static float lox_total_time;
 
-void StateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_total_time, float lox_total_time)
+void StateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_total_time_ms, float lox_total_time_ms)
 {
     // Timer is reset in handle_start_sequence before entering
 
     has_fuel = has_fuel_trace;
     has_lox = has_lox_trace;
-    fuel_total_time = fuel_total_time;
-    lox_total_time = lox_total_time;
+    fuel_total_time = fuel_total_time_ms;
+    lox_total_time = lox_total_time_ms;
 }
 
 std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t current_time, uint32_t start_time)
