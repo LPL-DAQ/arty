@@ -288,18 +288,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
     }
-
-    // Clear our data client subscription immediately on exit so the slot is available
-    // before the reaper thread wakes up. Without this there is a ~50ms window where a
-    // new subscribe request arrives and finds the slot still occupied by this dying thread.
-    k_mutex_lock(&data_client_info_guard, K_FOREVER);
-    for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-        if (data_client_slot_indexes[i] == thread_index) {
-            data_client_slot_indexes[i] = -1;
-            data_client_addr_lens[i] = sizeof(sockaddr);
-        }
-    }
-    k_mutex_unlock(&data_client_info_guard);
 }
 
 /// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
@@ -489,12 +477,10 @@ void serve_data_connections()
 
             // Lock the client info guard and broadcast the already-encoded buffer to all subscribed IPs
             k_mutex_lock(&data_client_info_guard, K_FOREVER);
-            bool any_client = false;
             for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
                 if (data_client_slot_indexes[i] == -1) {
                     continue;
                 }
-                any_client = true;
 
                 const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
 
@@ -502,9 +488,6 @@ void serve_data_connections()
                 if (static_cast<size_t>(bytes_sent) != data_packet_ostream.bytes_written) {
                     LOG_ERR("sendto failed: bytes_sent=%d errno=%d", bytes_sent, errno);
                 }
-            }
-            if (!any_client) {
-                LOG_WRN("Data packet dequeued but no UDP clients subscribed (slot_indexes all -1)");
             }
             k_mutex_unlock(&data_client_info_guard);
         }
