@@ -29,6 +29,7 @@ float LookupTable<x_len, x_bps, y_len, y_bps, bps>::interp(float x, float y)
     validate_axis_bps<y_len>(y_bps);
 
     // Find x breakpoint indices
+    x = std::clamp(x, x_bps[0], x_bps[x_len-1]);
     float x_bp_lo = x_bps[x_len-2];
     float x_bp_hi = x_bps[x_len-1];
     for (int i = 1; i < x_len; ++i) {
@@ -40,6 +41,7 @@ float LookupTable<x_len, x_bps, y_len, y_bps, bps>::interp(float x, float y)
     }
 
     // Find y breakpoints indices
+    y = std::clamp(y, y_bps[0], y_bps[y_len-1]);
     float y_idx_lo = y_len - 2;
     float y_idx_hi = y_len - 1;
     for (int i = 1; i < y_len; ++i) {
