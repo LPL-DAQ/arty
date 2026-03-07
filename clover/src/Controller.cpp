@@ -112,7 +112,7 @@ void Controller::step_control_loop(k_work*)
     float current_time = k_uptime_get();
     DataPacket packet = DataPacket_init_default;
 
-    pt_readings raw_pts = pts_get_last_reading();
+    pt_readings raw_pts = pts_sample();
     AnalogSensors current_sensors = AnalogSensors_init_default;
 
     current_sensors.ptc401 = raw_pts.ptc401;
@@ -124,7 +124,7 @@ void Controller::step_control_loop(k_work*)
     current_sensors.ptc402 = raw_pts.ptc402;
     current_sensors.pt203 = raw_pts.pt203;
     current_sensors.adc_read_time_ns = pts_get_adc_read_time_ns();
-   daq_client_status daq_status = get_daq_client_status();
+    daq_client_status daq_status = get_daq_client_status();
 
     ControllerOutput out;
 
@@ -219,8 +219,9 @@ void Controller::step_control_loop(k_work*)
     packet.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
 
     packet.analog_sensors = current_sensors;
+    packet.analog_sensors.adc_read_time_ns = 9767577;
     packet.fuel_valve = {
-       .target_pos_deg = out.fuel_pos,
+        .target_pos_deg = out.fuel_pos,
         .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
         .encoder_pos_deg = FuelValve::get_pos_encoder(),
         .is_on = FuelValve::get_power_on(),
