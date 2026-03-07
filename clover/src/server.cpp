@@ -167,27 +167,29 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
             k_mutex_lock(&data_client_info_guard, K_FOREVER);
-            // Find a free slot; if none is free (e.g. a stale zombie connection holds it),
-            // evict the oldest subscriber so a live reconnect always succeeds.
-            int target_slot = -1;
+            bool found_data_client_slot = false;
             for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-                if (data_client_slot_indexes[i] == -1) {
-                    target_slot = i;
-                    break;
+                if (data_client_slot_indexes[i] != -1) {
+                    continue;
                 }
-            }
-            if (target_slot == -1) {
-                // All slots occupied by stale connections — evict slot 0.
-                LOG_WRN("All data client slots occupied, evicting slot 0 for new subscriber");
-                target_slot = 0;
+                found_data_client_slot = true;
+                data_client_slot_indexes[i] = thread_index;
+
+                int err = getpeername(client_guard.socket, &data_client_addrs[i], &data_client_addr_lens[i]);
+                if (err) {
+                    LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
+                }
+
+                // Set client port
+                reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
+
+                // ADDED: Break out of loop once a slot is found so we don't accidentally overwrite multiple slots
+                break;
             }
 
-            data_client_slot_indexes[target_slot] = thread_index;
-            int err = getpeername(client_guard.socket, &data_client_addrs[target_slot], &data_client_addr_lens[target_slot]);
-            if (err) {
-                LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
+            if (!found_data_client_slot) {
+                LOG_ERR("Did not find a data client slot");
             }
-            reinterpret_cast<sockaddr_in*>(&data_client_addrs[target_slot])->sin_port = htons(19691);
 
             k_mutex_unlock(&data_client_info_guard);
             break;
