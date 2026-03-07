@@ -3,6 +3,7 @@
 
 import argparse
 import math
+import struct
 import socket
 import threading
 import sys
@@ -27,43 +28,46 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 import clickhouse_connect
 import polars as pl
+from collections import deque
+import plotext as plt
 
 
 THEME = {
-    "primary":      "bold gold1",
-    "success":      "bold green",
-    "warning":      "bold yellow",
-    "danger":       "bold red",
-    "info":         "bold gold1",
-    "muted":        "dim white",
-    "header":       "bold white on dark_red",
+    "primary": "bold gold1",
+    "success": "bold green",
+    "warning": "bold yellow",
+    "danger": "bold red",
+    "info": "bold gold1",
+    "muted": "dim white",
+    "header": "bold white on dark_red",
     "panel_border": "dark_red",
-    "icon_fire":    "🔥",
-    "icon_ok":      "✅",
-    "icon_warn":    "⚠️ ",
-    "icon_stop":    "🛑",
-    "icon_live":    "📡",
-    "icon_fuel":    "🟡",
-    "icon_lox":     "🔴",
-    "icon_valve":   "🔧",
-    "icon_seq":     "▶️ ",
-    "icon_loop":    "🔄",
-    "icon_id":      "🪪",
-    "icon_quit":    "❌",
+    "icon_fire": "🔥",
+    "icon_ok": "✅",
+    "icon_warn": "⚠️ ",
+    "icon_stop": "🛑",
+    "icon_live": "📡",
+    "icon_fuel": "🟡",
+    "icon_lox": "🔴",
+    "icon_valve": "🔧",
+    "icon_seq": "▶️ ",
+    "icon_loop": "🔄",
+    "icon_id": "🪪",
+    "icon_quit": "❌",
 }
 
-VALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
+ALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
-ZEPHYR_IP = "169.254.99.99"  # real board
-#ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
+# ZEPHYR_IP = "169.254.99.99"  # real board
+ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 19690
-LOCAL_PORT  = 19691
+DATA_IP = "0.0.0.0"  # Listen to UDP from anybody
+DATA_PORT = 19691
 
 # ── ClickHouse config ────────────────────────────────────────────────────────
-CH_HOST     = "172.233.143.186"
-CH_USER     = "writer"
+CH_HOST = "172.233.143.186"
+CH_USER = "writer"
 CH_PASSWORD = "ce8XpzhRGhsvBxCPHDTcvh6DMWhb3jyxgmQMNLrsKaCqtZvKf2"
 CH_DATABASE = "lpl"
 
@@ -88,34 +92,85 @@ packet_lock = threading.Lock()
 data_sock = None
 
 _packet_buffer: list = []
-_buffer_lock   = threading.Lock()
+_buffer_lock = threading.Lock()
 
-# All received packets are accumulated in memory; CSV is written once on exit.
-_csv_store: list = []           # list of (recv_time: float, pkt: DataPacket)
+_csv_store: list = []  # list of (recv_time: float, pkt: DataPacket); drained each second
 _csv_store_lock = threading.Lock()
+_csv_path: pathlib.Path | None = None  # set on first write
+_csv_fh = None  # open file handle
+_csv_writer = None  # csv.DictWriter bound to _csv_fh
+_csv_rows_written: int = 0
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(2.0)
-sock.connect((ZEPHYR_IP, ZEPHYR_PORT))
+_last_packet_time: float = 0.0
+_last_packet_lock = threading.Lock()
+
+_GRAPH_MAXLEN = 300  # ~60 s at 5 Hz
+_graph_history: deque = deque(maxlen=_GRAPH_MAXLEN)
+_graph_lock = threading.Lock()
+
+
+def _make_tcp_socket() -> socket.socket:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2.0)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    s.setsockopt(
+        socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5
+    )  # start probes after 5s idle
+    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
+    s.setsockopt(
+        socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3
+    )  # drop after 3 missed probes
+    s.connect((ZEPHYR_IP, ZEPHYR_PORT))
+    return s
+
+
+sock = _make_tcp_socket()
 # ── Telemetry listener ───────────────────────────────────────────────────────
+
 
 def listen_for_telemetry():
     """Background thread — receives UDP DataPackets and stores latest."""
-    global latest_packet
+    global latest_packet, _last_packet_time
     while True:
         try:
             data, _ = data_sock.recvfrom(4096)
             packet = clover_pb2.DataPacket()
             packet.ParseFromString(data)
             recv_time = time.time()
-            with packet_lock:
-                latest_packet = packet
-            with _buffer_lock:
-                _packet_buffer.append((recv_time, packet))
-            with _csv_store_lock:
-                _csv_store.append((recv_time, packet))
-        except Exception:
-            pass
+            for lock, name in (
+                (packet_lock, "packet_lock"),
+                (_last_packet_lock, "_last_packet_lock"),
+                (_buffer_lock, "_buffer_lock"),
+                (_csv_store_lock, "_csv_store_lock"),
+                (_graph_lock, "_graph_lock"),
+            ):
+                t0 = time.monotonic()
+                lock.acquire()
+                wait = time.monotonic() - t0
+                if wait > 0.05:
+                    console.print(
+                        f"  [bold yellow]LOCK SLOW: {name} waited {wait:.3f}s[/bold yellow]"
+                    )
+                try:
+                    if lock is packet_lock:
+                        latest_packet = packet
+                    elif lock is _last_packet_lock:
+                        _last_packet_time = recv_time
+                    elif lock is _buffer_lock:
+                        _packet_buffer.append((recv_time, packet))
+                    elif lock is _csv_store_lock:
+                        _csv_store.append((recv_time, packet))
+                    else:
+                        _graph_history.append(packet)
+                finally:
+                    lock.release()
+        except socket.timeout:
+            continue  # loop back and re-read data_sock global
+        except Exception as e:
+            console.print(
+                f"  [bold red]listen_for_telemetry error:[/bold red] {type(e).__name__}: {e}"
+            )
+            continue
 
 
 # update SystemState with (0–7); range 8
@@ -123,6 +178,7 @@ _STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(8)}
 
 
 # ── Data flattening ──────────────────────────────────────────────────────────
+
 
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
@@ -142,11 +198,15 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     f = pkt.fuel_valve
     l = pkt.lox_valve
     return {
-        'time':                     int(recv_time * 1e6),
-        'gnc_state':                float(pkt.state),
-        'gnc_data_queue_size':      float(pkt.data_queue_size),
-        'gnc_sequence_number':      float(pkt.sequence_number),
-        'gnc_controller_tick_ns':   float(pkt.controller_tick_time_ns),  # new field
+        'time':                     int(pkt.time_ns),     # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
+        'state':                float(pkt.state),
+        'data_queue_size':      float(pkt.data_queue_size),
+        'sequence_number':      float(pkt.sequence_number),
+        'controller_tick_ns':   float(pkt.controller_tick_time_ns),
+        'gnc_connected':            bool(pkt.gnc_connected),
+        'gnc_last_pinged_ns':       float(pkt.gnc_last_pinged_ns),
+        'daq_connected':            bool(pkt.daq_connected),
+        'daq_last_pinged_ns':       float(pkt.daq_last_pinged_ns),
         'gnc_pt102':                float(s.pt102),
         'gnc_pt103':                float(s.pt103),
         'gnc_pt202':                float(s.pt202),
@@ -159,15 +219,24 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         'gnc_tc102_5':              float(s.tc102_5),    # new sensor
         'gnc_adc_read_time_ns':     float(s.adc_read_time_ns),  # new timing
         # Fuel valve
-        'gnc_fuel_target':          float(f.target_pos_deg),
-        'gnc_fuel_driver':          float(f.driver_setpoint_pos_deg),
-        'gnc_fuel_encoder':         float(f.encoder_pos_deg),
-        'gnc_fuel_is_on':           float(f.is_on),      # PROTO CHANGE: was 'enabled'
+        "gnc_fuel_target": float(f.target_pos_deg),
+        "gnc_fuel_driver": float(f.driver_setpoint_pos_deg),
+        "gnc_fuel_encoder": float(f.encoder_pos_deg),
+        "gnc_fuel_is_on": float(f.is_on),  # PROTO CHANGE: was 'enabled'
         # LOX valve — same changes as fuel
         'gnc_lox_target':           float(l.target_pos_deg),
         'gnc_lox_driver':           float(l.driver_setpoint_pos_deg),
         'gnc_lox_encoder':          float(l.encoder_pos_deg),
         'gnc_lox_is_on':            float(l.is_on),      # PROTO CHANGE: was 'enabled'
+        # State data
+        'fuel_found_hardstop':      float(pkt.valve_calibration_data.fuel_found_hardstop),
+        'lox_found_hardstop':       float(pkt.valve_calibration_data.lox_found_hardstop),
+        'fuel_hardstop_pos':        float(pkt.valve_calibration_data.fuel_hardstop_pos),
+        'lox_hardstop_pos':         float(pkt.valve_calibration_data.lox_hardstop_pos),
+        'cal_phase':                float(pkt.valve_calibration_data.cal_phase),
+        'rep_count':                float(pkt.valve_calibration_data.rep_count),
+        'fuel_err':                 float(pkt.valve_calibration_data.fuel_err),
+        'lox_err':                  float(pkt.valve_calibration_data.lox_err),
     }
 
 
@@ -177,66 +246,95 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
     matching the unpivoted schema written to ClickHouse raw_sensors.
     """
     wide = _packet_to_row(recv_time, pkt)
-    ts   = wide['time']
+    ts = wide["time"]
     rows = []
 
     for sensor, raw_value in wide.items():
-        if sensor == 'time' or raw_value is None:
+        if sensor == "time" or raw_value is None:
             continue
 
         value = float(raw_value)
         # event column: state label for gnc_state rows, empty string otherwise
-        event = _STATE_NAMES.get(raw_value, '') if sensor == 'gnc_state' else ''
+        event = _STATE_NAMES.get(raw_value, "") if sensor == "gnc_state" else ""
 
-        rows.append({
-            "time":   ts,
-            "sensor": sensor,
-            "value":  value,
-            "event":  event,
-            "system": "atlas", # change if not atlas
-            "source": "gnc",   # leave as all GNC for now
-        })
+        rows.append(
+            {
+                "time": ts,
+                "sensor": sensor,
+                "value": value,
+                "event": event,
+                "system": "atlas",  # change if not atlas
+                "source": "gnc",  # leave as all GNC for now
+            }
+        )
 
     return rows
 
 
 def _write_csv_on_exit():
-    """Write all accumulated telemetry to a single CSV file at exit time."""
-    with _csv_store_lock:
-        snapshot = list(_csv_store)
+    """Flush any remaining buffered packets to the CSV file and close it."""
+    global _csv_fh, _csv_writer, _csv_rows_written, _csv_path
 
-    if not snapshot:
+    with _csv_store_lock:
+        remaining = list(_csv_store)
+        _csv_store.clear()
+
+    if remaining and _csv_fh is None:
+        # Client exited before the first flush_loop drain (ran very briefly)
+        _csv_path = pathlib.Path("data") / f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+        _csv_path.parent.mkdir(exist_ok=True)
+        _csv_fh = open(_csv_path, "w", newline="")
+        _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+        _csv_writer.writeheader()
+
+    if _csv_fh is None:
         console.print(
             f"  [{THEME['muted']}]No telemetry received — CSV not written.[/{THEME['muted']}]"
         )
         return
 
-    exit_ts  = time.strftime('%Y%m%d_%H%M%S')
-    csv_path = pathlib.Path(f"raw_sensors_{exit_ts}.csv")
+    for recv_time, pkt in remaining:
+        try:
+            for row in _packet_to_csv_rows(recv_time, pkt):
+                _csv_writer.writerow(row)
+                _csv_rows_written += 1
+        except Exception as e:
+            console.print(f"  [bold red]CSV row error:[/bold red] {e}")
 
-    total_rows = 0
-    with open(csv_path, "w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        for recv_time, pkt in snapshot:
-            try:
-                for row in _packet_to_csv_rows(recv_time, pkt):
-                    writer.writerow(row)
-                    total_rows += 1
-            except Exception as e:
-                console.print(f"  [bold red]CSV row error:[/bold red] {e}")
-
+    _csv_fh.close()
+    _csv_fh = None
     console.print(
         f"\n  {THEME['icon_ok']} [bold green]CSV saved →[/bold green] "
-        f"[dim]{csv_path.resolve()}[/dim]\n"
-        f"  [{THEME['muted']}]{total_rows:,} rows from {len(snapshot):,} packets[/{THEME['muted']}]"
+        f"[dim]{_csv_path.resolve()}[/dim]\n"
+        f"  [{THEME['muted']}]{_csv_rows_written:,} rows written[/{THEME['muted']}]"
     )
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
 
+_STREAM_TIMEOUT = 5.0  # seconds without a packet before we re-subscribe
+
+
+def _reconnect_and_resubscribe():
+    """Reconnect the TCP socket and re-issue a subscribe request."""
+    global sock
+    try:
+        sock.close()
+    except Exception:
+        pass
+    try:
+        sock = _make_tcp_socket()
+        cmd_subscribe_data_stream()
+        console.print(
+            f"  [{THEME['warning']}]Reconnected and re-subscribed to data stream.[/{THEME['warning']}]"
+        )
+    except Exception as e:
+        console.print(f"  [{THEME['danger']}]Reconnect failed: {e}[/{THEME['danger']}]")
+
+
 def _flush_loop():
     """Background thread — drains the packet buffer into ClickHouse every second."""
+    global _last_packet_time
     ch = None
     while True:
         time.sleep(1.0)
@@ -263,8 +361,8 @@ def _flush_loop():
             rows = [_packet_to_row(t, p) for t, p in batch]
             df = (
                 pl.DataFrame(rows)
-                .unpivot(index=['time'], variable_name='sensor', value_name='value')
-                .drop_nulls('value')
+                .unpivot(index=["time"], variable_name="sensor", value_name="value")
+                .drop_nulls("value")
                 .with_columns(
                     pl.from_epoch('time', time_unit='us').alias('time'),
                     pl.col('value').cast(pl.Float64),
@@ -277,23 +375,178 @@ def _flush_loop():
                     pl.lit('gnc').alias('source'),
                 )
             )
-            ch.insert_df_arrow('raw_sensors', df)
+            ch.insert_df_arrow("raw_sensors", df)
         except Exception as e:
-            console.print(f"  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}")
+            console.print(
+                f"  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}"
+            )
             ch = None
+
+        # ── CSV incremental flush ────────────────────────────────────────────
+        with _csv_store_lock:
+            if _csv_store:
+                csv_batch = list(_csv_store)
+                _csv_store.clear()
+            else:
+                csv_batch = []
+
+        if csv_batch:
+            global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
+            if _csv_fh is None:
+                _csv_path = pathlib.Path("data") / f"raw_sensors_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+                _csv_path.parent.mkdir(exist_ok=True)
+                _csv_fh = open(_csv_path, "w", newline="")
+                _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+                _csv_writer.writeheader()
+            try:
+                for recv_time, pkt in csv_batch:
+                    for row in _packet_to_csv_rows(recv_time, pkt):
+                        _csv_writer.writerow(row)
+                        _csv_rows_written += 1
+                _csv_fh.flush()
+            except Exception as e:
+                console.print(f"  [bold red]CSV write error:[/bold red] {e}")
 
 
 # ── Live status display ──────────────────────────────────────────────────────
 
+def _plotext_panel(title: str) -> Panel:
+    """Wrap the current plotext figure in a rich Panel."""
+    t = THEME
+    return Panel(
+        Text.from_ansi(plt.build()),
+        title=f"[{t['primary']}]{title}[/{t['primary']}]",
+        border_style=t["panel_border"],
+        padding=(0, 0),
+    )
+
+
+def _waiting_panel(title: str) -> Panel:
+    t = THEME
+    return Panel(
+        f"[{t['muted']}]Waiting for data...[/{t['muted']}]",
+        title=f"[{t['primary']}]{title}[/{t['primary']}]",
+        border_style=t["panel_border"],
+    )
+
+
+def _half_width() -> int:
+    return (console.width // 2) - 6
+
+
+def _build_fuel_valve_graph() -> Panel:
+    """Fuel valve driver and encoder positions over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🟡 Fuel Valve")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.fuel_valve.driver_setpoint_pos_deg for p in history], label="Driver",  color=( 50, 100, 220), marker="braille")
+    plt.plot(times, [p.fuel_valve.encoder_pos_deg         for p in history], label="Encoder", color=(255, 220,   0), marker="braille")
+    plt.ylim(-5, 95)
+    plt.xlabel("t (s)")
+    plt.ylabel("deg")
+    return _plotext_panel("🟡 Fuel Valve")
+
+
+def _build_lox_valve_graph() -> Panel:
+    """LOX valve driver and encoder positions over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🔴 LOX Valve")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.lox_valve.driver_setpoint_pos_deg for p in history], label="Driver",  color=(  0, 200, 220), marker="braille")
+    plt.plot(times, [p.lox_valve.encoder_pos_deg         for p in history], label="Encoder", color=(220,  50,  50), marker="braille")
+    plt.ylim(-5, 95)
+    plt.xlabel("t (s)")
+    plt.ylabel("deg")
+    return _plotext_panel("🔴 LOX Valve")
+
+
+def _build_fuel_graph() -> Panel:
+    """Fuel-side pressure sensors (200-series + PTC) over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🟡 Fuel Sensors")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.analog_sensors.pt202   for p in history], label="PT-202",   color=(255, 220,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.pt203   for p in history], label="PT-203",   color=( 50, 200,  50), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptf401  for p in history], label="PTF-401",  color=(255, 140,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc401  for p in history], label="PTC-401",  color=(  0, 200, 220), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc402  for p in history], label="PTC-402",  color=(200,  50, 200), marker="braille")
+    fuel_vals = (
+        [p.analog_sensors.pt202  for p in history] +
+        [p.analog_sensors.pt203  for p in history] +
+        [p.analog_sensors.ptf401 for p in history] +
+        [p.analog_sensors.ptc401 for p in history] +
+        [p.analog_sensors.ptc402 for p in history]
+    )
+    plt.ylim(30, max(fuel_vals) * 1.05 if max(fuel_vals) > 30 else 60)
+    plt.xlabel("t (s)")
+    plt.ylabel("psi")
+    return _plotext_panel("🟡 Fuel Sensors (200s + PTC)")
+
+
+def _build_lox_graph() -> Panel:
+    """LOX-side pressure sensors (100-series + PTC) over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel("🔴 LOX Sensors")
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme("dark")
+    plt.plot(times, [p.analog_sensors.pt102   for p in history], label="PT-102",   color=(255, 220,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.pt103   for p in history], label="PT-103",   color=( 50, 200,  50), marker="braille")
+    plt.plot(times, [p.analog_sensors.pto401  for p in history], label="PTO-401",  color=(255, 140,   0), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc401  for p in history], label="PTC-401",  color=(  0, 200, 220), marker="braille")
+    plt.plot(times, [p.analog_sensors.ptc402  for p in history], label="PTC-402",  color=(200,  50, 200), marker="braille")
+    lox_vals = (
+        [p.analog_sensors.pt102  for p in history] +
+        [p.analog_sensors.pt103  for p in history] +
+        [p.analog_sensors.pto401 for p in history] +
+        [p.analog_sensors.ptc401 for p in history] +
+        [p.analog_sensors.ptc402 for p in history]
+    )
+    plt.ylim(30, max(lox_vals) * 1.05 if max(lox_vals) > 30 else 60)
+    plt.xlabel("t (s)")
+    plt.ylabel("psi")
+    return _plotext_panel("🔴 LOX Sensors (100s + PTC)")
+
+
 STATE_COLORS = {
-    "STATE_UNKNOWN":        "dim white",
-    "STATE_IDLE":           "green",
-    "STATE_CALIBRATE_VALVE":"magenta",
-    "STATE_VALVE_PRIMED":   "cyan",
-    "STATE_VALVE_SEQ":      "gold1",
-    "STATE_THRUST_PRIMED":  "cyan",
-    "STATE_THRUST_SEQ":     "yellow",
-    "STATE_ABORT":          "bold red",
+    "STATE_UNKNOWN": "dim white",
+    "STATE_IDLE": "green",
+    "STATE_CALIBRATE_VALVE": "magenta",
+    "STATE_VALVE_PRIMED": "cyan",
+    "STATE_VALVE_SEQ": "gold1",
+    "STATE_THRUST_PRIMED": "cyan",
+    "STATE_THRUST_SEQ": "yellow",
+    "STATE_ABORT": "bold red",
 }
 
 
@@ -311,40 +564,50 @@ def _build_status_renderable():
             border_style=t["panel_border"],
         )
 
-    state_name  = clover_pb2.SystemState.Name(pkt.state)
+    state_name = clover_pb2.SystemState.Name(pkt.state)
     state_color = STATE_COLORS.get(state_name, "white")
 
     # abort is now STATE_ABORT in state enum
-    is_abort  = (state_name == "STATE_ABORT")
-    abort_str = f"[bold red]{t['icon_stop']} ABORT[/bold red]" if is_abort else "[green]nominal[/green]"
+    is_abort = state_name == "STATE_ABORT"
+    abort_str = (
+        f"[bold red]{t['icon_stop']} ABORT[/bold red]"
+        if is_abort
+        else "[green]nominal[/green]"
+    )
 
     # ── Header ────────────────────────────────────────────────
     hdr = Table.grid(padding=(0, 3))
     for _ in range(5):
         hdr.add_column()
     hdr.add_row(
-        Text(f"{t['icon_live']} LIVE",       style="bold green"),
-        Text(f"State: {state_name}",          style=state_color),
+        Text(f"{t['icon_live']} LIVE", style="bold green"),
+        Text(f"State: {state_name}", style=state_color),
         # in nanoseconds
         Text(f"t = {pkt.time_ns / 1e9:.3f} s", style="white"),
-        Text(f"seq #{pkt.sequence_number}",   style=t["muted"]),
+        Text(f"seq #{pkt.sequence_number}", style=t["muted"]),
         Text(f"queue: {pkt.data_queue_size}", style=t["muted"]),
     )
-    header_panel = Panel(hdr, border_style=t["panel_border"], padding=(0, 1),
-                         subtitle=abort_str)
+    header_panel = Panel(
+        hdr, border_style=t["panel_border"], padding=(0, 1), subtitle=abort_str
+    )
 
     # ── Valve table ───────────────────────────────────────────
-    vt = Table(box=box.SIMPLE_HEAD, show_header=True,
-               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
-    vt.add_column("Valve",     style="bold white", no_wrap=True)
-    vt.add_column("On",        no_wrap=True)
-    vt.add_column("Target °",  style="white", no_wrap=True)
-    vt.add_column("Driver °",  style="white", no_wrap=True)
+    vt = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t["primary"],
+        border_style=t["panel_border"],
+        padding=(0, 1),
+    )
+    vt.add_column("Valve", style="bold white", no_wrap=True)
+    vt.add_column("On", no_wrap=True)
+    vt.add_column("Target °", style="white", no_wrap=True)
+    vt.add_column("Driver °", style="white", no_wrap=True)
     vt.add_column("Encoder °", style="white", no_wrap=True)
 
     for label, icon, color, v in [
-        ("FUEL", t["icon_fuel"], "gold1",    pkt.fuel_valve),
-        ("LOX",  t["icon_lox"],  "dark_red", pkt.lox_valve),
+        ("FUEL", t["icon_fuel"], "gold1", pkt.fuel_valve),
+        ("LOX", t["icon_lox"], "dark_red", pkt.lox_valve),
     ]:
         vt.add_row(
             f"{icon} [{color}]{label}[/{color}]",
@@ -356,8 +619,13 @@ def _build_status_renderable():
 
     # ── Sensor table ──────────────────────────────────────────
     #               Added TC-102, TC-102.5, ADC read time rows
-    st = Table(box=box.SIMPLE_HEAD, show_header=True,
-               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    st = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t["primary"],
+        border_style=t["panel_border"],
+        padding=(0, 1),
+    )
     st.add_column("Sensor", style="bold white", no_wrap=True)
     st.add_column("Value",  style="white",      no_wrap=True, justify="right")
     st.add_column("Unit",   style=t["muted"],   no_wrap=True)
@@ -379,12 +647,41 @@ def _build_status_renderable():
         val_str = f"{val:.2f}" if val != 0.0 else f"[{t['muted']}]—[/{t['muted']}]"
         st.add_row(name, val_str, unit)
 
+    # ── State data panel ──────────────────────────────────────
+    sd = Table(box=box.SIMPLE_HEAD, show_header=True,
+               header_style=t["primary"], border_style=t["panel_border"], padding=(0, 1))
+    sd.add_column("Field", style="bold white", no_wrap=True)
+    sd.add_column("Value", style="white",      no_wrap=True, justify="right")
+
+    which = pkt.WhichOneof("state_data")
+    if which == "valve_calibration_data":
+        c = pkt.valve_calibration_data
+        def _hs(found, pos):
+            return f"{pos:.2f}°" if found else f"[{t['muted']}]—[/{t['muted']}]"
+        sd.add_row("fuel hardstop", _hs(c.fuel_found_hardstop, c.fuel_hardstop_pos))
+        sd.add_row("lox hardstop",  _hs(c.lox_found_hardstop,  c.lox_hardstop_pos))
+        sd.add_row("cal phase",     str(c.cal_phase))
+        sd.add_row("rep count",     str(c.rep_count))
+        sd.add_row("fuel err",      f"{c.fuel_err:.4f}")
+        sd.add_row("lox err",       f"{c.lox_err:.4f}")
+    else:
+        sd.add_row(f"[{t['muted']}]no state data[/{t['muted']}]", "")
+
+    left = Group(
+        Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",     border_style=t["panel_border"]),
+        Panel(sd, title=f"[{t['primary']}]State Data[/{t['primary']}]", border_style=t["panel_border"]),
+    )
     bottom = Columns([
-        Panel(vt, title=f"[{t['primary']}]Valves[/{t['primary']}]",   border_style=t["panel_border"]),
-        Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]",  border_style=t["panel_border"]),
+        left,
+        Panel(st, title=f"[{t['primary']}]Sensors[/{t['primary']}]", border_style=t["panel_border"]),
     ])
 
-    return Group(header_panel, bottom)
+    return Group(
+        header_panel,
+        bottom,
+        Columns([_build_fuel_valve_graph(), _build_lox_valve_graph()]),
+        Columns([_build_fuel_graph(),       _build_lox_graph()]),
+    )
 
 
 def cmd_live_status():
@@ -398,11 +695,15 @@ def cmd_live_status():
             pass
         stop.set()
 
-    console.print(f"  [{THEME['muted']}]Live view — press Enter to return to menu[/{THEME['muted']}]")
+    console.print(
+        f"  [{THEME['muted']}]Live view — press Enter to return to menu[/{THEME['muted']}]"
+    )
     threading.Thread(target=_wait_for_enter, daemon=True).start()
 
     try:
-        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
+        with Live(
+            _build_status_renderable(), refresh_per_second=5, screen=False
+        ) as live:
             while not stop.is_set():
                 time.sleep(0.2)
                 live.update(_build_status_renderable())
@@ -411,14 +712,14 @@ def cmd_live_status():
 
 
 _TOOLBAR_STATE_TAGS = {
-    "STATE_UNKNOWN":        ("ansiwhite",  "UNKNOWN"),
-    "STATE_IDLE":           ("ansigreen",  "IDLE"),
-    "STATE_CALIBRATE_VALVE":("ansimagenta","CAL_VALVE"),
-    "STATE_VALVE_PRIMED":   ("ansicyan",   "VLV_PRIMED"),
-    "STATE_VALVE_SEQ":      ("ansiyellow", "VLV_SEQ"),
-    "STATE_THRUST_PRIMED":  ("ansicyan",   "THR_PRIMED"),
-    "STATE_THRUST_SEQ":     ("ansiyellow", "THR_SEQ"),
-    "STATE_ABORT":          ("ansired",    "ABORT"),
+    "STATE_UNKNOWN": ("ansiwhite", "UNKNOWN"),
+    "STATE_IDLE": ("ansigreen", "IDLE"),
+    "STATE_CALIBRATE_VALVE": ("ansimagenta", "CAL_VALVE"),
+    "STATE_VALVE_PRIMED": ("ansicyan", "VLV_PRIMED"),
+    "STATE_VALVE_SEQ": ("ansiyellow", "VLV_SEQ"),
+    "STATE_THRUST_PRIMED": ("ansicyan", "THR_PRIMED"),
+    "STATE_THRUST_SEQ": ("ansiyellow", "THR_SEQ"),
+    "STATE_ABORT": ("ansired", "ABORT"),
 }
 
 
@@ -433,18 +734,19 @@ def get_toolbar():
     state_name = clover_pb2.SystemState.Name(pkt.state)
     tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ("ansiwhite", state_name))
 
-
-    is_abort   = (state_name == "STATE_ABORT")
+    is_abort = state_name == "STATE_ABORT"
     abort_html = "  <ansired><b>🛑 ABORT</b></ansired>" if is_abort else ""
-
 
     s = pkt.analog_sensors
     sensor_parts = [
         f"{lbl}: {val:.1f}"
         for lbl, val in [
-            ("PT-F401", s.ptf401), ("PT-O401", s.pto401),
-            ("PT-C401", s.ptc401), ("PT-C402", s.ptc402),
-            ("TC-102",  s.tc102),  ("TC-102.5", s.tc102_5),  # new sensors
+            ("PT-F401", s.ptf401),
+            ("PT-O401", s.pto401),
+            ("PT-C401", s.ptc401),
+            ("PT-C402", s.ptc402),
+            ("TC-102", s.tc102),
+            ("TC-102.5", s.tc102_5),  # new sensors
         ]
         if val != 0.0
     ]
@@ -464,7 +766,6 @@ def get_toolbar():
 
 
 # ── TCP sender ───────────────────────────────────────────────────────────────
-
 def _recv_response() -> clover_pb2.Response:
     """Read a varint-length-prefixed Response from the TCP socket."""
     length = 0
@@ -494,15 +795,29 @@ def _recv_response() -> clover_pb2.Response:
 def send_request(req: clover_pb2.Request, label: str) -> bool:
     global sock
     """Serialize and send a Request over TCP, then read and display the Response."""
-    try:
-        payload = req.SerializeToString()
-        payload = _VarintBytes(len(payload)) + payload
-        sock.sendall(payload)
-    except Exception as e:
-        console.print(
-            f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
-        )
-        return False
+    raw = req.SerializeToString()
+    payload = _VarintBytes(len(raw)) + raw
+    for attempt in range(2):
+        try:
+            sock.sendall(payload)
+            break
+        except Exception as e:
+            if attempt == 0:
+                console.print(
+                    f"\n  {THEME['icon_warn']} [{THEME['warning']}]Connection lost, reconnecting...[/{THEME['warning']}]"
+                )
+                try:
+                    sock = _make_tcp_socket()
+                except Exception as re:
+                    console.print(
+                        f"\n  {THEME['icon_warn']} [{THEME['danger']}]Reconnect failed: {re}[/{THEME['danger']}]\n"
+                    )
+                    return False
+            else:
+                console.print(
+                    f"\n  {THEME['icon_warn']} [{THEME['danger']}]Failed to send {label}: {e}[/{THEME['danger']}]\n"
+                )
+                return False
 
     try:
         resp = _recv_response()
@@ -529,6 +844,7 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 # ── Command implementations ──────────────────────────────────────────────────
 
+
 def cmd_subscribe_data_stream():
     """Subscribe to telemetry data stream."""
     req = clover_pb2.Request()
@@ -539,7 +855,9 @@ def cmd_subscribe_data_stream():
 def cmd_identify_client():
     """Identify client as GNC."""
     t = THEME
-    console.print(f"\n  {t['icon_id']} [{t['primary']}]Client identity: GNC[/{t['primary']}]")
+    console.print(
+        f"\n  {t['icon_id']} [{t['primary']}]Client identity: GNC[/{t['primary']}]"
+    )
     req = clover_pb2.Request()
     req.identify_client.client = clover_pb2.GNC
     send_request(req, "IDENTIFY_CLIENT (GNC)")
@@ -558,15 +876,15 @@ def cmd_configure_sensor_bias():
     console.print(f"\n  [{t['primary']}]Configure Analog Sensor Bias[/{t['primary']}]")
 
     sensors = [
-        ("1",  "PT-102",   clover_pb2.PT102),
-        ("2",  "PT-103",   clover_pb2.PT103),
-        ("3",  "PT-202",   clover_pb2.PT202),
-        ("4",  "PT-203",   clover_pb2.PT203),
-        ("5",  "PT-F401",  clover_pb2.PTF401),
-        ("6",  "PT-O401",  clover_pb2.PTO401),
-        ("7",  "PT-C401",  clover_pb2.PTC401),
-        ("8",  "PT-C402",  clover_pb2.PTC402),
-        ("9",  "TC-102",   clover_pb2.TC102),
+        ("1", "PT-102", clover_pb2.PT102),
+        ("2", "PT-103", clover_pb2.PT103),
+        ("3", "PT-202", clover_pb2.PT202),
+        ("4", "PT-203", clover_pb2.PT203),
+        ("5", "PT-F401", clover_pb2.PTF401),
+        ("6", "PT-O401", clover_pb2.PTO401),
+        ("7", "PT-C401", clover_pb2.PTC401),
+        ("8", "PT-C402", clover_pb2.PTC402),
+        ("9", "TC-102", clover_pb2.TC102),
         ("10", "TC-102.5", clover_pb2.TC102_5),
     ]
     for num, name, _ in sensors:
@@ -579,24 +897,26 @@ def cmd_configure_sensor_bias():
 
     req = clover_pb2.Request()
     req.configure_analog_sensors_bias.sensor = sensor_val
-    req.configure_analog_sensors_bias.bias   = bias
+    req.configure_analog_sensors_bias.bias = bias
     send_request(req, f"CONFIGURE_SENSOR_BIAS ({sensor_name} bias={bias:.4f})")
 
 
 def cmd_reset_valve_position():
     """Reset a valve to a specified degree position."""
     t = THEME
-    console.print(f"\n  {t['icon_valve']} [{t['primary']}]Reset Valve Position[/{t['primary']}]")
+    console.print(
+        f"\n  {t['icon_valve']} [{t['primary']}]Reset Valve Position[/{t['primary']}]"
+    )
     console.print("    [1] FUEL")
     console.print("    [2] LOX")
 
-    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
-    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    choice = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
     valve_name = "FUEL" if choice == "1" else "LOX"
-    pos       = FloatPrompt.ask(f"  New position for {valve_name} valve (degrees)")
+    pos = FloatPrompt.ask(f"  New position for {valve_name} valve (degrees)")
 
     req = clover_pb2.Request()
-    req.reset_valve_position.valve      = valve
+    req.reset_valve_position.valve = valve
     req.reset_valve_position.new_pos_deg = pos
     send_request(req, f"RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)")
 
@@ -608,8 +928,8 @@ def cmd_power_on_valve():
     console.print("    [1] FUEL")
     console.print("    [2] LOX")
 
-    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
-    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    choice = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
     valve_name = "FUEL" if choice == "1" else "LOX"
 
     req = clover_pb2.Request()
@@ -624,8 +944,8 @@ def cmd_power_off_valve():
     console.print("    [1] FUEL")
     console.print("    [2] LOX")
 
-    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
-    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    choice = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
     valve_name = "FUEL" if choice == "1" else "LOX"
 
     req = clover_pb2.Request()
@@ -681,12 +1001,14 @@ def cmd_unprime():
 def cmd_calibrate_valve():
     """enter valve calibration mode (IDLE → CALIBRATE_VALVE)."""
     t = THEME
-    console.print(f"\n  {t['icon_valve']} [{t['primary']}]Calibrate Valve[/{t['primary']}]")
+    console.print(
+        f"\n  {t['icon_valve']} [{t['primary']}]Calibrate Valve[/{t['primary']}]"
+    )
     console.print("    [1] FUEL")
     console.print("    [2] LOX")
 
-    choice    = Prompt.ask("  Select valve", choices=["1", "2"])
-    valve     = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
+    choice = Prompt.ask("  Select valve", choices=["1", "2"])
+    valve = clover_pb2.FUEL if choice == "1" else clover_pb2.LOX
     valve_name = "FUEL" if choice == "1" else "LOX"
 
     req = clover_pb2.Request()
@@ -730,6 +1052,28 @@ def _save_sequence(subdir: pathlib.Path, prefix: str, msg):
     console.print(f"  [{t['success']}]Saved → {filename}[/{t['success']}]")
 
 
+def _f32(v: float) -> float:
+    """Round a Python float to float32 precision (matches firmware storage/arithmetic)."""
+    return struct.unpack("f", struct.pack("f", v))[0]
+
+
+def _sine_sample_f32(
+    offset: float, amplitude: float, period: float, phase_deg: float, t_ms: int
+) -> float:
+    """
+    Replicate firmware's float32 sine sample:
+      offset + amplitude * sin(t / period * TAU + phase_deg / 360 * TAU)
+    where TAU = 2.0f * pi_v<float> and every operation is float32.
+    """
+    TAU = _f32(2.0 * math.pi)
+    o = _f32(offset)
+    a = _f32(amplitude)
+    per = _f32(period)
+    ph = _f32(phase_deg)
+    t = _f32(float(t_ms))
+    arg = _f32(_f32(t / per) * TAU + _f32(ph / _f32(360.0)) * TAU)
+    return _f32(o + _f32(a * _f32(math.sin(arg))))
+
 def _build_control_trace() -> clover_pb2.ControlTrace:
     """Interactively build a ControlTrace with one or more segments."""
     t = THEME
@@ -754,8 +1098,8 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
 
         if seg_type == "1":
             if cursor_val is not None:
-                console.print(f"    [{t['muted']}]Start value locked to {cursor_val:.2f}[/{t['muted']}]")
-                start_val = cursor_val
+               console.print(f"    [{t['muted']}]Start value locked to {cursor_val:.2f}[/{t['muted']}]")
+               start_val = cursor_val
             else:
                 start_val = FloatPrompt.ask("    Start value")
             end_val = FloatPrompt.ask("    End value")
@@ -765,18 +1109,20 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
             console.print(f"    [{t['success']}]Linear segment: {start_val} → {end_val}[/{t['success']}]")
         else:
             amplitude = FloatPrompt.ask("    Amplitude")
-            period    = FloatPrompt.ask("    Period (ms)")
+            period = FloatPrompt.ask("    Period (ms)")
             phase_deg = FloatPrompt.ask("    Phase (degrees)", default=0.0)
             phase_rad = math.radians(phase_deg)
             if cursor_val is not None:
                 offset = cursor_val - amplitude * math.sin(phase_rad)
-                console.print(f"    [{t['muted']}]Offset auto-set to {offset:.4f} for continuity[/{t['muted']}]")
+                console.print(
+                    f"    [{t['muted']}]Offset auto-set to {offset:.4f} for continuity[/{t['muted']}]"
+                )
             else:
                 offset = FloatPrompt.ask("    Offset (baseline)")
-            end_val = offset + amplitude * math.sin(2 * math.pi * length_ms / period + phase_rad)
-            seg.sine.offset    = offset
+            end_val = _sine_sample_f32(offset, amplitude, period, phase_deg, length_ms)
+            seg.sine.offset = offset
             seg.sine.amplitude = amplitude
-            seg.sine.period    = period
+            seg.sine.period = period
             seg.sine.phase_deg = phase_deg
             cursor_val = end_val
             console.print(f"    [{t['success']}]Sine segment: offset={offset:.4f}, amp={amplitude}, T={period}ms → ends at {end_val:.2f}[/{t['success']}]")
@@ -812,18 +1158,24 @@ def cmd_load_valve_sequence():
 
     do_fuel = Confirm.ask("  Configure FUEL trace (degrees)?", default=True)
     if do_fuel:
-        console.print(f"\n  {t['icon_fuel']} [{t['warning']}]FUEL trace setup:[/{t['warning']}]")
+        console.print(
+            f"\n  {t['icon_fuel']} [{t['warning']}]FUEL trace setup:[/{t['warning']}]"
+        )
         fuel_trace = _build_control_trace()
         req.load_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
 
     do_lox = Confirm.ask("\n  Configure LOX trace (degrees)?", default=True)
     if do_lox:
-        console.print(f"\n  {t['icon_lox']} [{t['info']}]LOX trace setup:[/{t['info']}]")
+        console.print(
+            f"\n  {t['icon_lox']} [{t['info']}]LOX trace setup:[/{t['info']}]"
+        )
         lox_trace = _build_control_trace()
         req.load_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
 
     if not do_fuel and not do_lox:
-        console.print(f"  [{t['danger']}]At least one trace is required — nothing sent.[/{t['danger']}]")
+        console.print(
+            f"  [{t['danger']}]At least one trace is required — nothing sent.[/{t['danger']}]"
+        )
         return
 
     if Confirm.ask("  Save this sequence for later?", default=False):
@@ -895,30 +1247,57 @@ def cmd_start_thrust_sequence():
 
 # changed options based on updated .proto file
 MENU_ITEMS = [
-    ("sub",   "subscribe",  "Subscribe to data stream",                        cmd_subscribe_data_stream),
-    ("id",    "identify",   "Identify this client (GNC)",                      cmd_identify_client),
-    ("check", "check",      "Check system is not aborted",                     cmd_is_not_aborted),
-    ("bias",  "bias",       "Configure analog sensor bias",                    cmd_configure_sensor_bias),
-    ("reset", "reset",      "Reset valve position",                            cmd_reset_valve_position),
-    ("pon",   "poweron",    "Power ON valve (enable stepper)",                 cmd_power_on_valve),
-    ("poff",  "poweroff",   "Power OFF valve (disable stepper)",               cmd_power_off_valve),
-    ("cal",   "calibrate",  "Calibrate valve  (IDLE → CALIBRATE_VALVE)",       cmd_calibrate_valve),
-    ("lvseq", "loadvalve",  "Load valve sequence  (IDLE → VALVE_PRIMED)",      cmd_load_valve_sequence),
-    ("svseq", "startvalve", "Start valve sequence (VALVE_PRIMED → VALVE_SEQ)", cmd_start_valve_sequence),
-    ("ltseq", "loadthrust", "Load thrust sequence (IDLE → THRUST_PRIMED)",     cmd_load_thrust_sequence),
-    ("stseq", "startthrust","Start thrust sequence (THRUST_PRIMED → THRUST_SEQ)", cmd_start_thrust_sequence),
-    ("unprime","unprime",   "Unprime  (VALVE/THRUST_PRIMED → IDLE)",           cmd_unprime),
-    ("abort", "abort",      "ABORT active sequence → safe state",              cmd_abort),
-    ("halt",  "halt",       "HALT all actuators",                              cmd_halt),
-    ("status","status",     "Live telemetry dashboard (Enter to exit)",        None),
-    ("quit",  "quit",       "Exit",                                            None),
+    ("sub", "subscribe", "Subscribe to data stream", cmd_subscribe_data_stream),
+    ("id", "identify", "Identify this client (GNC)", cmd_identify_client),
+    ("check", "check", "Check system is not aborted", cmd_is_not_aborted),
+    ("bias", "bias", "Configure analog sensor bias", cmd_configure_sensor_bias),
+    ("reset", "reset", "Reset valve position", cmd_reset_valve_position),
+    ("pon", "poweron", "Power ON valve (enable stepper)", cmd_power_on_valve),
+    ("poff", "poweroff", "Power OFF valve (disable stepper)", cmd_power_off_valve),
+    (
+        "cal",
+        "calibrate",
+        "Calibrate valve  (IDLE → CALIBRATE_VALVE)",
+        cmd_calibrate_valve,
+    ),
+    (
+        "lvseq",
+        "loadvalve",
+        "Load valve sequence  (IDLE → VALVE_PRIMED)",
+        cmd_load_valve_sequence,
+    ),
+    (
+        "svseq",
+        "startvalve",
+        "Start valve sequence (VALVE_PRIMED → VALVE_SEQ)",
+        cmd_start_valve_sequence,
+    ),
+    (
+        "ltseq",
+        "loadthrust",
+        "Load thrust sequence (IDLE → THRUST_PRIMED)",
+        cmd_load_thrust_sequence,
+    ),
+    (
+        "stseq",
+        "startthrust",
+        "Start thrust sequence (THRUST_PRIMED → THRUST_SEQ)",
+        cmd_start_thrust_sequence,
+    ),
+    ("unprime", "unprime", "Unprime  (VALVE/THRUST_PRIMED → IDLE)", cmd_unprime),
+    ("abort", "abort", "ABORT active sequence → safe state", cmd_abort),
+    ("halt", "halt", "HALT all actuators", cmd_halt),
+    ("status", "status", "Live telemetry dashboard (Enter to exit)", None),
+    ("quit", "quit", "Exit", None),
 ]
 
 
 def print_menu():
     t = THEME
     console.print()
-    console.rule(f"[{t['header']}] {t['icon_fire']} CLOVER CLI {t['icon_fire']} [/{t['header']}]")
+    console.rule(
+        f"[{t['header']}] {t['icon_fire']} CLOVER CLI {t['icon_fire']} [/{t['header']}]"
+    )
     console.print()
 
     table = Table(
@@ -928,27 +1307,27 @@ def print_menu():
         border_style=t["panel_border"],
         padding=(0, 2),
     )
-    table.add_column("CMD",         style="bold white", no_wrap=True)
+    table.add_column("CMD", style="bold white", no_wrap=True)
     table.add_column("Description", style="white")
 
     icons = {
-        "sub":    THEME["icon_live"],
-        "id":     THEME["icon_id"],
-        "check":  "🔍",
-        "bias":   "⚙️ ",
-        "reset":  THEME["icon_valve"],
-        "pon":    "🟢",
-        "poff":   "⚫",
-        "cal":    "📐",
-        "lvseq":  THEME["icon_seq"],
-        "svseq":  THEME["icon_fire"],
-        "ltseq":  THEME["icon_loop"],
-        "stseq":  THEME["icon_fire"],
-        "unprime":"↩️ ",
-        "abort":  THEME["icon_stop"],
-        "halt":   THEME["icon_stop"],
+        "sub": THEME["icon_live"],
+        "id": THEME["icon_id"],
+        "check": "🔍",
+        "bias": "⚙️ ",
+        "reset": THEME["icon_valve"],
+        "pon": "🟢",
+        "poff": "⚫",
+        "cal": "📐",
+        "lvseq": THEME["icon_seq"],
+        "svseq": THEME["icon_fire"],
+        "ltseq": THEME["icon_loop"],
+        "stseq": THEME["icon_fire"],
+        "unprime": "↩️ ",
+        "abort": THEME["icon_stop"],
+        "halt": THEME["icon_stop"],
         "status": THEME["icon_live"],
-        "quit":   THEME["icon_quit"],
+        "quit": THEME["icon_quit"],
     }
 
     for key, alias, desc, _ in MENU_ITEMS:
@@ -962,7 +1341,9 @@ def route_command(cmd: str) -> bool:
     cmd = cmd.strip().lower()
 
     if cmd in ("quit", "exit", "q"):
-        console.print(f"\n  {THEME['icon_stop']} [{THEME['warning']}]Exiting.[/{THEME['warning']}]\n")
+        console.print(
+            f"\n  {THEME['icon_stop']} [{THEME['warning']}]Exiting.[/{THEME['warning']}]\n"
+        )
         return False
 
     if cmd in ("status", "s"):
@@ -978,33 +1359,47 @@ def route_command(cmd: str) -> bool:
             fn()
             return True
 
-    console.print(f"  [{THEME['warning']}]Unknown command '{cmd}'. Type 'help' to see all commands.[/{THEME['warning']}]")
+    console.print(
+        f"  [{THEME['warning']}]Unknown command '{cmd}'. Type 'help' to see all commands.[/{THEME['warning']}]"
+    )
     return True
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
 
 def main():
     global data_sock
     t = THEME
 
     parser = argparse.ArgumentParser(description="Clover ground station CLI")
-    parser.add_argument("--no-data", action="store_true",
-                        help="Skip binding the UDP telemetry port (for second instances)")
+    parser.add_argument(
+        "--no-data",
+        action="store_true",
+        help="Skip binding the UDP telemetry port (for second instances)",
+    )
     args = parser.parse_args()
 
-    telemetry_info = f"Listen port: {LOCAL_PORT}" if not args.no_data else "Telemetry: disabled"
-    console.print(Panel.fit(
-        f"[{t['header']}] {t['icon_fire']}  CLOVER CLI INFO  {t['icon_fire']} [/{t['header']}]\n"
-        f"[{t['muted']}]Target: {ZEPHYR_IP}:{ZEPHYR_PORT}  |  {telemetry_info}[/{t['muted']}]",
-        border_style=t["panel_border"],
-        padding=(1, 4),
-    ))
+    telemetry_info = (
+        f"Listen port: {DATA_PORT}" if not args.no_data else "Telemetry: disabled"
+    )
+    console.print(
+        Panel.fit(
+            f"[{t['header']}] {t['icon_fire']}  CLOVER CLI INFO  {t['icon_fire']} [/{t['header']}]\n"
+            f"[{t['muted']}]Target: {ZEPHYR_IP}:{ZEPHYR_PORT}  |  {telemetry_info}[/{t['muted']}]",
+            border_style=t["panel_border"],
+            padding=(1, 4),
+        )
+    )
 
     if not args.no_data:
         data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        data_sock.bind(("0.0.0.0", LOCAL_PORT))
-        console.print(f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]")
+        data_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        data_sock.bind((DATA_IP, DATA_PORT))
+        data_sock.settimeout(1.0)
+        console.print(
+            f"\n  [{t['info']}]Auto-subscribing to data stream...[/{t['info']}]"
+        )
         cmd_subscribe_data_stream()
         threading.Thread(target=listen_for_telemetry, daemon=True).start()
         threading.Thread(target=_flush_loop, daemon=True).start()
@@ -1017,7 +1412,9 @@ def main():
         try:
             cmd = session.prompt("\n  CMD> ")
         except (KeyboardInterrupt, EOFError):
-            console.print(f"\n  {t['icon_stop']} [{t['warning']}]Exiting.[/{t['warning']}]\n")
+            console.print(
+                f"\n  {t['icon_stop']} [{t['warning']}]Exiting.[/{t['warning']}]\n"
+            )
             break
 
         if not route_command(cmd):

@@ -39,7 +39,6 @@ uint16_t raw_readings[CONFIG_PT_SAMPLES][NUM_PTS];
 static pt_readings last_reading;
 static int64_t last_read_uptime;
 static float last_adc_read_time_ns = 0.0f;
-
 static struct k_poll_signal adc_async_signal = K_POLL_SIGNAL_INITIALIZER(adc_async_signal);
 static bool async_pending = false;
 static uint32_t async_start_cycles = 0;
@@ -129,7 +128,9 @@ std::expected<void, Error> pts_init()
 /// Update PT sample readings.
 pt_readings pts_sample()
 {
+    int64_t t0 = k_uptime_ticks();
     int err = adc_read(adc_channels[0].dev, &sequence);
+    last_adc_read_time_ns = static_cast<float>(k_ticks_to_ns_near64(k_uptime_ticks() - t0));
     if (err) {
         LOG_ERR("Failed to read from ADC: err %d", err);
         return pt_readings{};

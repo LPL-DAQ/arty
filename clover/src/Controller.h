@@ -35,6 +35,7 @@ public:
     static inline bool fuel_powered = true;
     static inline bool lox_powered = true;
 
+
     static inline SystemState current_state = SystemState_STATE_IDLE;
     static SystemState state()
     {
