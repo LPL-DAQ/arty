@@ -10,14 +10,12 @@
 #include "ThrottleValve.h"
 #include "pts.h"
 #include "server.h"
-#include "sntp_imp.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
 }
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
-
 
 int main(void)
 {
@@ -30,36 +28,32 @@ int main(void)
     }
     blink_set_period_ms(blink, 1000u);
 
-    const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+    const struct device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
     if (!device_is_ready(uart)) {
         return 0;
     }
 
     LOG_INF("Initializing fuel throttle valve");
     if (auto result = FuelValve::init(); !result) {
-        LOG_ERR("Failed to initialize fuel throttle valve: %s",
-            result.error().build_message().c_str());
+        LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
         return 0;
     }
 
     LOG_INF("Initializing lox throttle valve");
     if (auto result = LoxValve::init(); !result) {
-        LOG_ERR("Failed to initialize lox throttle valve: %s",
-            result.error().build_message().c_str());
+        LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
         return 0;
     }
 
     LOG_INF("Initializing PTs");
     if (auto result = pts_init(); !result) {
-        LOG_ERR("Failed to initialize PTs: %s",
-            result.error().build_message().c_str());
+        LOG_ERR("Failed to initialize PTs: %s", result.error().build_message().c_str());
         return 0;
     }
 
     LOG_INF("Initializing Controller");
-    if (auto result = Controller::controller_init(); !result) {
-        LOG_ERR("Failed to initialize Controller: %s",
-            result.error().build_message().c_str());
+    if (auto result = Controller::init(); !result) {
+        LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
         return 0;
     }
 
@@ -73,7 +67,6 @@ int main(void)
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();
-
 
     k_sleep(K_FOREVER);
 }

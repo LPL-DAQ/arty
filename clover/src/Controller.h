@@ -26,7 +26,7 @@ struct ControllerOutput {
 
 class Controller {
 public:
-      // Define nominal safe positions
+    // Define nominal safe positions
     static constexpr float DEFAULT_FUEL_POS = 81.0f;
     static constexpr float DEFAULT_LOX_POS = 74.0f;
     // Shared tracking variables
@@ -62,7 +62,7 @@ public:
     static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
     static std::expected<void, Error> handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req);
 
-    static void change_state(SystemState new_state);
+    static std::expected<void, Error> change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);
     Controller() = delete;  // Explicitly prevent instantiation
 

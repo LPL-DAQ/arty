@@ -7,6 +7,8 @@
 #include "StateValveSeq.h"
 #include "ThrottleValve.h"
 #include "pts.h"
+#include "server.h"
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -17,7 +19,7 @@ K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
     if (current_state == new_state)
-        return;
+        return {};
 
     switch (new_state) {
     case SystemState_STATE_IDLE:
@@ -61,7 +63,7 @@ std::expected<void, Error> Controller::change_state(SystemState new_state)
 
     case SystemState_STATE_THRUST_SEQ:
         if (current_state != SystemState_STATE_THRUST_PRIMED) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state))) return;
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state)));
         }
         // INIT IS IN THE HANDLER
         current_state = new_state;
@@ -92,7 +94,7 @@ static void control_loop_schedule(k_timer* timer)
 
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
-static std::expected<void, Error> Controller::init()
+std::expected<void, Error> Controller::init()
 {
     auto ret = change_state(SystemState_STATE_IDLE);
     if (!ret.has_value()) {
@@ -102,6 +104,8 @@ static std::expected<void, Error> Controller::init()
     LOG_INF("Initializing Controller...");
     return {};
 }
+
+static int step_control_loop_debounce_warn_count = 0;
 
 void Controller::step_control_loop(k_work*)
 {
@@ -230,7 +234,17 @@ void Controller::step_control_loop(k_work*)
     };
 
     if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
-        LOG_WRN("Telemetry queue full, packet dropped");
+        if (step_control_loop_debounce_warn_count < 5) {
+            LOG_WRN("Telemetry queue full, packet dropped");
+        }
+        else if (step_control_loop_debounce_warn_count == 5) {
+            LOG_WRN("Telemetry queue full, packet dropped (silencing further warnings)");
+        }
+        step_control_loop_debounce_warn_count++;
+    }
+    else {
+        // Reset warning count
+        step_control_loop_debounce_warn_count = 0;
     }
 }
 

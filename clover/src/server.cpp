@@ -116,14 +116,14 @@ pb_istream_t pb_istream_from_socket(int sock)
 static std::expected<void, Error> handle_identify_client(const IdentifyClientRequest& req, int thread_index)
 {
     switch (req.client) {
-    ClientType_DAQ:
+    case ClientType_DAQ:
         k_mutex_lock(&daq_status_guard, K_FOREVER);
         daq_thread_index = thread_index;
-        daq_last_pinged_ms = k_get_uptime();
+        daq_last_pinged_ms = k_uptime_get();
         k_mutex_unlock(&daq_status_guard);
         return {};
 
-    ClientType_GNC:
+    case ClientType_GNC:
         return {};
 
     default:
@@ -134,10 +134,7 @@ static std::expected<void, Error> handle_identify_client(const IdentifyClientReq
 daq_client_status get_daq_client_status()
 {
     k_mutex_lock(&daq_status_guard, K_FOREVER);
-    auto ret = daq_client_status {
-        .connected = daq_thread_index != -1,
-        .last_pinged_ms = daq_thread_index != -1 ? k_get_uptime() - daq_last_pinged_ms : 0
-    }
+    auto ret = daq_client_status{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
 
     k_mutex_unlock(&daq_status_guard);
     return ret;
@@ -199,7 +196,8 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
         case Request_identify_client_tag: {
             LOG_INF("Identify client");
-            cmd_result = handle_identify_client(request.payload.identify_client) break;
+            cmd_result = handle_identify_client(request.payload.identify_client, thread_index);
+            break;
         }
         case Request_configure_analog_sensors_bias_tag: {
             LOG_INF("Configure analog sensor bias");
@@ -319,7 +317,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                     k_mutex_lock(&daq_status_guard, K_FOREVER);
                     if (daq_thread_index == i) {
                         daq_thread_index = -1;
-                        daq_last_pinged_ms = k_get_uptime();
+                        daq_last_pinged_ms = k_uptime_get();
                     }
                     k_mutex_unlock(&daq_status_guard);
 
