@@ -1,5 +1,5 @@
-identifier: nucleo_h755zi_q/stm32h755xx/m7
-name: ST Nucleo H755ZI-Q (M7)
+identifier: dev_board/stm32h755xx/m7
+name: Dev Board (M7)
 type: mcu
 arch: arm
 toolchain:
@@ -18,4 +18,4 @@ supported:
   - netif:eth
   - usb_device
   - can
-vendor: st
+vendor: lpl
