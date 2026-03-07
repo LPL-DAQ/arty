@@ -55,7 +55,7 @@ THEME = {
     "icon_quit": "❌",
 }
 
-ALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
+VALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
