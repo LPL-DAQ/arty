@@ -59,8 +59,8 @@ ALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
-# ZEPHYR_IP = "169.254.99.99"  # real board
-ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
+ZEPHYR_IP = "169.254.99.99"  # real board
+# ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = "0.0.0.0"  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -679,8 +679,8 @@ def _build_status_renderable():
     return Group(
         header_panel,
         bottom,
-        Columns([_build_fuel_valve_graph(), _build_lox_valve_graph()]),
-        Columns([_build_fuel_graph(),       _build_lox_graph()]),
+        #Columns([_build_fuel_valve_graph(), _build_lox_valve_graph()]),
+        #Columns([_build_fuel_graph(),       _build_lox_graph()]),
     )
 
 
