@@ -1,6 +1,9 @@
 #ifndef APP_LOOKUP_TABLE_H
 #define APP_LOOKUP_TABLE_H
 
+#include "isp_lut.h"
+#include "mprime_lut.h"
+
 template <int len> consteval void validate_axis_bps(std::array<float, len> bps)
 {
     for (int i = 1; i < len; ++i) {
@@ -14,7 +17,7 @@ float tween(float in, float low_in, float high_in, float low_out, float high_out
 }
 
 template <int x_len, std::array<float, x_len> x_bps, int y_len, std::array<float, y_len> y_bps, std::array<std::array<y_len>, x_len> bps> class LookupTable {
-    float interp(float x, float y);
+    static float interp(float x, float y);
 }
 
 template <int x_len, std::array<float, x_len> x_bps, int y_len, std::array<float, y_len> y_bps, std::array<std::array<y_len>, x_len> bps>
@@ -61,24 +64,8 @@ float LookupTable<x_len, x_bps, y_len, y_bps, bps>::interp(float x, float y)
     return tween(x, x_bps[x_idx_lo], x_bps[x_idx_hi], xlo_ytween, x_hi_ytween);
 }
 
-typedef 
-
-// 2D Bilinear Interpolation Function Declaration
-float interp2D(const float* x_axis, int x_len, const float* y_axis, int y_len, const float* data_grid, float x_val, float y_val);
-
-// ISP lookup: chamber pressure (pc) vs O/F.
-extern const float isp_pc_axis[];
-extern const int isp_pc_len;
-extern const float isp_of_axis[];
-extern const int isp_of_len;
-extern const float isp_data[];
-
-// MPrime lookup: target thrust vs O/F.
-extern const float thrust_axis[];
-extern const int thrust_axis_len;
-extern const float of_axis[];
-extern const int of_axis_len;
-extern const float fuel_valve_grid[];
-extern const float lox_valve_grid[];
+typedef LookupTable<ISP_PC_AXIS_LEN, ISP_PC_AXIS, ISP_MR_AXIS_LEN, ISP_MR_AXIS, ISP_BPS> IspLookupTable
+typedef LookupTable<MPRIME_THRUST_AXIS_LEN, MPRIME_THRUST_AXIS, MPRIME_MR_AXIS_LEN, MPRIME_MR_AXIS, MPRIME_FUEL_POS_DEG_BPS> MprimeFuelPosDegLookupTable;
+typedef LookupTable<MPRIME_THRUST_AXIS_LEN, MPRIME_THRUST_AXIS, MPRIME_MR_AXIS_LEN, MPRIME_MR_AXIS, MPRIME_LOX_POS_DEG_BPS> MprimeLoxPosDegLookupTable;
 
 #endif  // APP_LOOKUP_TABLE_H
