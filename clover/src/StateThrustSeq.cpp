@@ -140,6 +140,8 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
         p_ch = ptc402_val;
     }
     else {
+        LOG_ERR("NO PTC 401 / PTC402");
+
         // Both failed: Trigger Abort
         out.set_fuel = true;
         out.fuel_pos = Controller::DEFAULT_FUEL_POS;
@@ -162,6 +164,8 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     }
     else {
         // Both failed: Trigger Abort
+        LOG_ERR("NO PT 203 / ptf401");
+
         out.set_fuel = true;
         out.fuel_pos = Controller::DEFAULT_FUEL_POS;
         out.set_lox = true;
@@ -183,6 +187,8 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     }
     else {
         // Both failed: Trigger Abort
+        LOG_ERR("NO PT 203 / 401");
+
         out.set_fuel = true;
         out.fuel_pos = Controller::DEFAULT_FUEL_POS;
         out.set_lox = true;
