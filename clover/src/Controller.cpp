@@ -109,7 +109,7 @@ static int step_control_loop_debounce_warn_count = 0;
 
 void Controller::step_control_loop(k_work*)
 {
-    float current_time = k_uptime_get();
+    int64_t current_time = k_uptime_get();
     DataPacket packet = DataPacket_init_default;
 
     pt_readings raw_pts = pts_sample();
