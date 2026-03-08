@@ -57,13 +57,27 @@
     };*/
 };
 
+&clk_lsi {
+	status = "okay";
+};
+
+&clk_hsi {
+	status = "okay";
+};
+
+/*&clk_hse {
+	hse-bypass;
+	clock-frequency = <DT_FREQ_M(25)>;
+	status = "okay";
+};*/
+
 &pll {
-    div-m = <5>;
-    mul-n = <192>;
+    div-m = <4>;
+    mul-n = <60>;
     div-p = <2>;
-    div-q = <4>;
-    div-r = <4>;
-    clocks = <&clk_hse>;
+    div-q = <2>;
+    div-r = <2>;
+    clocks = <&clk_hsi>;
     status = "okay";
 };
 
@@ -87,12 +101,12 @@
     status = "okay";
 };*/
 
-&uart4 {
+/*&uart4 {
     pinctrl-names = "default";
     pinctrl-0 = <&uart4_tx_pd1 &uart4_rx_pd0>;
     current-speed = <115200>;
     status = "okay";
-};
+};*/
 /*
 &sdmmc1 {
     pinctrl-names = "default";
