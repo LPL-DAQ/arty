@@ -20,7 +20,7 @@ void StateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_tot
     lox_total_time = lox_total_time_ms;
 }
 
-std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t current_time, uint32_t start_time)
+std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(int64_t current_time, int64_t start_time)
 {
     ControllerOutput out;
     ValveSequenceData data{};
@@ -31,6 +31,7 @@ std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t curr
     if (has_fuel) {
         auto f_target = fuel_trace.sample(dt);
         if (!f_target) {
+            LOG_ERR("Failed to sample fuel trace: %s", f_target.error().build_message().c_str());
             out.next_state = SystemState_STATE_IDLE;
             return {out, data};
         }
@@ -41,6 +42,7 @@ std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t curr
     if (has_lox) {
         auto l_target = lox_trace.sample(dt);
         if (!l_target) {
+            LOG_ERR("Failed to sample lox trace: %s", l_target.error().build_message().c_str());
             out.next_state = SystemState_STATE_IDLE;
             return {out, data};
         }
@@ -48,10 +50,12 @@ std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(uint32_t curr
         out.lox_pos = *l_target;
     }
 
-    if (((has_fuel && has_lox) && (dt >= lox_total_time && dt >= fuel_total_time)) || ((has_fuel && !has_lox) && dt >= fuel_total_time) ||
-        ((!has_fuel && has_lox) && dt >= lox_total_time)) {
+    bool done_fuel = has_fuel ? dt >= fuel_total_time : true;
+    bool done_lox = has_lox ? dt >= lox_total_time : true;
+
+    if (done_fuel && done_lox) {
+        LOG_INF("Done open loop seq, dt was %f", static_cast<double>(dt));
         out.next_state = SystemState_STATE_IDLE;
-        return {out, data};
     }
 
     return std::make_pair(out, data);
