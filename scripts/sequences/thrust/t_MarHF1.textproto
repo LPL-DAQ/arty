@@ -1,0 +1,89 @@
+thrust_trace_lbf {
+  total_time_ms: 4100
+  segments {
+    start_ms: 0
+    length_ms: 100
+    linear {
+      start_val: 675.0
+      end_val: 608.0
+    }
+  }
+  segments {
+    start_ms: 100
+    length_ms: 300
+    linear {
+      start_val: 608.0
+      end_val: 608.0
+    }
+  }
+  segments {
+    start_ms: 400
+    length_ms: 800
+    sine {
+      offset: 574.0
+      amplitude: 34.0
+      period: 400.0
+      phase_deg: 90.0
+    }
+  }
+  segments {
+    start_ms: 1200
+    length_ms: 100
+    linear {
+      start_val: 608.0
+      end_val: 540.0
+    }
+  }
+  segments {
+    start_ms: 1300
+    length_ms: 300
+    linear {
+      start_val: 540.0
+      end_val: 540.0
+    }
+  }
+  segments {
+    start_ms: 1600
+    length_ms: 800
+    sine {
+      offset: 506.0
+      amplitude: 34.0
+      period: 400.0
+      phase_deg: 90.0
+    }
+  }
+  segments {
+    start_ms: 2400
+    length_ms: 100
+    linear {
+      start_val: 540.0
+      end_val: 473.0
+    }
+  }
+  segments {
+    start_ms: 2500
+    length_ms: 300
+    linear {
+      start_val: 473.0
+      end_val: 473.0
+    }
+  }
+  segments {
+    start_ms: 2800
+    length_ms: 800
+    sine {
+      offset: 439.0
+      amplitude: 34.0
+      period: 400.0
+      phase_deg: 90.0
+    }
+  }
+  segments {
+    start_ms: 3600
+    length_ms: 500
+    linear {
+      start_val: 473.0
+      end_val: 1000.0
+    }
+  }
+}

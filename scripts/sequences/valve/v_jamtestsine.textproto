@@ -1,0 +1,42 @@
+fuel_trace_deg {
+  total_time_ms: 6000
+  segments {
+    start_ms: 0
+    length_ms: 1000
+    linear {
+      start_val: 81.0
+      end_val: 45.0
+    }
+  }
+  segments {
+    start_ms: 1000
+    length_ms: 5000
+    sine {
+      offset: 45.0
+      amplitude: 5.0
+      period: 400.0
+      phase_deg: 0.0
+    }
+  }
+}
+lox_trace_deg {
+  total_time_ms: 6000
+  segments {
+    start_ms: 0
+    length_ms: 1000
+    linear {
+      start_val: 74.0
+      end_val: 45.0
+    }
+  }
+  segments {
+    start_ms: 1000
+    length_ms: 5000
+    sine {
+      offset: 45.0
+      amplitude: 5.0
+      period: 400.0
+      phase_deg: 0.0
+    }
+  }
+}
