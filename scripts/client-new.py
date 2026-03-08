@@ -59,8 +59,8 @@ VALVE_SEQ_DIR  = pathlib.Path("sequences/valve")
 THRUST_SEQ_DIR = pathlib.Path("sequences/thrust")
 
 # Network
-ZEPHYR_IP = "169.254.99.99"  # real board
-# ZEPHYR_IP   = "127.0.0.1"      # fake_telemetry.py
+# ZEPHYR_IP = "169.254.99.99"  # real board
+ZEPHYR_IP   = "192.168.0.150"      # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = "0.0.0.0"  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -198,7 +198,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     f = pkt.fuel_valve
     l = pkt.lox_valve
     return {
-        'time':                     int(pkt.time_ns),     # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
+        'time':                     recv_time,     # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
         'state':                float(pkt.state),
         'data_queue_size':      float(pkt.data_queue_size),
         'sequence_number':      float(pkt.sequence_number),
@@ -237,6 +237,19 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         'rep_count':                float(pkt.valve_calibration_data.rep_count),
         'fuel_err':                 float(pkt.valve_calibration_data.fuel_err),
         'lox_err':                  float(pkt.valve_calibration_data.lox_err),
+        
+        'predicted_thrust':      float(pkt.thrust_sequence_data.predicted_thrust),
+        'predicted_of':       float(pkt.thrust_sequence_data.predicted_of),
+        'mdot_fuel':        float(pkt.thrust_sequence_data.mdot_fuel),
+        'mdot_lox':         float(pkt.thrust_sequence_data.mdot_lox),
+        'target_thrust':                float(pkt.thrust_sequence_data.target_thrust),
+        'thrust_error':                float(pkt.thrust_sequence_data.thrust_error),
+        'change_alpha_cmd':                 float(pkt.thrust_sequence_data.change_alpha_cmd),
+        'clamped_change_alpha_cmd':                  float(pkt.thrust_sequence_data.clamped_change_alpha_cmd),
+        'alpha':                  float(pkt.thrust_sequence_data.alpha),
+        'thrust_from_alpha':                  float(pkt.thrust_sequence_data.thrust_from_alpha),
+        'fuel_valve_cmd':                  float(pkt.thrust_sequence_data.fuel_valve_cmd),
+        'lox_valve_cmd':                  float(pkt.thrust_sequence_data.lox_valve_cmd),
     }
 
 
@@ -364,7 +377,7 @@ def _flush_loop():
                 .unpivot(index=["time"], variable_name="sensor", value_name="value")
                 .drop_nulls("value")
                 .with_columns(
-                    pl.from_epoch('time', time_unit='us').alias('time'),
+                    pl.from_epoch(pl.col('time') * 1e6, time_unit='us').alias('time'),
                     pl.col('value').cast(pl.Float64),
                     pl.when(pl.col('sensor') == 'gnc_state')
                       .then(pl.col('value').map_elements(

@@ -1,0 +1,90 @@
+fuel_trace_deg {
+  total_time_ms: 2350
+  segments {
+    start_ms: 0
+    length_ms: 50
+    linear {
+      start_val: 95.0
+      end_val: 32.0
+    }
+  }
+  segments {
+    start_ms: 50
+    length_ms: 1000
+    linear {
+      start_val: 32.0
+      end_val: 32.0
+    }
+  }
+  segments {
+    start_ms: 1050
+    length_ms: 100
+    linear {
+      start_val: 32.0
+      end_val: 65.0
+    }
+  }
+  segments {
+    start_ms: 1150
+    length_ms: 1000
+    sine {
+      offset: 65.0
+      amplitude: 10.0
+      period: 50.0
+      phase_deg: 0.0
+    }
+  }
+  segments {
+    start_ms: 2150
+    length_ms: 200
+    linear {
+      start_val: 65.00005
+      end_val: 65.0
+    }
+  }
+}
+lox_trace_deg {
+  total_time_ms: 2350
+  segments {
+    start_ms: 0
+    length_ms: 50
+    linear {
+      start_val: 95.0
+      end_val: 32.0
+    }
+  }
+  segments {
+    start_ms: 50
+    length_ms: 1000
+    linear {
+      start_val: 32.0
+      end_val: 32.0
+    }
+  }
+  segments {
+    start_ms: 1050
+    length_ms: 100
+    linear {
+      start_val: 32.0
+      end_val: 65.0
+    }
+  }
+  segments {
+    start_ms: 1150
+    length_ms: 1000
+    sine {
+      offset: 65.0
+      amplitude: 10.0
+      period: 50.0
+      phase_deg: 0.0
+    }
+  }
+  segments {
+    start_ms: 2150
+    length_ms: 200
+    linear {
+      start_val: 65.00005
+      end_val: 65.0
+    }
+  }
+}
