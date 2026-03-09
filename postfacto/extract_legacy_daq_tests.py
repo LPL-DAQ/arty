@@ -57,7 +57,7 @@ while True:
     time.sleep(5)
 
     events = clickhouse_client.query_df_arrow(
-        "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= fromUnixTimestamp64Nano({t1:Int64}) ORDER BY `time` LIMIT 500",
+        "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= fromUnixTimestamp64Nano({t1:Int64}) ORDER BY time LIMIT 500",
         parameters={
             't1': int(last_processed_date.timestamp() * 1e9),
         },
