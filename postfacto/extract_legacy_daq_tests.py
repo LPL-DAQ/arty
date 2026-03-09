@@ -66,7 +66,7 @@ while True:
 
     if events.height == 0:
         wait_count += 1
-        if wait_count % 4000:
+        if wait_count % 4000 == 0:
             print(
                 f'Waiting for new event (last processed: {last_processed_date}, wait count: {wait_count})'
             )
