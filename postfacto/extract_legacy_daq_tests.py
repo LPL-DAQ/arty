@@ -21,7 +21,7 @@ SHEETS_ID = os.environ['SHEETS_ID']
 SHEETS_SERVICE_ACCOUNT_FILE = os.environ['SHEETS_SERVICE_ACCOUNT_FILE']
 
 
-def commit_last_processed_time(new_time: datetime.datetime):
+def commit_last_processed_date(new_time: datetime.datetime):
     print(f'Committing last processed time: {new_time}')
     with open(PERSISTENT_DATA_PATH, 'w+b') as f:
         pickle.dump(new_time, f)
@@ -52,11 +52,12 @@ else:
     print(f'Found last processed datetime from max test datapoint: {last_processed_date}')
 
 # Process data points.
+wait_count = 0
 while True:
     time.sleep(5)
 
     events = clickhouse_client.query_df_arrow(
-        "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= fromUnixTimestamp64Nano({t1:Int64}) ORDER BY `time` LIMIT 500",
+        "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= fromUnixTimestamp64Nano({t1:Int64}) AND `time` <=  ORDER BY `time` LIMIT 500",
         parameters={
             't1': int(last_processed_date.timestamp() * 1e9),
         },
@@ -64,16 +65,11 @@ while True:
     )
 
     if events.height == 0:
-        gapped_events = clickhouse_client.query_df_arrow(
-            "SELECT `time`, `event` FROM raw_sensors WHERE `sensor` == 'event' AND `time` >= {t:DateTime64(9, 'America/Los_Angeles')} ORDER BY `time` LIMIT 1",
-            parameters={'t': last_processed_date.timestamp()},
-            dataframe_library='polars',
-        )
-        if gapped_events.height > 0:
-            print('Later event block found. Updating last processed date to start from this range.')
-            last_processed_date = gapped_events[0, 'time']
-            commit_last_processed_time(last_processed_date)
+        wait_count += 1
+        if wait_count % 4000:
+            print(f'Waiting for new event (last processed: {last_processed_date}, wait count: {wait_count})')
         continue
+    wait_count = 0
 
     # Sequence either goes ignition -> ignition_terminated OR ignition -> abort -> terminated.
     ignition_time = events.filter(pl.col('event') == 'ignition')[0, 'time']
@@ -82,7 +78,7 @@ while True:
 
         # Add an epsilon to prevent this event from being re-processed.
         last_processed_date = events[-1, 'time'] + datetime.timedelta(milliseconds=1)
-        commit_last_processed_time(last_processed_date)
+        commit_last_processed_date(last_processed_date)
         continue
 
     # Do not match sequence events that are potentially cut off at the end with the current frame.
@@ -98,7 +94,7 @@ while True:
     ):
         print('No ignition termination events found, we may find it in the next frame.')
         last_processed_date = ignition_time
-        commit_last_processed_time(last_processed_date)
+        commit_last_processed_date(last_processed_date)
         continue
 
     elif (
@@ -124,7 +120,7 @@ while True:
             f"Found sequence but it seems wrong ({seq_start_time} to {seq_end_time}), let's skip this start..."
         )
         last_processed_date = seq_start_time + datetime.timedelta(milliseconds=1)
-        commit_last_processed_time(last_processed_date)
+        commit_last_processed_date(last_processed_date)
         continue
 
     print(f'Test sequence discovered, from {seq_start_time} to {seq_end_time}')
@@ -149,7 +145,7 @@ while True:
     elif lox_open_events.is_empty() and fuel_open_events.is_empty():
         print('No meaningful valve actuations discovered, discarding test.')
         last_processed_date = last_event_time
-        commit_last_processed_time(last_processed_date)
+        commit_last_processed_date(last_processed_date)
         continue
 
     # If it's a fuel flow, mark from fuel open.
@@ -203,4 +199,4 @@ while True:
     print(f'Inserted new test: {result}')
 
     last_processed_date = last_event_time
-    commit_last_processed_time(last_processed_date)
+    commit_last_processed_date(last_processed_date)
