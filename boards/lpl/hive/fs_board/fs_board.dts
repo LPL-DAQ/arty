@@ -75,7 +75,7 @@
     div-m = <4>;
     mul-n = <60>;
     div-p = <2>;
-    div-q = <2>;
+    div-q = <20>;
     div-r = <2>;
     clocks = <&clk_hsi>;
     status = "okay";
@@ -101,22 +101,35 @@
     status = "okay";
 };*/
 
-/*&uart4 {
+&uart4 {
     pinctrl-names = "default";
     pinctrl-0 = <&uart4_tx_pd1 &uart4_rx_pd0>;
-    current-speed = <115200>;
+    current-speed = <9600>;
     status = "okay";
-};*/
+};
 /*
 &sdmmc1 {
     pinctrl-names = "default";
-    pinctrl-0 = <&sdmmc1_d0_pc8 &sdmmc1_d1_pc9
+    pinctrl-0 = <&sdmmc1_d0_pc8
+      &sdmmc1_d1_pc9
                  &sdmmc1_d2_pc10 &sdmmc1_d3_pc11
-                 &sdmmc1_ck_pc12 &sdmmc1_cmd_pd2>;
-    cd-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
-    disk-name = "SD";
+                 &sdmmc1_d4_pb8  &sdmmc1_d5_pb9
+                 &sdmmc1_d6_pc6  &sdmmc1_d7_pc7
+                 &sdmmc1_ck_pc12 &sdmmc1_cmd_pd2
+                 >;
+    bus-width = <1>;
+    disk-name = "MMC";
     status = "okay";
 };*/
+
+&sdmmc1 {
+    pinctrl-names = "default";
+    pinctrl-0 = < &sdmmc1_d0_pc8 &sdmmc1_ck_pc12 &sdmmc1_cmd_pd2>;
+    bus-width = <1>;
+    disk-name = "MMC";
+    status = "okay";
+};
+
 
 /*
 &quadspi {
