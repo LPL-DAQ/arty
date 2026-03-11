@@ -6,9 +6,6 @@ set -euxo pipefail
 find clover carl \( -iname '*.h' -o -iname '*.cpp' \) | xargs clang-format -i -style=file
 # TODO: Add cppcheck/etc
 
-# Rust
-cargo fmt
-
 # Python
 ruff check --fix
 ruff format

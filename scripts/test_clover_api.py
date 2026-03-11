@@ -66,7 +66,8 @@ def handle_data_stream():
     """Listens for data packets."""
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind(('localhost', DATA_PORT))
+        # FIXED: Bind to 0.0.0.0 so we receive packets from the Ethernet interface
+        sock.bind(('0.0.0.0', DATA_PORT))
         print('Data stream connected.')
 
         while True:
@@ -95,6 +96,13 @@ def handle_command_stream():
         req.subscribe_data_stream.SetInParent()
         resp = send_request(sock, req)
         print(f'Got resp: {resp}')
+
+        req = clover_api.Request()
+        req.calibrate_valve.valve = clover_api.LOX
+        resp = send_request(sock, req)
+        print(f'Got resp: {resp}')
+
+
 
         while True:
             time.sleep(1000)

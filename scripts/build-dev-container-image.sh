@@ -5,6 +5,8 @@ source /home/lpl/arty/credentials
 
 set -euxo pipefail
 
+DOCKER_HOST="tcp://localhost:2375"
+
 # Check for uncommitted changes
 if [[ -n "$(git status -s)" ]]; then
     echo "You have uncommitted changes, please commit everything before running this script."

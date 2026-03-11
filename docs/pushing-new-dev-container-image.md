@@ -15,6 +15,11 @@ GITHUB_USERNAME=jamm-es
 GITHUB_PERSONAL_ACCESS_TOKEN=ghp_[...]
 ```
 
+## Docker setup
+
+Ensure that the Docker daemon is accessible via TCP by checking `Expose daemon on tcp://localhost:2375 without TLS`
+in the Docker Desktop settings.
+
 ## Build and push
 
 All devcontainer images are build from the root Dockerfile. Modify it to include your change and commit all your

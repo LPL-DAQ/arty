@@ -1,8 +1,11 @@
 #ifndef ARTY_PTS_H
 #define ARTY_PTS_H
 
-#include <zephyr/devicetree.h>
+#include "Error.h"
 
+#include <expected>
+#include <zephyr/devicetree.h>
+#include <stdint.h>
 /*
  * The following macro magic is used to generate a struct to hold the result of one PT reading. If the device tree has:
  *     ...
@@ -26,18 +29,28 @@ struct pt_readings {
 };
 
 struct pt_config {
-    float scale;  // psig per analog reading unit. For teensy, resolution = 12, so for a 1k PT this would be (1000.0 / 4096.0)
+    float scale;
     float bias;
     float range;
+};
+
+struct pts_metrics {
+    uint32_t last_latency_us;
 };
 
 constexpr int NUM_PTS = DT_PROP_LEN(USER_NODE, io_channels);
 extern pt_config pt_configs[NUM_PTS];
 
-int pts_init();
+// --- Existing API ---
+std::expected<void, Error> pts_init();
 pt_readings pts_sample();
 pt_readings pts_get_last_reading();
-int pts_set_bias(int index, float bias);
-int pts_set_range(int index, float range);
+float pts_get_adc_read_time_ns();
+std::expected<void, Error> pts_set_bias(int index, float bias);
+std::expected<void, Error> pts_set_range(int index, float range);
+
+// --- Async API ---
+void pts_request_async();
+bool pts_try_collect(pt_readings* out);
 
 #endif  // ARTY_PTS_H

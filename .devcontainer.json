@@ -8,6 +8,6 @@
   "privileged": true,
   "remoteUser": "lpl",
   "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git config --global push.autoSetupRemote true",
-  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299",
-  "initializeCommand": "docker image pull --platform=linux/amd64 ghcr.io/lpl-daq/arty/dev-container:build_2026-01-29_01-16-00_71bd777d72ea1dc985f8656e48ce0082589ef299"
+  "image": "ghcr.io/lpl-daq/arty/dev-container:build_2026-02-14_22-56-14_9f9a16295ce3e2cfeb9b8050e6329142a4e92e83",
+  "initializeCommand": "docker image pull --platform=linux/amd64 ghcr.io/lpl-daq/arty/dev-container:build_2026-02-14_22-56-14_9f9a16295ce3e2cfeb9b8050e6329142a4e92e83"
 }

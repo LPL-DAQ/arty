@@ -1,0 +1,13 @@
+[Unit]
+Description=postfacto legacy daq data ingestion
+After=network-online.target
+
+[Service]
+ExecStart=/opt/uv/uv --project /opt/postfacto run --env-file /etc/postfacto/db_config /opt/postfacto/daqtop/ingest_legacy_daq_data.py
+Type=simple
+Nice=10
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

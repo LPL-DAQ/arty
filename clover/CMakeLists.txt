@@ -13,7 +13,6 @@ project(app)
 list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
 include(nanopb)
 
-
 zephyr_include_directories(${CMAKE_CURRENT_BINARY_DIR})
 zephyr_nanopb_sources(app ../api/clover.proto)
 

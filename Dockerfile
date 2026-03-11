@@ -76,31 +76,25 @@ west sdk install -t arm-zephyr-eabi
 sudo rm -rf /home/lpl/arty
 EOF
 
-# Rust
+# Install docker CLI only
 RUN << EOF
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-. "$HOME/.cargo/env"
-rustup component add rustfmt
+sudo apt install -y ca-certificates
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+sudo tee /etc/apt/sources.list.d/docker.sources << END
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+END
+
+sudo apt update
+sudo apt install -y docker-ce-cli
 EOF
-
-# Build flasherd-client and store it at ~/prebaked-bin so it can be copied into ~/arty/bin upon dev container startup.
-COPY Cargo.toml /home/lpl/arty/Cargo.toml
-COPY Cargo.lock /home/lpl/arty/Cargo.lock
-COPY flasherd /home/lpl/arty/flasherd
-COPY flasherd-client /home/lpl/arty/flasherd-client
-COPY api /home/lpl/arty/api
-RUN << EOF
-sudo chown -R lpl ~/arty
-sudo chmod -R 0777 ~/arty
-
-. ~/.cargo/env
-cd ~/arty || exit 1
-cargo build --package flasherd-client --release
-
-mv ~/arty/target/release/flasherd-client /usr/bin/flasherd-client
-
-sudo rm -rf ~/arty
-EOF
+ENV DOCKER_HOST=tcp://localhost:2375
 
 # Cosmetic changes
 RUN << EOF
