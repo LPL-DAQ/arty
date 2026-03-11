@@ -18,8 +18,9 @@
     };
 
     chosen {
-        zephyr,console = &uart4;
-        zephyr,shell-uart = &uart4;
+        /* 刪除或註解掉這兩行，這是導致當機的主因 */
+        /* zephyr,console = &uart4; */
+        /* zephyr,shell-uart = &uart4; */
         zephyr,sram = &sram0;
         zephyr,flash = &flash0;
     };
