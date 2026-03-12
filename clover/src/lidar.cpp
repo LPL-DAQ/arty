@@ -28,7 +28,10 @@ static void lidar_thread(void*, void*, void*)
 
     while (1) {
         uint8_t byte;
-        if (uart_poll_in(lidar_1, &byte) == 0) {
+        int poll = uart_poll_in(lidar_1, &byte);
+        // LOG_INF("Poll: %d", poll);
+        if (poll == 0) {
+            // LOG_INF("if start");
             if (i == 0 && byte != 0x59) continue;
             if (i == 1 && byte != 0x59) { i = 0; continue; }
 
@@ -37,10 +40,12 @@ static void lidar_thread(void*, void*, void*)
                 i = 0;
                 decode(msg, false);
             }
+            // LOG_INF("if end");
         }
-        else{
-            k_msleep(1);
-        }
+        // else{
+        //     LOG_INF("else");
+        //     k_msleep(1);
+        // }
     }
 }
 
@@ -55,16 +60,16 @@ int lidar_init()
     }
 
     // Configure LiDAR
-    static const uint8_t set_framerate[] = {0x5A, 0x06, 0x03, 0x64, 0x00, 0x00}; // 100 Hz
-    static const uint8_t enable_output[] = {0x5A, 0x05, 0x07, 0x01, 0x67};       // output on
-    static const uint8_t save_settings[]  = {0x5A, 0x04, 0x11, 0x6F};             // persist
+    //static const uint8_t set_framerate[] = {0x5A, 0x06, 0x03, 0x64, 0x00, 0x00}; // 100 Hz
+    //static const uint8_t enable_output[] = {0x5A, 0x05, 0x07, 0x01, 0x67};       // output on
+    //static const uint8_t save_settings[]  = {0x5A, 0x04, 0x11, 0x6F};             // persist
 
-    for (uint8_t b : set_framerate) uart_poll_out(lidar_1, b);
-    k_msleep(100);
-    for (uint8_t b : enable_output)  uart_poll_out(lidar_1, b);
-    k_msleep(100);
-    for (uint8_t b : save_settings)  uart_poll_out(lidar_1, b);
-    k_msleep(100);
+    //for (uint8_t b : set_framerate) uart_poll_out(lidar_1, b);
+    //k_msleep(100);
+    //for (uint8_t b : enable_output)  uart_poll_out(lidar_1, b);
+    //k_msleep(100);
+    //for (uint8_t b : save_settings)  uart_poll_out(lidar_1, b);
+    //k_msleep(100);
 
     k_sem_give(&lidar_ready);
     return 0;
