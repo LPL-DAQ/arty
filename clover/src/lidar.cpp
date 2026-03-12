@@ -2,12 +2,29 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/ring_buffer.h>
 
 LOG_MODULE_REGISTER(LiDAR, CONFIG_LOG_DEFAULT_LEVEL); //For logging to be put under the LiDAR tag
 
 K_MUTEX_DEFINE(lidar_lock); //Mutex to protect LiDAR data
 
 K_SEM_DEFINE(lidar_ready, 0, 1);
+
+RING_BUF_DECLARE(uart_ringbuf, 64);
+
+// UART interrupt callback
+static void uart_cb(const struct device *dev, void *user_data)
+{
+    uint8_t received_byte;
+    if (!uart_irq_update(dev)) {
+        return;
+    }
+
+    while (uart_irq_rx_ready(dev)) {
+        uart_fifo_read(dev, &received_byte, 1);
+        ring_buf_put(&uart_ringbuf, &received_byte, 1);
+    }
+}
 
 static float current_distance = 0.0f;
 static const struct device* lidar_1;
@@ -28,24 +45,16 @@ static void lidar_thread(void*, void*, void*)
 
     while (1) {
         uint8_t byte;
-        int poll = uart_poll_in(lidar_1, &byte);
-        // LOG_INF("Poll: %d", poll);
-        if (poll == 0) {
-            // LOG_INF("if start");
+        while (ring_buf_get(&uart_ringbuf, &byte, 1) > 0) {
             if (i == 0 && byte != 0x59) continue;
             if (i == 1 && byte != 0x59) { i = 0; continue; }
 
             msg[i++] = byte;
-            if (i == 4) {
+            if (i == 9) {
                 i = 0;
-                decode(msg, false);
+                decode(msg, true);
             }
-            // LOG_INF("if end");
         }
-        // else{
-        //     LOG_INF("else");
-        //     k_msleep(1);
-        // }
     }
 }
 
@@ -59,17 +68,8 @@ int lidar_init()
         return -ENODEV;
     }
 
-    // Configure LiDAR
-    //static const uint8_t set_framerate[] = {0x5A, 0x06, 0x03, 0x64, 0x00, 0x00}; // 100 Hz
-    //static const uint8_t enable_output[] = {0x5A, 0x05, 0x07, 0x01, 0x67};       // output on
-    //static const uint8_t save_settings[]  = {0x5A, 0x04, 0x11, 0x6F};             // persist
-
-    //for (uint8_t b : set_framerate) uart_poll_out(lidar_1, b);
-    //k_msleep(100);
-    //for (uint8_t b : enable_output)  uart_poll_out(lidar_1, b);
-    //k_msleep(100);
-    //for (uint8_t b : save_settings)  uart_poll_out(lidar_1, b);
-    //k_msleep(100);
+    uart_irq_callback_user_data_set(lidar_1, uart_cb, NULL);
+    uart_irq_rx_enable(lidar_1);
 
     k_sem_give(&lidar_ready);
     return 0;
