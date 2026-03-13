@@ -44,7 +44,7 @@ GNC throttle + TVC flows board.
 
     chosen {
 		zephyr,console = &lpuart7;
-        };
+    };
 
     example_sensor: example-sensor {
         compatible = "zephyr,example-sensor";
@@ -193,4 +193,9 @@ pt_adc: &adc1 {
 &lpuart4 {
     status = "okay";
     current-speed = <115200>;
+};
+
+&enet_mac {
+    /delete-property/ nxp,unique-mac;
+    local-mac-address = [67 67 67 67 67 67];
 };
