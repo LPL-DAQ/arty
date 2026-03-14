@@ -83,9 +83,9 @@
 
 
 &pll2 {
-    div-m = <16>;
-    mul-n = <5>;
-    div-p = <1>;   // Gvies 20 mHz to the ADC as SCLK input
+    div-m = <4>;
+    mul-n = <10>;
+    div-p = <8>;   // Gvies 20 mHz to the ADC as SCLK input
     div-q = <2>;
     div-r = <2>;
     clocks = <&clk_hsi>;
