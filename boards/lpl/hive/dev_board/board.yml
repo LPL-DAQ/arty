@@ -1,5 +1,5 @@
 board:
-  name: nucleo_h755zi_q
+  name: dev_board
   full_name: Nucleo H755ZI-Q
   vendor: st
   socs:
