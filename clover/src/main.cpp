@@ -10,6 +10,7 @@
 #include "ThrottleValve.h"
 #include "pts.h"
 #include "server.h"
+#include "lidar.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -33,6 +34,7 @@ int main(void)
         return 0;
     }
 
+    /*
     LOG_INF("Initializing fuel throttle valve");
     if (auto result = FuelValve::init(); !result) {
         LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
@@ -44,7 +46,15 @@ int main(void)
         LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
         return 0;
     }
+        */
 
+    LOG_INF("Initializing LiDAR");
+    int err = lidar_init();
+    if (err) {
+        LOG_ERR("Failed to initialize LiDAR");
+        return 0;
+    }
+    /*
     LOG_INF("Initializing PTs");
     if (auto result = pts_init(); !result) {
         LOG_ERR("Failed to initialize PTs: %s", result.error().build_message().c_str());
@@ -67,6 +77,7 @@ int main(void)
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();
+    */
 
-    k_sleep(K_FOREVER);
+    //k_sleep(K_FOREVER);
 }
