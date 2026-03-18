@@ -3,3 +3,5 @@
 
 # Out-of-tree drivers for custom classes
 add_subdirectory_ifdef(CONFIG_BLINK blink)
+
+add_subdirectory_ifdef(CONFIG_VN300 vn300)

@@ -3,4 +3,5 @@
 
 menu "Drivers"
 rsource "blink/Kconfig"
+rsource "vn300/Kconfig"
 endmenu
