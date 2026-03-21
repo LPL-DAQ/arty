@@ -14,7 +14,6 @@
 
 #include "ThrottleValve.h"
 #include "clover.pb.h"
-#include "guards/SocketGuard.h"
 #include "pts.h"
 // ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
@@ -41,18 +40,18 @@ K_THREAD_STACK_ARRAY_DEFINE(client_stacks, MAX_OPEN_CLIENTS, CONNECTION_THREAD_S
 
 constexpr int MAX_THREAD_NAME_LENGTH = 10;
 static std::array<std::string, MAX_OPEN_CLIENTS> thread_names;
-K_MUTEX_DEFINE(thread_info_guard);
+K_MUTEX_DEFINE(thread_info_lock);
 
 /// Tracks when DAQ last pinged (AKA, ID'd itself)
 static int daq_thread_index = -1;
 static int64_t daq_last_pinged_ms = 0;
-K_MUTEX_DEFINE(daq_status_guard);
+K_MUTEX_DEFINE(daq_status_lock);
 
 constexpr int MAX_DATA_CLIENTS = 1;
 static std::array<sockaddr, MAX_DATA_CLIENTS> data_client_addrs;
 static std::array<socklen_t, MAX_DATA_CLIENTS> data_client_addr_lens;
 static std::array<int, MAX_DATA_CLIENTS> data_client_slot_indexes;
-K_MUTEX_DEFINE(data_client_info_guard);
+K_MUTEX_DEFINE(data_client_info_lock);
 
 /// Synchronizes command/data server threads to ensure they only start accepting connections after startup is fully
 /// done (i.e., when serve_connections() is called).
@@ -116,12 +115,12 @@ pb_istream_t pb_istream_from_socket(int sock)
 static std::expected<void, Error> handle_identify_client(const IdentifyClientRequest& req, int thread_index)
 {
     switch (req.client) {
-    case ClientType_DAQ:
-        k_mutex_lock(&daq_status_guard, K_FOREVER);
+    case ClientType_DAQ: {
+        MutexGuard daq_status_guard{&daq_status_lock};
         daq_thread_index = thread_index;
         daq_last_pinged_ms = k_uptime_get();
-        k_mutex_unlock(&daq_status_guard);
         return {};
+    }
 
     case ClientType_GNC:
         return {};
@@ -133,11 +132,8 @@ static std::expected<void, Error> handle_identify_client(const IdentifyClientReq
 
 daq_client_status get_daq_client_status()
 {
-    k_mutex_lock(&daq_status_guard, K_FOREVER);
-    auto ret = daq_client_status{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
-
-    k_mutex_unlock(&daq_status_guard);
-    return ret;
+    MutexGuard daq_status_guard{&daq_status_lock};
+    return daq_client_status{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
 }
 
 /// Handles a client connection. Should run in its own thread.
@@ -166,7 +162,8 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         switch (request.which_payload) {
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
-            k_mutex_lock(&data_client_info_guard, K_FOREVER);
+            MutexGuard daq_status_guard{&data_client_info_lock};
+
             bool found_data_client_slot = false;
             for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
                 if (data_client_slot_indexes[i] != -1) {
@@ -191,7 +188,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                 LOG_ERR("Did not find a data client slot");
             }
 
-            k_mutex_unlock(&data_client_info_guard);
             break;
         }
         case Request_identify_client_tag: {
@@ -289,7 +285,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
     }
 
-    zsock_close(socket);
+    zsock_close(client_socket);
 }
 
 /// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
@@ -297,46 +293,51 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
     bool freed_threads[MAX_OPEN_CLIENTS] = {false};
     while (true) {
-        k_mutex_lock(&has_thread_lock, K_FOREVER);
-        for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
-            if (has_thread[i]) {
-                int ret = k_thread_join(&client_threads[i], K_NO_WAIT);
-                if (ret == 0) {
-                    k_mutex_lock(&thread_info_guard, K_FOREVER);
-                    thread_names[i].clear();
-                    k_mutex_unlock(&thread_info_guard);
+        {
+            MutexGuard has_thread_guard{&has_thread_lock};
+            for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
+                if (has_thread[i]) {
+                    int ret = k_thread_join(&client_threads[i], K_NO_WAIT);
+                    if (ret == -EBUSY) {
+                        // Thread still running
+                        continue;
+                    }
+                    else if (ret != 0) {
+                        LOG_ERR("Unexpected code from joining client thread: err %d", ret);
+                        continue;
+                    }
+
+                    {
+                        MutexGuard thread_info_guard{&thread_info_lock};
+                        thread_names[i].clear();
+                    }
 
                     // Clean up potential data client subscription
-                    k_mutex_lock(&data_client_info_guard, K_FOREVER);
-                    for (int j = 0; j < MAX_DATA_CLIENTS; ++j) {
-                        if (data_client_slot_indexes[j] == i) {
-                            data_client_slot_indexes[j] = -1;
-                            data_client_addr_lens[j] = sizeof(sockaddr);
+                    {
+                        MutexGuard data_client_info_guard{&data_client_info_lock};
+                        for (int j = 0; j < MAX_DATA_CLIENTS; ++j) {
+                            if (data_client_slot_indexes[j] == i) {
+                                data_client_slot_indexes[j] = -1;
+                                data_client_addr_lens[j] = sizeof(sockaddr);
+                            }
                         }
                     }
-                    k_mutex_unlock(&data_client_info_guard);
 
                     // Clean up potential DAQ connection
-                    k_mutex_lock(&daq_status_guard, K_FOREVER);
-                    if (daq_thread_index == i) {
-                        daq_thread_index = -1;
-                        daq_last_pinged_ms = k_uptime_get();
+                    {
+                        MutexGuard daq_status_guard{&daq_status_lock};
+                        if (daq_thread_index == i) {
+                            daq_thread_index = -1;
+                            daq_last_pinged_ms = k_uptime_get();
+                        }
                     }
-                    k_mutex_unlock(&daq_status_guard);
 
                     has_thread[i] = false;
                     freed_threads[i] = true;
                     k_sem_give(&num_open_connections);
                 }
-                else if (ret == -EBUSY) {
-                    // Thread still running
-                }
-                else {
-                    LOG_ERR("Unexpected code from joining client thread: err %d", ret);
-                }
             }
         }
-        k_mutex_unlock(&has_thread_lock);
 
         // Log freed threads outside mutex
         for (int i = 0; i < MAX_OPEN_CLIENTS; ++i) {
@@ -394,14 +395,15 @@ void serve_command_connections()
         }
 
         // Find open connection index
-        int connection_index = 0;
-        k_mutex_lock(&has_thread_lock, K_FOREVER);
-        for (connection_index = 0; connection_index < MAX_OPEN_CLIENTS; ++connection_index) {
-            if (!has_thread[connection_index]) {
-                break;
+        int connection_index;
+        {
+            MutexGuard has_thread_guard{&has_thread_lock};
+            for (connection_index = 0; connection_index < MAX_OPEN_CLIENTS; ++connection_index) {
+                if (!has_thread[connection_index]) {
+                    break;
+                }
             }
         }
-        k_mutex_unlock(&has_thread_lock);
         if (connection_index == MAX_OPEN_CLIENTS) {
             LOG_ERR("Consistency error: Server acquired connection semaphore but no thread slots were open");
             return;
@@ -427,9 +429,10 @@ void serve_command_connections()
             0,
             K_NO_WAIT);
 
-        k_mutex_lock(&has_thread_lock, K_FOREVER);
-        has_thread[connection_index] = true;
-        k_mutex_unlock(&has_thread_lock);
+        {
+            MutexGuard has_thread_guard{&has_thread_lock};
+            has_thread[connection_index] = true;
+        }
     }
 }
 
@@ -478,7 +481,7 @@ void serve_data_connections()
             }
 
             // Lock the client info guard and broadcast the already-encoded buffer to all subscribed IPs
-            k_mutex_lock(&data_client_info_guard, K_FOREVER);
+            MutexGuard data_client_info_guard{&data_client_info_lock};
             for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
                 if (data_client_slot_indexes[i] == -1) {
                     continue;
@@ -491,7 +494,6 @@ void serve_data_connections()
                     LOG_ERR("sendto failed: bytes_sent=%d errno=%d", bytes_sent, errno);
                 }
             }
-            k_mutex_unlock(&data_client_info_guard);
         }
     }
 }
