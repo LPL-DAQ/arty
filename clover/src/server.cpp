@@ -144,11 +144,11 @@ daq_client_status get_daq_client_status()
 static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
     int thread_index = reinterpret_cast<int>(p1_thread_index);
-    SocketGuard client_guard{reinterpret_cast<int>(p2_client_socket)};
-    LOG_INF("Handling socket: %d", client_guard.socket);
+    int client_socket = reinterpret_cast<int>(p2_client_socket);
+    LOG_INF("Handling socket: %d", client_socket);
 
-    pb_istream_t pb_input = pb_istream_from_socket(client_guard.socket);
-    pb_ostream_t pb_output = pb_ostream_from_socket(client_guard.socket);
+    pb_istream_t pb_input = pb_istream_from_socket(client_socket);
+    pb_ostream_t pb_output = pb_ostream_from_socket(client_socket);
 
     while (true) {
         Request request = Request_init_default;
@@ -175,7 +175,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                 found_data_client_slot = true;
                 data_client_slot_indexes[i] = thread_index;
 
-                int err = getpeername(client_guard.socket, &data_client_addrs[i], &data_client_addr_lens[i]);
+                int err = getpeername(client_socket, &data_client_addrs[i], &data_client_addr_lens[i]);
                 if (err) {
                     LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
                 }
@@ -288,6 +288,8 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
     }
+
+    zsock_close(socket);
 }
 
 /// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
