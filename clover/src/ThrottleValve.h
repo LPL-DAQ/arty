@@ -2,6 +2,7 @@
 #define ARTY_THROTTLEVALVE_H
 
 #include "Error.h"
+#include "MutexGuard.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -165,7 +166,7 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     const device*, struct gpio_callback*, gpio_port_pins_t)
 {
     constexpr int8_t ENCODER_STEP_TABLE[4][4] = {
-    {0, +1, -1, 0},
+        {0, +1, -1, 0},
         {-1, 0, 0, +1},
         {+1, 0, 0, -1},
         {0, -1, +1, 0},
@@ -212,73 +213,61 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-std::expected<void, Error>
-ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::init()
+std::expected<void, Error> ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::init()
 {
     LOG_MODULE_DECLARE(throttle_valve);
     LOG_INF("%s Initializing throttle valve...", kind_to_prefix(kind));
 
     if (!device_is_ready(pul_gpio.port)) {
         LOG_ERR("%s Pulse GPIO not ready", kind_to_prefix(kind));
-        return std::unexpected(Error::from_device_not_ready(pul_gpio.port)
-            .context("pulse GPIO not ready on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_device_not_ready(pul_gpio.port).context("pulse GPIO not ready on %s valve", kind_to_prefix(kind)));
     }
     if (!device_is_ready(dir_gpio.port)) {
         LOG_ERR("%s Direction GPIO not ready", kind_to_prefix(kind));
-        return std::unexpected(Error::from_device_not_ready(dir_gpio.port)
-            .context("direction GPIO not ready on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_device_not_ready(dir_gpio.port).context("direction GPIO not ready on %s valve", kind_to_prefix(kind)));
     }
     if (!device_is_ready(ena_gpio.port)) {
         LOG_ERR("%s Enable GPIO not ready", kind_to_prefix(kind));
-        return std::unexpected(Error::from_device_not_ready(ena_gpio.port)
-            .context("enable GPIO not ready on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_device_not_ready(ena_gpio.port).context("enable GPIO not ready on %s valve", kind_to_prefix(kind)));
     }
     if (!device_is_ready(enc_a_gpio.port)) {
         LOG_ERR("%s Encoder A GPIO not ready", kind_to_prefix(kind));
-        return std::unexpected(Error::from_device_not_ready(enc_a_gpio.port)
-            .context("encoder A GPIO not ready on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_device_not_ready(enc_a_gpio.port).context("encoder A GPIO not ready on %s valve", kind_to_prefix(kind)));
     }
     if (!device_is_ready(enc_b_gpio.port)) {
         LOG_ERR("%s Encoder B GPIO not ready", kind_to_prefix(kind));
-        return std::unexpected(Error::from_device_not_ready(enc_b_gpio.port)
-            .context("encoder B GPIO not ready on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_device_not_ready(enc_b_gpio.port).context("encoder B GPIO not ready on %s valve", kind_to_prefix(kind)));
     }
     if (!device_is_ready(control_counter)) {
         LOG_ERR("%s Stepper counter not ready", kind_to_prefix(kind));
-        return std::unexpected(Error::from_device_not_ready(control_counter)
-            .context("stepper counter not ready on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_device_not_ready(control_counter).context("stepper counter not ready on %s valve", kind_to_prefix(kind)));
     }
 
     int err;
     err = gpio_pin_configure_dt(&pul_gpio, GPIO_OUTPUT_INACTIVE);
     if (err) {
         LOG_ERR("%s Failed to configure pulse GPIO: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to configure pulse GPIO on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to configure pulse GPIO on %s valve", kind_to_prefix(kind)));
     }
     err = gpio_pin_configure_dt(&dir_gpio, GPIO_OUTPUT_INACTIVE);
     if (err) {
         LOG_ERR("%s Failed to configure direction GPIO: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to configure direction GPIO on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to configure direction GPIO on %s valve", kind_to_prefix(kind)));
     }
     err = gpio_pin_configure_dt(&ena_gpio, GPIO_OUTPUT_ACTIVE);
     if (err) {
         LOG_ERR("%s Failed to configure enable GPIO: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to configure enable GPIO on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to configure enable GPIO on %s valve", kind_to_prefix(kind)));
     }
     err = gpio_pin_configure_dt(&enc_a_gpio, GPIO_INPUT);
     if (err) {
         LOG_ERR("%s Failed to configure encoder A GPIO: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to configure encoder A GPIO on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to configure encoder A GPIO on %s valve", kind_to_prefix(kind)));
     }
     err = gpio_pin_configure_dt(&enc_b_gpio, GPIO_INPUT);
     if (err) {
         LOG_ERR("%s Failed to configure encoder B GPIO: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to configure encoder B GPIO on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to configure encoder B GPIO on %s valve", kind_to_prefix(kind)));
     }
 
     prev_encoder_state = read_encoder_state();
@@ -286,14 +275,12 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
     err = gpio_pin_interrupt_configure_dt(&enc_a_gpio, GPIO_INT_EDGE_BOTH);
     if (err) {
         LOG_ERR("%s Failed to enable encoder A interrupts: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to enable encoder A interrupts on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to enable encoder A interrupts on %s valve", kind_to_prefix(kind)));
     }
     err = gpio_pin_interrupt_configure_dt(&enc_b_gpio, GPIO_INT_EDGE_BOTH);
     if (err) {
         LOG_ERR("%s Failed to enable encoder B interrupts: err %d", kind_to_prefix(kind), err);
-        return std::unexpected(Error::from_code(err)
-            .context("failed to enable encoder B interrupts on %s valve", kind_to_prefix(kind)));
+        return std::unexpected(Error::from_code(err).context("failed to enable encoder B interrupts on %s valve", kind_to_prefix(kind)));
     }
 
     gpio_init_callback(&encoder_a_callback, encoder_update_isr, BIT(enc_a_gpio.pin));
@@ -325,22 +312,24 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
     prevState = state;
     if (!on) {
         state = ValveState::OFF;
-    } else if (set_pos) {
+    }
+    else if (set_pos) {
         state = ValveState::RUNNING;
-    } else {
+    }
+    else {
         state = ValveState::STOPPED;
     }
 
     switch (state) {
-        case ValveState::OFF:
-            power_on(false);
-            break;
-        case ValveState::STOPPED:
-            stop();
-            break;
-        case ValveState::RUNNING:
-            move(target_deg);
-            break;
+    case ValveState::OFF:
+        power_on(false);
+        break;
+    case ValveState::STOPPED:
+        stop();
+        break;
+    case ValveState::RUNNING:
+        move(target_deg);
+        break;
     }
     return {};
 }
@@ -371,7 +360,6 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     }
 
     target_velocity = std::clamp(target_velocity, -MAX_VELOCITY, MAX_VELOCITY);
-
 
     // Based on velocity, calculate pulse interval. Must divide by two as each counter trigger
     // only toggles pulse, so two triggers are needed for full step on rising edge.
@@ -405,14 +393,13 @@ template <
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::stop()
 {
     power_on(true);
-    k_mutex_lock(&motor_lock, K_FOREVER);
+
+    MutexGuard motor_guard{&motor_lock};
     counter_stop(control_counter);
     acceleration = 0;
     velocity = 0;
     state = ValveState::STOPPED;
-    k_mutex_unlock(&motor_lock);
 }
-
 
 /// Reset internal and encoder positions to a new value without moving the motor. The current physical valve position
 /// will be set as the input new position.
@@ -428,19 +415,17 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
 {
     LOG_MODULE_DECLARE(throttle_valve);
 
-    k_mutex_lock(&motor_lock, K_FOREVER);
+    MutexGuard motor_guard{&motor_lock};
     // if (state != ValveState::STOPPED) {
-        // k_mutex_unlock(&motor_lock);
-        //     LOG_ERR("Cannot reset to position open when motor is stopped.");
-        //     return;
-        // }
+    // k_mutex_unlock(&motor_lock);
+    //     LOG_ERR("Cannot reset to position open when motor is stopped.");
+    //     return;
+    // }
 
-        int new_steps = static_cast<int>(std::round(new_pos / DEG_PER_STEP));
-        steps = new_steps;
-        int new_encoder_count = static_cast<int>(std::round(new_pos / DEG_PER_ENCODER_COUNT));
-        encoder_count = new_encoder_count;
-
-    k_mutex_unlock(&motor_lock);
+    int new_steps = static_cast<int>(std::round(new_pos / DEG_PER_STEP));
+    steps = new_steps;
+    int new_encoder_count = static_cast<int>(std::round(new_pos / DEG_PER_ENCODER_COUNT));
+    encoder_count = new_encoder_count;
 }
 
 template <
@@ -454,7 +439,7 @@ template <
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::power_on(bool on)
 {
     LOG_MODULE_DECLARE(throttle_valve);
-    k_mutex_lock(&motor_lock, K_FOREVER);
+    MutexGuard motor_guard{&motor_lock};
 
     if (on) {
         if (prevState == ValveState::OFF) {
@@ -468,8 +453,6 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
             gpio_pin_set_dt(&ena_gpio, 0);
         }
     }
-
-    k_mutex_unlock(&motor_lock);
 }
 
 /// Get internal motor position via how many pulses we sent to the controller.
@@ -568,7 +551,7 @@ bool ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     return state != ValveState::OFF;
 }
 
-typedef ThrottleValve <
+typedef ThrottleValve<
     ValveKind::FUEL,
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_stepper_pul_gpios),
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), fuel_valve_stepper_dir_gpios),
@@ -578,7 +561,7 @@ typedef ThrottleValve <
     DEVICE_DT_GET(DT_ALIAS(fuel_valve_stepper_pulse_counter))>
     FuelValve;
 
-typedef ThrottleValve <
+typedef ThrottleValve<
     ValveKind::LOX,
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_stepper_pul_gpios),
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_stepper_dir_gpios),
