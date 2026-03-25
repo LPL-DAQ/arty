@@ -35,10 +35,14 @@ int main(void)
     while (1) {
         /* 4. Read ADC value (Internal driver handles SPI/CS) */
         int ret = adc_read(adc_dev, &sequence);
-        __ASSERT(ret == 0, "adc_read failed: %d", ret);
+        //__ASSERT(ret == 0, "adc_read failed: %d", ret);
 
         if (ret == 0) {
-            /* Success! Check 'sample_val' in Debugger (Range: 0-4095) */
+            /* View result in RTT Viewer or Debugger Console */
+            printk("ADC Read Success: %d\n", sample_val);
+        } else {
+            /* Check error code if read fails */
+            printk("ADC Read Failed! Error code: %d\n", ret);
         }
 
         /* Using Busy Wait as you requested */
