@@ -157,6 +157,10 @@
     };
 };
 
+&gpioa {
+    status = "okay";
+};
+
 &spi1 {
     pinctrl-names = "default";
     pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pd7>;
