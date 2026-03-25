@@ -162,16 +162,16 @@
 };
 
 &spi1 {
+    status = "okay";
     pinctrl-names = "default";
     pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pd7>;
     cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
-    status = "okay";
-    /*#address-cells = <1>;
-    #size-cells = <0>;
 
-    adc@0 {
-        compatible = "ti,ads7953";
+    ads7953: adc@0 {
+        compatible = "ti,ads7950";
+        status = "okay";
         reg = <0>;
-        spi-max-frequency = <20000000>;
-    };*/
+        spi-max-frequency = <1000000>;
+        #io-channel-cells = <1>;
+    };
 };
