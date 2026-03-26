@@ -9,7 +9,6 @@ static const struct gpio_dt_spec dir_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user
 
 extern "C" int main(void)
 {
-    /* 1. 只留最簡單的列印，確認能不能進到 main */
     printk("Hello! Entering main...\n");
 
     const struct device *flash_dev = DEVICE_DT_GET(DT_NODELABEL(mx25l25645g));

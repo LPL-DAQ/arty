@@ -18,11 +18,16 @@
     };
 
     chosen {
-        /* 刪除或註解掉這兩行，這是導致當機的主因 */
-        /* zephyr,console = &uart4; */
-        /* zephyr,shell-uart = &uart4; */
+        zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
         zephyr,sram = &sram0;
         zephyr,flash = &flash0;
+    };
+
+    qspi_mm_mpu: mpu-region@90000000 {
+        compatible = "zephyr,arm-mpu-region";
+        reg = <0x90000000 DT_SIZE_M(256)>;
+        aattribute = <0x03070000>;
     };
 
     leds {
@@ -102,12 +107,13 @@
     status = "okay";
 };*/
 
-/*&uart4 {
+&uart4 {
     pinctrl-names = "default";
     pinctrl-0 = <&uart4_tx_pd1 &uart4_rx_pd0>;
     current-speed = <115200>;
     status = "okay";
-};*/
+};
+
 /*
 &sdmmc1 {
     pinctrl-names = "default";
