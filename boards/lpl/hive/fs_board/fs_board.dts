@@ -2,6 +2,7 @@
 #include <st/h7/stm32h750Xb.dtsi>
 #include <st/h7/stm32h750vbtx-pinctrl.dtsi>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/clock/stm32h7_clock.h>
 
 / {
     chosen {
@@ -44,13 +45,10 @@
 	status = "okay";
 };
 
-/* 1. 配置 PLL2 產生 20MHz 的時鐘源 */
-&pll2 {
+&pll3 {
     div-m = <4>;
-    mul-n = <10>;
-    div-p = <8>;   /* HSI(64MHz)/4 * 10 / 8 = 20MHz */
-    div-q = <2>;
-    div-r = <2>;
+    mul-n = <160>; /* 放大倍率以符合硬體規範 */
+    div-p = <128>; /* 相應增大除頻，維持輸出為 20MHz */
     clocks = <&clk_hsi>;
     status = "okay";
 };
@@ -58,19 +56,44 @@
 &spi1 {
     status = "okay";
     pinctrl-names = "default";
-    /* 2. 修正引腳：pd7 改為 pa7 */
-    pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pd7>;
+    pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pd7>; /* 2. pd7 vs pa7 */
     cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
 
-    /* 3. 指定 SPI1 的時鐘源來自 PLL2P */
-    clocks = <&rcc STM32_CLOCK_BUS_APB2 0x00001000>, <&rcc STM32_SRC_PLL2_P SPI123_SEL(0)>;
+    #address-cells = <1>; //子節點的 reg 用 1 個數字表示
+    #size-cells = <0>;  //子節點的 reg 不需要 size
+
+    clocks = <&rcc STM32_CLOCK_BUS_APB2 0x00001000>, <&rcc STM32_SRC_PLL3_P SPI123_SEL(0)>;
 
     ads7950: adc@0 {
         compatible = "ti,ads7950";
-        reg = <0>;
+        reg = <0>; //就是由 父節點（spi1）定義格式
         spi-max-frequency = <20000000>;
-        #io-channel-cells = <1>;
+        #io-channel-cells = <1>; //chose chanel
+        ti,range = <1>;          //1 = 0..Vref，2 = 0..2*Vref
         status = "okay";
+
+        /* --- for ADC driver (暫時不用) ---
+        #address-cells = <1>;
+        #size-cells = <0>;
+        channel@0 {
+            reg = <0>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_EXTERNAL0";
+            zephyr,vref-mv = <3300>; /* REFP 若接 3.3V 就用 3300 if 2.5V reference IC <2500>*/
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <12>;
+        };
+        */
     };
 };
 
+/*
+ * 先保留，之後要用 adc_read_dt() 時再打開。
+ * //ADC_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), ain0);
+ * //把 <&ads7950 0> 解析成 adc_dt_spec
+
+ * &zephyr_user {
+ *     io-channels = <&ads7950 0>;
+ *     io-channel-names = "ain0";
+ * };
+ */

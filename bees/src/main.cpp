@@ -5,7 +5,6 @@
 #define ADS7950_NODE DT_NODELABEL(ads7950)
 
 /*
- * 關鍵修正：
  * 1. SPI_WORD_SET(16): 符合 ADS7950 16-bit 規格
  * 2. SPI_MODE_LOOP: 開啟內部環回，沒接硬體也能測試
  */
