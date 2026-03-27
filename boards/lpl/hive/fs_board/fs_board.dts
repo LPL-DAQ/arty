@@ -44,19 +44,33 @@
 	status = "okay";
 };
 
+/* 1. 配置 PLL2 產生 20MHz 的時鐘源 */
+&pll2 {
+    div-m = <4>;
+    mul-n = <10>;
+    div-p = <8>;   /* HSI(64MHz)/4 * 10 / 8 = 20MHz */
+    div-q = <2>;
+    div-r = <2>;
+    clocks = <&clk_hsi>;
+    status = "okay";
+};
+
 &spi1 {
     status = "okay";
     pinctrl-names = "default";
+    /* 2. 修正引腳：pd7 改為 pa7 */
     pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pd7>;
     cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
+
+    /* 3. 指定 SPI1 的時鐘源來自 PLL2P */
+    clocks = <&rcc STM32_CLOCK_BUS_APB2 0x00001000>, <&rcc STM32_SRC_PLL2_P SPI123_SEL(0)>;
 
     ads7950: adc@0 {
         compatible = "ti,ads7950";
         reg = <0>;
-        spi-max-frequency = <100000>;
-        spi-cpol;
-        spi-cpha;
+        spi-max-frequency = <20000000>;
         #io-channel-cells = <1>;
         status = "okay";
     };
 };
+
