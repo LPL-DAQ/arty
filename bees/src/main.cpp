@@ -1,61 +1,66 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/adc.h>
-#include <zephyr/arch/cpu.h>  // Required for direct register access (SPI1->SR)
+#include <zephyr/drivers/spi.h>
 
-/* Get ADC device from devicetree label */
-#define ADC_NODE DT_NODELABEL(ads7953)
+#define ADS7950_NODE DT_NODELABEL(ads7950)
+
+/* Let devicetree provide CS, frequency, and SPI mode flags */
+static const struct spi_dt_spec ads_spi = SPI_DT_SPEC_GET(
+    ADS7950_NODE,
+    SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
+    0
+);
+
+volatile int g_init_ret;
+volatile int g_ret;
+volatile uint8_t g_tx_buf[2];
+volatile uint8_t g_rx_buf[2];
+
+static struct spi_buf tx_buf = {
+    .buf = (void *)g_tx_buf,
+    .len = sizeof(g_tx_buf),
+};
+
+static struct spi_buf rx_buf = {
+    .buf = (void *)g_rx_buf,
+    .len = sizeof(g_rx_buf),
+};
+
+static struct spi_buf_set tx_set = {
+    .buffers = &tx_buf,
+    .count = 1,
+};
+
+static struct spi_buf_set rx_set = {
+    .buffers = &rx_buf,
+    .count = 1,
+};
 
 int main(void)
 {
-    const struct device *adc_dev = DEVICE_DT_GET(ADC_NODE);
+    g_init_ret = 0;
+    g_ret = 0;
+    g_tx_buf[0] = 0;
+    g_tx_buf[1] = 0;
+    g_rx_buf[0] = 0;
+    g_rx_buf[1] = 0;
 
-    /* 1. Check if driver is ready */
-    if (!device_is_ready(adc_dev)) {
-        printk("ADC Device not ready!\n");
-        return -1;
+    if (!spi_is_ready_dt(&ads_spi)) {
+        g_init_ret = -1;
+        return 0;
     }
-
-    /* 2. Configure ADC channel 0 */
-    struct adc_channel_cfg ch_cfg = {
-        .gain = ADC_GAIN_1,
-        .reference = ADC_REF_INTERNAL,
-        .acquisition_time = ADC_ACQ_TIME_DEFAULT,
-        .channel_id = 0, /* ADS7953 CH0 */
-    };
-
-    int setup_ret = adc_channel_setup(adc_dev, &ch_cfg);
-    if (setup_ret != 0) {
-        printk("ADC Channel Setup Failed: %d\n", setup_ret);
-    }
-
-    /* 3. Prepare sequence and buffer */
-    int16_t sample_val = 0;
-    struct adc_sequence sequence = {
-        .channels = BIT(0),
-        .buffer = &sample_val,
-        .buffer_size = sizeof(sample_val),
-        .resolution = 12,
-    };
 
     while (1) {
-        /* 4. Read ADC value (Internal driver handles SPI/CS) */
-        int ret = adc_read(adc_dev, &sequence);
+        /* Send a simple 2-byte frame */
+        g_tx_buf[0] = 0x10;
+        g_tx_buf[1] = 0x00;
+        g_rx_buf[0] = 0x00;
+        g_rx_buf[1] = 0x00;
 
-        if (ret == 0) {
-            /* Read Success */
-            printk("ADC Read Success: %d | SPI1_SR: 0x%08x\n", sample_val, SPI1->SR);
-        } else {
-            /* Read Failed - Detailed Hardware Debug */
-            printk("ADC Read Failed! Error: %d | SPI1_SR: 0x%08x | GPIOA_IDR: 0x%08x\n",
-                    ret, SPI1->SR, GPIOA->IDR);
+        g_ret = spi_transceive_dt(&ads_spi, &tx_set, &rx_set);
 
-            // Check specific SPI error flags
-            if (SPI1->SR & 0x00000400) printk(" -> SPI Overrun Error detected!\n");
-            if (SPI1->SR & 0x00000001) printk(" -> SPI Rx Buffer Not Empty\n");
-        }
-
-        /* Using Busy Wait as requested (1,000,000 us = 1 second) */
-        k_busy_wait(1000000);
+        k_msleep(1000);
     }
+
+    return 0;
 }
