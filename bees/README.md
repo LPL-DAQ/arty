@@ -4,8 +4,16 @@
 
 ## Build
 
+Using the feed system board:
+
 ```shell
 west build ~/arty/bees --pristine auto --board fs_board/stm32h750xx --build-dir ~/arty/bees/build
+```
+
+Using the Nucleo H755ZI-Q dev board: [currently broken]
+
+```shell
+west build ~/arty/bees --pristine auto --board dev_board --build-dir ~/arty/bees/build
 ```
 
 ## Flash
