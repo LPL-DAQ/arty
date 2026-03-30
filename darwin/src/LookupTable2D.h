@@ -9,11 +9,11 @@ private:
     constexpr float EPSILON = 0.0001f;
 
 public:
-    static float interp(float x, float y);
+    static float sample(float x, float y);
 };
 
 template <int x_len, float x_min, float x_max, float x_gap, int y_len, float y_min, float y_max, float y_gap, std::array<std::array<float, y_len>, x_len> bps>
-float LookupTable2D<x_len, x_min, x_max, x_gap, y_len, y_min, y_max, y_gap, bps>::interp(float x, float y)
+float LookupTable2D<x_len, x_min, x_max, x_gap, y_len, y_min, y_max, y_gap, bps>::sample(float x, float y)
 {
     static_assert(x_len >= 2);
     static_assert(y_len >= 2);
@@ -21,7 +21,7 @@ float LookupTable2D<x_len, x_min, x_max, x_gap, y_len, y_min, y_max, y_gap, bps>
     static_assert(y_gap > 0);
     static_assert(x_max > x_min);
     static_assert(y_max > y_min);
-    static_assert(std::abs(x_min + x_gap * (x_len - 1) - x_high) < EPSILON, "x_max is incorrect given bp count and gap");
+    static_assert(std::abs(x_min + x_gap * (x_len - 1) - x_max) < EPSILON, "x_max is incorrect given bp count and gap");
     static_assert(std::abs(y_min + y_gap * (y_len - 1) - y_max) < EPSILON, "y_max is incorrect given bp count and gap");
 
     // Determine bp indices bounding input point, clamping into bps array domain

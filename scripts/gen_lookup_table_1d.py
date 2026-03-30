@@ -78,12 +78,12 @@ uv --project ~/arty/scripts run ~/arty/scripts/gen_lookup_table_1d.py {name} {x_
 #include <array>
 #include "LookupTable1D.h"
 
-constexpr int {name_upper_snake}_X_LEN = {x_len:.10f}f;
+constexpr int {name_upper_snake}_X_LEN = {x_len};
 constexpr float {name_upper_snake}_X_MIN = {x_min:.10f}f;
 constexpr float {name_upper_snake}_X_MAX = {x_max:.10f}f;
 constexpr float {name_upper_snake}_X_GAP = {x_gap:.10f}f;
 
-constexpr std::array<float> {name_upper_snake}_BPS {{{', '.join([f'{bp:.10f}' for bp in breakpoints])}}};
+constexpr std::array<float, {name_upper_snake}_X_LEN> {name_upper_snake}_BPS {{{', '.join([f'{bp:.10f}' for bp in breakpoints])}}};
 
 typedef LookupTable1D<{name_upper_snake}_X_LEN, {name_upper_snake}_X_MIN, {name_upper_snake}_X_MAX, {name_upper_snake}_X_GAP, {name_upper_snake}_BPS> {name_upper_camel};
 """
