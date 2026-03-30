@@ -1,5 +1,5 @@
-identifier: nucleo_h755zi_q/stm32h755xx/m7
-name: ST Nucleo H755ZI-Q (M7)
+identifier: dev_board
+name: Hive Dev Board (ST Nucleo H755ZI-Q (M7))
 type: mcu
 arch: arm
 toolchain:
