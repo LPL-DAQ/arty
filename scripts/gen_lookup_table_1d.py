@@ -13,7 +13,7 @@ import string
 import sys
 
 EPSILON = 0.0001
-LOWER_SNAKE_CASE = string.ascii_lowercase + '_'
+LOWER_SNAKE_CASE = string.ascii_lowercase + string.digits + '_'
 
 if len(sys.argv) != 8:
     print(
@@ -64,16 +64,17 @@ if len(breakpoints) != x_len:
 name_upper_snake = name.upper()
 name_upper_camel = ''.join(word[0].upper() + word[1:] for word in name.split('_'))
 
-payload = f"""#pragma once
-
-/*
+payload = f"""/*
 >>> GENERATED FILE <<<
 
 Re-create this whenever {input_file_path} changes by running from the arty directory:
+
 ```
 uv --project ~/arty/scripts run ~/arty/scripts/gen_lookup_table_1d.py {name} {x_len} {x_min} {x_max} {x_gap} {input_file_path} {output_file_path}
 ```
 */
+
+#pragma once
 
 #include <array>
 #include "LookupTable1D.h"

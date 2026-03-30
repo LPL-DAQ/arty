@@ -1,12 +1,14 @@
 #ifndef APP_LOOKUP_TABLE_2D_H
 #define APP_LOOKUP_TABLE_2D_H
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 template <int x_len, float x_min, float x_max, float x_gap, int y_len, float y_min, float y_max, float y_gap, std::array<std::array<float, y_len>, x_len> bps>
 class LookupTable2D {
 private:
-    constexpr float EPSILON = 0.0001f;
+    static constexpr float EPSILON = 0.0001f;
 
 public:
     static float sample(float x, float y);
@@ -27,12 +29,12 @@ float LookupTable2D<x_len, x_min, x_max, x_gap, y_len, y_min, y_max, y_gap, bps>
     // Determine bp indices bounding input point, clamping into bps array domain
     int x_low_idx = std::clamp(static_cast<int>(std::floor((x - x_min) / x_gap)), 0, x_len - 2);
     int y_low_idx = std::clamp(static_cast<int>(std::floor((y - y_min) / y_gap)), 0, y_len - 2);
-    int x_high_idx = y_low_idx + 1;   // Bound to [1, x_len - 1]
-    int y_high_idx = y_high_idx + 1;  // Bound to [1, y_len - 1]
+    int x_high_idx = x_low_idx + 1;  // Bound to [1, x_len - 1]
+    int y_high_idx = y_low_idx + 1;  // Bound to [1, y_len - 1]
 
     // Determine where input bp is within indexes bounding box, clamping such that it remains inside.
-    float x_tween = std::clamp(((x_high_idx * x_gap + x_min) - std::clamp(x, x_min, x_max)) / x_gap, 0.0f, 1.0f);
-    float y_tween = std::clamp(((y_high_idy * y_gap + y_min) - std::clamp(y, y_min, y_may)) / y_gap, 0.0f, 1.0f);
+    float x_tween = std::clamp((std::clamp(x, x_min, x_max) - x_min) / x_gap - x_low_idx, 0.0f, 1.0f);
+    float y_tween = std::clamp((std::clamp(y, y_min, y_max) - y_min) / y_gap - y_low_idx, 0.0f, 1.0f);
 
     // Sample bounding box breakpoints
     float bp_x_low_y_low = bps[x_low_idx][y_low_idx];
