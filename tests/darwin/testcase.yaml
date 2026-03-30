@@ -1,0 +1,4 @@
+tests:
+  darwin_unit.testsuite:
+    platform_allow:
+      - native_sim
