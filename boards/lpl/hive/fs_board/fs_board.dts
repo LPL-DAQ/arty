@@ -79,7 +79,7 @@
             reg = <0>;
             zephyr,gain = "ADC_GAIN_1";
             zephyr,reference = "ADC_REF_EXTERNAL0";
-            zephyr,vref-mv = <3300>; /* REFP 若接 3.3V 就用 3300 if 2.5V reference IC <2500>*/
+            zephyr,vref-mv = <3300>; //REFP 若接 3.3V 就用 3300 if 2.5V reference IC <2500>
             zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
             zephyr,resolution = <12>;
         };
