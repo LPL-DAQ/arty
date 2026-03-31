@@ -4,42 +4,75 @@
 
 #define ADS7950_NODE DT_NODELABEL(ads7950)
 
-/*
- * 1. SPI_WORD_SET(16): 符合 ADS7950 16-bit 規格
- * 2. SPI_MODE_LOOP: 開啟內部環回，沒接硬體也能測試
- */
+/* SPI config: internal loopback */
 static const struct spi_dt_spec ads_spi = SPI_DT_SPEC_GET(
-    ADS7950_NODE,
-    SPI_OP_MODE_MASTER | SPI_WORD_SET(16) | SPI_TRANSFER_MSB | SPI_MODE_LOOP,
-    0
+	ADS7950_NODE,
+	SPI_OP_MODE_MASTER | SPI_WORD_SET(16) | SPI_TRANSFER_MSB,
+	0
 );
 
+/* Debug variables (watch these in debugger) */
 volatile int g_init_ret = 0;
 volatile int g_ret = 0;
-volatile uint16_t g_tx_val = 0;
-volatile uint16_t g_rx_val = 0;
+volatile int g_match = 0;   // 1 = success, 0 = mismatch
 
-static struct spi_buf tx_buf = { .buf = (void *)&g_tx_val, .len = 2 };
-static struct spi_buf rx_buf = { .buf = (void *)&g_rx_val, .len = 2 };
-static struct spi_buf_set tx_set = { .buffers = &tx_buf, .count = 1 };
-static struct spi_buf_set rx_set = { .buffers = &rx_buf, .count = 1 };
+volatile uint16_t g_tx_val[2] = {0};
+volatile uint16_t g_rx_val[2] = {0};
+
+/* SPI buffers */
+static struct spi_buf tx_bufs[] = {
+	{
+		.buf = (void *)g_tx_val,
+		.len = sizeof(g_tx_val),
+	},
+};
+
+static struct spi_buf rx_bufs[] = {
+	{
+		.buf = (void *)g_rx_val,
+		.len = sizeof(g_rx_val),
+	},
+};
+
+static struct spi_buf_set tx_set = {
+	.buffers = tx_bufs,
+	.count = 1,
+};
+
+static struct spi_buf_set rx_set = {
+	.buffers = rx_bufs,
+	.count = 1,
+};
 
 int main(void)
 {
-    if (!spi_is_ready_dt(&ads_spi)) {
-        g_init_ret = -1;
-        return 0;
-    }
+	if (!spi_is_ready_dt(&ads_spi)) {
+		g_init_ret = -1;
+		while (1);
+	}
 
-    while (1) {
-        /* 指令：Manual Mode, Channel 0 */
-        g_tx_val = 0x1800;
-        g_rx_val = 0;
+	while (1) {
+		/* Prepare test pattern */
+		g_tx_val[0] = 0x1800;
+		g_tx_val[1] = 0x1800;
 
-        /* 執行傳輸：在 Loopback 模式下，g_rx_val 應該會變成 0x1800 */
-        g_ret = spi_transceive_dt(&ads_spi, &tx_set, &rx_set);
+		g_rx_val[0] = 0;
+		g_rx_val[1] = 0;
 
-        k_msleep(1000);
-    }
-    return 0;
+		/* SPI transfer */
+		g_ret = spi_transceive_dt(&ads_spi, &tx_set, &rx_set);
+
+		/* Check result */
+		if (g_ret == 0 &&
+		    g_rx_val[0] == g_tx_val[0] &&
+		    g_rx_val[1] == g_tx_val[1]) {
+			g_match = 1;   // loopback OK
+		} else {
+			g_match = 0;   // failed
+		}
+
+		k_msleep(1000);
+	}
+
+	return 0;
 }
