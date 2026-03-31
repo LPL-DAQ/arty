@@ -27,7 +27,7 @@
     qspi_mm_mpu: mpu-region@90000000 {
         compatible = "zephyr,arm-mpu-region";
         reg = <0x90000000 DT_SIZE_M(256)>;
-        aattribute = <0x03070000>;
+        aattribute = <0x03080000>;
     };
 
     leds {
