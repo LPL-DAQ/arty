@@ -1,10 +1,10 @@
 #ifndef APP_CONTROLLER_H
 #define APP_CONTROLLER_H
 
+#include "AnalogSensors.h"
 #include "Error.h"
 #include "Trace.h"
 #include "clover.pb.h"
-#include "pts.h"
 #include <expected>
 #include <zephyr/kernel.h>
 
@@ -34,7 +34,6 @@ public:
     static inline uint32_t sequence_start_time = 0;
     static inline bool fuel_powered = true;
     static inline bool lox_powered = true;
-
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
     static SystemState state()
@@ -69,7 +68,6 @@ public:
 
 private:
     static inline uint32_t udp_sequence_number = 0;
-    static void stream_telemetry(const AnalogSensors& sensors);
 };
 
 extern struct k_msgq telemetry_msgq;

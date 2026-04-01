@@ -184,7 +184,7 @@ enum SystemState {
   STATE_ABORT = 7;
 }
 
-// next tag: 15
+// next tag: 22
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -194,14 +194,14 @@ message DataPacket {
   // Current controller state
   required SystemState state = 6;
 
+  // Time taken by various controller components.
+  required ControllerTiming controller_timing = 21;
+
   // Size of pending queue of data packets to send.
   required uint32 data_queue_size = 2;
 
   // Counts up for each data packet sent.
   required uint64 sequence_number = 8;
-
-  // Time required to execute one tick of the controller.
-  required float controller_tick_time_ns = 12;
 
   required bool gnc_connected = 15;
   required float gnc_last_pinged_ns = 16;
@@ -209,8 +209,9 @@ message DataPacket {
   required bool daq_connected = 17;
   required float daq_last_pinged_ns = 18;
 
-  // Peripherals
-  required AnalogSensors analog_sensors = 5;
+  // Sensors
+  required PTs pts = 19;
+  required TCs tcs = 20;
 
   // Actuators
   required ValveStatus fuel_valve = 3;
@@ -234,6 +235,13 @@ message DataPacket {
   }
 }
 
+// Stats on controller and sensor execution times.
+message ControllerTiming {
+  required float controller_tick_time_ns = 1;
+  required float analog_sensors_sense_time_ns = 2;
+  required float lidar_sense_time_ns = 3;
+}
+
 message ValveStatus {
   required float target_pos_deg = 1;
   required float driver_setpoint_pos_deg = 2;
@@ -241,18 +249,22 @@ message ValveStatus {
   required bool is_on = 4;
 }
 
-message AnalogSensors {
-  required float pt102 = 1;
-  required float pt103 = 2;
-  required float pt202 = 3;
-  required float pt203 = 4;
-  required float ptf401 = 5;
-  required float pto401 = 6;
-  required float ptc401 = 7;
-  required float ptc402 = 8;
-  required float tc102 = 9;
-  required float tc102_5 = 10;
-  required float adc_read_time_ns = 11;
+// Pressure transducers, measured in psig.
+message PTs {
+  optional float pt102 = 1;
+  optional float pt103 = 2;
+  optional float pt202 = 3;
+  optional float pt203 = 4;
+  optional float ptf401 = 5;
+  optional float pto401 = 6;
+  optional float ptc401 = 7;
+  optional float ptc402 = 8;
+}
+
+// Thermocouples, measured in deg C.
+message TCs {
+  optional float tc102 = 1;
+  optional float tc102_5 = 2;
 }
 
 message IdleData {}

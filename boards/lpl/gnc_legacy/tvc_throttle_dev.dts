@@ -6,11 +6,14 @@ GNC throttle + TVC flows board.
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
 
+#define ANALOG_SENSORS_ADC_RESOLUTION 12
+#define ANALOG_SENSORS_ADC_OVERSAMPLING 5
+
 / {
     model = "TVC/Throttle Dev Board";
 
     aliases {
-        pt-adc = &adc1;
+        analog-sensors-adc = &adc1;
         fuel-valve-stepper-pulse-counter = &pit0_channel0;
         lox-valve-stepper-pulse-counter = &pit0_channel1;
     };
@@ -38,8 +41,11 @@ GNC throttle + TVC flows board.
         // PTO401 - PT7 - Pin 18 - A4 - adc1 6
         // PTC401 - PT8 - Pin 19 - A5 - adc1 5
         // PTC402 - PT9 - Pin 20 - A6 - adc1 15
-        pt-names = "ptc401", "pto401", "pt202", "pt102", "pt103", "ptf401", "pt203", "ptc402";
+
+        // ADC channels used by AnalogSensors.
         io-channels = <&adc1 5>, <&adc1 6>, <&adc1 8>, <&adc1 9>, <&adc1 10>, <&adc1 11>, <&adc1 12>, <&adc1 15>;
+        analog-sensors-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
+        analog-sensors-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
     };
 
     chosen {
@@ -96,8 +102,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@6 {
@@ -105,8 +111,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@8 {
@@ -114,8 +120,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@9 {
@@ -123,8 +129,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@a {
@@ -132,8 +138,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@b {
@@ -141,8 +147,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@c {
@@ -150,8 +156,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 
     channel@f {
@@ -159,8 +165,8 @@ pt_adc: &adc1 {
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <12>; // Max for chip
-        zephyr,oversampling = <5>; // 32x averaging
+        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
 };
 
