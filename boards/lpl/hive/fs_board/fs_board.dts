@@ -9,6 +9,11 @@
         zephyr,flash = &flash0;
         zephyr,sram = &sram0;
     };
+
+    zephyr,user {
+        io-channels = <&ads7950 0>;
+        io-channel-names = "ain0";
+    };
 };
 
 &clk_lsi {
@@ -77,31 +82,18 @@
         ti,range = <1>;          // 1 = 0..Vref, 2 = 0..2*Vref
         status = "okay";
 
-        /* --- ADC Driver Configuration (Temporarily Unused) ---
+        /* --- ADC Driver Configuration (Temporarily Unused) --- */
         #address-cells = <1>;
         #size-cells = <0>;
         channel@0 {
             reg = <0>;
             zephyr,gain = "ADC_GAIN_1";
-            zephyr,reference = "ADC_REF_EXTERNAL0";
+            zephyr,reference = "ADC_REF_VDD_1"; /*ADC_REF_EXTERNAL0*/
             // Use 3300 for 3.3V REFP, or 2500 for a 2.5V reference IC
-            zephyr,vref-mv = <3300>;
+            zephyr,vref-mv = <2500>;
             zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
             zephyr,resolution = <12>;
         };
-        */
+
     };
 };
-
-/*
- * Keep for future use; enable when calling adc_read_dt().
- *
- * Example:
- * // ADC_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), ain0);
- * // Parses <&ads7950 0> into an adc_dt_spec structure.
-
- * &zephyr_user {
- *     io-channels = <&ads7950 0>;
- *     io-channel-names = "ain0";
- * };
- */
