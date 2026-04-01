@@ -14,7 +14,6 @@
 
 #include "ThrottleValve.h"
 #include "clover.pb.h"
-#include "pts.h"
 // ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
 #include "server.h"

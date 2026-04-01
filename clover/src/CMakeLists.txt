@@ -1,14 +1,14 @@
-target_sources(app PRIVATE main.cpp)
-target_sources(app PRIVATE server.cpp)
-target_sources(app PRIVATE pts.cpp)
-target_sources(app PRIVATE ThrottleValve.cpp)
-target_sources(app PRIVATE lidar.cpp)
-target_sources(app PRIVATE Controller.cpp)
-target_sources(app PRIVATE Error.cpp)
-target_sources(app PRIVATE Trace.cpp)
-target_sources(app PRIVATE LookupTable.cpp)
-target_sources(app PRIVATE StateIdle.cpp)
-target_sources(app PRIVATE StateCalibrateValve.cpp)
-target_sources(app PRIVATE StateValveSeq.cpp)
-target_sources(app PRIVATE StateThrustSeq.cpp)
-target_sources(app PRIVATE StateAbort.cpp)
+target_sources(app PRIVATE main.cpp
+    server.cpp
+    ThrottleValve.cpp
+    lidar.cpp
+    Controller.cpp
+    Error.cpp
+    Trace.cpp
+    LookupTable.cpp
+    StateIdle.cpp
+    StateCalibrateValve.cpp
+    StateValveSeq.cpp
+    StateThrustSeq.cpp
+    StateAbort.cpp
+    AnalogSensors.cpp)

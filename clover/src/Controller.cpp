@@ -1,4 +1,5 @@
 #include "Controller.h"
+#include "AnalogSensors.h"
 #include "ControllerConfig.h"
 #include "StateAbort.h"
 #include "StateCalibrateValve.h"
@@ -6,15 +7,20 @@
 #include "StateThrustSeq.h"
 #include "StateValveSeq.h"
 #include "ThrottleValve.h"
-#include "pts.h"
 #include "server.h"
 
+#include "config.h"
 #include <zephyr/kernel.h>
+#include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
+
+// Controller tick workqueue thread
+K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
+k_work_q controller_step_work_q;
 
 std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
@@ -96,12 +102,27 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 std::expected<void, Error> Controller::init()
 {
+    LOG_INF("Triggering initial sensor readings");
+    k_sched_lock();
+    AnalogSensors::start_sense();
+    // Other sensors here...
+    k_sched_unlock();
+
+    LOG_INF("Pausing for initial sensor readings to complete");
+    k_sleep(K_MSEC(500));
+
+    // Set up workqueue
+    LOG_INF("Initializing workqueue");
+    k_work_queue_init(&controller_step_work_q);
+    k_work_queue_start(
+        &controller_step_work_q, controller_step_thread_stack, K_THREAD_STACK_SIZEOF(controller_step_thread_stack), CONTROLLER_STEP_WORK_Q_PRIORITY, nullptr);
+
     auto ret = change_state(SystemState_STATE_IDLE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to idle"));
     }
+    LOG_INF("Beginning controller ticks");
     k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
-    LOG_INF("Initializing Controller...");
     return {};
 }
 
@@ -110,20 +131,18 @@ static int step_control_loop_debounce_warn_count = 0;
 void Controller::step_control_loop(k_work*)
 {
     int64_t current_time = k_uptime_get();
-    DataPacket packet = DataPacket_init_default;
+    DataPacket data = DataPacket_init_default;
 
-    pt_readings raw_pts = pts_sample();
-    AnalogSensors current_sensors = AnalogSensors_init_default;
+    // Read sensors
 
-    current_sensors.ptc401 = raw_pts.ptc401;
-    current_sensors.pto401 = raw_pts.pto401;
-    current_sensors.pt202 = raw_pts.pt202;
-    current_sensors.pt102 = raw_pts.pt102;
-    current_sensors.pt103 = raw_pts.pt103;
-    current_sensors.ptf401 = raw_pts.ptf401;
-    current_sensors.ptc402 = raw_pts.ptc402;
-    current_sensors.pt203 = raw_pts.pt203;
-    current_sensors.adc_read_time_ns = pts_get_adc_read_time_ns();
+    auto analog_sensors_readings = AnalogSensors::read();
+    if (analog_sensors_readings) {
+        std::tie(data.pts, data.tcs, data.controller_timing.analog_sensors_sense_time_ns) = *analog_sensors_readings;
+    }
+    else {
+        LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
+    }
+
     daq_client_status daq_status = get_daq_client_status();
 
     ControllerOutput out;
@@ -132,8 +151,8 @@ void Controller::step_control_loop(k_work*)
     switch (current_state) {
     case SystemState_STATE_IDLE: {
         auto [idle_out, idle_data] = StateIdle::tick();
-        packet.which_state_data = DataPacket_idle_data_tag;
-        packet.state_data.idle_data = idle_data;
+        data.which_state_data = DataPacket_idle_data_tag;
+        data.state_data.idle_data = idle_data;
         out = idle_out;
         break;
     }
@@ -141,52 +160,52 @@ void Controller::step_control_loop(k_work*)
         // Can make this work over protobuf later
         auto [cal_out, cal_data] = StateCalibrateValve::tick(
             current_time, FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
-        packet.which_state_data = DataPacket_valve_calibration_data_tag;
-        packet.state_data.valve_calibration_data = cal_data;
+        data.which_state_data = DataPacket_valve_calibration_data_tag;
+        data.state_data.valve_calibration_data = cal_data;
         out = cal_out;
         break;
     }
     case SystemState_STATE_VALVE_PRIMED: {
         auto [primed_out, primed_data] = StateIdle::tick();
         primed_out.next_state = SystemState_STATE_VALVE_PRIMED;
-        packet.which_state_data = DataPacket_idle_data_tag;
-        packet.state_data.idle_data = primed_data;
+        data.which_state_data = DataPacket_idle_data_tag;
+        data.state_data.idle_data = primed_data;
         out = primed_out;
         break;
     }
     case SystemState_STATE_VALVE_SEQ: {
         auto [seq_out, seq_data] = StateValveSeq::tick(current_time, sequence_start_time);
-        packet.which_state_data = DataPacket_valve_sequence_data_tag;
-        packet.state_data.valve_sequence_data = seq_data;
+        data.which_state_data = DataPacket_valve_sequence_data_tag;
+        data.state_data.valve_sequence_data = seq_data;
         out = seq_out;
         break;
     }
     case SystemState_STATE_THRUST_PRIMED: {
         auto [thrust_primed_out, thrust_primed_data] = StateIdle::tick();
         thrust_primed_out.next_state = SystemState_STATE_THRUST_PRIMED;
-        packet.which_state_data = DataPacket_idle_data_tag;
-        packet.state_data.idle_data = thrust_primed_data;
+        data.which_state_data = DataPacket_idle_data_tag;
+        data.state_data.idle_data = thrust_primed_data;
         out = thrust_primed_out;
         break;
     }
     case SystemState_STATE_THRUST_SEQ: {
-        auto [thrust_out, thrust_data] = StateThrustSeq::tick(current_sensors, current_time, sequence_start_time);
-        packet.which_state_data = DataPacket_thrust_sequence_data_tag;
-        packet.state_data.thrust_sequence_data = thrust_data;
+        auto [thrust_out, thrust_data] = StateThrustSeq::tick(data.pts, current_time, sequence_start_time);
+        data.which_state_data = DataPacket_thrust_sequence_data_tag;
+        data.state_data.thrust_sequence_data = thrust_data;
         out = thrust_out;
         break;
     }
     case SystemState_STATE_ABORT: {
         auto [abort_out, abort_data] = StateAbort::tick(current_time, abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
-        packet.which_state_data = DataPacket_abort_data_tag;
-        packet.state_data.abort_data = abort_data;
+        data.which_state_data = DataPacket_abort_data_tag;
+        data.state_data.abort_data = abort_data;
         out = abort_out;
         break;
     }
     default: {
         auto [idle_out, idle_data] = StateIdle::tick();
-        packet.which_state_data = DataPacket_idle_data_tag;
-        packet.state_data.idle_data = idle_data;
+        data.which_state_data = DataPacket_idle_data_tag;
+        data.state_data.idle_data = idle_data;
         out = idle_out;
         break;
     }
@@ -208,32 +227,30 @@ void Controller::step_control_loop(k_work*)
     LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
 
     // telemetry
-    packet.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
-    packet.state = current_state;
-    packet.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
-    packet.sequence_number = udp_sequence_number++;
-    packet.gnc_connected = true;
-    packet.gnc_last_pinged_ns = 0;
+    data.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
+    data.state = current_state;
+    data.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
+    data.sequence_number = udp_sequence_number++;
+    data.gnc_connected = true;
+    data.gnc_last_pinged_ns = 0;
 
-    packet.daq_connected = daq_status.connected;
-    packet.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
+    data.daq_connected = daq_status.connected;
+    data.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
 
-    packet.analog_sensors = current_sensors;
-    packet.analog_sensors.adc_read_time_ns = 9767577;
-    packet.fuel_valve = {
+    data.fuel_valve = {
         .target_pos_deg = out.fuel_pos,
         .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
         .encoder_pos_deg = FuelValve::get_pos_encoder(),
         .is_on = FuelValve::get_power_on(),
     };
-    packet.lox_valve = {
+    data.lox_valve = {
         .target_pos_deg = out.lox_pos,
         .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
         .encoder_pos_deg = LoxValve::get_pos_encoder(),
         .is_on = LoxValve::get_power_on(),
     };
 
-    if (k_msgq_put(&telemetry_msgq, &packet, K_NO_WAIT) != 0) {
+    if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {
             LOG_WRN("Telemetry queue full, packet dropped");
         }
@@ -246,6 +263,9 @@ void Controller::step_control_loop(k_work*)
         // Reset warning count
         step_control_loop_debounce_warn_count = 0;
     }
+
+    // Trigger sensor readings for next tick.
+    AnalogSensors::start_sense();
 }
 
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
@@ -458,7 +478,6 @@ std::expected<void, Error> Controller::handle_configure_analog_sensor_bias(const
         return std::unexpected(Error::from_cause("Unknown analog sensor identifier"));
     }
 
-    pts_set_bias(i, req.bias);
     return {};
 }
 
