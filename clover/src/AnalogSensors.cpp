@@ -197,7 +197,7 @@ static void sense()
 
                         // Convert amplified signal back to unamplified TC signal
                         constexpr float V_REF = 1.25;
-                        float unamplified_v = 
+                        float unamplified_v =
 
                         switch (config.tc_type) {
                         case TCType_K_TYPE: {
