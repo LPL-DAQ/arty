@@ -440,47 +440,6 @@ std::expected<void, Error> Controller::handle_power_on_valve(const PowerOnValveR
     return {};
 }
 
-std::expected<void, Error> Controller::handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req)
-{
-    LOG_INF("Received configure analog sensor bias request");
-
-    // Maps AnalogSensor enum to pt_configs[] index (order from tvc_throttle_dev.dts pt-names)
-    int i;
-    switch (req.sensor) {
-    case AnalogSensor_PTC401:
-        i = 0;
-        break;
-    case AnalogSensor_PTO401:
-        i = 1;
-        break;
-    case AnalogSensor_PT202:
-        i = 2;
-        break;
-    case AnalogSensor_PT102:
-        i = 3;
-        break;
-    case AnalogSensor_PT103:
-        i = 4;
-        break;
-    case AnalogSensor_PTF401:
-        i = 5;
-        break;
-    case AnalogSensor_PT203:
-        i = 6;
-        break;
-    case AnalogSensor_PTC402:
-        i = 7;
-        break;
-    case AnalogSensor_TC102:
-    case AnalogSensor_TC102_5:
-        return std::unexpected(Error::from_cause("TC sensors are not ADC-sourced and do not support bias configuration"));
-    default:
-        return std::unexpected(Error::from_cause("Unknown analog sensor identifier"));
-    }
-
-    return {};
-}
-
 std::expected<void, Error> Controller::handle_power_off_valve(const PowerOffValveRequest& req)
 {
     LOG_INF("Received power off valve request");

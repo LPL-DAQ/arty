@@ -60,7 +60,6 @@ public:
     static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
     static std::expected<void, Error> handle_power_on_valve(const PowerOnValveRequest& req);
     static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
-    static std::expected<void, Error> handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req);
 
     static std::expected<void, Error> change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);
