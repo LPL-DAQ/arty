@@ -28,3 +28,19 @@ west flash
 ```bash
 minicom -b 115200 -D /dev/tty.usbmodem[PORT]
 ```
+
+## Output for Windows (run in Command Line)
+
+```shell
+wsl --install
+sudo apt update
+sudo apt install minicom
+minicom -b 115200 -D /dev/ttyS3
+```
+                              ^ port # might need to be changed
+
+bypass command if issues:
+
+```shell
+sudo chmod 666 /dev/ttyS3
+```
