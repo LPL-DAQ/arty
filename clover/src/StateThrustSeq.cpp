@@ -1721,7 +1721,7 @@ void StateThrustSeq::init(float total_time_ms)
 }
 
 // needs , float target_thrust_lbf, float target_of from Sample
-std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const PTs& pts, int64_t current_time, int64_t start_time)
+std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
     ControllerOutput out{};
     ThrustSequenceData data{};
@@ -1740,7 +1740,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const PTs& 
     float target_thrust_lbf = *target_result;
 
     // 1. Safety: abort if PTC401 is below threshold for some time
-    if (pts.ptc401 <= PTC401_ABORT_THRESHOLD) {
+    if (analog_sensors.battery_voltage <= PTC401_ABORT_THRESHOLD) {
         if (low_ptc_start_time_ms == 0) {
             low_ptc_start_time_ms = current_time;
         }
@@ -1760,18 +1760,18 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const PTs& 
     }
 
     // 2. Read pressures
-    float ptc401_val = pts.ptc401;                                    // Adjusted value
-    float pto401_val = pts.pto401 + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
-    float pt103_val = pts.pt103;                                      // Adjusted value
-    float ptf401_val = pts.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
-    float pt203_val = pts.pt203;                                      // Adjusted value
-    float ptc402_val = pts.ptc402;                                    // Adjusted value
-    bool pt203_valid = (pts.pt203 >= MIN_threshold && pts.pt203 <= MAX_threshold_PT2k);
-    bool ptf401_valid = (pts.ptf401 >= MIN_threshold && pts.ptf401 <= MAX_threshold_PT2k);
-    bool pt103_valid = (pts.pt103 >= MIN_threshold && pts.pt103 <= MAX_threshold_PT2k);
-    bool pto401_valid = (pts.pto401 >= MIN_threshold && pts.pto401 <= MAX_threshold_PT2k);
-    bool ptc401_valid = (pts.ptc401 >= MIN_threshold && pts.ptc401 <= MAX_threshold_PT1k);
-    bool ptc402_valid = (pts.ptc402 >= MIN_threshold && pts.ptc402 <= MAX_threshold_PT1k);
+    float ptc401_val = analog_sensors.battery_voltage;                                    // Adjusted value
+    float pto401_val = analog_sensors.battery_voltage + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
+    float pt103_val = analog_sensors.battery_voltage;                                      // Adjusted value
+    float ptf401_val = analog_sensors.battery_voltage + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+    float pt203_val = analog_sensors.battery_voltage;                                      // Adjusted value
+    float ptc402_val = analog_sensors.battery_voltage;                                    // Adjusted value
+    bool pt203_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+    bool ptf401_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+    bool pt103_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+    bool pto401_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+    bool ptc401_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT1k);
+    bool ptc402_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT1k);
     float p_inj_fuel;
     float p_inj_lox;
     float p_ch;

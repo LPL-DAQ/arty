@@ -131,16 +131,16 @@ static int step_control_loop_debounce_warn_count = 0;
 void Controller::step_control_loop(k_work*)
 {
     int64_t current_time = k_uptime_get();
+    uint64_t start_cycle = k_cycle_get_64();
     DataPacket data = DataPacket_init_default;
 
     // Read sensors
-
     auto analog_sensors_readings = AnalogSensors::read();
     if (analog_sensors_readings) {
-        std::tie(data.pts, data.tcs, data.controller_timing.analog_sensors_sense_time_ns) = *analog_sensors_readings;
+        std::tie(data.analog_sensors, data.controller_timing.analog_sensors_sense_time_ns) = *analog_sensors_readings;
     }
     else {
-        LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
+        // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
     daq_client_status daq_status = get_daq_client_status();
@@ -189,7 +189,7 @@ void Controller::step_control_loop(k_work*)
         break;
     }
     case SystemState_STATE_THRUST_SEQ: {
-        auto [thrust_out, thrust_data] = StateThrustSeq::tick(data.pts, current_time, sequence_start_time);
+        auto [thrust_out, thrust_data] = StateThrustSeq::tick(data.analog_sensors, current_time, sequence_start_time);
         data.which_state_data = DataPacket_thrust_sequence_data_tag;
         data.state_data.thrust_sequence_data = thrust_data;
         out = thrust_out;
@@ -233,6 +233,8 @@ void Controller::step_control_loop(k_work*)
     data.sequence_number = udp_sequence_number++;
     data.gnc_connected = true;
     data.gnc_last_pinged_ns = 0;
+
+    data.controller_timing.controller_tick_time_ns = static_cast<float>(k_cycle_get_64() - start_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
 
     data.daq_connected = daq_status.connected;
     data.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
@@ -437,47 +439,6 @@ std::expected<void, Error> Controller::handle_power_on_valve(const PowerOnValveR
     default:
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to power on command"));
     }
-    return {};
-}
-
-std::expected<void, Error> Controller::handle_configure_analog_sensor_bias(const ConfigureAnalogSensorBiasRequest& req)
-{
-    LOG_INF("Received configure analog sensor bias request");
-
-    // Maps AnalogSensor enum to pt_configs[] index (order from tvc_throttle_dev.dts pt-names)
-    int i;
-    switch (req.sensor) {
-    case AnalogSensor_PTC401:
-        i = 0;
-        break;
-    case AnalogSensor_PTO401:
-        i = 1;
-        break;
-    case AnalogSensor_PT202:
-        i = 2;
-        break;
-    case AnalogSensor_PT102:
-        i = 3;
-        break;
-    case AnalogSensor_PT103:
-        i = 4;
-        break;
-    case AnalogSensor_PTF401:
-        i = 5;
-        break;
-    case AnalogSensor_PT203:
-        i = 6;
-        break;
-    case AnalogSensor_PTC402:
-        i = 7;
-        break;
-    case AnalogSensor_TC102:
-    case AnalogSensor_TC102_5:
-        return std::unexpected(Error::from_cause("TC sensors are not ADC-sourced and do not support bias configuration"));
-    default:
-        return std::unexpected(Error::from_cause("Unknown analog sensor identifier"));
-    }
-
     return {};
 }
 
