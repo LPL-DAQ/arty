@@ -1,0 +1,2 @@
+add_subdirectory(LookupTable1D)
+add_subdirectory(LookupTable2D)
