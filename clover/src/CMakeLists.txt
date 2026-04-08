@@ -11,4 +11,5 @@ target_sources(app PRIVATE main.cpp
     StateValveSeq.cpp
     StateThrustSeq.cpp
     StateAbort.cpp
-    AnalogSensors.cpp)
+    AnalogSensors.cpp
+    MutexGuard.cpp)
