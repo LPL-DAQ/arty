@@ -2,6 +2,9 @@
 #include "MutexGuard.h"
 #include "clover.pb.h"
 #include "config.h"
+#include "lut/tc_k_type_v_to_deg_c_lut.h"
+#include "lut/tc_t_type_v_to_deg_c_lut.h"
+#include <array>
 #include <optional>
 #include <tuple>
 #include <zephyr/device.h>
@@ -12,18 +15,18 @@
 
 // Array of each ADC device
 static constexpr int NUM_ADCS = DT_PROP_LEN(DT_PATH(zephyr_user), analog_sensor_adcs);
-static const std::array<device*, NUM_ADCS> adc_devices = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), analog_sensor_adcs, DEVICE_DT_GET_BY_IDX, (, ))};
+static constexpr std::array<const device*, NUM_ADCS> adc_devices = {
+    DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), analog_sensor_adcs, DEVICE_DT_GET_BY_IDX, (, ))};
 
 static constexpr int OVERSAMPLING = DT_PROP(DT_PATH(zephyr_user), analog_sensor_adc_oversampling);
 static constexpr int RESOLUTION = DT_PROP(DT_PATH(zephyr_user), analog_sensor_adc_resolution);
 
 // Subset of ADC channels we make available to be assigned to PTs/TCs.
-static constexpr int NUM_ANALOG_CHANNELS = DT_PROP_LEN(DT_PATH(zephyr_user), analog_sensor_channels);
-#define LPL_ANALOG_SENSORS_ADC_CHANNELS_INIT(node_id, prop, idx) \
-    ADC_DT_SPEC_STRUCT(DT_PHA_BY_IDX(node_id, prop, idx, ctlr), DT_PHA_BY_IDX(node_id, prop, idx, input))
-static constexpr std::array<adc_dt_spec, NUM_ANALOG_CHANNELS> adc_channels = {
-    DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), analog_sensor_channels, LPL_ANALOG_SENSORS_ADC_CHANNELS_INIT, (, ))};
-#undef LPL_ANALOG_SENSORS_ADC_CHANNELS_INIT
+static constexpr int NUM_ANALOG_CHANNELS = DT_PROP_LEN(DT_PATH(zephyr_user), io_channels);
+#define LAMBDA(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx)
+// For some ungodly reason we cannot use a std::array here.
+static constexpr adc_dt_spec adc_channels[NUM_ANALOG_CHANNELS] = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), io_channels, LAMBDA, (, ))};
+#undef LAMBDA
 
 // Spec and buffers used for ADC reads.
 
@@ -31,7 +34,8 @@ static constexpr std::array<adc_dt_spec, NUM_ANALOG_CHANNELS> adc_channels = {
 static consteval uint32_t channels_bitmask(const device* adc_dev)
 {
     uint32_t mask = 0;
-    for (const auto& channel : adc_channels) {
+    for (int i = 0; i < NUM_ANALOG_CHANNELS; ++i) {
+        const auto& channel = adc_channels[i];
         if (channel.dev == adc_dev) {
             mask |= (1 << channel.channel_id);
         }
@@ -50,7 +54,7 @@ static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_ma
         int reading_index = 0;
 
         for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
-            const auto& channel = adc_channels[i];
+            const auto& channel = adc_channels[j];
             if (channel.dev == adc_dev) {
                 out[i][reading_index] = j;
                 ++reading_index;
@@ -79,17 +83,16 @@ static std::array<adc_sequence, NUM_ADCS> adc_read_seqs = []() consteval {
         size_t used_channels = 0;
         uint32_t mask = 0;
         for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
-            const auto& channel = adc_channels[i];
+            const auto& channel = adc_channels[j];
             if (channel.dev == adc_dev) {
                 mask |= (1 << channel.channel_id);
                 used_channels++;
             }
         }
-        return mask;
 
         out[i] = {
             .options = &adc_read_options,
-            .channels = channels_bitmask(adc_dev),
+            .channels = mask,
             .buffer = raw_readings[i].data(),
             .buffer_size = used_channels * sizeof(uint16_t),
             .resolution = RESOLUTION,
@@ -100,8 +103,7 @@ static std::array<adc_sequence, NUM_ADCS> adc_read_seqs = []() consteval {
 
 /// Signals upon which ADCs will notify when their read is complete
 std::array<k_poll_signal, NUM_ADCS> read_signals;
-#define LAMBDA(node_id, prop, idx) K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &read_signals[idx], 0),
-std::array<k_poll_event, NUM_ADCS> read_events{DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), analog_sensor_adcs, LAMBDA, (, ))};
+std::array<k_poll_event, NUM_ADCS> read_events;
 #undef LAMBDA
 
 /// Signals readiness
@@ -135,11 +137,12 @@ static void sense()
         k_sem_take(&allow_sense_sem, K_FOREVER);
 
         // Read from all ADCs concurrently
+        uint64_t start_read_cycle = k_cycle_get_64();
         for (int i = 0; i < NUM_ADCS; ++i) {
             k_poll_signal_init(&read_signals[i]);
             int err = adc_read_async(adc_devices[i], &adc_read_seqs[i], &read_signals[i]);
             if (err) {
-                LOG_ERR("Error initiating async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message());
+                LOG_ERR("Error initiating async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
         }
 
@@ -154,7 +157,7 @@ static void sense()
                 LOG_ERR("ADC %s was not siganled: %d", adc_devices[i]->name, signaled);
             }
             if (result != 0) {
-                LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message());
+                LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message().c_str());
             }
         }
 
@@ -163,8 +166,12 @@ static void sense()
             MutexGuard reading_guard{&reading_mutex};
             MutexGuard config_guard{&config_mutex};
 
+            sense_time_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
+
+            has_reading = true;
+
             for (int i = 0; i < NUM_ADCS; ++i) {
-                for (int j = 0; j < adc_read_seqs[i].buffer_size) {
+                for (int j = 0; j < static_cast<int>(adc_read_seqs[i].buffer_size); ++j) {
                     int input_channel = adc_channel_to_input_channel[i][j];
 
                     if (input_channel == -1) {
@@ -175,16 +182,16 @@ static void sense()
                     auto maybe_config = sensor_configs[input_channel];
                     if (!maybe_config) {
                         // Channel was not configured
-                        break;
+                        continue;
                     }
                     // This config is pre-validated.
                     const AnalogSensorConfig& config = *maybe_config;
 
                     float raw_reading = raw_readings[i][j];
-                    float reading;
+                    float curr_reading;
                     // Sensor is a PT
                     if (config.has_pt_bias_psig) {
-                        reading = raw_reading / static_cast<float>(1 << RESOLUTION) * config.pt_range_psig + config.pt_bias_psig;
+                        curr_reading = raw_reading / static_cast<float>(1 << RESOLUTION) * config.pt_range_psig + config.pt_bias_psig;
                     }
 
                     // Sensor is a TC. Note that this code is specialized for our own TC amp modules.
@@ -196,36 +203,163 @@ static void sense()
                         float reading_v = raw_reading / static_cast<float>(1 << RESOLUTION) * 5.0f;
 
                         // Convert amplified signal back to unamplified TC signal
-                        constexpr float V_REF = 1.25;
-                        float unamplified_v =
+                        constexpr float V_REF = 1.25f;
+                        float unamplified_v = (reading_v - V_REF - 0.00125f) / 122.4f;
 
                         switch (config.tc_type) {
                         case TCType_K_TYPE: {
+                            // Reading is from -200 to 400 deg C
+                            curr_reading = TcKTypeVToDegCLut::sample(unamplified_v);
+                            break;
                         }
                         case TCType_T_TYPE: {
+                            // Reading is from -200 to 50 deg C
+                            curr_reading = TcTTypeVToDegCLut::sample(unamplified_v);
+                            break;
                         }
                         default: {
-                            LOG_ERR("Config has no valid TC type set despite it being validated");
+                            // Impossible as we pre-validated the configs.
+                            LOG_ERR("Config has no valid TC type set despite it being validated, got: %d", config.tc_type);
+                            curr_reading = -9999.0f;
+                            break;
                         }
                         }
                     }
 
                     // Sensor is raw
                     else if (config.has_raw_bias_v) {
-                        reading = static_cast<float>(raw_reading) / static_cast<float>(1 << RESOLUTION) * config.raw_range_v + config.raw_bias_v;
+                        curr_reading = static_cast<float>(raw_reading) / static_cast<float>(1 << RESOLUTION) * config.raw_range_v + config.raw_bias_v;
                     }
 
                     else {
                         LOG_ERR("Config has no sensor type set despite it being validated");
+                        continue;
+                    }
+
+                    // Write sensor reading, configs should be validated to prevent overwriting.
+                    switch (config.assignment) {
+                    // Vehicle pressurant
+                    case AnalogSensor_PT001: {
+                        sensor_readings.has_pt001 = true;
+                        sensor_readings.pt001 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PT002: {
+                        sensor_readings.has_pt002 = true;
+                        sensor_readings.pt002 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PT003: {
+                        sensor_readings.has_pt003 = true;
+                        sensor_readings.pt003 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PT004: {
+                        sensor_readings.has_pt004 = true;
+                        sensor_readings.pt004 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PT005: {
+                        sensor_readings.has_pt005 = true;
+                        sensor_readings.pt005 = curr_reading;
+                        break;
+                    }
+                    // Vehicle fuel side
+                    case AnalogSensor_PT101: {
+                        sensor_readings.has_pt101 = true;
+                        sensor_readings.pt101 = curr_reading;
+                        break;
+                    }
+                    // Vehicle LOx side
+                    case AnalogSensor_PT201: {
+                        sensor_readings.has_pt201 = true;
+                        sensor_readings.pt201 = curr_reading;
+                        break;
+                    }
+                    // Engine
+                    case AnalogSensor_PTF1: {
+                        sensor_readings.has_ptf1 = true;
+                        sensor_readings.ptf1 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PTF2: {
+                        sensor_readings.has_ptf2 = true;
+                        sensor_readings.ptf2 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PTO1: {
+                        sensor_readings.has_pto1 = true;
+                        sensor_readings.pto1 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PTC1: {
+                        sensor_readings.has_ptc1 = true;
+                        sensor_readings.ptc1 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PTC2: {
+                        sensor_readings.has_ptc2 = true;
+                        sensor_readings.ptc2 = curr_reading;
+                        break;
+                    }
+                    // TCs
+                    case AnalogSensor_TC001: {
+                        sensor_readings.has_tc001 = true;
+                        sensor_readings.tc001 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TC101: {
+                        sensor_readings.has_tc101 = true;
+                        sensor_readings.tc101 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TC102: {
+                        sensor_readings.has_tc102 = true;
+                        sensor_readings.tc102 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TCF1: {
+                        sensor_readings.has_tcf1 = true;
+                        sensor_readings.tcf1 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TCO1: {
+                        sensor_readings.has_tco1 = true;
+                        sensor_readings.tco1 = curr_reading;
+                        break;
+                    }
+                    // GSE pressurant
+                    case AnalogSensor_PTG001: {
+                        sensor_readings.has_ptg001 = true;
+                        sensor_readings.ptg001 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_PTG002: {
+                        sensor_readings.has_ptg002 = true;
+                        sensor_readings.ptg002 = curr_reading;
+                        break;
+                    }
+                    // GSE LOx
+                    case AnalogSensor_PTG101: {
+                        sensor_readings.has_ptg101 = true;
+                        sensor_readings.ptg101 = curr_reading;
+                        break;
+                    }
+                    // Hornet
+                    case AnalogSensor_BATTERY_VOLTAGE: {
+                        sensor_readings.has_battery_voltage = true;
+                        sensor_readings.battery_voltage = curr_reading;
+                        break;
+                    }
+
+                    // Impossible as we validated configs beforehand.
+                    default: {
+                        LOG_ERR("Got invalid sensor assignment %d despite us validating configs beforehand", config.assignment);
+                        break;
+                    }
                     }
                 }
             }
-
-            has_reading = true;
-            pts.has_pt102 = true;
-            pts.pt102 = 67.0f;
-            // TODO
-            // and so on
         }
     }
 }
@@ -251,6 +385,11 @@ std::expected<void, Error> AnalogSensors::init()
         }
     }
 
+    // Initialize read_events
+    for (int i = 0; i < NUM_ADCS; ++i) {
+        k_poll_event_init(&read_events[i], K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &read_signals[i]);
+    }
+
     LOG_INF("Initiating sense loop");
     k_sem_give(&ready_sem);
 
@@ -260,9 +399,9 @@ std::expected<void, Error> AnalogSensors::init()
 /// Sets configs for all analog sensors, validating them to ensure its correct.
 std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const ConfigureAnalogSensorsRequest& req)
 {
-    std::array<bool, NUM_ANALOG_CHANNELS> assigned_channels;
+    std::array<bool, NUM_ANALOG_CHANNELS> assigned_channels{};
     assigned_channels.fill(false);
-    std::array<bool, _AnalogSensor_ARRAYSIZE> assigned_sensors;
+    std::array<bool, _AnalogSensor_ARRAYSIZE> assigned_sensors{};
     assigned_sensors.fill(false);
 
     for (int i = 0; i < req.configs_count; ++i) {
@@ -334,6 +473,8 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             sensor_configs[req.configs[i].channel] = std::make_optional(req.configs[i]);
         }
     }
+
+    return {};
 }
 
 /// Called from at the end of a control tick to allow AnalogSensors to initiate a sensor reading.
@@ -355,6 +496,10 @@ std::optional<std::pair<AnalogSensorReadings, float>> AnalogSensors::read()
     if (!has_reading) {
         return std::nullopt;
     }
+
+    // Consume reading
+    has_reading = false;
+
     return {{sensor_readings, sense_time_ns}};
     // return std::make_optional(std::make_pair(sensor_readings, sense_time_ns));
 }

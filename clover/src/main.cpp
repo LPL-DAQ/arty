@@ -5,12 +5,13 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/usb/usb_device.h>
 
+#include "AnalogSensors.h"
 #include "Controller.h"
 #include "ThrottleValve.h"
-#include "AnalogSensors.h"
-#include "server.h"
 #include "lidar.h"
+#include "server.h"
 
 extern "C" {
 #include <app/drivers/blink.h>
@@ -29,10 +30,29 @@ int main(void)
     }
     blink_set_period_ms(blink, 1000u);
 
-    const struct device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-    if (!device_is_ready(uart)) {
-        return 0;
+    // Serial over USB setup
+    if (usb_enable(nullptr)) {
+        LOG_ERR("USB is not enabled.");
+        while (1) {
+        }
     }
+
+    // Try connecting to serial over usb for 3 seconds.
+    const device* usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+    for (int i = 0; i < 30; ++i) {
+        k_sleep(K_MSEC(100));
+
+        uint32_t dtr = 0;
+        uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
+        if (dtr) {
+            break;
+        }
+    }
+
+    // const struct device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+    // if (!device_is_ready(uart)) {
+    //     return 0;
+    // }
 
     LOG_INF("Initializing fuel throttle valve");
     if (auto result = FuelValve::init(); !result) {

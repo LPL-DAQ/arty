@@ -31,17 +31,6 @@ Hornet Mk. 3 board.
         lox-valve-encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
         lox-valve-encoder-b-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 1
 
-        // HACK: For whatever reason the io-channels may be getting auto-sorted? Thus, we order our pt labels
-        // corresponding to the sorted ascending order of ADC1 channels.
-        // PT102 - PT1 - Pin 40 - A16 - adc1 9
-        // PT103 - PT2 - Pin 41 - A17 - adc1 10
-        // PT202 - PT4 - Pin 15 - A1 - adc1 8
-        // PT203 - PT5 - Pin 16 - A2 - adc1 12
-        // PTF401 - PT6 - Pin 17 - A3 - adc1 11
-        // PTO401 - PT7 - Pin 18 - A4 - adc1 6
-        // PTC401 - PT8 - Pin 19 - A5 - adc1 5
-        // PTC402 - PT9 - Pin 20 - A6 - adc1 15
-
         // ADC channels used by AnalogSensors.
         analog-sensor-max-adc-channels = <16>;
         io-channels = <&adc1 5>, <&adc1 6>, <&adc1 8>, <&adc1 9>, <&adc1 10>, <&adc1 11>, <&adc1 12>, <&adc1 15>;
@@ -52,7 +41,8 @@ Hornet Mk. 3 board.
     };
 
     chosen {
-		zephyr,console = &lpuart7;
+        zephyr,console = &cdc_acm_uart0;
+		// zephyr,console = &lpuart7;
     };
 
     example_sensor: example-sensor {

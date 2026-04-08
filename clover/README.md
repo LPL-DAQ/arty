@@ -18,3 +18,4 @@ Ensure the dev board is in bootloader mode, and that tycmd is installed.
 
 ```shell
 west flash --build-dir ~/arty/clover/build
+```

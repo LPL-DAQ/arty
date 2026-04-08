@@ -120,10 +120,10 @@ int decode(uint8_t* msg, bool detailed)  // lod for level of detail
     }
 
     if (detailed) {
-        LOG_INF("LiDAR distance: %.2f m, strength: %u, temp: %u", distance_meters, strength, temp);
+        LOG_INF("LiDAR distance: %.2f m, strength: %u, temp: %u", static_cast<double>(distance_meters), strength, temp);
     }
     else {
-        LOG_INF("LiDAR distance: %.2f m", distance_meters);
+        LOG_INF("LiDAR distance: %.2f m", static_cast<double>(distance_meters));
     }
     return 0;
 }

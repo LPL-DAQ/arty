@@ -190,7 +190,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
       - pkt.is_abort removed — abort is now a SystemState (STATE_ABORT)
       - controller_tick_time_ns added as a timing metric
     """
-    pts = pkt.pts
+    # pts = pkt.pts
     f = pkt.fuel_valve
     l = pkt.lox_valve
     return {
@@ -198,19 +198,19 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         'state': float(pkt.state),
         'data_queue_size': float(pkt.data_queue_size),
         'sequence_number': float(pkt.sequence_number),
-        'controller_tick_ns': float(pkt.controller_tick_time_ns),
+        'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
         'gnc_connected': bool(pkt.gnc_connected),
         'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
         'daq_connected': bool(pkt.daq_connected),
         'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
-        'gnc_pt102': float(pts.pt102),
-        'gnc_pt103': float(pts.pt103),
-        'gnc_pt202': float(pts.pt202),
-        'gnc_pt203': float(pts.pt203),
-        'gnc_ptf401': float(pts.ptf401),
-        'gnc_pto401': float(pts.pto401),
-        'gnc_ptc401': float(pts.ptc401),
-        'gnc_ptc402': float(pts.ptc402),
+        # 'gnc_pt102': float(pts.pt102),
+        # 'gnc_pt103': float(pts.pt103),
+        # 'gnc_pt202': float(pts.pt202),
+        # 'gnc_pt203': float(pts.pt203),
+        # 'gnc_ptf401': float(pts.ptf401),
+        # 'gnc_pto401': float(pts.pto401),
+        # 'gnc_ptc401': float(pts.ptc401),
+        # 'gnc_ptc402': float(pts.ptc402),
         # Fuel valve
         'gnc_fuel_target': float(f.target_pos_deg),
         'gnc_fuel_driver': float(f.driver_setpoint_pos_deg),
@@ -711,22 +711,43 @@ def _build_status_renderable():
     st.add_column('Value', style='white', no_wrap=True, justify='right')
     st.add_column('Unit', style=t['muted'], no_wrap=True)
 
-    pts = pkt.pts
+    sensors = pkt.analog_sensors
     for name, val, unit in [
-        ('PT-102', pts.pt102, 'psi'),
-        ('PT-103', pts.pt103, 'psi'),
-        ('PT-202', pts.pt202, 'psi'),
-        ('PT-203', pts.pt203, 'psi'),
-        ('PTF-401', pts.ptf401, 'psi'),
-        ('PTO-401', pts.pto401, 'psi'),
-        ('PTC-401', pts.ptc401, 'psi'),
-        ('PTC-402', pts.ptc402, 'psi'),
+        ('PT-001', sensors.pt001, 'psi'),
+        ('PT-002', sensors.pt002, 'psi'),
+        ('PT-003', sensors.pt003, 'psi'),
+        # ('PT-203', sensors.pt203, 'psi'),
+        # ('PTF-401', sensors.ptf401, 'psi'),
+        ('PT-101', sensors.pt101, 'psi'),
+        ('TC-101', sensors.tc101, '°C'),
+        ('TC-102', sensors.tc102, '°C'),
         # ("TC-102",     pts.tc102,            "°C"),
         # ("TC-102.5",   pts.tc102_5,          "°C"),
         # ("ADC t",      pts.adc_read_time_ns, "ns"),
     ]:
         val_str = f'{val:.2f}' if val != 0.0 else f'[{t["muted"]}]—[/{t["muted"]}]'
         st.add_row(name, val_str, unit)
+
+    # ── Timings table ──────────────────────────────────────────
+    #               Added TC-102, TC-102.5, ADC read time rows
+    stime = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    stime.add_column('Sensor', style='bold white', no_wrap=True)
+    stime.add_column('Time taken', style='white', no_wrap=True, justify='right')
+    stime.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    sensors = pkt.analog_sensors
+    for name, val, unit in [
+        ('Controller Tick', pkt.controller_timing.controller_tick_time_ns / 1000, 'us'),
+        ('Analog Read', pkt.controller_timing.analog_sensors_sense_time_ns / 1000, 'us'),
+    ]:
+        val_str = f'{val:.2f}' if val != 0.0 else f'[{t["muted"]}]—[/{t["muted"]}]'
+        stime.add_row(name, val_str, unit)
 
     # ── State data panel ──────────────────────────────────────
     sd = Table(
@@ -759,6 +780,11 @@ def _build_status_renderable():
         Panel(vt, title=f'[{t["primary"]}]Valves[/{t["primary"]}]', border_style=t['panel_border']),
         Panel(
             sd, title=f'[{t["primary"]}]State Data[/{t["primary"]}]', border_style=t['panel_border']
+        ),
+        Panel(
+            stime,
+            title=f'[{t["primary"]}]Timing Data[/{t["primary"]}]',
+            border_style=t['panel_border'],
         ),
     )
     bottom = Columns(
@@ -831,14 +857,16 @@ def get_toolbar():
     is_abort = state_name == 'STATE_ABORT'
     abort_html = '  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
 
-    pts = pkt.pts
+    sensors = pkt.analog_sensors
     sensor_parts = [
         f'{lbl}: {val:.1f}'
         for lbl, val in [
-            ('PT-F401', pts.ptf401),
-            ('PT-O401', pts.pto401),
-            ('PT-C401', pts.ptc401),
-            ('PT-C402', pts.ptc402),
+            ('TC-101', sensors.tc101),
+            ('TC-102', sensors.tc102),
+            # ('PT-F401', pts.ptf401),
+            # ('PT-O401', pts.pto401),
+            # ('PT-C401', pts.ptc401),
+            # ('PT-C402', pts.ptc402),
             # ('TC-102', pts.tc102),
             # ('TC-102.5', pts.tc102_5),  # new sensors
         ]
@@ -938,6 +966,24 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 
 # ── Command implementations ──────────────────────────────────────────────────
+
+
+def cmd_configure_analog_sensors():
+    """Configure analog sensors."""
+    cfg1 = clover_pb2.AnalogSensorConfig()
+    cfg1.channel = 0
+    cfg1.assignment = clover_pb2.TC101
+    cfg1.tc_type = clover_pb2.K_TYPE
+
+    cfg2 = clover_pb2.AnalogSensorConfig()
+    cfg2.channel = 1
+    cfg2.assignment = clover_pb2.PT101
+    cfg2.pt_range_psig = 1000
+    cfg2.pt_bias_psig = 100
+
+    req = clover_pb2.Request()
+    req.configure_analog_sensors.configs.extend([cfg1, cfg2])
+    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
 
 
 def cmd_subscribe_data_stream():
@@ -1388,6 +1434,7 @@ MENU_ITEMS = [
     ('unprime', 'unprime', 'Unprime  (VALVE/THRUST_PRIMED → IDLE)', cmd_unprime),
     ('abort', 'abort', 'ABORT active sequence → safe state', cmd_abort),
     ('halt', 'halt', 'HALT all actuators', cmd_halt),
+    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
     ('status', 'status', 'Live telemetry dashboard (Enter to exit)', None),
     ('quit', 'quit', 'Exit', None),
 ]
