@@ -2,6 +2,8 @@
 #include "ControllerConfig.h"
 #include "server.h"
 #include "config.h"
+#include "throttle/ThrottleController.h"
+#include "rcs/RCSController.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -34,8 +36,6 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 std::expected<void, Error> Controller::init()
 {
-
-
 
     LOG_INF("Triggering initial sensor readings");
     k_sched_lock();
@@ -80,9 +80,35 @@ void Controller::step_control_loop(k_work*)
 
     daq_client_status daq_status = get_daq_client_status();
 
+    // Dispatch to appropriate peripheral controllers based on current state
+    switch (current_state) {
+    case SystemState_STATE_THROTTLE:
+        ThrottleController::step_control_loop(analog_sensors_readings);
+        break;
+    case SystemState_STATE_TVC_THROTTLE:
+    //TVC Controller
+        ThrottleController::step_control_loop(analog_sensors_readings);
+        break;
+    case SystemState_STATE_TVC_THROTTLE_RCS:
+        //TVC Controller
+        ThrottleController::step_control_loop(analog_sensors_readings);
+        RCSController::step_control_loop(analog_sensors_readings);
+        break;
+    case SystemState_STATE_RCS:
+        RCSController::step_control_loop(analog_sensors_readings);
+        break;
+    case SystemState_STATE_TVC:
+        //TVC Controller
+            break;
+    // TODO
+    case SystemState_STATE_IDLE:
+    case SystemState_STATE_ABORT:
+    case SystemState_STATE_FLIGHT:
 
-
-
+    default:
+        // No peripheral controllers active in these states
+        break;
+    }
 }
 
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
