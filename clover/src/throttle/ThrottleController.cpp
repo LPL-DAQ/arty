@@ -1,5 +1,5 @@
 #include "ThrottleController.h"
-#include "AnalogSensors.h"
+#include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "StateAbort.h"
 #include "StateCalibrateValve.h"
@@ -15,8 +15,6 @@
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(ThrottleController, LOG_LEVEL_INF);
-
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
 
 std::expected<void, Error> ThrottleController::change_state(SystemState new_state)
@@ -88,8 +86,6 @@ std::expected<void, Error> ThrottleController::change_state(SystemState new_stat
 }
 
 
-
-K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 std::expected<void, Error> ThrottleController::init()
 {
@@ -208,8 +204,6 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
 
     data.controller_timing.controller_tick_time_ns = static_cast<float>(k_cycle_get_64() - start_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
 
-    data.daq_connected = daq_status.connected;
-    data.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
 
     data.fuel_valve = {
         .target_pos_deg = out.fuel_pos,

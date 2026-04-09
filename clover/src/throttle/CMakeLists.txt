@@ -6,4 +6,4 @@ target_sources(app PRIVATE
     StateValveSeq.cpp
     StateThrustSeq.cpp
     StateAbort.cpp
-    MutexGuard.cpp)
+)

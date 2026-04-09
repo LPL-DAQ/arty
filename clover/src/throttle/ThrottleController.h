@@ -4,7 +4,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../Error.h"
 #include "../Trace.h"
-#include "../clover.pb.h"
+#include "clover.pb.h"
 #include <expected>
 #include <zephyr/kernel.h>
 

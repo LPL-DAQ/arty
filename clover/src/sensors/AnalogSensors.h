@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../Error.h"
-#include "../clover.pb.h"
+#include "clover.pb.h"
 #include <expected>
 #include <optional>
 #include <tuple>

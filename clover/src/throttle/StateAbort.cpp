@@ -4,8 +4,8 @@ void StateAbort::init() {
     // Controller handles actuation now
 }
 
-std::pair<ControllerOutput, AbortData> StateAbort::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
-    ControllerOutput out{};
+std::pair<ThrottleControllerOutput, AbortData> StateAbort::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
+    ThrottleControllerOutput out{};
     AbortData abort_data{};
 
     // Drive valves to nominal safe positions
