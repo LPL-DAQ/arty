@@ -1,13 +1,13 @@
 #include "StateThrustSeq.h"
-#include "ControllerConfig.h"
-#include "LookupTable.h"
+#include "../ControllerConfig.h"
+#include "../LookupTable.h"
 
 #include <algorithm>
 #include <cmath>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_DECLARE(Controller, LOG_LEVEL_INF);
+LOG_MODULE_DECLARE(ThrottleController, LOG_LEVEL_INF);
 
 // ISP lookup axes: chamber pressure (pc) vs O/F.
 constexpr int ISP_PC_LEN = 29;
@@ -1721,9 +1721,9 @@ void StateThrustSeq::init(float total_time_ms)
 }
 
 // needs , float target_thrust_lbf, float target_of from Sample
-std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
-    ControllerOutput out{};
+    ThrottleControllerOutput out{};
     ThrustSequenceData data{};
 
     // get desired thrust sample
@@ -1748,9 +1748,9 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
             // TOOD: Fix float to double cast
             LOG_ERR("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS);
             out.set_fuel = true;
-            out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+            out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
             out.set_lox = true;
-            out.lox_pos = Controller::DEFAULT_LOX_POS;
+            out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
             out.next_state = SystemState_STATE_ABORT;
             return {out, data};
         }
@@ -1792,9 +1792,9 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
 
         // Both failed: Trigger Abort
         out.set_fuel = true;
-        out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+        out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
         out.set_lox = true;
-        out.lox_pos = Controller::DEFAULT_LOX_POS;
+        out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
         out.next_state = SystemState_STATE_ABORT;
         return {out, data};
     }
@@ -1815,9 +1815,9 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
         LOG_ERR("NO PT 203 / ptf401");
 
         out.set_fuel = true;
-        out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+        out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
         out.set_lox = true;
-        out.lox_pos = Controller::DEFAULT_LOX_POS;
+        out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
         out.next_state = SystemState_STATE_ABORT;
         return {out, data};
     }
@@ -1838,9 +1838,9 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
         LOG_ERR("NO PT 203 / 401");
 
         out.set_fuel = true;
-        out.fuel_pos = Controller::DEFAULT_FUEL_POS;
+        out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
         out.set_lox = true;
-        out.lox_pos = Controller::DEFAULT_LOX_POS;
+        out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
         out.next_state = SystemState_STATE_ABORT;
         return {out, data};
     }
@@ -1906,7 +1906,7 @@ std::pair<ControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const Analo
     data.fuel_valve_cmd = fuel_valve_cmd;
     data.lox_valve_cmd = lox_valve_cmd;
 
-    // 10. Populate ControllerOutput
+    // 10. Populate ThrottleControllerOutput
     out.set_fuel = true;
     out.fuel_pos = fuel_valve_cmd;
     out.set_lox = true;

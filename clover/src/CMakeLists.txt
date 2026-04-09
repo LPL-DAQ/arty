@@ -1,7 +1,6 @@
 target_sources(app PRIVATE main.cpp
     server.cpp
     ThrottleValve.cpp
-    lidar.cpp
     Controller.cpp
     Error.cpp
     Trace.cpp
@@ -11,5 +10,9 @@ target_sources(app PRIVATE main.cpp
     StateValveSeq.cpp
     StateThrustSeq.cpp
     StateAbort.cpp
-    AnalogSensors.cpp
     MutexGuard.cpp)
+
+add_subdirectory(sensors)
+add_subdirectory(rcs)
+add_subdirectory(throttle)
+add_subdirectory(tvc)

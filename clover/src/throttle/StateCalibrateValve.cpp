@@ -53,8 +53,8 @@ void StateCalibrateValve::init(float fuel_pos, float fuel_pos_enc, float lox_pos
     lox_starting_error = lox_pos - lox_pos_enc;
 }
 
-std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
-    ControllerOutput out{};
+std::pair<ThrottleControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
+    ThrottleControllerOutput out{};
     ValveCalibrationData data{};
 
     switch (phase) {
@@ -96,7 +96,7 @@ std::pair<ControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint
 
     return std::make_pair(out, data);
 }
-void StateCalibrateValve::seek_hardstop(ControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
+void StateCalibrateValve::seek_hardstop(ThrottleControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
     out.set_fuel = true;
     out.set_lox = true;
 
@@ -134,7 +134,7 @@ void StateCalibrateValve::seek_hardstop(ControllerOutput& out, float fuel_pos,fl
 }
 
 
-void StateCalibrateValve::end_movement(ControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::end_movement(ThrottleControllerOutput& out, uint32_t timestamp) {
     FuelValve::reset_pos(fuel_hardstop_position);
     LoxValve::reset_pos(lox_hardstop_position);
 
@@ -150,7 +150,7 @@ void StateCalibrateValve::end_movement(ControllerOutput& out, uint32_t timestamp
 
 }
 
-void StateCalibrateValve::power_off(ControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::power_off(ThrottleControllerOutput& out, uint32_t timestamp) {
     out.fuel_on = false;
     out.lox_on = false;
     if (timestamp - power_cycle_timestamp >= 4000) {
@@ -159,7 +159,7 @@ void StateCalibrateValve::power_off(ControllerOutput& out, uint32_t timestamp) {
     out.next_state = SystemState_STATE_CALIBRATE_VALVE;
 }
 
-void StateCalibrateValve::repower(ControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::repower(ThrottleControllerOutput& out, uint32_t timestamp) {
     // while default, this is just explicit for clarity
     out.fuel_on = true;
     out.lox_on = true;
@@ -169,7 +169,7 @@ void StateCalibrateValve::repower(ControllerOutput& out, uint32_t timestamp) {
     out.next_state = SystemState_STATE_CALIBRATE_VALVE;
 }
 
-void StateCalibrateValve::complete(ControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::complete(ThrottleControllerOutput& out, uint32_t timestamp) {
     out.set_fuel = true;
     out.set_lox = true;
     out.fuel_pos = 95.0f;
@@ -197,7 +197,7 @@ void StateCalibrateValve::complete(ControllerOutput& out, uint32_t timestamp) {
 
 }
 
-void StateCalibrateValve::error(ControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::error(ThrottleControllerOutput& out, uint32_t timestamp) {
     // In error, turn off drivers and do not try to move
     out.set_fuel = false;
     out.set_lox = false;
@@ -209,7 +209,7 @@ void StateCalibrateValve::error(ControllerOutput& out, uint32_t timestamp) {
     }
 }
 
-void StateCalibrateValve::measure(ControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
+void StateCalibrateValve::measure(ThrottleControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
     out.set_fuel = true;
     out.set_lox = true;
 

@@ -20,9 +20,9 @@ void StateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_tot
     lox_total_time = lox_total_time_ms;
 }
 
-std::pair<ControllerOutput, ValveSequenceData> StateValveSeq::tick(int64_t current_time, int64_t start_time)
+std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64_t current_time, int64_t start_time)
 {
-    ControllerOutput out;
+    ThrottleControllerOutput out;
     ValveSequenceData data{};
     out.next_state = SystemState_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 

@@ -4,8 +4,8 @@ void StateIdle::init() {
     // Initial setup if needed (valves are stopped by the output struct)
 }
 
-std::pair<ControllerOutput, IdleData> StateIdle::tick() {
-    ControllerOutput out{};
+std::pair<ThrottleControllerOutput, IdleData> StateIdle::tick() {
+    ThrottleControllerOutput out{};
     IdleData data{};
     out.set_fuel = false; // Tells the Controller to call stop()
     out.set_lox = false;

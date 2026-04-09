@@ -1,9 +1,9 @@
 #include "AnalogSensors.h"
-#include "MutexGuard.h"
+#include "../MutexGuard.h"
 #include "clover.pb.h"
-#include "config.h"
-#include "lut/tc_k_type_v_to_deg_c_lut.h"
-#include "lut/tc_t_type_v_to_deg_c_lut.h"
+#include "../config.h"
+#include "../lut/tc_k_type_v_to_deg_c_lut.h"
+#include "../lut/tc_t_type_v_to_deg_c_lut.h"
 #include <array>
 #include <optional>
 #include <tuple>

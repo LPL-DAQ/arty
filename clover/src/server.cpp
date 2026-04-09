@@ -12,10 +12,11 @@
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
 
-#include "ThrottleValve.h"
+#include "throttle/ThrottleValve.h"
 #include "clover.pb.h"
 // ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
+#include "throttle/ThrottleController.h"
 #include "server.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
@@ -205,33 +206,33 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         // Provided by ThrottleValve
         case Request_reset_valve_position_tag: {
             LOG_INF("Reset valve position");
-            // ADDED: Defer to the static controller to conform to std::expected pattern
-            cmd_result = Controller::handle_reset_valve_position(request.payload.reset_valve_position);
+            // ADDED: Defer to the static ThrottleController to conform to std::expected pattern
+            cmd_result = ThrottleController::handle_reset_valve_position(request.payload.reset_valve_position);
             break;
         }
         case Request_calibrate_valve_tag: {
             LOG_INF("Calibrate valve");
-            cmd_result = Controller::handle_calibrate_valve(request.payload.calibrate_valve);
+            cmd_result = ThrottleController::handle_calibrate_valve(request.payload.calibrate_valve);
             break;
         }
         case Request_load_valve_sequence_tag: {
             LOG_INF("Load valve sequence");
-            cmd_result = Controller::handle_load_valve_sequence(request.payload.load_valve_sequence);
+            cmd_result = ThrottleController::handle_load_valve_sequence(request.payload.load_valve_sequence);
             break;
         }
         case Request_start_valve_sequence_tag: {
             LOG_INF("Start valve sequence");
-            cmd_result = Controller::handle_start_valve_sequence(request.payload.start_valve_sequence);
+            cmd_result = ThrottleController::handle_start_valve_sequence(request.payload.start_valve_sequence);
             break;
         }
         case Request_load_thrust_sequence_tag: {
             LOG_INF("Load thrust sequence");
-            cmd_result = Controller::handle_load_thrust_sequence(request.payload.load_thrust_sequence);
+            cmd_result = ThrottleController::handle_load_thrust_sequence(request.payload.load_thrust_sequence);
             break;
         }
         case Request_start_thrust_sequence_tag: {
             LOG_INF("Start thrust sequence");
-            cmd_result = Controller::handle_start_thrust_sequence(request.payload.start_thrust_sequence);
+            cmd_result = ThrottleController::handle_start_thrust_sequence(request.payload.start_thrust_sequence);
             break;
         }
         case Request_abort_tag: {
@@ -241,22 +242,22 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
         case Request_unprime_tag: {
             LOG_INF("Unprime");
-            cmd_result = Controller::handle_unprime(request.payload.unprime);
+            cmd_result = ThrottleController::handle_unprime(request.payload.unprime);
             break;
         }
         case Request_halt_tag: {
             LOG_INF("Halt");
-            cmd_result = Controller::handle_halt(request.payload.halt);
+            cmd_result = ThrottleController::handle_halt(request.payload.halt);
             break;
         }
         case Request_power_on_valve_tag: {
             LOG_INF("Power on valve");
-            cmd_result = Controller::handle_power_on_valve(request.payload.power_on_valve);
+            cmd_result = ThrottleController::handle_power_on_valve(request.payload.power_on_valve);
             break;
         }
         case Request_power_off_valve_tag: {
             LOG_INF("Power off valve");
-            cmd_result = Controller::handle_power_off_valve(request.payload.power_off_valve);
+            cmd_result = ThrottleController::handle_power_off_valve(request.payload.power_off_valve);
             break;
         }
         default: {
