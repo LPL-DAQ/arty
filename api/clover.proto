@@ -57,6 +57,15 @@ message Request {
     // Transiitons ROLL_PRIMED -> ROLL_SEQ
     RCSStartRollSequenceRequest rcs_start_roll_sequence = 22;
 
+    // Transitions (CALIBRATE_VALVE, VALVE_SEQ, PITCH_SEQ, ABORT) -> IDLE
+    TVCHaltRequest tvc_halt = 23;
+    // Transitions (VALVE_PRIMED, PITCH_PRIMED) -> IDLE
+    TVCUnprimeRequest tvc_unprime = 24;
+    // Transitions IDLE -> VALVE_PRIMED
+    TVCLoadSequenceRequest tvc_load_sequence = 25;
+    // Transitions VALVE_PRIMED -> VALVE_SEQ
+    TVCStartSequenceRequest tvc_start_sequence = 26;
+
 
   }
 }
@@ -235,6 +244,33 @@ message RCSLoadRollSequenceRequest {
 message RCSStartRollSequenceRequest {}
 
 
+// TVC Requests
+
+
+// Halt all actuators.
+message TVCHaltRequest {}
+
+// Unprime a request.
+message TVCUnprimeRequest {}
+
+// Load a sequence. Traces for X and Y angles must be set.
+message TVCLoadSequenceRequest {
+  required ControlTrace x_angle_trace_deg = 1;
+  required ControlTrace y_angle_trace_deg = 2;
+}
+
+// Start a loaded sequence.
+message TVCStartSequenceRequest {}
+
+// Load a Pitch sequence.
+message TVCLoadPitchSequenceRequest {
+  required ControlTrace pitch_trace_lbf = 1;
+}
+
+// Start a loaded Pitch sequence.
+message TVCStartPitchSequenceRequest {}
+
+
 // Control sequences
 message ControlTrace {
   required uint32 total_time_ms = 1;
@@ -378,6 +414,16 @@ message DataPacket {
     // THRUST_SEQ
     RCSRollSequenceData rcs_roll_sequence_data = 28;
   }
+  oneof tvc_state_data {
+    // IDLE, TRACE_PRIMED
+    TVCIdleData tvc_idle_data = 29;
+
+    // ABORT
+    TVCAbortData tvc_abort_data = 30;
+
+    // TRACE
+    TVCSequenceData tvc_sequence_data = 31;
+  }
 }
 
 // Stats on controller and sensor execution times.
@@ -482,4 +528,13 @@ message RCSValveSequenceData {}
 // TODO
 message RCSRollSequenceData {
 
+}
+
+message TVCAbortData {}
+
+message TVCIdleData {}
+
+message TVCSequenceData {
+  required float x_angle_deg = 1;
+  required float y_angle_deg = 2;
 }

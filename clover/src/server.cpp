@@ -296,24 +296,14 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
 
         // Provided by TVCController
-        case Request_tvc_load_valve_sequence_tag: {
-            LOG_INF("Load valve sequence");
-            cmd_result = TVCController::handle_load_valve_sequence(request.payload.tvc_load_valve_sequence);
+        case Request_tvc_load_sequence_tag: {
+            LOG_INF("Load sequence");
+            cmd_result = TVCController::handle_load_sequence(request.payload.tvc_load_sequence);
             break;
         }
-        case Request_tvc_start_valve_sequence_tag: {
-            LOG_INF("Start valve sequence");
-            cmd_result = TVCController::handle_start_valve_sequence(request.payload.tvc_start_valve_sequence);
-            break;
-        }
-        case Request_tvc_load_pitch_sequence_tag: {
-            LOG_INF("Load pitch sequence");
-            cmd_result = TVCController::handle_load_pitch_sequence(request.payload.tvc_load_pitch_sequence);
-            break;
-        }
-        case Request_tvc_start_pitch_sequence_tag: {
-            LOG_INF("Start pitch sequence");
-            cmd_result = TVCController::handle_start_pitch_sequence(request.payload.tvc_start_pitch_sequence);
+        case Request_tvc_start_sequence_tag: {
+            LOG_INF("Start sequence");
+            cmd_result = TVCController::handle_start_sequence(request.payload.tvc_start_sequence);
             break;
         }
         case Request_tvc_unprime_tag: {

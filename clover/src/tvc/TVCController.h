@@ -34,10 +34,8 @@ public:
     static void step_control_loop(std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings);
     // Request handlers
     static std::expected<void, Error> handle_abort(const AbortRequest& req);
-    static std::expected<void, Error> handle_load_valve_sequence(const TVCLoadValveSequenceRequest& req);
-    static std::expected<void, Error> handle_start_valve_sequence(const TVCStartValveSequenceRequest& req);
-    static std::expected<void, Error> handle_load_pitch_sequence(const TVCLoadPitchSequenceRequest& req);
-    static std::expected<void, Error> handle_start_pitch_sequence(const TVCStartPitchSequenceRequest& req);
+    static std::expected<void, Error> handle_load_sequence(const TVCLoadSequenceRequest& req);
+    static std::expected<void, Error> handle_start_sequence(const TVCStartSequenceRequest& req);
     static std::expected<void, Error> handle_unprime(const TVCUnprimeRequest& req);
     static std::expected<void, Error> handle_halt(const TVCHaltRequest& req);
 
