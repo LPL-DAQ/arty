@@ -224,14 +224,48 @@ message SineSegment {
 enum SystemState {
   STATE_UNKNOWN = 0;
   STATE_IDLE = 1;
-  STATE_CALIBRATE_VALVE = 2;
-  STATE_VALVE_PRIMED = 3;
-  STATE_VALVE_SEQ = 4;
-  STATE_THRUST_PRIMED = 5;
-  STATE_THRUST_SEQ = 6;
-  STATE_ABORT = 7;
+  STATE_FLIGHT = 2;
+  STATE_THROTTLE = 3;
+  STATE_TVC = 4;
+  STATE_RCS = 5;
+  STATE_TVC_THROTTLE = 6;
+  STATE_TVC_THROTTLE_RCS = 7;
+  STATE_ABORT = 8;
+
+}
+enum ThrottleState {
+  THROTTLE_STATE_UNKNOWN = 0;
+  THROTTLE_STATE_IDLE = 1;
+  THROTTLE_STATE_CALIBRATE_VALVE = 2;
+  THROTTLE_STATE_VALVE_PRIMED = 3;
+  THROTTLE_STATE_VALVE_SEQ = 4;
+  THROTTLE_STATE_THRUST_PRIMED = 5;
+  THROTTLE_STATE_THRUST_SEQ = 6;
+  THROTTLE_STATE_ABORT = 7;
+  THROTTLE_STATE_OFF = 8;
 }
 
+enum TVCState {
+  TVC_STATE_UNKNOWN = 0;
+  TVC_STATE_IDLE = 1;
+  TVC_STATE_FLIGHT = 2;
+  TVC_STATE_TRACE_PRIMED = 3;
+  TVC_STATE_TRACE = 4;
+  TVC_STATE_ABORT = 5;
+  TVC_STATE_OFF = 6;
+
+}
+enum RCSState {
+  RCS_STATE_UNKNOWN = 0;
+  RCS_STATE_IDLE = 1;
+  RCS_STATE_VALVE_PRIMED = 2;
+  RCS_STATE_VALVE_SEQ = 3;
+  RCS_STATE_ROLL_PRIMED = 4;
+  RCS_STATE_ROLL_SEQ = 5;
+  RCS_STATE_ABORT = 6;
+  RCS_STATE_OFF = 7;
+
+}
 // next tag: 21
 message DataPacket {
   // Time since chip start in nanoseconds.
@@ -241,6 +275,11 @@ message DataPacket {
 
   // Current controller state
   required SystemState state = 6;
+  required ThrottleState throttle_state = 21;
+  required TVCState tvc_state = 22;
+  required RCSState rcs_state = 23;
+
+
 
   // Time taken by various controller components.
   required ControllerTiming controller_timing = 20;
@@ -264,7 +303,7 @@ message DataPacket {
   required ValveStatus fuel_valve = 3;
   required ValveStatus lox_valve = 4;
 
-  oneof state_data {
+  oneof throttle_state_data {
     // IDLE, VALVE_PRIMED, THRUST_PRIMED
     IdleData idle_data = 13;
 

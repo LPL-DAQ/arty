@@ -17,9 +17,9 @@ std::pair<ThrottleControllerOutput, AbortData> StateAbort::tick(uint32_t current
 
     // Run for ~0.5s before allowing state transition back to idle
     if (current_time - entry_time > 500) {
-        out.next_state = SystemState_STATE_IDLE;
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     } else {
-        out.next_state = SystemState_STATE_ABORT;
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
     }
 
     return std::make_pair(out, abort_data);

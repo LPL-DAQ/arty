@@ -9,7 +9,7 @@ std::pair<ThrottleControllerOutput, IdleData> StateIdle::tick() {
     IdleData data{};
     out.set_fuel = false; // Tells the Controller to call stop()
     out.set_lox = false;
-    out.next_state = SystemState_STATE_IDLE;
+    out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     return std::make_pair(out, data);
 
 }

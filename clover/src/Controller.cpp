@@ -34,6 +34,9 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 std::expected<void, Error> Controller::init()
 {
+
+
+
     LOG_INF("Triggering initial sensor readings");
     k_sched_lock();
     AnalogSensors::start_sense();
@@ -97,17 +100,20 @@ const char* Controller::get_state_name(SystemState state)
 {
     if (state == SystemState_STATE_IDLE)
         return "Idle";
-    if (state == SystemState_STATE_CALIBRATE_VALVE)
-        return "Calibrate Valve";
-    if (state == SystemState_STATE_VALVE_PRIMED)
-        return "Valve Primed";
-    if (state == SystemState_STATE_VALVE_SEQ)
-        return "Valve Seq";
-    if (state == SystemState_STATE_THRUST_PRIMED)
-        return "Thrust Primed";
-    if (state == SystemState_STATE_THRUST_SEQ)
-        return "Thrust Seq";
     if (state == SystemState_STATE_ABORT)
         return "Abort";
+    if (state == SystemState_STATE_FLIGHT)
+        return "Flight";
+    if (state == SystemState_STATE_THROTTLE)
+        return "Throttle";
+    if (state == SystemState_STATE_TVC)
+        return "TVC";
+    if (state == SystemState_STATE_RCS)
+        return "RCS";
+    if (state == SystemState_STATE_TVC_THROTTLE)
+        return "TVC_Throttle";
+    if (state == SystemState_STATE_TVC_THROTTLE_RCS)
+        return "TVC_Throttle_RCS";
     return "Unknown State";  // Unknown state
 }
+

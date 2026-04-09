@@ -24,7 +24,7 @@ std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64
 {
     ThrottleControllerOutput out;
     ValveSequenceData data{};
-    out.next_state = SystemState_STATE_VALVE_SEQ;  // Assume we stay in this state by default
+    out.next_state = ThrottleState_THROTTLE_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 
     float dt = current_time - start_time;
 
@@ -32,7 +32,7 @@ std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64
         auto f_target = fuel_trace.sample(dt);
         if (!f_target) {
             LOG_ERR("Failed to sample fuel trace: %s", f_target.error().build_message().c_str());
-            out.next_state = SystemState_STATE_IDLE;
+            out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
             return {out, data};
         }
         out.set_fuel = true;
@@ -43,7 +43,7 @@ std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64
         auto l_target = lox_trace.sample(dt);
         if (!l_target) {
             LOG_ERR("Failed to sample lox trace: %s", l_target.error().build_message().c_str());
-            out.next_state = SystemState_STATE_IDLE;
+            out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
             return {out, data};
         }
         out.set_lox = true;
@@ -55,7 +55,7 @@ std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64
 
     if (done_fuel && done_lox) {
         LOG_INF("Done open loop seq, dt was %f", static_cast<double>(dt));
-        out.next_state = SystemState_STATE_IDLE;
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     }
 
     return std::make_pair(out, data);

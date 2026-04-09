@@ -8,7 +8,7 @@
 #include <expected>
 #include <zephyr/kernel.h>
 
-typedef SystemState SystemState;
+typedef ThrottleState ThrottleState;
 
 struct ThrottleControllerOutput {
     bool set_fuel = false;
@@ -21,7 +21,7 @@ struct ThrottleControllerOutput {
     bool reset_fuel = false;
     float reset_lox_pos = 0.0f;
     bool reset_lox = false;
-    SystemState next_state = SystemState_STATE_IDLE;
+    ThrottleState next_state = ThrottleState_THROTTLE_STATE_IDLE;
 };
 
 class ThrottleController {
@@ -35,8 +35,8 @@ public:
     static inline bool fuel_powered = true;
     static inline bool lox_powered = true;
 
-    static inline SystemState current_state = SystemState_STATE_IDLE;
-    static SystemState state()
+    static inline ThrottleState current_state = ThrottleState_THROTTLE_STATE_IDLE;
+    static ThrottleState state()
     {
         return current_state;
     }
@@ -59,8 +59,8 @@ public:
     static std::expected<void, Error> handle_power_on_valve(const PowerOnValveRequest& req);
     static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
 
-    static std::expected<void, Error> change_state(SystemState new_state);
-    static const char* get_state_name(SystemState state);
+    static std::expected<void, Error> change_state(ThrottleState new_state);
+    static const char* get_state_name(ThrottleState state);
     ThrottleController() = delete;  // Explicitly prevent instantiation
 
 private:

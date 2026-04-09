@@ -17,36 +17,36 @@
 LOG_MODULE_REGISTER(ThrottleController, LOG_LEVEL_INF);
 
 
-std::expected<void, Error> ThrottleController::change_state(SystemState new_state)
+std::expected<void, Error> ThrottleController::change_state(ThrottleState new_state)
 {
     if (current_state == new_state)
         return {};
 
     switch (new_state) {
-    case SystemState_STATE_IDLE:
+    case ThrottleState_THROTTLE_STATE_IDLE:
         current_state = new_state;
         StateIdle::init();
 
         break;
 
-    case SystemState_STATE_CALIBRATE_VALVE:
-        if (current_state != SystemState_STATE_IDLE) {
+    case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE:
+        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state)));
         }
         StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
         current_state = new_state;
         break;
 
-    case SystemState_STATE_VALVE_PRIMED:
-        if (current_state != SystemState_STATE_IDLE) {
+    case ThrottleState_THROTTLE_STATE_VALVE_PRIMED:
+        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state)));
         }
         StateIdle::init();
         current_state = new_state;
         break;
 
-    case SystemState_STATE_VALVE_SEQ:
-        if (current_state != SystemState_STATE_VALVE_PRIMED) {
+    case ThrottleState_THROTTLE_STATE_VALVE_SEQ:
+        if (current_state != ThrottleState_THROTTLE_STATE_VALVE_PRIMED) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state)));
         }
 
@@ -54,24 +54,24 @@ std::expected<void, Error> ThrottleController::change_state(SystemState new_stat
         current_state = new_state;
         break;
 
-    case SystemState_STATE_THRUST_PRIMED:
-        if (current_state != SystemState_STATE_IDLE) {
+    case ThrottleState_THROTTLE_STATE_THRUST_PRIMED:
+        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Primed, must be in Idle", get_state_name(current_state)));
         }
         StateIdle::init();
         current_state = new_state;
         break;
 
-    case SystemState_STATE_THRUST_SEQ:
-        if (current_state != SystemState_STATE_THRUST_PRIMED) {
+    case ThrottleState_THROTTLE_STATE_THRUST_SEQ:
+        if (current_state != ThrottleState_THROTTLE_STATE_THRUST_PRIMED) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state)));
         }
         // INIT IS IN THE HANDLER
         current_state = new_state;
         break;
 
-    case SystemState_STATE_ABORT:
-        if (current_state != SystemState_STATE_THRUST_SEQ && current_state != SystemState_STATE_VALVE_SEQ) {
+    case ThrottleState_THROTTLE_STATE_ABORT:
+        if (current_state != ThrottleState_THROTTLE_STATE_THRUST_SEQ && current_state != ThrottleState_THROTTLE_STATE_VALVE_SEQ) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq or Thrust Seq", get_state_name(current_state)));
         }
         StateAbort::init();
@@ -98,7 +98,7 @@ std::expected<void, Error> ThrottleController::init()
     LOG_INF("Pausing for initial sensor readings to complete");
     k_sleep(K_MSEC(500));
 
-    auto ret = change_state(SystemState_STATE_IDLE);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_IDLE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to idle"));
     }
@@ -117,63 +117,63 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
-    case SystemState_STATE_IDLE: {
+    case ThrottleState_THROTTLE_STATE_IDLE: {
         auto [idle_out, idle_data] = StateIdle::tick();
-        data.which_state_data = DataPacket_idle_data_tag;
-        data.state_data.idle_data = idle_data;
+        data.which_throttle_state_data = DataPacket_idle_data_tag;
+        data.throttle_state_data.idle_data = idle_data;
         out = idle_out;
         break;
     }
-    case SystemState_STATE_CALIBRATE_VALVE: {
+    case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE: {
         // Can make this work over protobuf later
         auto [cal_out, cal_data] = StateCalibrateValve::tick(
             current_time, FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
-        data.which_state_data = DataPacket_valve_calibration_data_tag;
-        data.state_data.valve_calibration_data = cal_data;
+        data.which_throttle_state_data = DataPacket_valve_calibration_data_tag;
+        data.throttle_state_data.valve_calibration_data = cal_data;
         out = cal_out;
         break;
     }
-    case SystemState_STATE_VALVE_PRIMED: {
+    case ThrottleState_THROTTLE_STATE_VALVE_PRIMED: {
         auto [primed_out, primed_data] = StateIdle::tick();
-        primed_out.next_state = SystemState_STATE_VALVE_PRIMED;
-        data.which_state_data = DataPacket_idle_data_tag;
-        data.state_data.idle_data = primed_data;
+        primed_out.next_state = ThrottleState_THROTTLE_STATE_VALVE_PRIMED;
+        data.which_throttle_state_data = DataPacket_idle_data_tag;
+        data.throttle_state_data.idle_data = primed_data;
         out = primed_out;
         break;
     }
-    case SystemState_STATE_VALVE_SEQ: {
+    case ThrottleState_THROTTLE_STATE_VALVE_SEQ: {
         auto [seq_out, seq_data] = StateValveSeq::tick(current_time, sequence_start_time);
-        data.which_state_data = DataPacket_valve_sequence_data_tag;
-        data.state_data.valve_sequence_data = seq_data;
+        data.which_throttle_state_data = DataPacket_valve_sequence_data_tag;
+        data.throttle_state_data.valve_sequence_data = seq_data;
         out = seq_out;
         break;
     }
-    case SystemState_STATE_THRUST_PRIMED: {
+    case ThrottleState_THROTTLE_STATE_THRUST_PRIMED: {
         auto [thrust_primed_out, thrust_primed_data] = StateIdle::tick();
-        thrust_primed_out.next_state = SystemState_STATE_THRUST_PRIMED;
-        data.which_state_data = DataPacket_idle_data_tag;
-        data.state_data.idle_data = thrust_primed_data;
+        thrust_primed_out.next_state = ThrottleState_THROTTLE_STATE_THRUST_PRIMED;
+        data.which_throttle_state_data = DataPacket_idle_data_tag;
+        data.throttle_state_data.idle_data = thrust_primed_data;
         out = thrust_primed_out;
         break;
     }
-    case SystemState_STATE_THRUST_SEQ: {
+    case ThrottleState_THROTTLE_STATE_THRUST_SEQ: {
         auto [thrust_out, thrust_data] = StateThrustSeq::tick(data.analog_sensors, current_time, sequence_start_time);
-        data.which_state_data = DataPacket_thrust_sequence_data_tag;
-        data.state_data.thrust_sequence_data = thrust_data;
+        data.which_throttle_state_data = DataPacket_thrust_sequence_data_tag;
+        data.throttle_state_data.thrust_sequence_data = thrust_data;
         out = thrust_out;
         break;
     }
-    case SystemState_STATE_ABORT: {
+    case ThrottleState_THROTTLE_STATE_ABORT: {
         auto [abort_out, abort_data] = StateAbort::tick(current_time, abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
-        data.which_state_data = DataPacket_abort_data_tag;
-        data.state_data.abort_data = abort_data;
+        data.which_throttle_state_data = DataPacket_abort_data_tag;
+        data.throttle_state_data.abort_data = abort_data;
         out = abort_out;
         break;
     }
     default: {
         auto [idle_out, idle_data] = StateIdle::tick();
-        data.which_state_data = DataPacket_idle_data_tag;
-        data.state_data.idle_data = idle_data;
+        data.which_throttle_state_data = DataPacket_idle_data_tag;
+        data.throttle_state_data.idle_data = idle_data;
         out = idle_out;
         break;
     }
@@ -196,7 +196,7 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
 
     // telemetry
     data.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
-    data.state = current_state;
+    data.throttle_state = current_state;
     data.data_queue_size = k_msgq_num_used_get(&telemetry_msgq);
     data.sequence_number = udp_sequence_number++;
     data.gnc_connected = true;
@@ -240,7 +240,7 @@ std::expected<void, Error> ThrottleController::handle_abort(const AbortRequest& 
 {
     LOG_INF("Received abort request");
     abort_entry_time = k_uptime_get();
-    auto ret = change_state(SystemState_STATE_ABORT);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_ABORT);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to abort"));
     }
@@ -250,7 +250,7 @@ std::expected<void, Error> ThrottleController::handle_abort(const AbortRequest& 
 std::expected<void, Error> ThrottleController::handle_unprime(const UnprimeRequest& req)
 {
     LOG_INF("Received unprime request");
-    auto ret = change_state(SystemState_STATE_IDLE);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_IDLE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to idle"));
     }
@@ -266,7 +266,7 @@ std::expected<void, Error> ThrottleController::handle_load_thrust_sequence(const
         return std::unexpected(result.error().context("%s", "Invalid thrust trace"));
     StateThrustSeq::init(req.thrust_trace_lbf.total_time_ms);
 
-    auto ret = change_state(SystemState_STATE_THRUST_PRIMED);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_THRUST_PRIMED);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
     }
@@ -278,8 +278,8 @@ std::expected<void, Error> ThrottleController::handle_start_thrust_sequence(cons
 {
     LOG_INF("Received start thrust sequence request");
     sequence_start_time = k_uptime_get();
-    change_state(SystemState_STATE_THRUST_SEQ);
-    auto ret = change_state(SystemState_STATE_THRUST_SEQ);
+    change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to thrust seq"));
     }
@@ -319,7 +319,7 @@ std::expected<void, Error> ThrottleController::handle_load_valve_sequence(const 
         StateValveSeq::init(false, true, -1.0f, req.lox_trace_deg.total_time_ms);
     }
 
-    auto ret = change_state(SystemState_STATE_VALVE_PRIMED);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_VALVE_PRIMED);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
     }
@@ -332,7 +332,7 @@ std::expected<void, Error> ThrottleController::handle_start_valve_sequence(const
 
     LOG_INF("Received start valve sequence request");
     sequence_start_time = k_uptime_get();
-    auto ret = change_state(SystemState_STATE_VALVE_SEQ);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_VALVE_SEQ);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to valve seq"));
     }
@@ -342,7 +342,7 @@ std::expected<void, Error> ThrottleController::handle_start_valve_sequence(const
 std::expected<void, Error> ThrottleController::handle_halt(const HaltRequest& req)
 {
     LOG_INF("Received halt request");
-    auto ret = change_state(SystemState_STATE_IDLE);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_IDLE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to idle"));
     }
@@ -352,7 +352,7 @@ std::expected<void, Error> ThrottleController::handle_halt(const HaltRequest& re
 std::expected<void, Error> ThrottleController::handle_calibrate_valve(const CalibrateValveRequest& req)
 {
     LOG_INF("Received calibrate valve request");
-    auto ret = change_state(SystemState_STATE_CALIBRATE_VALVE);
+    auto ret = change_state(ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to calibrate valve"));
     }
@@ -363,7 +363,7 @@ std::expected<void, Error> ThrottleController::handle_reset_valve_position(const
 {
     LOG_INF("Received reset valve request");
 
-    if (current_state != SystemState_STATE_IDLE) {
+    if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot reset valve position unless system is IDLE"));
     }
 
@@ -389,7 +389,7 @@ std::expected<void, Error> ThrottleController::handle_power_on_valve(const Power
 {
     LOG_INF("Received power on valve request");
 
-    if (current_state != SystemState_STATE_IDLE) {
+    if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot turn valve on unless system is IDLE"));
     }
 
@@ -412,7 +412,7 @@ std::expected<void, Error> ThrottleController::handle_power_off_valve(const Powe
 {
     LOG_INF("Received power off valve request");
 
-    if (current_state != SystemState_STATE_IDLE) {
+    if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot turn valve off unless system is IDLE"));
     }
 
@@ -431,21 +431,21 @@ std::expected<void, Error> ThrottleController::handle_power_off_valve(const Powe
     return {};
 }
 
-const char* ThrottleController::get_state_name(SystemState state)
+const char* ThrottleController::get_state_name(ThrottleState state)
 {
-    if (state == SystemState_STATE_IDLE)
+    if (state == ThrottleState_THROTTLE_STATE_IDLE)
         return "Idle";
-    if (state == SystemState_STATE_CALIBRATE_VALVE)
+    if (state == ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE)
         return "Calibrate Valve";
-    if (state == SystemState_STATE_VALVE_PRIMED)
+    if (state == ThrottleState_THROTTLE_STATE_VALVE_PRIMED)
         return "Valve Primed";
-    if (state == SystemState_STATE_VALVE_SEQ)
+    if (state == ThrottleState_THROTTLE_STATE_VALVE_SEQ)
         return "Valve Seq";
-    if (state == SystemState_STATE_THRUST_PRIMED)
+    if (state == ThrottleState_THROTTLE_STATE_THRUST_PRIMED)
         return "Thrust Primed";
-    if (state == SystemState_STATE_THRUST_SEQ)
+    if (state == ThrottleState_THROTTLE_STATE_THRUST_SEQ)
         return "Thrust Seq";
-    if (state == SystemState_STATE_ABORT)
+    if (state == ThrottleState_THROTTLE_STATE_ABORT)
         return "Abort";
     return "Unknown State";  // Unknown state
 }

@@ -85,11 +85,13 @@ int main(void)
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
         return 0;
     }
+    
     LOG_INF("Initializing ThrottleController");
     if (auto result = ThrottleController::init(); !result) {
         LOG_ERR("Failed to initialize Throttle Controller: %s", result.error().build_message().c_str());
         return 0;
     }
+
     // LOG_INF("initializing SNTP");
     // err = sntp_init();
     // if (err) {

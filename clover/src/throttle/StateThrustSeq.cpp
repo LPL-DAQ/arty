@@ -1751,7 +1751,7 @@ std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(con
             out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
             out.set_lox = true;
             out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
-            out.next_state = SystemState_STATE_ABORT;
+            out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
             return {out, data};
         }
     }
@@ -1795,7 +1795,7 @@ std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(con
         out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
         out.set_lox = true;
         out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
-        out.next_state = SystemState_STATE_ABORT;
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
         return {out, data};
     }
     if (pt203_valid && ptf401_valid) {
@@ -1818,7 +1818,7 @@ std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(con
         out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
         out.set_lox = true;
         out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
-        out.next_state = SystemState_STATE_ABORT;
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
         return {out, data};
     }
     if (pt103_valid && pto401_valid) {
@@ -1841,7 +1841,7 @@ std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(con
         out.fuel_pos = ThrottleController::DEFAULT_FUEL_POS;
         out.set_lox = true;
         out.lox_pos = ThrottleController::DEFAULT_LOX_POS;
-        out.next_state = SystemState_STATE_ABORT;
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
         return {out, data};
     }
 
@@ -1911,7 +1911,7 @@ std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(con
     out.fuel_pos = fuel_valve_cmd;
     out.set_lox = true;
     out.lox_pos = lox_valve_cmd;
-    out.next_state = SystemState_STATE_THRUST_SEQ;
+    out.next_state = ThrottleState_THROTTLE_STATE_THRUST_SEQ;
 
     return {out, data};
 }

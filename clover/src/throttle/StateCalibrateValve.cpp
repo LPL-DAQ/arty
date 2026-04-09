@@ -130,7 +130,7 @@ void StateCalibrateValve::seek_hardstop(ThrottleControllerOutput& out, float fue
         rep_counter++;
         phase = CalPhase::END_MOVEMENT;
     }
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
+    out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
 
@@ -146,7 +146,7 @@ void StateCalibrateValve::end_movement(ThrottleControllerOutput& out, uint32_t t
     else if (timestamp - power_cycle_timestamp >= 1000) {
         phase = CalPhase::POWER_OFF;
     }
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
+    out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 
 }
 
@@ -156,7 +156,7 @@ void StateCalibrateValve::power_off(ThrottleControllerOutput& out, uint32_t time
     if (timestamp - power_cycle_timestamp >= 4000) {
         phase = CalPhase::REPOWER;
     }
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
+    out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
 void StateCalibrateValve::repower(ThrottleControllerOutput& out, uint32_t timestamp) {
@@ -166,7 +166,7 @@ void StateCalibrateValve::repower(ThrottleControllerOutput& out, uint32_t timest
     if (timestamp - power_cycle_timestamp >= 5000) {
         phase = CalPhase::COMPLETE;
     }
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
+    out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
 void StateCalibrateValve::complete(ThrottleControllerOutput& out, uint32_t timestamp) {
@@ -188,9 +188,9 @@ void StateCalibrateValve::complete(ThrottleControllerOutput& out, uint32_t times
 
 
     // should be idle, but this is for testing
-    out.next_state = SystemState_STATE_CALIBRATE_VALVE;
+    out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
     if (timestamp - power_cycle_timestamp >= 6500) {
-        out.next_state = SystemState_STATE_IDLE;
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
         phase = CalPhase::COMPLETE;
     }
 
@@ -243,14 +243,14 @@ void StateCalibrateValve::measure(ThrottleControllerOutput& out, float fuel_pos,
 
 
     // if both reached, move away from stop
-    out.next_state =    SystemState_STATE_CALIBRATE_VALVE;
+    out.next_state =    ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 
     if (fuel_found_stop && lox_found_stop) {
         fuel_target_position = fuel_hardstop_position;
         lox_target_position = lox_hardstop_position;
         // LOG_INF("err: %f, pos %f, enc %f",  std::abs(lox_pos - (lox_starting_error + lox_pos_enc)), lox_pos, lox_pos_enc);
         // LOG_INF("Fuel hardstop at %f, Lox hardstop at %f", fuel_hardstop_position, lox_hardstop_position);
-        out.next_state = SystemState_STATE_IDLE;
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     }
 }
 
