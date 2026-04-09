@@ -1,4 +1,4 @@
-#include "StateValveSeq.h"
+#include "RCSStateValveSeq.h"
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(RCSController, LOG_LEVEL_INF);

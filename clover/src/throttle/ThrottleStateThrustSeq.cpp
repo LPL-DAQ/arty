@@ -1,4 +1,4 @@
-#include "StateThrustSeq.h"
+#include "ThrottleStateThrustSeq.h"
 #include "../ControllerConfig.h"
 #include "../LookupTable.h"
 

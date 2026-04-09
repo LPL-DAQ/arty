@@ -1,4 +1,4 @@
-#include "StateIdle.h"
+#include "RCSStateIdle.h"
 
 void RCSStateIdle::init() {
     // Initial setup if needed (valves are stopped by the output struct)

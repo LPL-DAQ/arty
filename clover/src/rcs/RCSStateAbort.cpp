@@ -1,4 +1,4 @@
-#include "StateAbort.h"
+#include "RCSStateAbort.h"
 
 void RCSStateAbort::init() {
     // Controller handles actuation now

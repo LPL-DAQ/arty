@@ -1,7 +1,7 @@
 target_sources(app PRIVATE
     RCSController.cpp
-    StateIdle.cpp
-    StateRollSeq.cpp
-    StateValveSeq.cpp
-    StateAbort.cpp
+    RCSStateIdle.cpp
+    RCSStateRollSeq.cpp
+    RCSStateValveSeq.cpp
+    RCSStateAbort.cpp
     )

@@ -1,4 +1,4 @@
-#include "StateIdle.h"
+#include "ThrottleStateIdle.h"
 
 void ThrottleStateIdle::init() {
     // Initial setup if needed (valves are stopped by the output struct)

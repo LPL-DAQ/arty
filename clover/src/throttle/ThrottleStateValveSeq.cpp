@@ -1,4 +1,4 @@
-#include "StateValveSeq.h"
+#include "ThrottleStateValveSeq.h"
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(ThrottleStateValveSeq, LOG_LEVEL_INF);
