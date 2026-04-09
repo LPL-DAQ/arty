@@ -5,7 +5,7 @@
 
 namespace TVCStateAbort {
     void init();
-    std::pair<TVCControllerOutput, RCSAbortData> tick(uint32_t current_time, uint32_t entry_time);
+    std::pair<TVCControllerOutput, TVCAbortData> tick(uint32_t current_time, uint32_t entry_time);
 }
 
 #endif // APP_TVC_STATE_ABORT_H

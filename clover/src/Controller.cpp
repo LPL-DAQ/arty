@@ -101,9 +101,6 @@ void Controller::step_control_loop(k_work*)
     case SystemState_STATE_RCS:
         RCSController::step_control_loop(analog_sensors_readings);
         break;
-    case SystemState_STATE_TVC:
-        //TVC Controller
-            break;
     // TODO
     case SystemState_STATE_IDLE:
     case SystemState_STATE_ABORT:
