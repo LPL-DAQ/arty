@@ -18,6 +18,7 @@
 #include "Controller.h"
 #include "throttle/ThrottleController.h"
 #include "rcs/RCSController.h"
+#include "tvc/TVCController.h"
 #include "server.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
@@ -291,6 +292,38 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_rcs_halt_tag: {
             LOG_INF("Halt");
             cmd_result = RCSController::handle_halt(request.payload.rcs_halt);
+            break;
+        }
+
+        // Provided by TVCController
+        case Request_tvc_load_valve_sequence_tag: {
+            LOG_INF("Load valve sequence");
+            cmd_result = TVCController::handle_load_valve_sequence(request.payload.tvc_load_valve_sequence);
+            break;
+        }
+        case Request_tvc_start_valve_sequence_tag: {
+            LOG_INF("Start valve sequence");
+            cmd_result = TVCController::handle_start_valve_sequence(request.payload.tvc_start_valve_sequence);
+            break;
+        }
+        case Request_tvc_load_pitch_sequence_tag: {
+            LOG_INF("Load pitch sequence");
+            cmd_result = TVCController::handle_load_pitch_sequence(request.payload.tvc_load_pitch_sequence);
+            break;
+        }
+        case Request_tvc_start_pitch_sequence_tag: {
+            LOG_INF("Start pitch sequence");
+            cmd_result = TVCController::handle_start_pitch_sequence(request.payload.tvc_start_pitch_sequence);
+            break;
+        }
+        case Request_tvc_unprime_tag: {
+            LOG_INF("Unprime");
+            cmd_result = TVCController::handle_unprime(request.payload.tvc_unprime);
+            break;
+        }
+        case Request_tvc_halt_tag: {
+            LOG_INF("Halt");
+            cmd_result = TVCController::handle_halt(request.payload.tvc_halt);
             break;
         }
 

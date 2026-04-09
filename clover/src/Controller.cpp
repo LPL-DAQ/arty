@@ -4,6 +4,7 @@
 #include "config.h"
 #include "throttle/ThrottleController.h"
 #include "rcs/RCSController.h"
+#include "tvc/TVCController.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -85,12 +86,15 @@ void Controller::step_control_loop(k_work*)
     case SystemState_STATE_THROTTLE:
         ThrottleController::step_control_loop(analog_sensors_readings);
         break;
+    case SystemState_STATE_TVC:
+        TVCController::step_control_loop(analog_sensors_readings);
+        break;
     case SystemState_STATE_TVC_THROTTLE:
-    //TVC Controller
+        TVCController::step_control_loop(analog_sensors_readings);
         ThrottleController::step_control_loop(analog_sensors_readings);
         break;
     case SystemState_STATE_TVC_THROTTLE_RCS:
-        //TVC Controller
+        TVCController::step_control_loop(analog_sensors_readings);
         ThrottleController::step_control_loop(analog_sensors_readings);
         RCSController::step_control_loop(analog_sensors_readings);
         break;
