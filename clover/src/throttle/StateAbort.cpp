@@ -1,12 +1,12 @@
 #include "StateAbort.h"
 
-void StateAbort::init() {
+void ThrottleStateAbort::init() {
     // Controller handles actuation now
 }
 
-std::pair<ThrottleControllerOutput, AbortData> StateAbort::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
+std::pair<ThrottleControllerOutput, ThrottleAbortData> ThrottleStateAbort::tick(uint32_t current_time, uint32_t entry_time, float default_fuel, float default_lox) {
     ThrottleControllerOutput out{};
-    AbortData abort_data{};
+    ThrottleAbortData abort_data{};
 
     // Drive valves to nominal safe positions
     out.set_fuel = true;

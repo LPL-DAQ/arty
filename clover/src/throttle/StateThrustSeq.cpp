@@ -1721,10 +1721,10 @@ void StateThrustSeq::init(float total_time_ms)
 }
 
 // needs , float target_thrust_lbf, float target_of from Sample
-std::pair<ThrottleControllerOutput, ThrustSequenceData> StateThrustSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<ThrottleControllerOutput, ThrottleThrustSequenceData> StateThrustSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
     ThrottleControllerOutput out{};
-    ThrustSequenceData data{};
+    ThrottleThrustSequenceData data{};
 
     // get desired thrust sample
     float elapsed_time = current_time - start_time;

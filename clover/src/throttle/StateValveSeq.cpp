@@ -1,7 +1,7 @@
 #include "StateValveSeq.h"
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(StateValveSeq, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(ThrottleStateValveSeq, LOG_LEVEL_INF);
 
 static Trace fuel_trace;
 static Trace lox_trace;
@@ -10,7 +10,7 @@ static bool has_lox;
 static float fuel_total_time;
 static float lox_total_time;
 
-void StateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_total_time_ms, float lox_total_time_ms)
+void ThrottleStateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_total_time_ms, float lox_total_time_ms)
 {
     // Timer is reset in handle_start_sequence before entering
 
@@ -20,10 +20,10 @@ void StateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float fuel_tot
     lox_total_time = lox_total_time_ms;
 }
 
-std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64_t current_time, int64_t start_time)
+std::pair<ThrottleControllerOutput, ThrottleValveSequenceData> ThrottleStateValveSeq::tick(int64_t current_time, int64_t start_time)
 {
     ThrottleControllerOutput out;
-    ValveSequenceData data{};
+    ThrottleValveSequenceData data{};
     out.next_state = ThrottleState_THROTTLE_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 
     float dt = current_time - start_time;
@@ -61,12 +61,12 @@ std::pair<ThrottleControllerOutput, ValveSequenceData> StateValveSeq::tick(int64
     return std::make_pair(out, data);
 }
 
-Trace& StateValveSeq::get_fuel_trace()
+Trace& ThrottleStateValveSeq::get_fuel_trace()
 {
     return fuel_trace;
 }
 
-Trace& StateValveSeq::get_lox_trace()
+Trace& ThrottleStateValveSeq::get_lox_trace()
 {
     return lox_trace;
 }

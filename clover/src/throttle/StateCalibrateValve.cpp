@@ -53,9 +53,9 @@ void StateCalibrateValve::init(float fuel_pos, float fuel_pos_enc, float lox_pos
     lox_starting_error = lox_pos - lox_pos_enc;
 }
 
-std::pair<ThrottleControllerOutput, ValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
+std::pair<ThrottleControllerOutput, ThrottleValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
     ThrottleControllerOutput out{};
-    ValveCalibrationData data{};
+    ThrottleValveCalibrationData data{};
 
     switch (phase) {
         case CalPhase::SEEK_HARDSTOP:

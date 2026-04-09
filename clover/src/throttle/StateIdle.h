@@ -1,11 +1,11 @@
-#ifndef APP_STATE_IDLE_H
-#define APP_STATE_IDLE_H
+#ifndef APP_THROTTLE_STATE_IDLE_H
+#define APP_THROTTLE_STATE_IDLE_H
 
 #include "ThrottleController.h"
 
-namespace StateIdle {
+namespace ThrottleStateIdle {
     void init();
-    std::pair<ThrottleControllerOutput, IdleData> tick();
+    std::pair<ThrottleControllerOutput, ThrottleIdleData> tick();
 }
 
-#endif // APP_STATE_IDLE_H
+#endif // APP_THROTTLE_STATE_IDLE_H

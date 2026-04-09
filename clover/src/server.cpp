@@ -17,6 +17,7 @@
 // ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
 #include "throttle/ThrottleController.h"
+#include "rcs/RCSController.h"
 #include "server.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
@@ -203,63 +204,96 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
-        // Provided by ThrottleValve
-        case Request_reset_valve_position_tag: {
-            LOG_INF("Reset valve position");
-            // ADDED: Defer to the static ThrottleController to conform to std::expected pattern
-            cmd_result = ThrottleController::handle_reset_valve_position(request.payload.reset_valve_position);
-            break;
-        }
-        case Request_calibrate_valve_tag: {
-            LOG_INF("Calibrate valve");
-            cmd_result = ThrottleController::handle_calibrate_valve(request.payload.calibrate_valve);
-            break;
-        }
-        case Request_load_valve_sequence_tag: {
-            LOG_INF("Load valve sequence");
-            cmd_result = ThrottleController::handle_load_valve_sequence(request.payload.load_valve_sequence);
-            break;
-        }
-        case Request_start_valve_sequence_tag: {
-            LOG_INF("Start valve sequence");
-            cmd_result = ThrottleController::handle_start_valve_sequence(request.payload.start_valve_sequence);
-            break;
-        }
-        case Request_load_thrust_sequence_tag: {
-            LOG_INF("Load thrust sequence");
-            cmd_result = ThrottleController::handle_load_thrust_sequence(request.payload.load_thrust_sequence);
-            break;
-        }
-        case Request_start_thrust_sequence_tag: {
-            LOG_INF("Start thrust sequence");
-            cmd_result = ThrottleController::handle_start_thrust_sequence(request.payload.start_thrust_sequence);
-            break;
-        }
         case Request_abort_tag: {
             LOG_INF("Abort");
             cmd_result = Controller::handle_abort(request.payload.abort);
             break;
         }
-        case Request_unprime_tag: {
+        // Provided by ThrottleValve
+        case Request_throttle_reset_valve_position_tag: {
+            LOG_INF("Reset valve position");
+            // ADDED: Defer to the static ThrottleController to conform to std::expected pattern
+            cmd_result = ThrottleController::handle_reset_valve_position(request.payload.throttle_reset_valve_position);
+            break;
+        }
+        case Request_throttle_calibrate_valve_tag: {
+            LOG_INF("Calibrate valve");
+            cmd_result = ThrottleController::handle_calibrate_valve(request.payload.throttle_calibrate_valve);
+            break;
+        }
+        case Request_throttle_load_valve_sequence_tag: {
+            LOG_INF("Load valve sequence");
+            cmd_result = ThrottleController::handle_load_valve_sequence(request.payload.throttle_load_valve_sequence);
+            break;
+        }
+        case Request_throttle_start_valve_sequence_tag: {
+            LOG_INF("Start valve sequence");
+            cmd_result = ThrottleController::handle_start_valve_sequence(request.payload.throttle_start_valve_sequence);
+            break;
+        }
+        case Request_throttle_load_thrust_sequence_tag: {
+            LOG_INF("Load thrust sequence");
+            cmd_result = ThrottleController::handle_load_thrust_sequence(request.payload.throttle_load_thrust_sequence);
+            break;
+        }
+        case Request_throttle_start_thrust_sequence_tag: {
+            LOG_INF("Start thrust sequence");
+            cmd_result = ThrottleController::handle_start_thrust_sequence(request.payload.throttle_start_thrust_sequence);
+            break;
+        }
+        case Request_throttle_unprime_tag: {
             LOG_INF("Unprime");
-            cmd_result = ThrottleController::handle_unprime(request.payload.unprime);
+            cmd_result = ThrottleController::handle_unprime(request.payload.throttle_unprime);
             break;
         }
-        case Request_halt_tag: {
+        case Request_throttle_halt_tag: {
             LOG_INF("Halt");
-            cmd_result = ThrottleController::handle_halt(request.payload.halt);
+            cmd_result = ThrottleController::handle_halt(request.payload.throttle_halt);
             break;
         }
-        case Request_power_on_valve_tag: {
+        case Request_throttle_power_on_valve_tag: {
             LOG_INF("Power on valve");
-            cmd_result = ThrottleController::handle_power_on_valve(request.payload.power_on_valve);
+            cmd_result = ThrottleController::handle_power_on_valve(request.payload.throttle_power_on_valve);
             break;
         }
-        case Request_power_off_valve_tag: {
+        case Request_throttle_power_off_valve_tag: {
             LOG_INF("Power off valve");
-            cmd_result = ThrottleController::handle_power_off_valve(request.payload.power_off_valve);
+            cmd_result = ThrottleController::handle_power_off_valve(request.payload.throttle_power_off_valve);
             break;
         }
+
+        // Provided by RCSController
+        case Request_rcs_load_valve_sequence_tag: {
+            LOG_INF("Load valve sequence");
+            cmd_result = RCSController::handle_load_valve_sequence(request.payload.rcs_load_valve_sequence);
+            break;
+        }
+        case Request_rcs_start_valve_sequence_tag: {
+            LOG_INF("Start valve sequence");
+            cmd_result = RCSController::handle_start_valve_sequence(request.payload.rcs_start_valve_sequence);
+            break;
+        }
+        case Request_rcs_load_roll_sequence_tag: {
+            LOG_INF("Load roll sequence");
+            cmd_result = RCSController::handle_load_roll_sequence(request.payload.rcs_load_roll_sequence);
+            break;
+        }
+        case Request_rcs_start_roll_sequence_tag: {
+            LOG_INF("Start roll sequence");
+            cmd_result = RCSController::handle_start_roll_sequence(request.payload.rcs_start_roll_sequence);
+            break;
+        }
+        case Request_rcs_unprime_tag: {
+            LOG_INF("Unprime");
+            cmd_result = RCSController::handle_unprime(request.payload.rcs_unprime);
+            break;
+        }
+        case Request_rcs_halt_tag: {
+            LOG_INF("Halt");
+            cmd_result = RCSController::handle_halt(request.payload.rcs_halt);
+            break;
+        }
+
         default: {
             LOG_ERR(
                 "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);
@@ -286,10 +320,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         if (!ok) {
             LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
+        zsock_close(client_socket);
     }
 
-    zsock_close(client_socket);
 }
+
+
 
 /// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
 [[noreturn]] static void reap_dead_connections(void*, void*, void*)

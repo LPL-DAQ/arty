@@ -12,6 +12,7 @@
 #include "sensors/lidar.h"
 #include "Controller.h"
 #include "throttle/ThrottleController.h"
+#include "rcs/RCSController.h"
 #include "server.h"
 
 extern "C" {
@@ -85,10 +86,16 @@ int main(void)
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
         return 0;
     }
-    
+
     LOG_INF("Initializing ThrottleController");
     if (auto result = ThrottleController::init(); !result) {
         LOG_ERR("Failed to initialize Throttle Controller: %s", result.error().build_message().c_str());
+        return 0;
+    }
+    
+    LOG_INF("Initializing RCSController");
+    if (auto result = RCSController::init(); !result) {
+        LOG_ERR("Failed to initialize RCS Controller: %s", result.error().build_message().c_str());
         return 0;
     }
 

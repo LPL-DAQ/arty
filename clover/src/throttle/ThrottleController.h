@@ -45,19 +45,19 @@ public:
 
     static void step_control_loop(std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings);
     // Request handlers
-    static std::expected<void, Error> handle_load_valve_sequence(const LoadValveSequenceRequest& req);
-    static std::expected<void, Error> handle_start_valve_sequence(const StartValveSequenceRequest& req);
-    static std::expected<void, Error> handle_load_thrust_sequence(const LoadThrustSequenceRequest& req);
-    static std::expected<void, Error> handle_start_thrust_sequence(const StartThrustSequenceRequest& req);
     static std::expected<void, Error> handle_abort(const AbortRequest& req);
-    static std::expected<void, Error> handle_unprime(const UnprimeRequest& req);
-    static std::expected<void, Error> handle_calibrate_valve(const CalibrateValveRequest& req);
+    static std::expected<void, Error> handle_load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_valve_sequence(const ThrottleStartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_start_thrust_sequence(const ThrottleStartThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_unprime(const ThrottleUnprimeRequest& req);
+    static std::expected<void, Error> handle_calibrate_valve(const ThrottleCalibrateValveRequest& req);
 
-    static std::expected<void, Error> handle_halt(const HaltRequest& req);
+    static std::expected<void, Error> handle_halt(const ThrottleHaltRequest& req);
 
-    static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_power_on_valve(const PowerOnValveRequest& req);
-    static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
+    static std::expected<void, Error> handle_reset_valve_position(const ThrottleResetValvePositionRequest& req);
+    static std::expected<void, Error> handle_power_on_valve(const ThrottlePowerOnValveRequest& req);
+    static std::expected<void, Error> handle_power_off_valve(const ThrottlePowerOffValveRequest& req);
 
     static std::expected<void, Error> change_state(ThrottleState new_state);
     static const char* get_state_name(ThrottleState state);
