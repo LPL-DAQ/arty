@@ -1,0 +1,21 @@
+config ZEPHYR_ARTY_MODULE
+   bool
+   default y
+config ZEPHYR_ARDUINO_API_MODULE
+   bool
+   default y
+config ZEPHYR_NANOPB_MODULE
+   bool
+   default y
+config ZEPHYR_CMSIS_6_MODULE
+   bool
+   default y
+config ZEPHYR_HAL_NXP_MODULE
+   bool
+   default y
+config ZEPHYR_HAL_STM32_MODULE
+   bool
+   default y
+config ZEPHYR_LORAMAC_NODE_MODULE
+   bool
+   default y

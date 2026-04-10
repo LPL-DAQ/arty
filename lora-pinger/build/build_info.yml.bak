@@ -1,0 +1,5 @@
+west:
+  command: /home/lpl/.venv/bin/west build /home/lpl/arty/lora-pinger --pristine auto
+    --board teensy41 --build-dir /home/lpl/arty/lora-pinger/build
+  topdir: /home/lpl
+  version: 1.5.0

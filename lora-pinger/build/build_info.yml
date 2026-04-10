@@ -1,0 +1,55 @@
+cmake:
+  application:
+    configuration-dir: '/home/lpl/arty/lora-pinger'
+    source-dir: '/home/lpl/arty/lora-pinger'
+  board:
+    name: 'teensy41'
+    path:
+     - '/home/lpl/zephyr/boards/pjrc/teensy4'
+    qualifiers: 'mimxrt1062'
+    revision: ''
+  devicetree:
+    bindings-dirs:
+     - '/workspaces/arty/dts/bindings'
+     - '/home/lpl/zephyr/dts/bindings'
+    files:
+     - '/home/lpl/zephyr/boards/pjrc/teensy4/teensy41.dts'
+     - '/home/lpl/arty/lora-pinger/app.overlay'
+    include-dirs:
+     - '/workspaces/arty/include'
+     - '/workspaces/arty/dts'
+     - '/home/lpl/modules/hal/nxp/dts'
+     - '/home/lpl/modules/hal/stm32/dts'
+     - '/home/lpl/zephyr/include'
+     - '/home/lpl/zephyr/include/zephyr'
+     - '/home/lpl/zephyr/dts/common'
+     - '/home/lpl/zephyr/dts/vendor'
+     - '/home/lpl/zephyr/dts/rx'
+     - '/home/lpl/zephyr/dts/x86'
+     - '/home/lpl/zephyr/dts/xtensa'
+     - '/home/lpl/zephyr/dts/sparc'
+     - '/home/lpl/zephyr/dts/riscv'
+     - '/home/lpl/zephyr/dts/posix'
+     - '/home/lpl/zephyr/dts/arm64'
+     - '/home/lpl/zephyr/dts/arm'
+     - '/home/lpl/zephyr/dts/arc'
+     - '/home/lpl/zephyr/dts'
+    user-files:
+     - '/home/lpl/arty/lora-pinger/app.overlay'
+  kconfig:
+    files:
+     - '/home/lpl/zephyr/boards/pjrc/teensy4/teensy41_defconfig'
+     - '/home/lpl/arty/lora-pinger/prj.conf'
+    user-files:
+     - '/home/lpl/arty/lora-pinger/prj.conf'
+  toolchain:
+    name: 'zephyr'
+    path: '/home/lpl/zephyr-sdk-0.17.2'
+  zephyr:
+    version: '4.2.0'
+    zephyr-base: '/home/lpl/zephyr'
+version: '0.1.0'
+west:
+  command: '/home/lpl/.venv/bin/west build /home/lpl/arty/lora-pinger --pristine auto --board teensy41 --build-dir /home/lpl/arty/lora-pinger/build'
+  topdir: '/home/lpl'
+  version: '1.5.0'

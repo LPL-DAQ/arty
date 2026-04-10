@@ -1,0 +1,45 @@
+menu "arty (/home/lpl/arty)"
+osource "/workspaces/arty/Kconfig"
+config ZEPHYR_ARTY_MODULE
+	bool
+	default y
+endmenu
+menu "arduino-api (/home/lpl/modules/lib/Arduino-Zephyr-API)"
+osource "/home/lpl/modules/lib/Arduino-Zephyr-API/Kconfig"
+config ZEPHYR_ARDUINO_API_MODULE
+	bool
+	default y
+endmenu
+menu "nanopb (/home/lpl/modules/lib/nanopb)"
+osource "$(ZEPHYR_NANOPB_KCONFIG)"
+config ZEPHYR_NANOPB_MODULE
+	bool
+	default y
+endmenu
+menu "cmsis_6 (/home/lpl/modules/hal/cmsis_6)"
+osource "$(ZEPHYR_CMSIS_6_KCONFIG)"
+config ZEPHYR_CMSIS_6_MODULE
+	bool
+	default y
+endmenu
+menu "hal_nxp (/home/lpl/modules/hal/nxp)"
+osource "$(ZEPHYR_HAL_NXP_KCONFIG)"
+config ZEPHYR_HAL_NXP_MODULE
+	bool
+	default y
+
+config ZEPHYR_HAL_NXP_MODULE_BLOBS
+	bool
+endmenu
+config ZEPHYR_HAL_STM32_MODULE
+	bool
+	default y
+
+config ZEPHYR_HAL_STM32_MODULE_BLOBS
+	bool
+menu "loramac-node (/home/lpl/modules/lib/loramac-node)"
+osource "$(ZEPHYR_LORAMAC_NODE_KCONFIG)"
+config ZEPHYR_LORAMAC_NODE_MODULE
+	bool
+	default y
+endmenu

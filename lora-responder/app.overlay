@@ -1,0 +1,45 @@
+/*
+ * Overlay for Teensy 4.1 + single RFM95W (SX1276) on LPSPI4.
+ *
+ * Wiring:
+ *   MOSI  = Pin 11   (LPSPI4_SDO)
+ *   MISO  = Pin 12   (LPSPI4_SDI)
+ *   SCK   = Pin 13   (LPSPI4_SCK)
+ *   CS    = Pin 10   (gpio2 0)
+ *   RST   = Pin 8    (gpio2 16)
+ *   DIO0  = Pin 2    (gpio4 4)
+ */
+
+&lpspi4 {
+	status = "okay";
+	cs-gpios = <&gpio2 0 GPIO_ACTIVE_LOW>;
+
+	lora0: sx1276@0 {
+		compatible = "semtech,sx1276";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+		reset-gpios = <&gpio2 16 GPIO_ACTIVE_LOW>;
+		dio-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>;
+		power-amplifier-output = "pa-boost";
+	};
+};
+
+/ {
+	chosen {
+		zephyr,console = &cdc_acm_uart0;
+	};
+
+	aliases {
+		lora0 = &lora0;
+	};
+};
+
+&zephyr_udc0 {
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+&lpuart6 {
+	status = "disabled";
+};

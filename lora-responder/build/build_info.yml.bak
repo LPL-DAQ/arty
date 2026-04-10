@@ -1,0 +1,5 @@
+west:
+  command: /home/lpl/.venv/bin/west build /home/lpl/arty/lora-responder --pristine
+    auto --board teensy41 --build-dir /home/lpl/arty/lora-responder/build
+  topdir: /home/lpl
+  version: 1.5.0
