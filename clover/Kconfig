@@ -10,6 +10,23 @@ menu "Zephyr"
 source "Kconfig.zephyr"
 endmenu
 
+menu "Application options"
+
+choice THROTTLE_TARGET
+    prompt "Throttle target platform"
+    default THROTTLE_TARGET_RANGER
+
+config THROTTLE_TARGET_RANGER
+    bool "Ranger rocket throttle implementation"
+
+config THROTTLE_TARGET_HORNET
+    bool "Hornet drone throttle implementation"
+
+endchoice
+
+endmenu
+
+
 module = THROTTLE
 module-str = THROTTLE
 source "subsys/logging/Kconfig.template.log_config"
