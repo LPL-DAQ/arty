@@ -82,6 +82,7 @@ void Controller::step_control_loop(k_work*)
     daq_client_status daq_status = get_daq_client_status();
 
     // Dispatch to appropriate peripheral controllers based on current state
+    // TODO: Add data handling
     switch (current_state) {
     case SystemState_STATE_THROTTLE:
         ThrottleController::step_control_loop(analog_sensors_readings);
@@ -110,6 +111,21 @@ void Controller::step_control_loop(k_work*)
         // No peripheral controllers active in these states
         break;
     }
+    
+    if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
+        if (step_control_loop_debounce_warn_count < 5) {
+            LOG_WRN("Telemetry queue full, packet dropped");
+        }
+        else if (step_control_loop_debounce_warn_count == 5) {
+            LOG_WRN("Telemetry queue full, packet dropped (silencing further warnings)");
+        }
+        step_control_loop_debounce_warn_count++;
+    }
+    else {
+        // Reset warning count
+        step_control_loop_debounce_warn_count = 0;
+    }
+
 }
 
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
