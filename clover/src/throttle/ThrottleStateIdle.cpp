@@ -7,7 +7,6 @@ void ThrottleStateIdle::init() {
 std::pair<ThrottleStateOutput, ThrottleIdleData> ThrottleStateIdle::tick() {
     ThrottleStateOutput out{};
     ThrottleIdleData data{};
-    out.has_power_on = true;
     out.power_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     return std::make_pair(out, data);
