@@ -107,13 +107,11 @@ std::expected<void, Error> ThrottleController::init()
 }
 
 
-void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
+void ThrottleController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
 {
     int64_t current_time = k_uptime_get();
     uint64_t start_cycle = k_cycle_get_64();
-    DataPacket data = DataPacket_init_default;
-
-    ThrottleStateOutput out;
+    ThrottleStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
@@ -199,7 +197,6 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
 
     // TODO: Reset position?
 
-    // telemetry
     data.throttle_state = current_state;
 
     // TODO: send data to primary controller

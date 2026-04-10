@@ -80,10 +80,9 @@ std::expected<void, Error> TVCController::init()
 
 static int step_control_loop_debounce_warn_count = 0;
 
-void TVCController::step_control_loop(std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
+void TVCController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
 {
     int64_t current_time = k_uptime_get();
-    DataPacket data = DataPacket_init_default;
 
     TVCControllerOutput out;
 

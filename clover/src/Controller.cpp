@@ -86,22 +86,22 @@ void Controller::step_control_loop(k_work*)
     // TODO: Add data handling
     switch (current_state) {
     case SystemState_STATE_THROTTLE:
-        ThrottleController::step_control_loop(analog_sensors_readings);
+        ThrottleController::step_control_loop(data, analog_sensors_readings);
         break;
     case SystemState_STATE_TVC:
-        TVCController::step_control_loop(analog_sensors_readings);
+        TVCController::step_control_loop(data, analog_sensors_readings);
         break;
     case SystemState_STATE_TVC_THROTTLE:
-        TVCController::step_control_loop(analog_sensors_readings);
-        ThrottleController::step_control_loop(analog_sensors_readings);
+        TVCController::step_control_loop(data, analog_sensors_readings);
+        ThrottleController::step_control_loop(data, analog_sensors_readings);
         break;
     case SystemState_STATE_TVC_THROTTLE_RCS:
-        TVCController::step_control_loop(analog_sensors_readings);
-        ThrottleController::step_control_loop(analog_sensors_readings);
-        RCSController::step_control_loop(analog_sensors_readings);
+        TVCController::step_control_loop(data, analog_sensors_readings);
+        ThrottleController::step_control_loop(data, analog_sensors_readings);
+        RCSController::step_control_loop(data, analog_sensors_readings);
         break;
     case SystemState_STATE_RCS:
-        RCSController::step_control_loop(analog_sensors_readings);
+        RCSController::step_control_loop(data, analog_sensors_readings);
         break;
     // TODO
     case SystemState_STATE_IDLE:
