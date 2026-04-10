@@ -7,6 +7,12 @@
 
 LOG_MODULE_REGISTER(ThrottleRanger, LOG_LEVEL_INF);
 
+namespace ThrottleRanger {
+float alpha = 1.0f; // TODO: 1 or -1?
+uint32_t low_ptc_start_time_ms = 0;
+float target_of = 1.2f;
+}
+
 std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors){
     bool has_thrust = output.has_thrust;
     bool has_fuel_pos = output.has_fuel_pos;
@@ -23,7 +29,7 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
 
     if (has_thrust) {
         uint32_t current_time = k_uptime_get_32();
-
+        // TODO: Check if the abort stuff is all good
         // 1. Safety: abort if PTC401 is below threshold for some time
         if (analog_sensors.battery_voltage <= PTC401_ABORT_THRESHOLD) {
             if (low_ptc_start_time_ms == 0) {
@@ -149,15 +155,15 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
         float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
 
         // 10. Integrate PID to get alpha
-        if (alpha == -1.0f) {
+        if (ThrottleRanger::alpha == -1.0f) {
             // Initialize alpha to starting guess based on Mprime
-            alpha = (target_thrust_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+            ThrottleRanger::alpha = (target_thrust_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
         }
-        alpha += clamped_change_alpha_cmd;
-        alpha = std::clamp(alpha, MIN_ALPHA, MAX_ALPHA);
+        ThrottleRanger::alpha += clamped_change_alpha_cmd;
+        ThrottleRanger::alpha = std::clamp(ThrottleRanger::alpha, MIN_ALPHA, MAX_ALPHA);
 
         // 11. Plug alpha into Mprime contour
-        float thrust_from_alpha = alpha * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
+        float thrust_from_alpha = ThrottleRanger::alpha * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
         float fuel_valve_cmd = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, fuel_valve_grid_internal, thrust_from_alpha, target_of_safe);
 
         float lox_valve_cmd = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, lox_valve_grid_internal, thrust_from_alpha, target_of_safe);

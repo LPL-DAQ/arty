@@ -1661,44 +1661,43 @@ constexpr float lox_valve_grid_internal[] = {
 
 
 
-static constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
-static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
+constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
+constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 
 // TODO: Should constants be moved to header?
 // Physics constants
-static constexpr float EFFICIENCY = 0.93f;
-static constexpr float LBF_CONVERSION = 0.224809f;
-static constexpr float K_SLOPE = -1.132744863732548e-04f;
-static constexpr float K_OFFSET = 0.123605503801193f;
-static constexpr float ALPHA = 307.6704337316606f;
-static constexpr float LOX_AREA_SI = 1.39154e-5f;
-static constexpr float PSI_TO_PA = 6894.76f;
-static constexpr float FUEL_CV_INJ = 0.5f;
-static constexpr float FUEL_SG = 0.806f;
-static constexpr float MIN_SAFE_OF = 0.5f;
-static constexpr float MAX_SAFE_OF = 3.0f;
-static constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
-static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
+constexpr float EFFICIENCY = 0.93f;
+constexpr float LBF_CONVERSION = 0.224809f;
+constexpr float K_SLOPE = -1.132744863732548e-04f;
+constexpr float K_OFFSET = 0.123605503801193f;
+constexpr float ALPHA = 307.6704337316606f;
+constexpr float LOX_AREA_SI = 1.39154e-5f;
+constexpr float PSI_TO_PA = 6894.76f;
+constexpr float FUEL_CV_INJ = 0.5f;
+constexpr float FUEL_SG = 0.806f;
+constexpr float MIN_SAFE_OF = 0.5f;
+constexpr float MAX_SAFE_OF = 3.0f;
+constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
+constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
 // Controller constants
 // TODO: Tune controller constants
-static constexpr float THRUST_KP = 0.015f;
-static constexpr float MAX_CHANGE_ALPHA = 20.0f;
-static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
-static constexpr float MIN_ALPHA = 0.0f;
-static constexpr float MAX_ALPHA = 0.84f;
-static constexpr float MIN_VALVE_POS = 25.0f;
-static constexpr float MAX_VALVE_POS = 90.0f;
+constexpr float THRUST_KP = 0.015f;
+constexpr float MAX_CHANGE_ALPHA = 20.0f;
+constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
+constexpr float MIN_ALPHA = 0.0f;
+constexpr float MAX_ALPHA = 0.84f;
+constexpr float MIN_VALVE_POS = 25.0f;
+constexpr float MAX_VALVE_POS = 90.0f;
 
 // Controller state variables
-static float alpha = -1.0f;
-static float MAX_threshold_PT2k = 1900.0f;  // Define a maximum value for sensor validation
-static float MAX_threshold_PT1k = 950.0f;   // Define a maximum value for sensor validation
-static float MIN_threshold = 50.0f;         // Define a minimum value for sensor validation
+extern float alpha;
+constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
+constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
+constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
 // Track duration of low chamber pressure for abort logic.
-static uint32_t low_ptc_start_time_ms = 0;
-float target_of = 1.2f;
-
+extern uint32_t low_ptc_start_time_ms;
+extern float target_of;
 inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
     // TODO: Shoudl max be 0.1 or 0.0
@@ -1716,7 +1715,6 @@ inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
     return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
-static float tot_ms = 0.0f;
 
 }
 
