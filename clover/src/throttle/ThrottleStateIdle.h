@@ -5,7 +5,7 @@
 
 namespace ThrottleStateIdle {
     void init();
-    std::pair<ThrottleControllerOutput, ThrottleIdleData> tick();
+    std::pair<ThrottleStateOutput, ThrottleIdleData> tick();
 }
 
 #endif // APP_THROTTLE_STATE_IDLE_H

@@ -20,10 +20,11 @@ void ThrottleStateValveSeq::init(bool has_fuel_trace, bool has_lox_trace, float 
     lox_total_time = lox_total_time_ms;
 }
 
-std::pair<ThrottleControllerOutput, ThrottleValveSequenceData> ThrottleStateValveSeq::tick(int64_t current_time, int64_t start_time)
+std::pair<ThrottleStateOutput, ThrottleValveSequenceData> ThrottleStateValveSeq::tick(int64_t current_time, int64_t start_time)
 {
-    ThrottleControllerOutput out;
+    ThrottleStateOutput out{};
     ThrottleValveSequenceData data{};
+    out.power_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 
     float dt = current_time - start_time;
@@ -35,7 +36,7 @@ std::pair<ThrottleControllerOutput, ThrottleValveSequenceData> ThrottleStateValv
             out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
             return {out, data};
         }
-        out.set_fuel = true;
+        out.has_fuel_pos = true;
         out.fuel_pos = *f_target;
     }
 
@@ -46,7 +47,7 @@ std::pair<ThrottleControllerOutput, ThrottleValveSequenceData> ThrottleStateValv
             out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
             return {out, data};
         }
-        out.set_lox = true;
+        out.has_lox_pos = true;
         out.lox_pos = *l_target;
     }
 

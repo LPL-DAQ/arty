@@ -53,8 +53,8 @@ void StateCalibrateValve::init(float fuel_pos, float fuel_pos_enc, float lox_pos
     lox_starting_error = lox_pos - lox_pos_enc;
 }
 
-std::pair<ThrottleControllerOutput, ThrottleValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
-    ThrottleControllerOutput out{};
+std::pair<ThrottleStateOutput, ThrottleValveCalibrationData> StateCalibrateValve::tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc) {
+    ThrottleStateOutput out{};
     ThrottleValveCalibrationData data{};
 
     switch (phase) {
@@ -96,18 +96,20 @@ std::pair<ThrottleControllerOutput, ThrottleValveCalibrationData> StateCalibrate
 
     return std::make_pair(out, data);
 }
-void StateCalibrateValve::seek_hardstop(ThrottleControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
-    out.set_fuel = true;
-    out.set_lox = true;
+void StateCalibrateValve::seek_hardstop(ThrottleStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
+    out.power_on = true;
+    out.power_on = true;
 
     if (!lox_found_stop
         && std::abs(lox_pos - (lox_starting_error + lox_pos_enc)) <= pos_error_limit
     ) {
             lox_target_position += step_size / (rep_counter+1);
+            out.has_lox_pos = true;
             out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
     } else { // when it reaches
         lox_found_stop = true;
         lox_hardstop_position = lox_pos_enc;
+        out.has_lox_pos = true;
         out.lox_pos = lox_pos_enc; // hold position once we find the hardstop
     }
 
@@ -116,10 +118,12 @@ void StateCalibrateValve::seek_hardstop(ThrottleControllerOutput& out, float fue
         && std::abs(fuel_pos - (fuel_starting_error + fuel_pos_enc)) <= pos_error_limit
     ) {
             fuel_target_position += step_size / (rep_counter+1);
+            out.has_fuel_pos = true;
             out.fuel_pos = fuel_target_position; // move towards stop, but slow down in later loops
     } else { // when it reaches
         fuel_found_stop = true;
         fuel_hardstop_position = fuel_pos_enc;
+        out.has_fuel_pos = true;
         out.fuel_pos = fuel_pos_enc; // hold position once we find the hardstop
     }
 
@@ -134,12 +138,12 @@ void StateCalibrateValve::seek_hardstop(ThrottleControllerOutput& out, float fue
 }
 
 
-void StateCalibrateValve::end_movement(ThrottleControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::end_movement(ThrottleStateOutput& out, uint32_t timestamp) {
     FuelValve::reset_pos(fuel_hardstop_position);
     LoxValve::reset_pos(lox_hardstop_position);
 
-    out.set_fuel = false;
-    out.set_lox = false;
+    out.power_on = true;
+    out.power_on = false;
     if (power_cycle_timestamp == 0){
         power_cycle_timestamp = timestamp;
     }
@@ -150,34 +154,33 @@ void StateCalibrateValve::end_movement(ThrottleControllerOutput& out, uint32_t t
 
 }
 
-void StateCalibrateValve::power_off(ThrottleControllerOutput& out, uint32_t timestamp) {
-    out.fuel_on = false;
-    out.lox_on = false;
+void StateCalibrateValve::power_off(ThrottleStateOutput& out, uint32_t timestamp) {
+    out.power_on = true;
+    out.power_on = false;
     if (timestamp - power_cycle_timestamp >= 4000) {
         phase = CalPhase::REPOWER;
     }
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
-void StateCalibrateValve::repower(ThrottleControllerOutput& out, uint32_t timestamp) {
-    // while default, this is just explicit for clarity
-    out.fuel_on = true;
-    out.lox_on = true;
+void StateCalibrateValve::repower(ThrottleStateOutput& out, uint32_t timestamp) {
+    out.power_on = true;
+    out.power_on = true;
     if (timestamp - power_cycle_timestamp >= 5000) {
         phase = CalPhase::COMPLETE;
     }
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
-void StateCalibrateValve::complete(ThrottleControllerOutput& out, uint32_t timestamp) {
-    out.set_fuel = true;
-    out.set_lox = true;
+void StateCalibrateValve::complete(ThrottleStateOutput& out, uint32_t timestamp) {
+    out.power_on = true;
+    out.power_on = true;
+    out.has_fuel_pos = true;
     out.fuel_pos = 95.0f;
+    out.has_lox_pos = true;
     out.lox_pos = 95.0f;
-    out.reset_fuel = true;
-    out.reset_fuel_pos = 95;
-    out.reset_lox = true;
-    out.reset_lox_pos = 95;
+    FuelValve::reset_pos(95.0f);
+    LoxValve::reset_pos(95.0f);
 
     fuel_found_stop = false;
     lox_found_stop = false;
@@ -186,7 +189,6 @@ void StateCalibrateValve::complete(ThrottleControllerOutput& out, uint32_t times
     fuel_target_position = 95;
     lox_target_position = 95;
 
-
     // should be idle, but this is for testing
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
     if (timestamp - power_cycle_timestamp >= 6500) {
@@ -194,56 +196,47 @@ void StateCalibrateValve::complete(ThrottleControllerOutput& out, uint32_t times
         phase = CalPhase::COMPLETE;
     }
 
-
 }
 
-void StateCalibrateValve::error(ThrottleControllerOutput& out, uint32_t timestamp) {
+void StateCalibrateValve::error(ThrottleStateOutput& out, uint32_t timestamp) {
     // In error, turn off drivers and do not try to move
-    out.set_fuel = false;
-    out.set_lox = false;
-    out.fuel_on = false;
-    out.lox_on = false;
+    out.power_on = true;
+    out.power_on = false;
 
     if (power_cycle_timestamp == 0){
         power_cycle_timestamp = timestamp;
     }
 }
 
-void StateCalibrateValve::measure(ThrottleControllerOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
-    out.set_fuel = true;
-    out.set_lox = true;
-
-
+void StateCalibrateValve::measure(ThrottleStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
+    out.power_on = true;
+    out.power_on = true;
 
     if (lox_pos_enc > 10){
         lox_target_position -= step_size*3;
+        out.has_lox_pos = true;
         out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
     }
     else if (!lox_found_stop
         && std::abs(lox_pos - (lox_starting_error + lox_pos_enc)) <= pos_error_limit
     ) {
-            lox_target_position -= step_size;
-            out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
-
+        lox_target_position -= step_size;
+        out.has_lox_pos = true;
+        out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
     } else { // when it reaches
         lox_found_stop = true;
         lox_hardstop_position = lox_pos_enc;
+        out.has_lox_pos = true;
         out.lox_pos = lox_pos_enc; // hold position once we find the hardstop
     }
 
-    // // if loxside hasnt reached
-    // if (!lox_found_stop && std::abs(lox_pos - lox_pos_enc) <= pos_error_limit) {
-    //     lox_target_position += step_size / (rep_counter+1);
-    //     out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
-    // } else { // when it reaches
-        fuel_found_stop = true;
-        fuel_hardstop_position = fuel_pos_enc;
-        out.fuel_pos = fuel_pos_enc; // hold position once we find the hardstop
-    // }
-
+    fuel_found_stop = true;
+    fuel_hardstop_position = fuel_pos_enc;
+    out.has_fuel_pos = true;
+    out.fuel_pos = fuel_pos_enc; // hold position once we find the hardstop
 
     // if both reached, move away from stop
-    out.next_state =    ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
+    out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 
     if (fuel_found_stop && lox_found_stop) {
         fuel_target_position = fuel_hardstop_position;

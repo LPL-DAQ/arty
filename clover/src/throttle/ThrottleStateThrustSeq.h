@@ -7,7 +7,7 @@ namespace StateThrustSeq {
     static inline Trace trace;
 
     void init(float total_time_ms);
-    std::pair<ThrottleControllerOutput, ThrottleThrustSequenceData> tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
+    std::pair<ThrottleStateOutput, ThrottleThrustSequenceData> tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
 
 
     Trace& get_trace();

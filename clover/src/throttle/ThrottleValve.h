@@ -382,6 +382,7 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     }
 }
 
+
 template <
     ValveKind kind,
     gpio_dt_spec pul_dt_init,

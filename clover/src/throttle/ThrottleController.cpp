@@ -6,7 +6,7 @@
 #include "ThrottleStateIdle.h"
 #include "ThrottleStateThrustSeq.h"
 #include "ThrottleStateValveSeq.h"
-#include "ThrottleValve.h"
+#include "ThrottleRanger.h"
 #include "../server.h"
 
 #include "../config.h"
@@ -22,6 +22,7 @@ std::expected<void, Error> ThrottleController::change_state(ThrottleState new_st
     if (current_state == new_state)
         return {};
 
+
     switch (new_state) {
     case ThrottleState_THROTTLE_STATE_IDLE:
         current_state = new_state;
@@ -33,7 +34,7 @@ std::expected<void, Error> ThrottleController::change_state(ThrottleState new_st
         if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state)));
         }
-        StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+        StateCalibrateValve::init(ThrottleRanger::fuel_get_pos_internal(), ThrottleRanger::fuel_get_pos_encoder(), ThrottleRanger::lox_get_pos_internal(), ThrottleRanger::lox_get_pos_encoder());
         current_state = new_state;
         break;
 
@@ -112,7 +113,7 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
     uint64_t start_cycle = k_cycle_get_64();
     DataPacket data = DataPacket_init_default;
 
-    ThrottleControllerOutput out;
+    ThrottleStateOutput out;
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
@@ -124,9 +125,8 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
         break;
     }
     case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE: {
-        // Can make this work over protobuf later
         auto [cal_out, cal_data] = StateCalibrateValve::tick(
-            current_time, FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
+            current_time, ThrottleRanger::fuel_get_pos_internal(), ThrottleRanger::lox_get_pos_internal(), ThrottleRanger::fuel_get_pos_encoder(), ThrottleRanger::lox_get_pos_encoder());
         data.which_throttle_state_data = DataPacket_throttle_valve_calibration_data_tag;
         data.throttle_state_data.throttle_valve_calibration_data = cal_data;
         out = cal_out;
@@ -178,39 +178,31 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
     }
     }
 
+    // TODO: is this proper for analog sensor readings?
+    AnalogSensorReadings analog_sensors = AnalogSensorReadings_init_default;
+    if (analog_sensors_readings) {
+        analog_sensors = analog_sensors_readings->first;
+    }
+    auto ranger_ret = ThrottleRanger::tick(out, data, analog_sensors);
+    if (!ranger_ret.has_value()) {
+        LOG_ERR("ThrottleRanger error: %s", ranger_ret.error().build_message().c_str());
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
+    }
+
+    data.throttle_state_output = out;
+    data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
+
     auto ret = change_state(out.next_state);
     if (!ret.has_value()) {
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
     }
 
-    if (out.reset_fuel) {
-        FuelValve::reset_pos(out.reset_fuel_pos);
-    }
-    if (out.reset_lox) {
-        LoxValve::reset_pos(out.reset_lox_pos);
-    }
-
-    FuelValve::tick(out.fuel_on && fuel_powered, out.set_fuel, out.fuel_pos);
-    LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
+    // TODO: Reset position?
 
     // telemetry
     data.throttle_state = current_state;
 
-
-    data.fuel_valve = {
-        .target_pos_deg = out.fuel_pos,
-        .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
-        .encoder_pos_deg = FuelValve::get_pos_encoder(),
-        .is_on = FuelValve::get_power_on(),
-    };
-    data.lox_valve = {
-        .target_pos_deg = out.lox_pos,
-        .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
-        .encoder_pos_deg = LoxValve::get_pos_encoder(),
-        .is_on = LoxValve::get_power_on(),
-    };
-
-    // send data to primary controller
+    // TODO: send data to primary controller
 }
 
 std::expected<void, Error> ThrottleController::handle_abort(const AbortRequest& req)
@@ -362,6 +354,8 @@ std::expected<void, Error> ThrottleController::handle_reset_valve_position(const
     return {};
 }
 
+
+// currently dysfunctional
 std::expected<void, Error> ThrottleController::handle_power_on(const ThrottlePowerOnRequest& req)
 {
     LOG_INF("Received power on valve request");
