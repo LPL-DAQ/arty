@@ -95,8 +95,6 @@ std::expected<void, Error> RCSController::init()
     return {};
 }
 
-static int step_control_loop_debounce_warn_count = 0;
-
 void RCSController::step_control_loop(std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
 {
     int64_t current_time = k_uptime_get();

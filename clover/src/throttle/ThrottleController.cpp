@@ -105,7 +105,6 @@ std::expected<void, Error> ThrottleController::init()
     return {};
 }
 
-static int step_control_loop_debounce_warn_count = 0;
 
 void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
 {
@@ -210,6 +209,8 @@ void ThrottleController::step_control_loop(std::optional<std::pair<AnalogSensorR
         .encoder_pos_deg = LoxValve::get_pos_encoder(),
         .is_on = LoxValve::get_power_on(),
     };
+
+    // send data to primary controller
 }
 
 std::expected<void, Error> ThrottleController::handle_abort(const AbortRequest& req)
@@ -361,7 +362,7 @@ std::expected<void, Error> ThrottleController::handle_reset_valve_position(const
     return {};
 }
 
-std::expected<void, Error> ThrottleController::handle_power_on_valve(const ThrottlePowerOnValveRequest& req)
+std::expected<void, Error> ThrottleController::handle_power_on(const ThrottlePowerOnRequest& req)
 {
     LOG_INF("Received power on valve request");
 
@@ -384,7 +385,7 @@ std::expected<void, Error> ThrottleController::handle_power_on_valve(const Throt
     return {};
 }
 
-std::expected<void, Error> ThrottleController::handle_power_off_valve(const ThrottlePowerOffValveRequest& req)
+std::expected<void, Error> ThrottleController::handle_power_off(const ThrottlePowerOffRequest& req)
 {
     LOG_INF("Received power off valve request");
 
