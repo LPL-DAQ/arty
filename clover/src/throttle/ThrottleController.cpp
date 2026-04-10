@@ -244,7 +244,6 @@ std::expected<void, Error> ThrottleController::handle_start_thrust_sequence(cons
 {
     LOG_INF("Received start thrust sequence request");
     sequence_start_time = k_uptime_get();
-    change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
     auto ret = change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to thrust seq"));
