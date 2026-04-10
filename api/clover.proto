@@ -24,8 +24,8 @@ message Request {
 
     // Actuators
     ThrottleResetValvePositionRequest throttle_reset_valve_position = 2;
-    ThrottlePowerOffValveRequest throttle_power_off_valve = 24;
-    ThrottlePowerOnValveRequest throttle_power_on_valve = 23;
+    ThrottlePowerOffRequest throttle_power_off = 24;
+    ThrottlePowerOnRequest throttle_power_on = 23;
 
     // Transitions (VALVE_SEQ, THRUST_SEQ) -> ABORT
     AbortRequest abort = 10;
@@ -179,12 +179,12 @@ message AbortRequest {}
 // THROTTLE Requests
 
 // Turn on stepper motor.
-message ThrottlePowerOnValveRequest {
+message ThrottlePowerOnRequest {
   required Valve valve = 1;
 }
 
 // Turn off stepper motor.
-message ThrottlePowerOffValveRequest {
+message ThrottlePowerOffRequest {
   required Valve valve = 1;
 }
 
@@ -361,8 +361,6 @@ message DataPacket {
   required TVCState tvc_state = 22;
   required RCSState rcs_state = 23;
 
-
-
   // Time taken by various controller components.
   required ControllerTiming controller_timing = 20;
 
@@ -382,8 +380,12 @@ message DataPacket {
   required AnalogSensorReadings analog_sensors = 19;
 
   // Actuators
-  required ValveStatus fuel_valve = 3;
-  required ValveStatus lox_valve = 4;
+  required ThrottleStateOutput throttle_state_output = 32;
+  oneof throttle_actuator_data {
+    ThrottleRangerData throttle_ranger_data = 33;
+    ThrottleHornetData throttle_hornet_data = 34;
+  }
+
 
   oneof throttle_state_data {
     // IDLE, VALVE_PRIMED, THRUST_PRIMED
@@ -401,6 +403,7 @@ message DataPacket {
     // THRUST_SEQ
     ThrottleThrustSequenceData throttle_thrust_sequence_data = 11;
   }
+
   oneof rcs_state_data {
     // IDLE, VALVE_PRIMED, THRUST_PRIMED
     RCSIdleData rcs_idle_data = 24;
@@ -414,6 +417,7 @@ message DataPacket {
     // THRUST_SEQ
     RCSRollSequenceData rcs_roll_sequence_data = 28;
   }
+
   oneof tvc_state_data {
     // IDLE, TRACE_PRIMED
     TVCIdleData tvc_idle_data = 29;
@@ -480,10 +484,45 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
+message ThrottleStateOutput {
+
+  required ThrottleState next_state = 1;
+  optional float thrust = 2;
+  optional bool power_on = 3;
+  optional float fuel_pos = 4;
+  optional float lox_pos = 5;
+}
+
+message ThrottleRangerData {
+
+  required ValveStatus fuel_valve = 13;
+  required ValveStatus lox_valve = 14;
+
+  required float predicted_thrust = 1;
+  required float predicted_of = 2;
+  required float mdot_fuel = 3;
+  required float mdot_lox = 4;
+
+  required float change_alpha_cmd = 7;
+  required float clamped_change_alpha_cmd = 8;
+
+  required float alpha = 9;
+  required float thrust_from_alpha = 10;
+
+  required float fuel_valve_cmd = 11;
+  required float lox_valve_cmd = 12;
+}
+
+message ThrottleHornetData{
+  required float pwm_signal = 1;
+}
+
 message ThrottleAbortData {}
 
 message ThrottleIdleData {}
 
+
+// Only exists for Ranger anyways
 message ThrottleValveCalibrationData {
   required bool fuel_found_hardstop = 3;
   required float fuel_hardstop_pos = 4;
@@ -499,25 +538,13 @@ message ThrottleValveCalibrationData {
 
 message ThrottleValveSequenceData {}
 
-// TODO
 message ThrottleThrustSequenceData {
-  required float predicted_thrust = 1;
-  required float predicted_of = 2;
-  required float mdot_fuel = 3;
-  required float mdot_lox = 4;
+
   required float target_thrust = 5;
 
   required float thrust_error = 6;
-
-  required float change_alpha_cmd = 7;
-  required float clamped_change_alpha_cmd = 8;
-
-  required float alpha = 9;
-  required float thrust_from_alpha = 10;
-
-  required float fuel_valve_cmd = 11;
-  required float lox_valve_cmd = 12;
 }
+
 
 message RCSAbortData {}
 
@@ -529,7 +556,6 @@ message RCSValveSequenceData {}
 message RCSRollSequenceData {
 
 }
-
 message TVCAbortData {}
 
 message TVCIdleData {}
