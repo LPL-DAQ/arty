@@ -67,6 +67,7 @@ static int step_control_loop_debounce_warn_count = 0;
 void Controller::step_control_loop(k_work*)
 {
     int64_t current_time = k_uptime_get();
+    // TODO: What was start_cycle used for?
     uint64_t start_cycle = k_cycle_get_64();
     DataPacket data = DataPacket_init_default;
 
@@ -111,7 +112,7 @@ void Controller::step_control_loop(k_work*)
         // No peripheral controllers active in these states
         break;
     }
-    
+
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {
             LOG_WRN("Telemetry queue full, packet dropped");
