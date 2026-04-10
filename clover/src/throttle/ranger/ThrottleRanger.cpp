@@ -1,7 +1,7 @@
 #include "ThrottleRanger.h"
 #include "ThrottleValve.h"
-#include "../ControllerConfig.h"
-#include "../LookupTable.h"
+#include "../../ControllerConfig.h"
+#include "../../LookupTable.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 

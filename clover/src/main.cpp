@@ -8,7 +8,7 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "sensors/AnalogSensors.h"
-#include "throttle/ThrottleValve.h"
+#include "throttle/ranger/ThrottleValve.h"
 #include "sensors/lidar.h"
 #include "Controller.h"
 #include "throttle/ThrottleController.h"

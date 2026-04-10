@@ -1,5 +1,7 @@
 #include "ThrottleStateCalibrateValve.h"
+#include "ThrottleRanger.h"
 #include <zephyr/logging/log.h>
+
 #include <array>
 LOG_MODULE_REGISTER(StateCalibrateValve);
 
@@ -139,8 +141,8 @@ void StateCalibrateValve::seek_hardstop(ThrottleStateOutput& out, float fuel_pos
 
 
 void StateCalibrateValve::end_movement(ThrottleStateOutput& out, uint32_t timestamp) {
-    FuelValve::reset_pos(fuel_hardstop_position);
-    LoxValve::reset_pos(lox_hardstop_position);
+    ThrottleRanger::fuel_reset_pos(fuel_hardstop_position);
+    ThrottleRanger::lox_reset_pos(lox_hardstop_position);
 
     out.power_on = true;
     out.power_on = false;
@@ -179,8 +181,8 @@ void StateCalibrateValve::complete(ThrottleStateOutput& out, uint32_t timestamp)
     out.fuel_pos = 95.0f;
     out.has_lox_pos = true;
     out.lox_pos = 95.0f;
-    FuelValve::reset_pos(95.0f);
-    LoxValve::reset_pos(95.0f);
+    ThrottleRanger::fuel_reset_pos(95.0f);
+    ThrottleRanger::lox_reset_pos(95.0f);
 
     fuel_found_stop = false;
     lox_found_stop = false;

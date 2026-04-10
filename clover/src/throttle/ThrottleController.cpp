@@ -2,11 +2,11 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "ThrottleStateAbort.h"
-#include "ThrottleStateCalibrateValve.h"
+#include "ranger/ThrottleStateCalibrateValve.h"
 #include "ThrottleStateIdle.h"
 #include "ThrottleStateThrustSeq.h"
-#include "ThrottleStateValveSeq.h"
-#include "ThrottleRanger.h"
+#include "ranger/ThrottleStateValveSeq.h"
+#include "ranger/ThrottleRanger.h"
 #include "../server.h"
 
 #include "../config.h"
@@ -338,11 +338,11 @@ std::expected<void, Error> ThrottleController::handle_reset_valve_position(const
     // this is giving a double -> float warning rn but deal w that later
     case Valve_FUEL:
         LOG_INF("Resetting fuel valve position to %f", (double)req.new_pos_deg);
-        FuelValve::reset_pos(req.new_pos_deg);
+        ThrottleRanger::fuel_reset_pos(req.new_pos_deg);
         break;
     case Valve_LOX:
         LOG_INF("Resetting lox valve position to %f", (double)req.new_pos_deg);
-        LoxValve::reset_pos(req.new_pos_deg);
+        ThrottleRanger::lox_reset_pos(req.new_pos_deg);
         break;
     default:
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));

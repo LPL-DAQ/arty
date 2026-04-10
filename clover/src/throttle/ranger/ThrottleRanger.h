@@ -2,7 +2,7 @@
 #define APP_THROTTLE_RANGER_H
 
 #include <cmath>
-#include "ThrottleController.h"
+#include "../ThrottleController.h"
 
 namespace ThrottleRanger {
 

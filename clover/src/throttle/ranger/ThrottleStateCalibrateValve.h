@@ -1,7 +1,7 @@
 #ifndef APP_STATE_CALIBRATE_VALVE_H
 #define APP_STATE_CALIBRATE_VALVE_H
 
-#include "ThrottleController.h"
+#include "../ThrottleController.h"
 #include "ThrottleValve.h"
 
 #include <cmath>

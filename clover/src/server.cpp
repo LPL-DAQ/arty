@@ -12,7 +12,7 @@
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
 
-#include "throttle/ThrottleValve.h"
+#include "throttle/ranger/ThrottleValve.h"
 #include "clover.pb.h"
 // ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
