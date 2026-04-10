@@ -1,5 +1,4 @@
 #include "ThrottleHornet.h"
-#include "ThrottleValve.h"
 #include "../../ControllerConfig.h"
 #include "../../LookupTable.h"
 #include <zephyr/kernel.h>

@@ -27,7 +27,7 @@ static inline void set_target_actuator_tag(DataPacket& data)
 }
 
 #elif defined(CONFIG_HORNET)
-#include "ThrottleHornet.h"   // change path if your real header lives elsewhere
+#include "hornet/ThrottleHornet.h"   // change path if your real header lives elsewhere
 namespace ThrottleImpl = ThrottleHornet;
 static constexpr const char* kThrottleTargetName = "Hornet";
 
