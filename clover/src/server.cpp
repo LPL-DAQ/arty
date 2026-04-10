@@ -252,14 +252,14 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             cmd_result = ThrottleController::handle_halt(request.payload.throttle_halt);
             break;
         }
-        case Request_throttle_power_on_valve_tag: {
+        case Request_throttle_power_on_tag: {
             LOG_INF("Power on valve");
-            cmd_result = ThrottleController::handle_power_on_valve(request.payload.throttle_power_on_valve);
+            cmd_result = ThrottleController::handle_power_on(request.payload.throttle_power_on);
             break;
         }
-        case Request_throttle_power_off_valve_tag: {
+        case Request_throttle_power_off_tag: {
             LOG_INF("Power off valve");
-            cmd_result = ThrottleController::handle_power_off_valve(request.payload.throttle_power_off_valve);
+            cmd_result = ThrottleController::handle_power_off(request.payload.throttle_power_off);
             break;
         }
 
