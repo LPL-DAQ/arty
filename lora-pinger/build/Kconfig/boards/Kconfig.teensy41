@@ -1,2 +1,0 @@
-# Load board Kconfig descriptions.
-osource "/home/lpl/zephyr/boards/pjrc/teensy4/Kconfig.teensy41"
