@@ -10,19 +10,6 @@
 
 typedef ThrottleState ThrottleState;
 
-struct ThrottleControllerOutput {
-    bool set_fuel = false;
-    float fuel_pos = 0.0f;
-    bool fuel_on = true;
-    bool set_lox = false;
-    float lox_pos = 0.0f;
-    bool lox_on = true;
-    float reset_fuel_pos = 0.0f;
-    bool reset_fuel = false;
-    float reset_lox_pos = 0.0f;
-    bool reset_lox = false;
-    ThrottleState next_state = ThrottleState_THROTTLE_STATE_IDLE;
-};
 
 class ThrottleController {
 public:
@@ -56,8 +43,8 @@ public:
     static std::expected<void, Error> handle_halt(const ThrottleHaltRequest& req);
 
     static std::expected<void, Error> handle_reset_valve_position(const ThrottleResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_power_on_valve(const ThrottlePowerOnValveRequest& req);
-    static std::expected<void, Error> handle_power_off_valve(const ThrottlePowerOffValveRequest& req);
+    static std::expected<void, Error> handle_power_on(const ThrottlePowerOnRequest& req);
+    static std::expected<void, Error> handle_power_off(const ThrottlePowerOffRequest& req);
 
     static std::expected<void, Error> change_state(ThrottleState new_state);
     static const char* get_state_name(ThrottleState state);
