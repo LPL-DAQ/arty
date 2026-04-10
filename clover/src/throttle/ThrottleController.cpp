@@ -6,13 +6,40 @@
 #include "ThrottleStateIdle.h"
 #include "ThrottleStateThrustSeq.h"
 #include "ranger/ThrottleStateValveSeq.h"
-#include "ranger/ThrottleRanger.h"
 #include "../server.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+
+
+#if defined(CONFIG_RANGER)
+#include "ranger/ThrottleStateCalibrateValve.h"
+#include "ranger/ThrottleStateValveSeq.h"
+#include "ranger/ThrottleRanger.h"
+namespace ThrottleImpl = ThrottleRanger;
+static constexpr const char* kThrottleTargetName = "Ranger";
+
+static inline void set_target_actuator_tag(DataPacket& data)
+{
+    data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
+}
+
+#elif defined(CONFIG_HORNET)
+#include "ThrottleHornet.h"   // change path if your real header lives elsewhere
+namespace ThrottleImpl = ThrottleHornet;
+static constexpr const char* kThrottleTargetName = "Hornet";
+
+static inline void set_target_actuator_tag(DataPacket& data)
+{
+    // Replace this with your actual generated hornet actuator tag name if needed.
+    data.which_throttle_actuator_data = DataPacket_throttle_hornet_data_tag;
+}
+
+#else
+#error "Select either CONFIG_RANGER or CONFIG_HORNET"
+#endif
 
 LOG_MODULE_REGISTER(ThrottleController, LOG_LEVEL_INF);
 
@@ -30,29 +57,38 @@ std::expected<void, Error> ThrottleController::change_state(ThrottleState new_st
 
         break;
 
+
     case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE:
+        #if defined(CONFIG_RANGER)
         if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state)));
         }
-        StateCalibrateValve::init(ThrottleRanger::fuel_get_pos_internal(), ThrottleRanger::fuel_get_pos_encoder(), ThrottleRanger::lox_get_pos_internal(), ThrottleRanger::lox_get_pos_encoder());
+        StateCalibrateValve::init(ThrottleImpl::fuel_get_pos_internal(), ThrottleImpl::fuel_get_pos_encoder(), ThrottleImpl::lox_get_pos_internal(), ThrottleImpl::lox_get_pos_encoder());
         current_state = new_state;
+        #endif
         break;
 
     case ThrottleState_THROTTLE_STATE_VALVE_PRIMED:
+        #if defined(CONFIG_RANGER)
+
         if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state)));
         }
         ThrottleStateIdle::init();
         current_state = new_state;
+        #endif
         break;
 
     case ThrottleState_THROTTLE_STATE_VALVE_SEQ:
+        #if defined(CONFIG_RANGER)
+
         if (current_state != ThrottleState_THROTTLE_STATE_VALVE_PRIMED) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state)));
         }
 
         // INIT IS IN THE HANDLER
         current_state = new_state;
+        #endif
         break;
 
     case ThrottleState_THROTTLE_STATE_THRUST_PRIMED:
@@ -123,26 +159,34 @@ void ThrottleController::step_control_loop(DataPacket& data, std::optional<std::
         break;
     }
     case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE: {
+        #if defined(CONFIG_RANGER)
+
         auto [cal_out, cal_data] = StateCalibrateValve::tick(
-            current_time, ThrottleRanger::fuel_get_pos_internal(), ThrottleRanger::lox_get_pos_internal(), ThrottleRanger::fuel_get_pos_encoder(), ThrottleRanger::lox_get_pos_encoder());
+            current_time, ThrottleImpl::fuel_get_pos_internal(), ThrottleImpl::lox_get_pos_internal(), ThrottleImpl::fuel_get_pos_encoder(), ThrottleImpl::lox_get_pos_encoder());
         data.which_throttle_state_data = DataPacket_throttle_valve_calibration_data_tag;
         data.throttle_state_data.throttle_valve_calibration_data = cal_data;
         out = cal_out;
+        #endif
         break;
     }
     case ThrottleState_THROTTLE_STATE_VALVE_PRIMED: {
+        #if defined(CONFIG_RANGER)
+
         auto [primed_out, primed_data] = ThrottleStateIdle::tick();
         primed_out.next_state = ThrottleState_THROTTLE_STATE_VALVE_PRIMED;
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
         data.throttle_state_data.throttle_idle_data = primed_data;
         out = primed_out;
+        #endif
         break;
     }
     case ThrottleState_THROTTLE_STATE_VALVE_SEQ: {
+        #if defined(CONFIG_RANGER)
         auto [seq_out, seq_data] = ThrottleStateValveSeq::tick(current_time, sequence_start_time);
         data.which_throttle_state_data = DataPacket_throttle_valve_sequence_data_tag;
         data.throttle_state_data.throttle_valve_sequence_data = seq_data;
         out = seq_out;
+        #endif
         break;
     }
     case ThrottleState_THROTTLE_STATE_THRUST_PRIMED: {
@@ -181,14 +225,23 @@ void ThrottleController::step_control_loop(DataPacket& data, std::optional<std::
     if (analog_sensors_readings) {
         analog_sensors = analog_sensors_readings->first;
     }
-    auto ranger_ret = ThrottleRanger::tick(out, data, analog_sensors);
+
+    #if defined(CONFIG_RANGER)
+    auto ranger_ret = ThrottleImpl::tick(out, data, analog_sensors);
     if (!ranger_ret.has_value()) {
-        LOG_ERR("ThrottleRanger error: %s", ranger_ret.error().build_message().c_str());
+        LOG_ERR("ThrottleImpl error: %s", ranger_ret.error().build_message().c_str());
         out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
     }
-
-    data.throttle_state_output = out;
     data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
+    #elif defined(CONFIG_HORNET)
+    auto hornet_ret = ThrottleImpl::tick(out, data, analog_sensors);
+    if (!hornet_ret.has_value()) {
+        LOG_ERR("ThrottleImpl error: %s", hornet_ret.error().build_message().c_str());
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
+    }
+    data.which_throttle_actuator_data = DataPacket_throttle_hornet_data_tag;
+     #endif
+    data.throttle_state_output = out;
 
     auto ret = change_state(out.next_state);
     if (!ret.has_value()) {
@@ -253,7 +306,7 @@ std::expected<void, Error> ThrottleController::handle_start_thrust_sequence(cons
 
 std::expected<void, Error> ThrottleController::handle_load_valve_sequence(const ThrottleLoadValveSequenceRequest& req)
 {
-
+    #if defined(CONFIG_RANGER)
     LOG_INF("Received open loop valve sequence request");
     bool has_fuel = req.has_fuel_trace_deg;
     bool has_lox = req.has_lox_trace_deg;
@@ -288,19 +341,20 @@ std::expected<void, Error> ThrottleController::handle_load_valve_sequence(const 
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
     }
-
+    #endif
     return {};
 }
 
 std::expected<void, Error> ThrottleController::handle_start_valve_sequence(const ThrottleStartValveSequenceRequest& req)
 {
-
+    #if defined(CONFIG_RANGER)
     LOG_INF("Received start valve sequence request");
     sequence_start_time = k_uptime_get();
     auto ret = change_state(ThrottleState_THROTTLE_STATE_VALVE_SEQ);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to valve seq"));
     }
+    #endif
     return {};
 }
 
@@ -316,16 +370,19 @@ std::expected<void, Error> ThrottleController::handle_halt(const ThrottleHaltReq
 
 std::expected<void, Error> ThrottleController::handle_calibrate_valve(const ThrottleCalibrateValveRequest& req)
 {
+    #if defined(CONFIG_RANGER)
     LOG_INF("Received calibrate valve request");
     auto ret = change_state(ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to calibrate valve"));
     }
+    #endif
     return {};
 }
 
 std::expected<void, Error> ThrottleController::handle_reset_valve_position(const ThrottleResetValvePositionRequest& req)
 {
+    #if defined(CONFIG_RANGER)
     LOG_INF("Received reset valve request");
 
     if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
@@ -337,21 +394,21 @@ std::expected<void, Error> ThrottleController::handle_reset_valve_position(const
     // this is giving a double -> float warning rn but deal w that later
     case Valve_FUEL:
         LOG_INF("Resetting fuel valve position to %f", (double)req.new_pos_deg);
-        ThrottleRanger::fuel_reset_pos(req.new_pos_deg);
+        ThrottleImpl::fuel_reset_pos(req.new_pos_deg);
         break;
     case Valve_LOX:
         LOG_INF("Resetting lox valve position to %f", (double)req.new_pos_deg);
-        ThrottleRanger::lox_reset_pos(req.new_pos_deg);
+        ThrottleImpl::lox_reset_pos(req.new_pos_deg);
         break;
     default:
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
     }
-
+    #endif
     return {};
 }
 
 
-// currently dysfunctional
+// TODO: currently completely dysfunctional idk who or why this was made like this
 std::expected<void, Error> ThrottleController::handle_power_on(const ThrottlePowerOnRequest& req)
 {
     LOG_INF("Received power on valve request");
@@ -374,7 +431,7 @@ std::expected<void, Error> ThrottleController::handle_power_on(const ThrottlePow
     }
     return {};
 }
-
+// TODO: also dysfunctional, see above
 std::expected<void, Error> ThrottleController::handle_power_off(const ThrottlePowerOffRequest& req)
 {
     LOG_INF("Received power off valve request");

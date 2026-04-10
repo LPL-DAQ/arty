@@ -12,15 +12,15 @@ endmenu
 
 menu "Application options"
 
-choice THROTTLE_TARGET
-    prompt "Throttle target platform"
-    default THROTTLE_TARGET_RANGER
+choice IMPLEMENTATION
+    prompt "Ranger or Hornet"
+    default RANGER
 
-config THROTTLE_TARGET_RANGER
-    bool "Ranger rocket throttle implementation"
+config RANGER
+    bool "Ranger implementation"
 
-config THROTTLE_TARGET_HORNET
-    bool "Hornet drone throttle implementation"
+config HORNET
+    bool "Hornet implementation"
 
 endchoice
 
