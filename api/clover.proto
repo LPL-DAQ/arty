@@ -487,8 +487,8 @@ message AnalogSensorReadings {
 message ThrottleStateOutput {
 
   required ThrottleState next_state = 1;
+  required bool power_on = 3;
   optional float thrust = 2;
-  optional bool power_on = 3;
   optional float fuel_pos = 4;
   optional float lox_pos = 5;
 }
