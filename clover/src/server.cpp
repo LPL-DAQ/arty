@@ -12,11 +12,19 @@
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
 
-#include "ThrottleValve.h"
-#include "clover.pb.h"
-// ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
+#include "MutexGuard.h"
+#include "clover.pb.h"
 #include "server.h"
+
+#ifdef CONFIG_HORNET
+
+#elif CONFIG_RANGER
+#include "ThrottleValve.h"
+
+#else
+#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
+#endif
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -194,12 +202,15 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             cmd_result = handle_identify_client(request.payload.identify_client, thread_index);
             break;
         }
-        case Request_configure_analog_sensors_bias_tag: {
-            LOG_INF("Configure analog sensor bias");
-            cmd_result = Controller::handle_configure_analog_sensor_bias(request.payload.configure_analog_sensors_bias);
+
+        // Provided by AnalogSensors
+        case Request_configure_analog_sensors_tag: {
+            LOG_INF("Configure analog sensors");
+            cmd_result = AnalogSensors::handle_configure_analog_sensors(request.payload.configure_analog_sensors);
             break;
         }
 
+        // Provided by ThrottleValve
         case Request_reset_valve_position_tag: {
             LOG_INF("Reset valve position");
             // ADDED: Defer to the static controller to conform to std::expected pattern

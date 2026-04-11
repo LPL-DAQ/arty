@@ -2,13 +2,22 @@
 
 > It's better to be lucky than good.
 
-Embedded software for the GNC board.
+Embedded software for the Ranger.
 
 ## Build
 
+For Hornet:
+
 ```shell
-west build ~/arty/clover --pristine auto --board tvc_throttle_dev/mimxrt1062 --build-dir ~/arty/clover/build
+west build ~/arty/clover --pristine auto --board hornet_mk_3/mimxrt1062 --build-dir ~/arty/clover/build
 ```
+
+For Ranger:
+
+```shell
+west build ~/arty/clover --pristine auto --board ranger_1/mimxrt1062 --build-dir ~/arty/clover/build
+```
+
 
 ## Flash
 

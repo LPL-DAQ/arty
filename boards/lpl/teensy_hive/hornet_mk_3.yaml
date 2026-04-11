@@ -1,0 +1,11 @@
+identifier: Hornet Mk 3
+name: Hornet-Mk-3
+vendor: LPL
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio

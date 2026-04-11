@@ -1,0 +1,5 @@
+boards:
+  - name: hornet_mk_3
+    vendor: lpl
+    socs:
+      - name: mimxrt1062

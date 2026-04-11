@@ -12,7 +12,7 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 21
+// next tag: 22
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
@@ -20,7 +20,7 @@ message Request {
     IsNotAbortedRequest is_not_aborted_request = 20;
 
     // Sensors
-    ConfigureAnalogSensorBiasRequest configure_analog_sensors_bias = 17;
+    ConfigureAnalogSensorsRequest configure_analog_sensors = 21;
 
     // Actuators
     ResetValvePositionRequest reset_valve_position = 2;
@@ -68,24 +68,72 @@ enum ClientType {
   DAQ = 3;
 }
 
-// Configures bias for a PT or TC.
-message ConfigureAnalogSensorBiasRequest {
-  required AnalogSensor sensor = 1;
-  required float bias = 2;
+// Configure analog inputs as PTs or TCs. Should be called early in
+// program lifetime to ensure analog sensor readings get populated.
+message ConfigureAnalogSensorsRequest {
+  repeated AnalogSensorConfig configs = 1;
+}
+
+// Either all pt_* fields must be set, or all tc_* fields must be set, or all raw_* fields must be set.
+message AnalogSensorConfig {
+  // Sensor input number, corresponds to an ADC and its channel. Set in devicetree.
+  required uint32 channel = 1;
+  required AnalogSensor assignment = 2;
+
+  optional float pt_range_psig = 3;
+  optional float pt_bias_psig = 4;
+
+  optional TCType tc_type = 5;
+
+  optional float raw_range_v = 6;
+  optional float raw_bias_v = 7;
+}
+
+enum TCType {
+  UNKNOWN_TC_TYPE = 0;
+  K_TYPE = 1;
+  T_TYPE = 2;
 }
 
 enum AnalogSensor {
   UNKNOWN_ANALOG_SENSOR = 0;
-  PT102 = 1;
-  PT103 = 2;
-  PT202 = 3;
-  PT203 = 4;
-  PTF401 = 5;
-  PTO401 = 6;
-  PTC401 = 7;
-  PTC402 = 8;
-  TC102 = 9;
-  TC102_5 = 10;
+
+  // Vehicle pressurant
+  PT001 = 1;
+  PT002 = 2;
+  PT003 = 3;
+  PT004 = 4;
+  PT005 = 5;
+
+  // Vehicle fuel side
+  PT101 = 6;
+
+  // Vehicle LOx side
+  PT201 = 7;
+
+  // Engine
+  PTF1 = 8;
+  PTF2 = 9;
+  PTO1 = 10;
+  PTC1 = 11;
+  PTC2 = 12;
+
+  // TCs
+  TC001 = 13;
+  TC101 = 14;
+  TC102 = 15;
+  TCF1 = 16;
+  TCO1 = 17;
+
+  // GSE pressurant
+  PTG001 = 18;
+  PTG002 = 19;
+
+  // GSE LOx
+  PTG101 = 20;
+
+  // Hornet
+  BATTERY_VOLTAGE = 21;
 }
 
 // Reset the valve's position.
@@ -184,7 +232,7 @@ enum SystemState {
   STATE_ABORT = 7;
 }
 
-// next tag: 22
+// next tag: 21
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -195,7 +243,7 @@ message DataPacket {
   required SystemState state = 6;
 
   // Time taken by various controller components.
-  required ControllerTiming controller_timing = 21;
+  required ControllerTiming controller_timing = 20;
 
   // Size of pending queue of data packets to send.
   required uint32 data_queue_size = 2;
@@ -210,8 +258,7 @@ message DataPacket {
   required float daq_last_pinged_ns = 18;
 
   // Sensors
-  required PTs pts = 19;
-  required TCs tcs = 20;
+  required AnalogSensorReadings analog_sensors = 19;
 
   // Actuators
   required ValveStatus fuel_valve = 3;
@@ -249,22 +296,44 @@ message ValveStatus {
   required bool is_on = 4;
 }
 
-// Pressure transducers, measured in psig.
-message PTs {
-  optional float pt102 = 1;
-  optional float pt103 = 2;
-  optional float pt202 = 3;
-  optional float pt203 = 4;
-  optional float ptf401 = 5;
-  optional float pto401 = 6;
-  optional float ptc401 = 7;
-  optional float ptc402 = 8;
-}
+// PTs are in psig, TCs are in deg C, raw are in volts.
+message AnalogSensorReadings {
+  // Vehicle pressurant
+  optional float pt001 = 1;
+  optional float pt002 = 2;
+  optional float pt003 = 3;
+  optional float pt004 = 4;
+  optional float pt005 = 5;
 
-// Thermocouples, measured in deg C.
-message TCs {
-  optional float tc102 = 1;
-  optional float tc102_5 = 2;
+  // Vehicle fuel side
+  optional float pt101 = 6;
+
+  // Vehicle LOx side
+  optional float pt201 = 7;
+
+  // Engine
+  optional float ptf1 = 8;
+  optional float ptf2 = 9;
+  optional float pto1 = 10;
+  optional float ptc1 = 11;
+  optional float ptc2 = 12;
+
+  // TCs
+  optional float tc001 = 13;
+  optional float tc101 = 14;
+  optional float tc102 = 15;
+  optional float tcf1 = 16;
+  optional float tco1 = 17;
+
+  // GSE pressurant
+  optional float ptg001 = 18;
+  optional float ptg002 = 19;
+
+  // GSE LOx
+  optional float ptg101 = 20;
+
+  // Hornet
+  optional float battery_voltage = 21;
 }
 
 message IdleData {}
