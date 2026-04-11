@@ -317,6 +317,23 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
+        // Provided by FlightController
+        case Request_flight_load_sequence_tag: {
+            LOG_INF("Load flight sequence");
+            cmd_result = FlightController::handle_load_sequence(request.payload.flight_load_sequence);
+            break;
+        }
+        case Request_flight_start_sequence_tag: {
+            LOG_INF("Start flight sequence");
+            cmd_result = FlightController::handle_start_sequence(request.payload.flight_start_sequence);
+            break;
+        }
+        case Request_flight_halt_tag: {
+            LOG_INF("Halt flight");
+            cmd_result = FlightController::handle_halt(request.payload.flight_halt);
+            break;
+        }
+
         default: {
             LOG_ERR(
                 "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);

@@ -19,6 +19,10 @@ public:
     static std::expected<void, Error> init();
     static void step_control_loop(DataPacket& data);
 
+    static std::expected<void, Error> handle_load_sequence(const FlightLoadSequenceRequest& req);
+    static std::expected<void, Error> handle_start_sequence(const FlightStartSequenceRequest& req);
+    static std::expected<void, Error> handle_halt(const FlightHaltRequest& req);
+
     static const FlightStateOutput& get_output();
     static float get_z_acceleration();
     static float get_x_angular_acceleration();

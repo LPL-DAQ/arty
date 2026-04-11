@@ -66,7 +66,12 @@ message Request {
     // Transitions VALVE_PRIMED -> VALVE_SEQ
     TVCStartSequenceRequest tvc_start_sequence = 30;
 
-
+    // Transitions IDLE -> TAKEOFF
+    FlightLoadSequenceRequest flight_load_sequence = 31;
+    // Transitions TAKEOFF -> FLIGHT_SEQ
+    FlightStartSequenceRequest flight_start_sequence = 32;
+    // Transitions (FLIGHT_SEQ, LANDING, TAKEOFF) -> IDLE
+    FlightHaltRequest flight_halt = 33;
   }
 }
 
@@ -262,6 +267,16 @@ message TVCLoadSequenceRequest {
 // Start a loaded sequence.
 message TVCStartSequenceRequest {}
 
+
+// Flight Requests
+message FlightHaltRequest {}
+message FlightLoadSequenceRequest{
+  optional ControlTrace x_position_trace = 1;
+  optional ControlTrace y_position_trace = 2;
+  optional ControlTrace z_position_trace = 3;
+  optional ControlTrace roll_angle_trace = 4;
+
+}
 
 // Control sequences
 message ControlTrace {
@@ -551,12 +566,19 @@ message TVCStateOutput {
 
 }
 
+// this is what is sent to other controllers, calculated in FlightController
+message FlightControllerOutput{
+
+}
+
+// this is what is sent to FlightController
 message FlightStateOutput {
   required FlightState next_state = 1;
   required float z_acceleration = 1;
   required float x_angular_acceleration = 2;
   required float y_angular_acceleration = 3;
   required float roll_position = 4;
+
 }
 
 message ThrottleRangerData {
