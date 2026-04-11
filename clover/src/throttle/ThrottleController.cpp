@@ -19,24 +19,10 @@
 #include "ranger/ThrottleStateValveSeq.h"
 #include "ranger/ThrottleRanger.h"
 namespace ThrottleImpl = ThrottleRanger;
-static constexpr const char* kThrottleTargetName = "Ranger";
-
-static inline void set_target_actuator_tag(DataPacket& data)
-{
-    data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
-}
 
 #elif defined(CONFIG_HORNET)
 #include "hornet/ThrottleHornet.h"   // change path if your real header lives elsewhere
 namespace ThrottleImpl = ThrottleHornet;
-static constexpr const char* kThrottleTargetName = "Hornet";
-
-static inline void set_target_actuator_tag(DataPacket& data)
-{
-    // Replace this with your actual generated hornet actuator tag name if needed.
-    data.which_throttle_actuator_data = DataPacket_throttle_hornet_data_tag;
-}
-
 #else
 #error "Select either CONFIG_RANGER or CONFIG_HORNET"
 #endif
