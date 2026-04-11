@@ -26,6 +26,9 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
     if (has_lox_pos && output.power_on) {
         LoxValve::tick(output.power_on, has_lox_pos, output.lox_pos);
     }
+    
+    // shorthand for data tag
+    ThrottleRangerData& ranger_data = data.throttle_actuator_data.throttle_ranger_data;
 
     if (has_thrust) {
         uint32_t current_time = k_uptime_get_32();
@@ -173,16 +176,23 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
         lox_valve_cmd = std::clamp(lox_valve_cmd, MIN_VALVE_POS, MAX_VALVE_POS);
 
         // Populate telemetry data
-        data.throttle_actuator_data.throttle_ranger_data.predicted_thrust = predicted_thrust;
-        data.throttle_actuator_data.throttle_ranger_data.predicted_of = predicted_of;
-        data.throttle_actuator_data.throttle_ranger_data.mdot_fuel = mdot_f;
-        data.throttle_actuator_data.throttle_ranger_data.mdot_lox = mdot_lox;
-        data.throttle_actuator_data.throttle_ranger_data.change_alpha_cmd = change_alpha_cmd;
-        data.throttle_actuator_data.throttle_ranger_data.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
-        data.throttle_actuator_data.throttle_ranger_data.alpha = alpha;
-        data.throttle_actuator_data.throttle_ranger_data.thrust_from_alpha = thrust_from_alpha;
-        data.throttle_actuator_data.throttle_ranger_data.fuel_valve_cmd = fuel_valve_cmd;
-        data.throttle_actuator_data.throttle_ranger_data.lox_valve_cmd = lox_valve_cmd;
+        ranger_data.has_predicted_thrust = true;
+        ranger_data.predicted_thrust = predicted_thrust;
+        ranger_data.has_predicted_of = true;
+        ranger_data.predicted_of = predicted_of;
+        ranger_data.has_mdot_fuel = true;
+        ranger_data.mdot_fuel = mdot_f;
+        ranger_data.has_mdot_lox = true;
+        ranger_data.mdot_lox = mdot_lox;
+        ranger_data.has_change_alpha_cmd = true;
+        ranger_data.change_alpha_cmd = change_alpha_cmd;
+        ranger_data.has_clamped_change_alpha_cmd = true;
+        ranger_data.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
+        ranger_data.has_alpha = true;
+        ranger_data.alpha = alpha;
+        ranger_data.has_thrust_from_alpha = true;
+        ranger_data.thrust_from_alpha = thrust_from_alpha;
+
 
         // 10. Populate ThrottleControllerOutput
         output.has_fuel_pos = true;
@@ -196,13 +206,14 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
         FuelValve::tick(output.power_on, has_fuel_pos, output.fuel_pos);
     }
 
-    data.throttle_actuator_data.throttle_ranger_data.fuel_valve = {
+    // runs no matter which state:
+    ranger_data.fuel_valve = {
         .target_pos_deg = output.fuel_pos,
         .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
         .encoder_pos_deg = FuelValve::get_pos_encoder(),
         .is_on = FuelValve::get_power_on(),
     };
-    data.throttle_actuator_data.throttle_ranger_data.lox_valve = {
+    ranger_data.lox_valve = {
         .target_pos_deg = output.lox_pos,
         .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
         .encoder_pos_deg = LoxValve::get_pos_encoder(),
