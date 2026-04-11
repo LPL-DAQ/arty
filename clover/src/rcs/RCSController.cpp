@@ -222,6 +222,16 @@ std::expected<void, Error> RCSController::handle_load_roll_sequence(const RCSLoa
 {
     LOG_INF("Received load roll sequence request");
 
+    auto result = StateRollSeq::get_trace().load(req.Roll_trace_lbf);
+    if (!result)
+        return std::unexpected(result.error().context("%s", "Invalid roll trace"));
+
+    StateRollSeq::init(req.Roll_trace_lbf.total_time_ms);
+
+    auto ret = change_state(RCSState_RCS_STATE_ROLL_PRIMED);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to roll primed"));
+    }
 
     return {};
 }

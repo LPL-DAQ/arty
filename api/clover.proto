@@ -57,7 +57,7 @@ message Request {
     // Transiitons ROLL_PRIMED -> ROLL_SEQ
     RCSStartRollSequenceRequest rcs_start_roll_sequence = 22;
 
-    // Transitions (CALIBRATE_VALVE, VALVE_SEQ, PITCH_SEQ, ABORT) -> IDLE
+    // Transitions (CALIBRATE_VALVE, SEQ, ABORT) -> IDLE
     TVCHaltRequest tvc_halt = 27;
     // Transitions (VALVE_PRIMED, PITCH_PRIMED) -> IDLE
     TVCUnprimeRequest tvc_unprime = 28;
@@ -261,14 +261,6 @@ message TVCLoadSequenceRequest {
 
 // Start a loaded sequence.
 message TVCStartSequenceRequest {}
-
-// Load a Pitch sequence.
-message TVCLoadPitchSequenceRequest {
-  required ControlTrace pitch_trace_lbf = 1;
-}
-
-// Start a loaded Pitch sequence.
-message TVCStartPitchSequenceRequest {}
 
 
 // Control sequences

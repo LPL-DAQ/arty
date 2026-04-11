@@ -15,6 +15,5 @@ std::pair<TVCStateOutput, TVCFlightData> TVCStateFlight::tick(const AnalogSensor
     out.next_state = TVCState_TVC_STATE_FLIGHT;
     out.target_x = target_x;
     out.target_y = target_y;
-    // TODO: actually output the target angles
     return std::make_pair(out, data);
 }
