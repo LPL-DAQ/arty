@@ -10,7 +10,7 @@ std::expected<void, Error> TVCHornet::tick(TVCStateOutput& output, DataPacket& d
 
     // from here, we interaface with the motor (prabhu code) + thrust characterization
     auto& tvc_data = data.tvc_actuator_data.tvc_hornet_data;
-    tvc_data.target_x_deg = 0.0f;
-    tvc_data.target_y_deg = 0.0f;
+    tvc_data.x_pos = 0.0f;
+    tvc_data.y_pos = 0.0f;
     return {};
 }

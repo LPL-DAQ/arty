@@ -61,8 +61,7 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightStateFlightSeq::tick(cons
         out.y_angular_acceleration = *y_target;
         out.roll_position = *roll_target;
 
-        data.x_angle_deg = *x_target;
-        data.y_angle_deg = *y_target;
+
     } else{
         // TODO: Error!!!
     }

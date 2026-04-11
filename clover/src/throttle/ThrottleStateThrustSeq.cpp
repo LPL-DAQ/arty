@@ -9,6 +9,7 @@
 
 LOG_MODULE_DECLARE(ThrottleController, LOG_LEVEL_INF);
 
+static float tot_ms = 0.0f;
 
 void StateThrustSeq::init(float total_time_ms)
 {

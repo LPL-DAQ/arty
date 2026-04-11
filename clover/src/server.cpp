@@ -19,6 +19,7 @@
 #include "throttle/ThrottleController.h"
 #include "rcs/RCSController.h"
 #include "tvc/TVCController.h"
+#include "flight/FlightController.h"
 #include "server.h"
 // TODO: check if all handlers are called somewhere in here for all systems
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);

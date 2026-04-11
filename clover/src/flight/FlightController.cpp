@@ -202,15 +202,14 @@ void FlightController::step_control_loop(DataPacket& data)
     }
     }
 
-    auto ret = change_state(out.next_state);
+    auto ret = change_state(current_output.next_state);
     if (!ret.has_value()) {
         LOG_ERR("Error while changing flight state: %s", ret.error().build_message().c_str());
     }
 
-    data.flight_state_output = out;
+    data.flight_state_output = current_output;
     data.flight_state = current_state;
 
-    data.flight_controller_output = current_output;
 }
 
 const FlightStateOutput& FlightController::get_output()

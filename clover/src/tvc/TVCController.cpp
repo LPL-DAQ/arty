@@ -154,7 +154,7 @@ void TVCController::step_control_loop(DataPacket& data )
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
     }
 
-    auto impl_ret = TVCImpl::tick(out, data, data.analog_sensors);
+    auto impl_ret = TVCImpl::tick(out, data);
     if (!impl_ret.has_value()) {
         LOG_ERR("TVCImpl error: %s", impl_ret.error().build_message().c_str());
         out.next_state = TVCState_TVC_STATE_ABORT;

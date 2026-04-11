@@ -185,7 +185,7 @@ void RCSController::step_control_loop(DataPacket& data )
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
     }
 
-    auto impl_ret = RCSImpl::tick(out, data, data.analog_sensors);
+    auto impl_ret = RCSImpl::tick(out, data);
     if (!impl_ret.has_value()) {
         LOG_ERR("RCSImpl error: %s", impl_ret.error().build_message().c_str());
         out.next_state = RCSState_RCS_STATE_ABORT;
