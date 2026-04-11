@@ -7,6 +7,9 @@
 LOG_MODULE_REGISTER(TVCRanger, LOG_LEVEL_INF);
 
 std::expected<void, Error> TVCRanger::tick(TVCStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors){
+
+    // this is where adit (i think) code goes
+
     data.which_tvc_actuator_data = DataPacket_tvc_ranger_data_tag;
     auto& tvc_data = data.tvc_actuator_data.tvc_ranger_data;
     tvc_data.target_x_deg = 0.0f;
