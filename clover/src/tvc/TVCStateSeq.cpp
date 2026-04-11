@@ -16,9 +16,9 @@ void TVCStateSeq::init(bool has_trace, float total_time_ms)
     total_time = total_time_ms;
 }
 
-std::pair<TVCControllerOutput, TVCSequenceData> TVCStateSeq::tick(int64_t current_time, int64_t start_time)
+std::pair<TVCStateOutput, TVCSequenceData> TVCStateSeq::tick(int64_t current_time, int64_t start_time)
 {
-    TVCControllerOutput out;
+    TVCStateOutput out{};
     TVCSequenceData data{};
     out.next_state = TVCState_TVC_STATE_TRACE;  // Assume we stay in this state by default
 

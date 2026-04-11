@@ -84,7 +84,7 @@ void TVCController::step_control_loop(DataPacket& data, std::optional<std::pair<
 {
     int64_t current_time = k_uptime_get();
 
-    TVCControllerOutput out;
+    TVCStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
@@ -131,6 +131,8 @@ void TVCController::step_control_loop(DataPacket& data, std::optional<std::pair<
     if (!ret.has_value()) {
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
     }
+
+    data.tvc_state_output = out;
 
     // telemetry
     data.tvc_state = current_state;

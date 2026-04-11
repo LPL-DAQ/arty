@@ -4,8 +4,8 @@ void RCSStateAbort::init() {
     // Controller handles actuation now
 }
 
-std::pair<RCSControllerOutput, RCSAbortData> RCSStateAbort::tick(uint32_t current_time, uint32_t entry_time) {
-    RCSControllerOutput out{};
+std::pair<RCSStateOutput, RCSAbortData> RCSStateAbort::tick(uint32_t current_time, uint32_t entry_time) {
+    RCSStateOutput out{};
     RCSAbortData abort_data{};
 
 

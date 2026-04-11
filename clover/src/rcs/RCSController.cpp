@@ -98,7 +98,7 @@ std::expected<void, Error> RCSController::init()
 void RCSController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
 {
     int64_t current_time = k_uptime_get();
-    RCSControllerOutput out;
+    RCSStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
@@ -160,6 +160,8 @@ void RCSController::step_control_loop(DataPacket& data, std::optional<std::pair<
     if (!ret.has_value()) {
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
     }
+
+    data.rcs_state_output = out;
 
     // telemetry
     data.rcs_state = current_state;

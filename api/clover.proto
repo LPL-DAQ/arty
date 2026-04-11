@@ -381,6 +381,8 @@ message DataPacket {
 
   // Actuators
   required ThrottleStateOutput throttle_state_output = 32;
+  required RCSStateOutput rcs_state_output = 35;
+  required TVCStateOutput tvc_state_output = 36;
   oneof throttle_actuator_data {
     ThrottleRangerData throttle_ranger_data = 33;
     ThrottleHornetData throttle_hornet_data = 34;
@@ -491,6 +493,14 @@ message ThrottleStateOutput {
   optional float thrust = 2;
   optional float fuel_pos = 4;
   optional float lox_pos = 5;
+}
+
+message RCSStateOutput {
+  required RCSState next_state = 1;
+}
+
+message TVCStateOutput {
+  required TVCState next_state = 1;
 }
 
 message ThrottleRangerData {

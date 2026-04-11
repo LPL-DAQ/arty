@@ -10,11 +10,6 @@
 
 typedef TVCState TVCState;
 
-struct TVCControllerOutput {
-
-    TVCState next_state = TVCState_TVC_STATE_IDLE;
-};
-
 class TVCController {
 public:
 

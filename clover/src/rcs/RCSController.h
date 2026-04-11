@@ -10,11 +10,6 @@
 
 typedef RCSState RCSState;
 
-struct RCSControllerOutput {
-
-    RCSState next_state = RCSState_RCS_STATE_IDLE;
-};
-
 class RCSController {
 public:
 

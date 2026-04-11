@@ -6,7 +6,7 @@
 
 namespace RCSStateValveSeq {
     void init(bool has_trace, float total_time_ms);
-    std::pair<RCSControllerOutput, RCSValveSequenceData> tick(int64_t current_time, int64_t start_time);
+    std::pair<RCSStateOutput, RCSValveSequenceData> tick(int64_t current_time, int64_t start_time);
     Trace& get_trace();
 
 }

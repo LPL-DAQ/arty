@@ -5,7 +5,7 @@
 
 namespace RCSStateIdle {
     void init();
-    std::pair<RCSControllerOutput, RCSIdleData> tick();
+    std::pair<RCSStateOutput, RCSIdleData> tick();
 }
 
 #endif // APP_RCS_STATE_IDLE_H

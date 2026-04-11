@@ -5,7 +5,7 @@
 
 namespace TVCStateIdle {
     void init();
-    std::pair<TVCControllerOutput, TVCIdleData> tick();
+    std::pair<TVCStateOutput, TVCIdleData> tick();
 }
 
 #endif // APP_TVC_STATE_IDLE_H

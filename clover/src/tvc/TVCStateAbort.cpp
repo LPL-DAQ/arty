@@ -4,8 +4,8 @@ void TVCStateAbort::init() {
     // Controller handles actuation now
 }
 
-std::pair<TVCControllerOutput, TVCAbortData> TVCStateAbort::tick(uint32_t current_time, uint32_t entry_time) {
-    TVCControllerOutput out{};
+std::pair<TVCStateOutput, TVCAbortData> TVCStateAbort::tick(uint32_t current_time, uint32_t entry_time) {
+    TVCStateOutput out{};
     TVCAbortData abort_data{};
 
 

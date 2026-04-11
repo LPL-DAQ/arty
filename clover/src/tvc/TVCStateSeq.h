@@ -6,7 +6,7 @@
 
 namespace TVCStateSeq {
     void init(bool has_trace, float total_time_ms);
-    std::pair<TVCControllerOutput, TVCSequenceData> tick(int64_t current_time, int64_t start_time);
+    std::pair<TVCStateOutput, TVCSequenceData> tick(int64_t current_time, int64_t start_time);
     Trace& get_x_trace();
     Trace& get_y_trace();
 }

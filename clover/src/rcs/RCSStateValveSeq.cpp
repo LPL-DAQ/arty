@@ -15,9 +15,9 @@ void RCSStateValveSeq::init(bool has_trace, float total_time_ms)
     total_time = total_time_ms;
 }
 
-std::pair<RCSControllerOutput, RCSValveSequenceData> RCSStateValveSeq::tick(int64_t current_time, int64_t start_time)
+std::pair<RCSStateOutput, RCSValveSequenceData> RCSStateValveSeq::tick(int64_t current_time, int64_t start_time)
 {
-    RCSControllerOutput out;
+    RCSStateOutput out{};
     RCSValveSequenceData data{};
     out.next_state = RCSState_RCS_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 

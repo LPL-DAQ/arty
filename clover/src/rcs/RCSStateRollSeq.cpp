@@ -21,15 +21,15 @@ void StateRollSeq::init(float total_time_ms)
     tot_ms = total_time_ms;
 }
 
-std::pair<RCSControllerOutput, RCSRollSequenceData> StateRollSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<RCSStateOutput, RCSRollSequenceData> StateRollSeq::tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
-    RCSControllerOutput out{};
+    RCSStateOutput out{};
     RCSRollSequenceData data{};
 
     // Populate telemetry data
 
 
-    // 10. Populate RCSControllerOutput
+    // 10. Populate RCSStateOutput
 
 
     return {out, data};
