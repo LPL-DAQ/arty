@@ -1664,7 +1664,7 @@ constexpr float lox_valve_grid_internal[] = {
 constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
 constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 
-// TODO: Should constants be moved to header?
+// TODO: Should constants be moved to cpp?
 // Physics constants
 constexpr float EFFICIENCY = 0.93f;
 constexpr float LBF_CONVERSION = 0.224809f;

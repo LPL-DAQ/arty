@@ -44,7 +44,7 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
 
     if (has_thrust) {
         uint32_t current_time = k_uptime_get_32();
-        // TODO: Check if the abort stuff is all good
+        // TODO: Trupple check that the abort stuff works
         // 1. Safety: abort if PTC401 is below threshold for some time
         // TODO: is battery voltage the right thing to check here? that seems wrong
         if (data.analog_sensors.battery_voltage <= PTC401_ABORT_THRESHOLD) {
