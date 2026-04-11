@@ -224,12 +224,6 @@ void Controller::step_control_loop(k_work*)
         RCSController::change_state(RCSState_RCS_STATE_OFF);
     }
 
-    // TODO: Does this duplicate anywhere?
-    data.throttle_state = ThrottleController::current_state;
-    data.tvc_state = TVCController::current_state;
-    data.rcs_state = RCSController::current_state;
-    data.flight_state = FlightController::current_state;
-
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {
             LOG_WRN("Telemetry queue full, packet dropped");
