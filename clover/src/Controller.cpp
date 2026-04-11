@@ -240,6 +240,8 @@ void Controller::step_control_loop(k_work*)
 
 }
 
+// TODO: Handlers for here, which change system state and cascade to subsystems
+
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_INF("Received abort request");
