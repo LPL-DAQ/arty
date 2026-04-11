@@ -11,6 +11,7 @@
 #include "throttle/ranger/ThrottleValve.h"
 #include "sensors/lidar.h"
 #include "Controller.h"
+#include "FlightController.h"
 #include "throttle/ThrottleController.h"
 #include "rcs/RCSController.h"
 #include "tvc/TVCController.h"
@@ -110,7 +111,8 @@ int main(void)
     // Initialize flight controller helper state.
     auto flight_ret = FlightController::init();
     if (!flight_ret.has_value()) {
-        return std::unexpected(flight_ret.error().context("Failed to initialize flight controller"));
+        LOG_ERR("Failed to initialize flight controller: %s", flight_ret.error().build_message().c_str());
+        return 1;
     }
 
 
