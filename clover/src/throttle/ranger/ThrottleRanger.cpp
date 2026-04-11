@@ -8,7 +8,7 @@
 LOG_MODULE_REGISTER(ThrottleRanger, LOG_LEVEL_INF);
 
 namespace ThrottleRanger {
-float alpha = 1.0f; // TODO: 1 or -1?
+float alpha = -1.0f;
 uint32_t low_ptc_start_time_ms = 0;
 float target_of = 1.2f;
 }
@@ -33,6 +33,7 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
     }
     if (has_fuel_pos && output.power_on){
         FuelValve::tick(output.power_on, has_fuel_pos, output.fuel_pos);
+
     }
     if (has_lox_pos && output.power_on) {
         LoxValve::tick(output.power_on, has_lox_pos, output.lox_pos);
@@ -216,6 +217,9 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
         // Actuate valves based on calculations above
         LoxValve::tick(output.power_on, has_lox_pos, output.lox_pos);
         FuelValve::tick(output.power_on, has_fuel_pos, output.fuel_pos);
+    } else { // if there is no thrust commanded, reset this stuff
+        low_ptc_start_time_ms = 0;
+        alpha = -1.0f;
     }
 
     // runs no matter which state:
