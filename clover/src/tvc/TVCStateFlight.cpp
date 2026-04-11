@@ -1,5 +1,5 @@
 #include "TVCStateFlight.h"
-#include "../FlightController.h"
+#include "flight/FlightController.h"
 
 void TVCStateFlight::init() {
     // Minimal flight state initialization.

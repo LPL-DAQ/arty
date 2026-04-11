@@ -1,7 +1,6 @@
 target_sources(app PRIVATE main.cpp
     server.cpp
     Controller.cpp
-    FlightController.cpp
     Error.cpp
     Trace.cpp
     LookupTable.cpp

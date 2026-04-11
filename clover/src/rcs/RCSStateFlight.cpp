@@ -1,5 +1,5 @@
 #include "RCSStateFlight.h"
-#include "../FlightController.h"
+#include "flight/FlightController.h"
 
 void RCSStateFlight::init() {
     // Minimal flight state initialization.

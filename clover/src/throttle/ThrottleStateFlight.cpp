@@ -1,5 +1,5 @@
 #include "ThrottleStateFlight.h"
-#include "../FlightController.h"
+#include "flight/FlightController.h"
 
 void ThrottleStateFlight::init() {
     // Minimal flight state initialization.

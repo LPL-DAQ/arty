@@ -4,4 +4,6 @@ target_sources(app PRIVATE
     FlightStateTakeoff.cpp
     FlightStateFlightSeq.cpp
     FlightStateLanding.cpp
-    FlightStateOff.cpp)
+    FlightStateOff.cpp
+    FlightController.cpp
+)
