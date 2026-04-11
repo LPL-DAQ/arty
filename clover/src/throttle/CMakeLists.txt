@@ -3,7 +3,10 @@ target_sources(app PRIVATE
     ThrottleStateIdle.cpp
     ThrottleStateThrustSeq.cpp
     ThrottleStateAbort.cpp
+    hornet/ThrottleHornet.cpp
+    ranger/ThrottleRanger.cpp
+    ranger/ThrottleStateValveSeq.cpp
+    ranger/ThrottleStateCalibrateValve.cpp
+    ranger/ThrottleValve.cpp
 )
 
-add_subdirectory(ranger)
-add_subdirectory(hornet)

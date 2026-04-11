@@ -4,4 +4,6 @@ target_sources(app PRIVATE
     RCSStateRollSeq.cpp
     RCSStateValveSeq.cpp
     RCSStateAbort.cpp
+    hornet/RCSHornet.cpp
+    ranger/RCSRanger.cpp
     )
