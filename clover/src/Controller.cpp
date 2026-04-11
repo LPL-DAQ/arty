@@ -6,8 +6,16 @@
 #include "StateIdle.h"
 #include "StateThrustSeq.h"
 #include "StateValveSeq.h"
-#include "ThrottleValve.h"
 #include "server.h"
+
+#ifdef CONFIG_HORNET
+
+#elif CONFIG_RANGER
+#include "ThrottleValve.h"
+
+#else
+#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
+#endif
 
 #include "config.h"
 #include <zephyr/kernel.h>
@@ -38,7 +46,8 @@ std::expected<void, Error> Controller::change_state(SystemState new_state)
         if (current_state != SystemState_STATE_IDLE) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state)));
         }
-        StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
+
+        // StateCalibrateValve::init(FuelValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_internal(), LoxValve::get_pos_encoder());
         current_state = new_state;
         break;
 
@@ -158,11 +167,12 @@ void Controller::step_control_loop(k_work*)
     }
     case SystemState_STATE_CALIBRATE_VALVE: {
         // Can make this work over protobuf later
-        auto [cal_out, cal_data] = StateCalibrateValve::tick(
-            current_time, FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
-        data.which_state_data = DataPacket_valve_calibration_data_tag;
-        data.state_data.valve_calibration_data = cal_data;
-        out = cal_out;
+        // TODO: FIXUP
+        // auto [cal_out, cal_data] = StateCalibrateValve::tick(
+        //     current_time, FuelValve::get_pos_internal(), LoxValve::get_pos_internal(), FuelValve::get_pos_encoder(), LoxValve::get_pos_encoder());
+        // data.which_state_data = DataPacket_valve_calibration_data_tag;
+        // data.state_data.valve_calibration_data = cal_data;
+        // out = cal_out;
         break;
     }
     case SystemState_STATE_VALVE_PRIMED: {
@@ -217,14 +227,17 @@ void Controller::step_control_loop(k_work*)
     }
 
     if (out.reset_fuel) {
-        FuelValve::reset_pos(out.reset_fuel_pos);
+        // TODO: FIXUP
+        // FuelValve::reset_pos(out.reset_fuel_pos);
     }
     if (out.reset_lox) {
-        LoxValve::reset_pos(out.reset_lox_pos);
+        // TODO: FIXUP
+        // LoxValve::reset_pos(out.reset_lox_pos);
     }
 
-    FuelValve::tick(out.fuel_on && fuel_powered, out.set_fuel, out.fuel_pos);
-    LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
+    // TODO: FIXUP
+    // FuelValve::tick(out.fuel_on && fuel_powered, out.set_fuel, out.fuel_pos);
+    // LoxValve::tick(out.lox_on && lox_powered, out.set_lox, out.lox_pos);
 
     // telemetry
     data.time_ns = k_ticks_to_ns_near64(k_uptime_ticks());
@@ -241,15 +254,17 @@ void Controller::step_control_loop(k_work*)
 
     data.fuel_valve = {
         .target_pos_deg = out.fuel_pos,
-        .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
-        .encoder_pos_deg = FuelValve::get_pos_encoder(),
-        .is_on = FuelValve::get_power_on(),
+        // TODO: FIXUP
+        // .driver_setpoint_pos_deg = FuelValve::get_pos_internal(),
+        // .encoder_pos_deg = FuelValve::get_pos_encoder(),
+        // .is_on = FuelValve::get_power_on(),
     };
     data.lox_valve = {
         .target_pos_deg = out.lox_pos,
-        .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
-        .encoder_pos_deg = LoxValve::get_pos_encoder(),
-        .is_on = LoxValve::get_power_on(),
+        // TODO: FIXUP
+        // .driver_setpoint_pos_deg = LoxValve::get_pos_internal(),
+        // .encoder_pos_deg = LoxValve::get_pos_encoder(),
+        // .is_on = LoxValve::get_power_on(),
     };
 
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
@@ -406,11 +421,13 @@ std::expected<void, Error> Controller::handle_reset_valve_position(const ResetVa
     // this is giving a double -> float warning rn but deal w that later
     case Valve_FUEL:
         LOG_INF("Resetting fuel valve position to %f", (double)req.new_pos_deg);
-        FuelValve::reset_pos(req.new_pos_deg);
+        // TODO: FIXUP
+        // FuelValve::reset_pos(req.new_pos_deg);
         break;
     case Valve_LOX:
+        // TODO: FIXUP
         LOG_INF("Resetting lox valve position to %f", (double)req.new_pos_deg);
-        LoxValve::reset_pos(req.new_pos_deg);
+        // LoxValve::reset_pos(req.new_pos_deg);
         break;
     default:
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));

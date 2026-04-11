@@ -12,6 +12,13 @@ For Hornet:
 west build ~/arty/clover --pristine auto --board hornet_mk_3/mimxrt1062 --build-dir ~/arty/clover/build
 ```
 
+For Ranger:
+
+```shell
+west build ~/arty/clover --pristine auto --board ranger_1/mimxrt1062 --build-dir ~/arty/clover/build
+```
+
+
 ## Flash
 
 Ensure the dev board is in bootloader mode, and that tycmd is installed.
