@@ -391,7 +391,6 @@ message DataPacket {
   required AnalogSensorReadings analog_sensors = 19;
 
   // Flight
-  optional FlightControllerOutput flight_controller_output = 41;
   required FlightState flight_state = 42;
   optional FlightStateOutput flight_state_output = 43;
 
@@ -529,14 +528,6 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
-message FlightControllerOutput {
-  required float z_acceleration = 1;
-  required float x_angular_acceleration = 2;
-  required float y_angular_acceleration = 3;
-  required float roll_position = 4;
-
-}
-
 message FlightIdleData {}
 message FlightAbortData {}
 message FlightTakeoffData {}
@@ -563,6 +554,10 @@ message TVCStateOutput {
 
 message FlightStateOutput {
   required FlightState next_state = 1;
+  required float z_acceleration = 1;
+  required float x_angular_acceleration = 2;
+  required float y_angular_acceleration = 3;
+  required float roll_position = 4;
 }
 
 message ThrottleRangerData {

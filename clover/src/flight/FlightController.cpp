@@ -154,7 +154,7 @@ void FlightController::step_control_loop(DataPacket& data, std::optional<std::pa
     data.flight_state = current_state;
 
     // TODO: take the values from the actual state outputs
-    FlightControllerOutput flight_out = FlightControllerOutput_init_default;
+    FlightStateOutput flight_out = FlightStateOutput_init_default;
     flight_out.z_acceleration = 0.0f;
     flight_out.x_angular_acceleration = 0.0f;
     flight_out.y_angular_acceleration = 0.0f;
@@ -164,7 +164,7 @@ void FlightController::step_control_loop(DataPacket& data, std::optional<std::pa
     data.flight_controller_output = current_output;
 }
 
-const FlightControllerOutput& FlightController::get_output()
+const FlightStateOutput& FlightController::get_output()
 {
     return current_output;
 }

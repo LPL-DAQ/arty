@@ -19,7 +19,7 @@ public:
     static std::expected<void, Error> init();
     static void step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings);
 
-    static const FlightControllerOutput& get_output();
+    static const FlightStateOutput& get_output();
     static float get_z_acceleration();
     static float get_x_angular_acceleration();
     static float get_y_angular_acceleration();
@@ -31,7 +31,7 @@ public:
     FlightController() = delete;  // Explicitly prevent instantiation
 
 private:
-    static inline FlightControllerOutput current_output = FlightControllerOutput_init_default;
+    static inline FlightStateOutput current_output = FlightStateOutput_init_default;
 };
 
 #endif  // APP_FLIGHT_CONTROLLER_H
