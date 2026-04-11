@@ -2,6 +2,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "RCSStateAbort.h"
+#include "RCSStateFlight.h"
 #include "RCSStateIdle.h"
 #include "RCSStateRollSeq.h"
 #include "RCSStateValveSeq.h"
@@ -68,9 +69,17 @@ std::expected<void, Error> RCSController::change_state(RCSState new_state)
         current_state = new_state;
         break;
 
+    case RCSState_RCS_STATE_FLIGHT:
+        if (current_state != RCSState_RCS_STATE_IDLE) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Flight, must be in Idle", get_state_name(current_state)));
+        }
+        current_state = new_state;
+        RCSStateFlight::init();
+        break;
+
     case RCSState_RCS_STATE_ABORT:
-        if (current_state != RCSState_RCS_STATE_ROLL_SEQ && current_state != RCSState_RCS_STATE_VALVE_SEQ) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq or Roll Seq", get_state_name(current_state)));
+        if (current_state != RCSState_RCS_STATE_ROLL_SEQ && current_state != RCSState_RCS_STATE_VALVE_SEQ && current_state != RCSState_RCS_STATE_FLIGHT) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq, Roll Seq, or Flight", get_state_name(current_state)));
         }
         RCSStateAbort::init();
         current_state = new_state;
@@ -146,6 +155,13 @@ void RCSController::step_control_loop(DataPacket& data, std::optional<std::pair<
         data.which_rcs_state_data = DataPacket_rcs_roll_sequence_data_tag;
         data.rcs_state_data.rcs_roll_sequence_data = roll_data;
         out = roll_out;
+        break;
+    }
+    case RCSState_RCS_STATE_FLIGHT: {
+        auto [flight_out, flight_data] = RCSStateFlight::tick();
+        data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
+        data.rcs_state_data.rcs_flight_data = flight_data;
+        out = flight_out;
         break;
     }
     case RCSState_RCS_STATE_ABORT: {
@@ -277,6 +293,8 @@ const char* RCSController::get_state_name(RCSState state)
         return "Roll Primed";
     if (state == RCSState_RCS_STATE_ROLL_SEQ)
         return "Roll Seq";
+    if (state == RCSState_RCS_STATE_FLIGHT)
+        return "Flight";
     if (state == RCSState_RCS_STATE_ABORT)
         return "Abort";
     return "Unknown State";  // Unknown state

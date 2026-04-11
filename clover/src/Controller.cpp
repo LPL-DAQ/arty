@@ -1,5 +1,6 @@
 #include "Controller.h"
 #include "ControllerConfig.h"
+#include "FlightController.h"
 #include "server.h"
 #include "config.h"
 #include "throttle/ThrottleController.h"
@@ -83,8 +84,14 @@ void Controller::step_control_loop(k_work*)
     daq_client_status daq_status = get_daq_client_status();
 
     // Dispatch to appropriate peripheral controllers based on current state
-    // TODO: Add data handling
+    // TODO: Check that data passing works properly
     switch (current_state) {
+    case SystemState_STATE_FLIGHT:
+        FlightController::step_control_loop(data, analog_sensors_readings);
+        ThrottleController::step_control_loop(data, analog_sensors_readings);
+        TVCController::step_control_loop(data, analog_sensors_readings);
+        RCSController::step_control_loop(data, analog_sensors_readings);
+        break;
     case SystemState_STATE_THROTTLE:
         ThrottleController::step_control_loop(data, analog_sensors_readings);
         break;
@@ -106,7 +113,6 @@ void Controller::step_control_loop(k_work*)
     // TODO
     case SystemState_STATE_IDLE:
     case SystemState_STATE_ABORT:
-    case SystemState_STATE_FLIGHT:
 
     default:
         // No peripheral controllers active in these states

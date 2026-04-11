@@ -106,6 +106,14 @@ int main(void)
         return 0;
     }
 
+    LOG_INF("Initializing FlightController");
+    // Initialize flight controller helper state.
+    auto flight_ret = FlightController::init();
+    if (!flight_ret.has_value()) {
+        return std::unexpected(flight_ret.error().context("Failed to initialize flight controller"));
+    }
+
+
     // LOG_INF("initializing SNTP");
     // err = sntp_init();
     // if (err) {

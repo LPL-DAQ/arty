@@ -2,6 +2,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "ThrottleStateAbort.h"
+#include "ThrottleStateFlight.h"
 #include "ranger/ThrottleStateCalibrateValve.h"
 #include "ThrottleStateIdle.h"
 #include "ThrottleStateThrustSeq.h"
@@ -85,6 +86,14 @@ std::expected<void, Error> ThrottleController::change_state(ThrottleState new_st
         current_state = new_state;
         break;
 
+    case ThrottleState_THROTTLE_STATE_FLIGHT:
+        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Flight, must be in Idle", get_state_name(current_state)));
+        }
+        current_state = new_state;
+        ThrottleStateFlight::init();
+        break;
+
     case ThrottleState_THROTTLE_STATE_THRUST_SEQ:
         if (current_state != ThrottleState_THROTTLE_STATE_THRUST_PRIMED) {
             return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state)));
@@ -94,8 +103,8 @@ std::expected<void, Error> ThrottleController::change_state(ThrottleState new_st
         break;
 
     case ThrottleState_THROTTLE_STATE_ABORT:
-        if (current_state != ThrottleState_THROTTLE_STATE_THRUST_SEQ && current_state != ThrottleState_THROTTLE_STATE_VALVE_SEQ) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq or Thrust Seq", get_state_name(current_state)));
+        if (current_state != ThrottleState_THROTTLE_STATE_THRUST_SEQ && current_state != ThrottleState_THROTTLE_STATE_VALVE_SEQ && current_state != ThrottleState_THROTTLE_STATE_FLIGHT) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq, Thrust Seq, or Flight", get_state_name(current_state)));
         }
         ThrottleStateAbort::init();
         current_state = new_state;
@@ -188,6 +197,13 @@ void ThrottleController::step_control_loop(DataPacket& data, std::optional<std::
         data.which_throttle_state_data = DataPacket_throttle_thrust_sequence_data_tag;
         data.throttle_state_data.throttle_thrust_sequence_data = thrust_data;
         out = thrust_out;
+        break;
+    }
+    case ThrottleState_THROTTLE_STATE_FLIGHT: {
+        auto [flight_out, flight_data] = ThrottleStateFlight::tick(data.analog_sensors);
+        data.which_throttle_state_data = DataPacket_throttle_flight_data_tag;
+        data.throttle_state_data.throttle_flight_data = flight_data;
+        out = flight_out;
         break;
     }
     case ThrottleState_THROTTLE_STATE_ABORT: {
@@ -455,6 +471,8 @@ const char* ThrottleController::get_state_name(ThrottleState state)
         return "Thrust Primed";
     if (state == ThrottleState_THROTTLE_STATE_THRUST_SEQ)
         return "Thrust Seq";
+    if (state == ThrottleState_THROTTLE_STATE_FLIGHT)
+        return "Flight";
     if (state == ThrottleState_THROTTLE_STATE_ABORT)
         return "Abort";
     return "Unknown State";  // Unknown state

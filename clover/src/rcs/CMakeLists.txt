@@ -3,6 +3,7 @@ target_sources(app PRIVATE
     RCSStateIdle.cpp
     RCSStateRollSeq.cpp
     RCSStateValveSeq.cpp
+    RCSStateFlight.cpp
     RCSStateAbort.cpp
     hornet/RCSHornet.cpp
     ranger/RCSRanger.cpp

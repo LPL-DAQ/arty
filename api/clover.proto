@@ -325,16 +325,17 @@ enum ThrottleState {
   THROTTLE_STATE_THRUST_SEQ = 6;
   THROTTLE_STATE_ABORT = 7;
   THROTTLE_STATE_OFF = 8;
+  THROTTLE_STATE_FLIGHT = 9;
 }
 
 enum TVCState {
   TVC_STATE_UNKNOWN = 0;
   TVC_STATE_IDLE = 1;
-  TVC_STATE_FLIGHT = 2;
   TVC_STATE_TRACE_PRIMED = 3;
   TVC_STATE_TRACE = 4;
   TVC_STATE_ABORT = 5;
   TVC_STATE_OFF = 6;
+  TVC_STATE_FLIGHT = 7;
 
 }
 enum RCSState {
@@ -346,7 +347,17 @@ enum RCSState {
   RCS_STATE_ROLL_SEQ = 5;
   RCS_STATE_ABORT = 6;
   RCS_STATE_OFF = 7;
+  RCS_STATE_FLIGHT = 8;
 
+}
+enum FlightState {
+  FLIGHT_STATE_UNKNOWN = 0;
+  FLIGHT_STATE_IDLE = 1;
+  FLIGHT_STATE_ABORT = 2;
+  FLIGHT_STATE_TAKEOFF = 3;
+  FLIGHT_STATE_FLIGHT_SEQ = 4;
+  FLIGHT_STATE_LANDING = 5;
+  FLIGHT_STATE_OFF = 6;
 }
 // next tag: 21
 message DataPacket {
@@ -378,6 +389,11 @@ message DataPacket {
 
   // Sensors
   required AnalogSensorReadings analog_sensors = 19;
+
+  // Flight
+  optional FlightControllerOutput flight_controller_output = 41;
+  required FlightState flight_state = 42;
+  optional FlightStateOutput flight_state_output = 43;
 
   // Actuators
   required ThrottleStateOutput throttle_state_output = 32;
@@ -413,6 +429,9 @@ message DataPacket {
 
     // THRUST_SEQ
     ThrottleThrustSequenceData throttle_thrust_sequence_data = 11;
+
+    // FLIGHT
+    ThrottleFlightData throttle_flight_data = 12;
   }
 
   oneof rcs_state_data {
@@ -421,6 +440,9 @@ message DataPacket {
 
     // ABORT
     RCSAbortData rcs_abort_data = 25;
+
+    // FLIGHT
+    RCSFlightData rcs_flight_data = 26;
 
     // VALVE_SEQ
     RCSValveSequenceData rcs_valve_sequence_data = 27;
@@ -438,6 +460,18 @@ message DataPacket {
 
     // TRACE
     TVCSequenceData tvc_sequence_data = 31;
+
+    // FLIGHT
+    TVCFlightData tvc_flight_data = 50;
+  }
+
+  oneof flight_state_data {
+    FlightIdleData flight_idle_data = 44;
+    FlightAbortData flight_abort_data = 45;
+    FlightTakeoffData flight_takeoff_data = 46;
+    FlightSequenceData flight_sequence_data = 47;
+    FlightLandingData flight_landing_data = 48;
+    FlightOffData flight_off_data = 49;
   }
 }
 
@@ -495,13 +529,20 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
-message FlightStateOutput {
-  required float z_acceleration;
-  required float x_angular_acceleration;
-  required float y_angular_acceleration;
-  required float roll_position;
+message FlightControllerOutput {
+  required float z_acceleration = 1;
+  required float x_angular_acceleration = 2;
+  required float y_angular_acceleration = 3;
+  required float roll_position = 4;
 
 }
+
+message FlightIdleData {}
+message FlightAbortData {}
+message FlightTakeoffData {}
+message FlightSequenceData {}
+message FlightLandingData {}
+message FlightOffData {}
 
 message ThrottleStateOutput {
 
@@ -518,6 +559,10 @@ message RCSStateOutput {
 
 message TVCStateOutput {
   required TVCState next_state = 1;
+}
+
+message FlightStateOutput {
+  required FlightState next_state = 1;
 }
 
 message ThrottleRangerData {
@@ -596,7 +641,6 @@ message ThrottleThrustSequenceData {
   required float thrust_error = 6;
 }
 
-
 message RCSAbortData {}
 
 message RCSIdleData {}
@@ -614,4 +658,14 @@ message TVCIdleData {}
 message TVCSequenceData {
   required float x_angle_deg = 1;
   required float y_angle_deg = 2;
+}
+
+message ThrottleFlightData {
+}
+
+message RCSFlightData {
+}
+
+message TVCFlightData {
+
 }

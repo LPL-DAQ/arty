@@ -2,6 +2,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "TVCStateAbort.h"
+#include "TVCStateFlight.h"
 #include "TVCStateIdle.h"
 #include "TVCStateSeq.h"
 #include "../server.h"
@@ -51,9 +52,17 @@ std::expected<void, Error> TVCController::change_state(TVCState new_state)
         current_state = new_state;
         break;
 
+    case TVCState_TVC_STATE_FLIGHT:
+        if (current_state != TVCState_TVC_STATE_IDLE) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Flight, must be in Idle", get_state_name(current_state)));
+        }
+        current_state = new_state;
+        TVCStateFlight::init();
+        break;
+
     case TVCState_TVC_STATE_ABORT:
-        if (current_state != TVCState_TVC_STATE_TRACE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Trace", get_state_name(current_state)));
+        if (current_state != TVCState_TVC_STATE_TRACE && current_state != TVCState_TVC_STATE_FLIGHT) {
+            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Trace or Flight", get_state_name(current_state)));
         }
         TVCStateAbort::init();
         current_state = new_state;
@@ -110,6 +119,13 @@ void TVCController::step_control_loop(DataPacket& data, std::optional<std::pair<
         data.which_tvc_state_data = DataPacket_tvc_idle_data_tag;
         data.tvc_state_data.tvc_idle_data = primed_data;
         out = primed_out;
+        break;
+    }
+    case TVCState_TVC_STATE_FLIGHT: {
+        auto [flight_out, flight_data] = TVCStateFlight::tick(data.analog_sensors);
+        data.which_tvc_state_data = DataPacket_tvc_flight_data_tag;
+        data.tvc_state_data.tvc_flight_data = flight_data;
+        out = flight_out;
         break;
     }
     case TVCState_TVC_STATE_TRACE: {
@@ -225,6 +241,8 @@ const char* TVCController::get_state_name(TVCState state)
         return "Trace Primed";
     if (state == TVCState_TVC_STATE_TRACE)
         return "Trace";
+    if (state == TVCState_TVC_STATE_FLIGHT)
+        return "Flight";
     if (state == TVCState_TVC_STATE_ABORT)
         return "Abort";
     return "Unknown State";  // Unknown state

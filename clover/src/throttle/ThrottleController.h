@@ -31,6 +31,7 @@ public:
     static std::expected<void, Error> init();
 
     static void step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings);
+
     // Request handlers
     static std::expected<void, Error> handle_abort(const AbortRequest& req);
     static std::expected<void, Error> handle_load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
