@@ -14,6 +14,17 @@ float target_of = 1.2f;
 }
 
 std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, DataPacket& data){
+
+    if (output.has_fuel_reset_pos){
+        LOG_INF("Resetting fuel valve position to %f", (double)output.reset_fuel_pos);
+        ThrottleRanger::fuel_reset_pos(output.reset_fuel_pos);
+    }
+    if (output.has_lox_reset_pos){
+        LOG_INF("Resetting lox valve position to %f", (double)output.reset_lox_pos);
+        ThrottleRanger::lox_reset_pos(output.reset_lox_pos);
+    }
+
+
     bool has_thrust = output.has_thrust;
     bool has_fuel_pos = output.has_fuel_pos;
     bool has_lox_pos = output.has_lox_pos;

@@ -542,6 +542,8 @@ message ThrottleStateOutput {
   optional float thrust = 2;
   optional float fuel_pos = 4;
   optional float lox_pos = 5;
+  optional float reset_fuel_pos = 6;
+  optional float reset_lox_pos = 7;
 }
 
 message RCSStateOutput {

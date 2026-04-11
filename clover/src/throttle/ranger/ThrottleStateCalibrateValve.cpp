@@ -181,9 +181,6 @@ void StateCalibrateValve::complete(ThrottleStateOutput& out, uint32_t timestamp)
     out.fuel_pos = 95.0f;
     out.has_lox_pos = true;
     out.lox_pos = 95.0f;
-    ThrottleRanger::fuel_reset_pos(95.0f);
-    ThrottleRanger::lox_reset_pos(95.0f);
-
     fuel_found_stop = false;
     lox_found_stop = false;
     fuel_starting_error = 0;
@@ -194,8 +191,11 @@ void StateCalibrateValve::complete(ThrottleStateOutput& out, uint32_t timestamp)
     // should be idle, but this is for testing
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
     if (timestamp - power_cycle_timestamp >= 6500) {
+        out.has_reset_fuel_pos = true;
+        out.reset_fuel_pos = 95.0f;
+        out.has_reset_lox_pos = true;
+        out.reset_lox_pos = 95.0f;
         out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
-        phase = CalPhase::COMPLETE;
     }
 
 }
