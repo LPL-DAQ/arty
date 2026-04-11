@@ -91,56 +91,55 @@ std::expected<void, Error> FlightController::init()
 void FlightController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings)
 {
     int64_t current_time = k_uptime_get();
-    FlightStateOutput out{};
 
     switch (current_state) {
     case FlightState_FLIGHT_STATE_IDLE: {
         auto [idle_out, idle_data] = FlightStateIdle::tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
         data.flight_state_data.flight_idle_data = idle_data;
-        out = idle_out;
+        current_output = idle_out;
         break;
     }
     case FlightState_FLIGHT_STATE_TAKEOFF: {
         auto [takeoff_out, takeoff_data] = FlightStateTakeoff::tick(current_time, sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_takeoff_data_tag;
         data.flight_state_data.flight_takeoff_data = takeoff_data;
-        out = takeoff_out;
+        current_output = takeoff_out;
         break;
     }
     case FlightState_FLIGHT_STATE_FLIGHT_SEQ: {
         auto [seq_out, seq_data] = FlightStateFlightSeq::tick(data.analog_sensors, current_time, sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_sequence_data_tag;
         data.flight_state_data.flight_sequence_data = seq_data;
-        out = seq_out;
+        current_output = seq_out;
         break;
     }
     case FlightState_FLIGHT_STATE_LANDING: {
         auto [landing_out, landing_data] = FlightStateLanding::tick(current_time, sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_landing_data_tag;
         data.flight_state_data.flight_landing_data = landing_data;
-        out = landing_out;
+        current_output = landing_out;
         break;
     }
     case FlightState_FLIGHT_STATE_ABORT: {
         auto [abort_out, abort_data] = FlightStateAbort::tick(current_time, abort_entry_time);
         data.which_flight_state_data = DataPacket_flight_abort_data_tag;
         data.flight_state_data.flight_abort_data = abort_data;
-        out = abort_out;
+        current_output = abort_out;
         break;
     }
     case FlightState_FLIGHT_STATE_OFF: {
         auto [off_out, off_data] = FlightStateOff::tick();
         data.which_flight_state_data = DataPacket_flight_off_data_tag;
         data.flight_state_data.flight_off_data = off_data;
-        out = off_out;
+        current_output = off_out;
         break;
     }
     default: {
         auto [idle_out, idle_data] = FlightStateIdle::tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
         data.flight_state_data.flight_idle_data = idle_data;
-        out = idle_out;
+        current_output = idle_out;
         break;
     }
     }
@@ -153,14 +152,6 @@ void FlightController::step_control_loop(DataPacket& data, std::optional<std::pa
     data.flight_state_output = out;
     data.flight_state = current_state;
 
-    // TODO: take the values from the actual state outputs
-    FlightStateOutput flight_out = FlightStateOutput_init_default;
-    flight_out.z_acceleration = 0.0f;
-    flight_out.x_angular_acceleration = 0.0f;
-    flight_out.y_angular_acceleration = 0.0f;
-    flight_out.roll_position = 0.0f;
-
-    current_output = flight_out;
     data.flight_controller_output = current_output;
 }
 
