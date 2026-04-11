@@ -12,11 +12,19 @@
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
 
-#include "ThrottleValve.h"
-#include "clover.pb.h"
-// ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
+#include "MutexGuard.h"
+#include "clover.pb.h"
 #include "server.h"
+
+#ifdef CONFIG_HORNET
+
+#elif CONFIG_RANGER
+#include "ThrottleValve.h"
+
+#else
+#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
+#endif
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
