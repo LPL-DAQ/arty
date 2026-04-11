@@ -336,6 +336,10 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
+message IMUReadings {
+  optional float 
+}
+
 message IdleData {}
 
 message AbortData {}
