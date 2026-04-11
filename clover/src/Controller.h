@@ -8,25 +8,15 @@
 #include <expected>
 #include <zephyr/kernel.h>
 
-typedef SystemState SystemState;
-
-
 class Controller {
 public:
     // Define nominal safe positions
-    static constexpr float DEFAULT_FUEL_POS = 81.0f;
-    static constexpr float DEFAULT_LOX_POS = 74.0f;
+
     // Shared tracking variables
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
-    static inline bool fuel_powered = true;
-    static inline bool lox_powered = true;
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
-    static SystemState state()
-    {
-        return current_state;
-    }
 
     static std::expected<void, Error> init();
     static void controller_step_control_loop(k_work* work);  // The 1ms dispatcher called by the timer
