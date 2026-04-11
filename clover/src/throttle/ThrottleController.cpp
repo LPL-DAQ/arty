@@ -245,8 +245,6 @@ void ThrottleController::step_control_loop(DataPacket& data)
     }
 
     data.throttle_state = current_state;
-
-    // TODO: send data to primary controller
 }
 
 std::expected<void, Error> ThrottleController::handle_abort(const AbortRequest& req)
