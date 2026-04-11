@@ -244,8 +244,6 @@ void ThrottleController::step_control_loop(DataPacket& data)
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
     }
 
-    // TODO: Reset position?
-
     data.throttle_state = current_state;
 
     // TODO: send data to primary controller
