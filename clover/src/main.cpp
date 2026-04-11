@@ -21,10 +21,6 @@
 #error Either CONFIG_HORNET or CONFIG_RANGER must be set.
 #endif
 
-extern "C" {
-#include <app/drivers/blink.h>
-}
-
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 int main(void)
