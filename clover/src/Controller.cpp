@@ -202,7 +202,7 @@ void Controller::step_control_loop(k_work*)
 
     // Dispatch to appropriate peripheral controllers based on current state
     // TODO: Check that data passing works properly
-    // TODO: what exactly happens when system state is idle?
+    // TODO: is no step control loops running when idle ok?
     if (should_tick_flight()) {
         FlightController::step_control_loop(data, analog_sensors_readings);
     } else {
