@@ -495,6 +495,14 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
+message FlightStateOutput {
+  required float z_acceleration;
+  required float x_angular_acceleration;
+  required float y_angular_acceleration;
+  required float roll_position;
+
+}
+
 message ThrottleStateOutput {
 
   required ThrottleState next_state = 1;
