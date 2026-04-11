@@ -7,7 +7,6 @@
 #include "flight/FlightStateTakeoff.h"
 #include "flight/FlightStateFlightSeq.h"
 #include "flight/FlightStateLanding.h"
-// TODO: properly implement off states for this and other controllers
 #include "flight/FlightStateOff.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>

@@ -471,6 +471,8 @@ const char* ThrottleController::get_state_name(ThrottleState state)
         return "Thrust Primed";
     if (state == ThrottleState_THROTTLE_STATE_THRUST_SEQ)
         return "Thrust Seq";
+    if (state == ThrottleState_THROTTLE_STATE_OFF)
+        return "Off";
     if (state == ThrottleState_THROTTLE_STATE_FLIGHT)
         return "Flight";
     if (state == ThrottleState_THROTTLE_STATE_ABORT)

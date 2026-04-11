@@ -18,11 +18,128 @@ K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
 k_work_q controller_step_work_q;
 
+bool Controller::should_tick_throttle()
+{
+    return current_state != SystemState_STATE_RCS && current_state != SystemState_STATE_TVC && current_state != SystemState_STATE_UNKNOWN && current_state != SystemState_STATE_IDLE;
+}
+
+bool Controller::should_tick_tvc()
+{
+    return current_state != SystemState_STATE_THROTTLE && current_state != SystemState_STATE_RCS && current_state != SystemState_STATE_UNKNOWN && current_state != SystemState_STATE_IDLE;
+}
+
+bool Controller::should_tick_rcs()
+{
+    return current_state != SystemState_STATE_THROTTLE && current_state != SystemState_STATE_TVC && current_state != SystemState_STATE_UNKNOWN && current_state != SystemState_STATE_IDLE;
+}
+
+bool Controller::should_tick_flight()
+{
+    return current_state != SystemState_STATE_THROTTLE && current_state != SystemState_STATE_TVC && current_state != SystemState_STATE_RCS && current_state != SystemState_STATE_TVC_THROTTLE && current_state != SystemState_STATE_TVC_THROTTLE_RCS && current_state != SystemState_STATE_UNKNOWN && current_state != SystemState_STATE_IDLE;
+}
+
+std::expected<void, Error> Controller::attempt_abort_subsystems()
+{
+    std::expected<void, Error> ret = {};
+
+    switch (ThrottleController::current_state) {
+    case ThrottleState_THROTTLE_STATE_VALVE_SEQ:
+    case ThrottleState_THROTTLE_STATE_THRUST_SEQ:
+    case ThrottleState_THROTTLE_STATE_FLIGHT:
+        ret = ThrottleController::change_state(ThrottleState_THROTTLE_STATE_ABORT);
+        if (!ret.has_value()) return ret;
+        break;
+    default:
+        break;
+    }
+
+    switch (TVCController::current_state) {
+    case TVCState_TVC_STATE_TRACE:
+    case TVCState_TVC_STATE_FLIGHT:
+        ret = TVCController::change_state(TVCState_TVC_STATE_ABORT);
+        if (!ret.has_value()) return ret;
+        break;
+    default:
+        break;
+    }
+
+    switch (RCSController::current_state) {
+    case RCSState_RCS_STATE_VALVE_SEQ:
+    case RCSState_RCS_STATE_ROLL_SEQ:
+    case RCSState_RCS_STATE_FLIGHT:
+        ret = RCSController::change_state(RCSState_RCS_STATE_ABORT);
+        if (!ret.has_value()) return ret;
+        break;
+    default:
+        break;
+    }
+
+    switch (FlightController::current_state) {
+    case FlightState_FLIGHT_STATE_TAKEOFF:
+    case FlightState_FLIGHT_STATE_FLIGHT_SEQ:
+    case FlightState_FLIGHT_STATE_LANDING:
+        ret = FlightController::change_state(FlightState_FLIGHT_STATE_ABORT);
+        if (!ret.has_value()) return ret;
+        break;
+    default:
+        break;
+    }
+
+    return {};
+}
+
 std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
     if (current_state == new_state)
         return {};
 
+    if (new_state == SystemState_STATE_IDLE) {
+        std::expected<void, Error> ret = {};
+
+        if (ThrottleController::current_state != ThrottleState_THROTTLE_STATE_OFF) {
+            ret = ThrottleController::change_state(ThrottleState_THROTTLE_STATE_IDLE);
+            if (!ret.has_value()) {
+                return std::unexpected(ret.error().context("Failed to set throttle controller idle"));
+            }
+        }
+
+        if (TVCController::current_state != TVCState_TVC_STATE_OFF) {
+            ret = TVCController::change_state(TVCState_TVC_STATE_IDLE);
+            if (!ret.has_value()) {
+                return std::unexpected(ret.error().context("Failed to set TVC controller idle"));
+            }
+        }
+
+        if (RCSController::current_state != RCSState_RCS_STATE_OFF) {
+            ret = RCSController::change_state(RCSState_RCS_STATE_IDLE);
+            if (!ret.has_value()) {
+                return std::unexpected(ret.error().context("Failed to set RCS controller idle"));
+            }
+        }
+
+        if (FlightController::current_state != FlightState_FLIGHT_STATE_OFF) {
+            ret = FlightController::change_state(FlightState_FLIGHT_STATE_IDLE);
+            if (!ret.has_value()) {
+                return std::unexpected(ret.error().context("Failed to set flight controller idle"));
+            }
+        }
+
+        current_state = new_state;
+        return {};
+    }
+
+    if (new_state == SystemState_STATE_ABORT) {
+        abort_entry_time = k_uptime_get();
+        auto ret = attempt_abort_subsystems();
+        if (!ret.has_value()) {
+            return std::unexpected(ret.error().context("Failed to cascade abort to subsystems"));
+        }
+
+        current_state = new_state;
+        return {};
+    }
+
+    current_state = new_state;
     return {};
 }
 
@@ -85,39 +202,33 @@ void Controller::step_control_loop(k_work*)
 
     // Dispatch to appropriate peripheral controllers based on current state
     // TODO: Check that data passing works properly
-    switch (current_state) {
-    case SystemState_STATE_FLIGHT:
+    // TODO: what exactly happens when system state is idle?
+    if (should_tick_flight()) {
         FlightController::step_control_loop(data, analog_sensors_readings);
-        ThrottleController::step_control_loop(data, analog_sensors_readings);
-        TVCController::step_control_loop(data, analog_sensors_readings);
-        RCSController::step_control_loop(data, analog_sensors_readings);
-        break;
-    case SystemState_STATE_THROTTLE:
-        ThrottleController::step_control_loop(data, analog_sensors_readings);
-        break;
-    case SystemState_STATE_TVC:
-        TVCController::step_control_loop(data, analog_sensors_readings);
-        break;
-    case SystemState_STATE_TVC_THROTTLE:
-        TVCController::step_control_loop(data, analog_sensors_readings);
-        ThrottleController::step_control_loop(data, analog_sensors_readings);
-        break;
-    case SystemState_STATE_TVC_THROTTLE_RCS:
-        TVCController::step_control_loop(data, analog_sensors_readings);
-        ThrottleController::step_control_loop(data, analog_sensors_readings);
-        RCSController::step_control_loop(data, analog_sensors_readings);
-        break;
-    case SystemState_STATE_RCS:
-        RCSController::step_control_loop(data, analog_sensors_readings);
-        break;
-    // TODO
-    case SystemState_STATE_IDLE:
-    case SystemState_STATE_ABORT:
-
-    default:
-        // No peripheral controllers active in these states
-        break;
+    } else {
+        FlightController::change_state(FlightState_FLIGHT_STATE_OFF);
     }
+    if (should_tick_throttle()) {
+        ThrottleController::step_control_loop(data, analog_sensors_readings);
+    } else {
+        ThrottleController::change_state(ThrottleState_THROTTLE_STATE_OFF);
+    }
+    if (should_tick_tvc()) {
+        TVCController::step_control_loop(data, analog_sensors_readings);
+    } else {
+        TVCController::change_state(TVCState_TVC_STATE_OFF);
+    }
+    if (should_tick_rcs()) {
+        RCSController::step_control_loop(data, analog_sensors_readings);
+    } else {
+        RCSController::change_state(RCSState_RCS_STATE_OFF);
+    }
+
+    // TODO: Does this duplicate anywhere?
+    data.throttle_state = ThrottleController::current_state;
+    data.tvc_state = TVCController::current_state;
+    data.rcs_state = RCSController::current_state;
+    data.flight_state = FlightController::current_state;
 
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {

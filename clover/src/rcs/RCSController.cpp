@@ -293,6 +293,8 @@ const char* RCSController::get_state_name(RCSState state)
         return "Roll Primed";
     if (state == RCSState_RCS_STATE_ROLL_SEQ)
         return "Roll Seq";
+    if (state == RCSState_RCS_STATE_OFF)
+        return "Off";
     if (state == RCSState_RCS_STATE_FLIGHT)
         return "Flight";
     if (state == RCSState_RCS_STATE_ABORT)

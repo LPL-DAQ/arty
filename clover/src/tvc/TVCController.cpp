@@ -239,6 +239,8 @@ const char* TVCController::get_state_name(TVCState state)
         return "Trace Primed";
     if (state == TVCState_TVC_STATE_TRACE)
         return "Trace";
+    if (state == TVCState_TVC_STATE_OFF)
+        return "Off";
     if (state == TVCState_TVC_STATE_FLIGHT)
         return "Flight";
     if (state == TVCState_TVC_STATE_ABORT)

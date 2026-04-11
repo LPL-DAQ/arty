@@ -647,10 +647,9 @@ message RCSIdleData {}
 
 message RCSValveSequenceData {}
 
-// TODO
 message RCSRollSequenceData {
-
 }
+
 message TVCAbortData {}
 
 message TVCIdleData {}

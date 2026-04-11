@@ -27,6 +27,12 @@ public:
     static std::expected<void, Error> handle_abort(const AbortRequest& req);
     static std::expected<void, Error> change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);
+
+    static bool should_tick_throttle();
+    static bool should_tick_tvc();
+    static bool should_tick_rcs();
+    static bool should_tick_flight();
+    static std::expected<void, Error> attempt_abort_subsystems();
     Controller() = delete;  // Explicitly prevent instantiation
 
 private:
