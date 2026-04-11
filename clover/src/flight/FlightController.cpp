@@ -88,7 +88,7 @@ std::expected<void, Error> FlightController::init()
     return {};
 }
 
-void FlightController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings)
+void FlightController::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();
 

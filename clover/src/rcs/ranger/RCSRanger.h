@@ -6,7 +6,7 @@
 
 namespace RCSRanger {
 
-std::expected<void, Error> tick(RCSStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors);
+std::expected<void, Error> tick(RCSStateOutput& output, DataPacket& data);
 
 }
 

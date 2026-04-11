@@ -112,7 +112,7 @@ std::expected<void, Error> RCSController::init()
     return {};
 }
 
-void RCSController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
+void RCSController::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
     RCSStateOutput out{};

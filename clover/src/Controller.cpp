@@ -195,7 +195,7 @@ void Controller::step_control_loop(k_work*)
         std::tie(data.analog_sensors, data.controller_timing.analog_sensors_sense_time_ns) = *analog_sensors_readings;
     }
     else {
-        // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
+        LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
     daq_client_status daq_status = get_daq_client_status();
@@ -204,22 +204,22 @@ void Controller::step_control_loop(k_work*)
     // TODO: Check that data passing works properly
     // TODO: is no step control loops running when idle ok?
     if (should_tick_flight()) {
-        FlightController::step_control_loop(data, analog_sensors_readings);
+        FlightController::step_control_loop(data);
     } else {
         FlightController::change_state(FlightState_FLIGHT_STATE_OFF);
     }
     if (should_tick_throttle()) {
-        ThrottleController::step_control_loop(data, analog_sensors_readings);
+        ThrottleController::step_control_loop(data);
     } else {
         ThrottleController::change_state(ThrottleState_THROTTLE_STATE_OFF);
     }
     if (should_tick_tvc()) {
-        TVCController::step_control_loop(data, analog_sensors_readings);
+        TVCController::step_control_loop(data);
     } else {
         TVCController::change_state(TVCState_TVC_STATE_OFF);
     }
     if (should_tick_rcs()) {
-        RCSController::step_control_loop(data, analog_sensors_readings);
+        RCSController::step_control_loop(data);
     } else {
         RCSController::change_state(RCSState_RCS_STATE_OFF);
     }

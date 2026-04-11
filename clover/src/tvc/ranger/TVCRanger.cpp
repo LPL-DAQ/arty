@@ -6,7 +6,7 @@
 
 LOG_MODULE_REGISTER(TVCRanger, LOG_LEVEL_INF);
 
-std::expected<void, Error> TVCRanger::tick(TVCStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors){
+std::expected<void, Error> TVCRanger::tick(TVCStateOutput& output, DataPacket& data){
 
     // this is where adit (i think) code goes
 

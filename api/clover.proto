@@ -546,6 +546,8 @@ message ThrottleStateOutput {
 
 message RCSStateOutput {
   required RCSState next_state = 1;
+  required bool CW = 2;
+  required bool CCW = 3;
 }
 
 message TVCStateOutput {

@@ -16,5 +16,7 @@ std::pair<RCSStateOutput, RCSAbortData> RCSStateAbort::tick(uint32_t current_tim
         out.next_state = RCSState_RCS_STATE_ABORT;
     }
 
+    out.CW = false;
+    out.CCW = false;
     return std::make_pair(out, abort_data);
 }

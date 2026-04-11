@@ -31,7 +31,9 @@ std::pair<RCSStateOutput, RCSRollSequenceData> StateRollSeq::tick(const AnalogSe
 
     // 10. Populate RCSStateOutput
 
-
+    out.CW = false;
+    out.CCW = false;
+    out.next_state = RCSState_RCS_STATE_ROLL_SEQ;
     return {out, data};
 }
 

@@ -6,7 +6,7 @@
 
 LOG_MODULE_REGISTER(RCSRanger, LOG_LEVEL_INF);
 
-std::expected<void, Error> RCSRanger::tick(RCSStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors){
+std::expected<void, Error> RCSRanger::tick(RCSStateOutput& output, DataPacket& data){
     data.which_rcs_actuator_data = DataPacket_rcs_ranger_data_tag;
     auto& rcs_data = data.rcs_actuator_data.rcs_ranger_data;
     rcs_data.cw_open = false;

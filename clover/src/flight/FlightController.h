@@ -17,7 +17,7 @@ public:
     static inline uint32_t sequence_start_time = 0;
 
     static std::expected<void, Error> init();
-    static void step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings);
+    static void step_control_loop(DataPacket& data);
 
     static const FlightStateOutput& get_output();
     static float get_z_acceleration();

@@ -6,9 +6,9 @@
 
 LOG_MODULE_REGISTER(TVCHornet, LOG_LEVEL_INF);
 
-std::expected<void, Error> TVCHornet::tick(TVCStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors){
+std::expected<void, Error> TVCHornet::tick(TVCStateOutput& output, DataPacket& data){
 
-    // from here, we interaface with the motor (prabhu code) + thrust characterization 
+    // from here, we interaface with the motor (prabhu code) + thrust characterization
     auto& tvc_data = data.tvc_actuator_data.tvc_hornet_data;
     tvc_data.target_x_deg = 0.0f;
     tvc_data.target_y_deg = 0.0f;

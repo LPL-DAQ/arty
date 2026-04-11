@@ -19,6 +19,8 @@ std::pair<RCSStateOutput, RCSValveSequenceData> RCSStateValveSeq::tick(int64_t c
 {
     RCSStateOutput out{};
     RCSValveSequenceData data{};
+    out.CW = false;
+    out.CCW = false;
     out.next_state = RCSState_RCS_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 
     return std::make_pair(out, data);

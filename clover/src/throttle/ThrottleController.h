@@ -30,7 +30,7 @@ public:
 
     static std::expected<void, Error> init();
 
-    static void step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings);
+    static void step_control_loop(DataPacket& data);
 
     // Request handlers
     static std::expected<void, Error> handle_abort(const AbortRequest& req);

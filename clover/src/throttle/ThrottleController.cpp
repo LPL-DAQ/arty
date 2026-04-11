@@ -137,8 +137,8 @@ std::expected<void, Error> ThrottleController::init()
     return {};
 }
 
-
-void ThrottleController::step_control_loop(DataPacket& data, std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings )
+// std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings
+void ThrottleController::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();
     uint64_t start_cycle = k_cycle_get_64();
@@ -222,21 +222,15 @@ void ThrottleController::step_control_loop(DataPacket& data, std::optional<std::
     }
     }
 
-    // TODO: is this proper for analog sensor readings?
-    AnalogSensorReadings analog_sensors = AnalogSensorReadings_init_default;
-    if (analog_sensors_readings) {
-        analog_sensors = analog_sensors_readings->first;
-    }
-
     #if defined(CONFIG_RANGER)
-    auto ranger_ret = ThrottleImpl::tick(out, data, analog_sensors);
+    auto ranger_ret = ThrottleImpl::tick(out, data);
     if (!ranger_ret.has_value()) {
         LOG_ERR("ThrottleImpl error: %s", ranger_ret.error().build_message().c_str());
         out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
     }
     data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
     #elif defined(CONFIG_HORNET)
-    auto hornet_ret = ThrottleImpl::tick(out, data, analog_sensors);
+    auto hornet_ret = ThrottleImpl::tick(out, data);
     if (!hornet_ret.has_value()) {
         LOG_ERR("ThrottleImpl error: %s", hornet_ret.error().build_message().c_str());
         out.next_state = ThrottleState_THROTTLE_STATE_ABORT;

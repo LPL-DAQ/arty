@@ -6,7 +6,7 @@
 
 namespace ThrottleHornet {
 
-std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors);
+std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data);
 
 }
 

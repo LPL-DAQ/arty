@@ -6,7 +6,7 @@
 
 namespace TVCHornet {
 
-std::expected<void, Error> tick(TVCStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors);
+std::expected<void, Error> tick(TVCStateOutput& output, DataPacket& data);
 
 }
 

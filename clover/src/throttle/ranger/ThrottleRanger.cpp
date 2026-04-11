@@ -13,7 +13,7 @@ uint32_t low_ptc_start_time_ms = 0;
 float target_of = 1.2f;
 }
 
-std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors){
+std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, DataPacket& data){
     bool has_thrust = output.has_thrust;
     bool has_fuel_pos = output.has_fuel_pos;
     bool has_lox_pos = output.has_lox_pos;
@@ -26,7 +26,7 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
     if (has_lox_pos && output.power_on) {
         LoxValve::tick(output.power_on, has_lox_pos, output.lox_pos);
     }
-    
+
     // shorthand for data tag
     ThrottleRangerData& ranger_data = data.throttle_actuator_data.throttle_ranger_data;
 
@@ -34,7 +34,8 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
         uint32_t current_time = k_uptime_get_32();
         // TODO: Check if the abort stuff is all good
         // 1. Safety: abort if PTC401 is below threshold for some time
-        if (analog_sensors.battery_voltage <= PTC401_ABORT_THRESHOLD) {
+        // TODO: is battery voltage the right thing to check here? that seems wrong
+        if (data.analog_sensors.battery_voltage <= PTC401_ABORT_THRESHOLD) {
             if (low_ptc_start_time_ms == 0) {
                 low_ptc_start_time_ms = current_time;
             }
@@ -51,18 +52,18 @@ std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, Dat
         }
 
         // 2. Read pressures
-        float ptc401_val = analog_sensors.battery_voltage;                                    // Adjusted value
-        float pto401_val = analog_sensors.battery_voltage + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
-        float pt103_val = analog_sensors.battery_voltage;                                      // Adjusted value
-        float ptf401_val = analog_sensors.battery_voltage + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
-        float pt203_val = analog_sensors.battery_voltage;                                      // Adjusted value
-        float ptc402_val = analog_sensors.battery_voltage;                                    // Adjusted value
-        bool pt203_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
-        bool ptf401_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
-        bool pt103_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
-        bool pto401_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT2k);
-        bool ptc401_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT1k);
-        bool ptc402_valid = (analog_sensors.battery_voltage >= MIN_threshold && analog_sensors.battery_voltage <= MAX_threshold_PT1k);
+        float ptc401_val = data.analog_sensors.battery_voltage;                                    // Adjusted value
+        float pto401_val = data.analog_sensors.battery_voltage + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
+        float pt103_val = data.analog_sensors.battery_voltage;                                      // Adjusted value
+        float ptf401_val = data.analog_sensors.battery_voltage + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+        float pt203_val = data.analog_sensors.battery_voltage;                                      // Adjusted value
+        float ptc402_val = data.analog_sensors.battery_voltage;                                    // Adjusted value
+        bool pt203_valid = (data.analog_sensors.battery_voltage >= MIN_threshold && data.analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+        bool ptf401_valid = (data.analog_sensors.battery_voltage >= MIN_threshold && data.analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+        bool pt103_valid = (data.analog_sensors.battery_voltage >= MIN_threshold && data.analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+        bool pto401_valid = (data.analog_sensors.battery_voltage >= MIN_threshold && data.analog_sensors.battery_voltage <= MAX_threshold_PT2k);
+        bool ptc401_valid = (data.analog_sensors.battery_voltage >= MIN_threshold && data.analog_sensors.battery_voltage <= MAX_threshold_PT1k);
+        bool ptc402_valid = (data.analog_sensors.battery_voltage >= MIN_threshold && data.analog_sensors.battery_voltage <= MAX_threshold_PT1k);
         float p_inj_fuel;
         float p_inj_lox;
         float p_ch;

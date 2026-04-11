@@ -6,7 +6,7 @@
 
 namespace ThrottleRanger {
 
-std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data, const AnalogSensorReadings& analog_sensors);
+std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data);
 // fuel, lox
 float fuel_get_pos_internal();
 float fuel_get_pos_encoder();
