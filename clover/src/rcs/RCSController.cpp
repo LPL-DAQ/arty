@@ -11,7 +11,15 @@
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
-
+#if defined(CONFIG_RANGER)
+#include "ranger/RCSRanger.h"
+namespace RCSImpl = RCSRanger;
+#elif defined(CONFIG_HORNET)
+#include "hornet/RCSHornet.h"
+namespace RCSImpl = RCSHornet;
+#else
+#error "Select either CONFIG_RANGER or CONFIG_HORNET"
+#endif
 LOG_MODULE_REGISTER(RCSController, LOG_LEVEL_INF);
 
 
@@ -159,6 +167,12 @@ void RCSController::step_control_loop(DataPacket& data, std::optional<std::pair<
     auto ret = change_state(out.next_state);
     if (!ret.has_value()) {
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
+    }
+
+    auto impl_ret = RCSImpl::tick(out, data, data.analog_sensors);
+    if (!impl_ret.has_value()) {
+        LOG_ERR("RCSImpl error: %s", impl_ret.error().build_message().c_str());
+        out.next_state = RCSState_RCS_STATE_ABORT;
     }
 
     data.rcs_state_output = out;

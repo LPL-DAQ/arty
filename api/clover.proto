@@ -388,6 +388,15 @@ message DataPacket {
     ThrottleHornetData throttle_hornet_data = 34;
   }
 
+  oneof rcs_actuator_data {
+    RCSRangerData rcs_ranger_data = 37;
+    RCSHornetData rcs_hornet_data = 38;
+  }
+
+  oneof tvc_actuator_data {
+    TVCRangerData tvc_ranger_data = 39;
+    TVCHornetData tvc_hornet_data = 40;
+  }
 
   oneof throttle_state_data {
     // IDLE, VALVE_PRIMED, THRUST_PRIMED
@@ -523,6 +532,32 @@ message ThrottleRangerData {
 
 message ThrottleHornetData{
   required float pwm_signal = 1;
+}
+
+message TVCRangerData {
+  required float target_x_deg = 1;
+  required float target_y_deg = 2;
+  required float encoder_x_deg = 3;
+  required float encoder_y_deg = 4;
+}
+
+message TVCHornetData {
+  required float target_x_deg = 1;
+  required float target_y_deg = 2;
+}
+
+message RCSRangerData {
+  required bool cw_open = 1;
+  required bool ccw_open = 2;
+  required float target_position_deg = 3;
+  required float target_vel_deg_sec = 4;
+}
+
+message RCSHornetData {
+  required bool cw_power_on = 1;
+  required bool cw_power_off = 2;
+  required float target_position_deg = 3;
+  required float target_vel_deg_sec = 4;
 }
 
 message ThrottleAbortData {}

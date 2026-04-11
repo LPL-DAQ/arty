@@ -10,7 +10,15 @@
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
-
+#if defined(CONFIG_RANGER)
+#include "ranger/TVCRanger.h"
+namespace TVCImpl = TVCRanger;
+#elif defined(CONFIG_HORNET)
+#include "hornet/TVCHornet.h"
+namespace TVCImpl = TVCHornet;
+#else
+#error "Select either CONFIG_RANGER or CONFIG_HORNET"
+#endif
 LOG_MODULE_REGISTER(TVCController, LOG_LEVEL_INF);
 
 
@@ -130,6 +138,12 @@ void TVCController::step_control_loop(DataPacket& data, std::optional<std::pair<
     auto ret = change_state(out.next_state);
     if (!ret.has_value()) {
         LOG_ERR("Error while changing state: %s", ret.error().build_message().c_str());
+    }
+
+    auto impl_ret = TVCImpl::tick(out, data, data.analog_sensors);
+    if (!impl_ret.has_value()) {
+        LOG_ERR("TVCImpl error: %s", impl_ret.error().build_message().c_str());
+        out.next_state = TVCState_TVC_STATE_ABORT;
     }
 
     data.tvc_state_output = out;
