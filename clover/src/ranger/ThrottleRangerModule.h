@@ -1,37 +1,166 @@
-#ifndef APP_THROTTLE_RANGER_H
-#define APP_THROTTLE_RANGER_H
+#ifndef APP_THROTTLE_RANGER_MODULE_H
+#define APP_THROTTLE_RANGER_MODULE_H
 
-#include <cmath>
+#include "../sensors/AnalogSensors.h"
 #include "../Error.h"
-#include "../ThrottleController.h"
+#include "../Trace.h"
+#include "clover.pb.h"
+#include <expected>
+#include <zephyr/kernel.h>
 
-namespace ThrottleRanger {
+typedef ThrottleState ThrottleState;
 
-std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data);
-std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
-std::expected<void, Error> reset_valve_position(Valve valve, float new_pos_deg);
-std::expected<void, Error> ThrottleHornet::get_block_transition();
 
-void set_throttle_actuator_data_tag(DataPacket& data);
-std::unexpected<void, Error> ThrottleRanger::thrust_trace_tick(ThrottleStateOutput& output, DataPacket& data);
+class ThrottleRangerModule {
+public:
+// Define nominal safe positions
+static constexpr float DEFAULT_FUEL_POS = 81.0f;
+static constexpr float DEFAULT_LOX_POS = 74.0f;
+// Shared tracking variables
+static inline uint32_t abort_entry_time = 0;
+static inline uint32_t sequence_start_time = 0;
+static inline bool fuel_powered = true;
+static inline bool lox_powered = true;
 
-void init_states(ThrottleState new_state);
-void init_calibrate_valve(float fuel_pos, float fuel_pos_enc, float lox_pos, float lox_pos_enc);
-std::pair<ThrottleStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp, float fuel_pos, float lox_pos, float fuel_pos_enc, float lox_pos_enc);
-std::pair<ThrottleStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
-Trace& get_fuel_trace();
-Trace& get_lox_trace();
-void init_thrust_sequence(float total_time_ms);
+static inline ThrottleState current_state = ThrottleState_THROTTLE_STATE_IDLE;
+static ThrottleState state()
+{
+    return current_state;
+}
 
-// fuel, lox
-float fuel_get_pos_internal();
-float fuel_get_pos_encoder();
-float lox_get_pos_internal();
-float lox_get_pos_encoder();
-void fuel_reset_pos(float new_pos);
-void lox_reset_pos(float new_pos);
-bool fuel_get_power_on();
-bool lox_get_power_on();
+static std::expected<void, Error> init();
+
+static ThrottleRangerStateOutput step_control_loop(DataPacket& data);
+
+// Request handlers
+static std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
+static std::expected<void, Error> start_valve_sequence(const ThrottleStartValveSequenceRequest& req);
+static std::expected<void, Error> load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
+static std::expected<void, Error> start_thrust_sequence(const ThrottleStartThrustSequenceRequest& req);
+
+static std::expected<void, Error> power_on(const ThrottlePowerOnRequest& req);
+static std::expected<void, Error> power_off(const ThrottlePowerOffRequest& req);
+
+static std::expected<void, Error> change_state(ThrottleState new_state);
+static const char* get_state_name(ThrottleState state);
+ThrottleRangerModule() = delete;  // Explicitly prevent instantiation
+
+private:
+static std::pair<ThrottleRangerStateOutput, ThrottleIdleData> idle_tick();
+static std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t current_time);
+static std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
+static std::pair<ThrottleRangerStateOutput, ThrottleThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
+static std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+static std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
+
+static inline bool valve_sequence_has_fuel = false;
+static inline bool valve_sequence_has_lox = false;
+static inline float valve_sequence_fuel_total_time_ms = -1.0f;
+static inline float valve_sequence_lox_total_time_ms = -1.0f;
+static inline float thrust_sequence_total_time_ms = 0.0f;
+
+static Trace throttle_thrust_trace;
+static Trace fuel_trace;
+static Trace lox_trace;
+
+// TODO: is this used anywhere?
+static inline uint32_t udp_sequence_number = 0;
+
+
+
+// cal
+enum class CalPhase {
+    SEEK_HARDSTOP,
+    BACK_OFF,
+    END_MOVEMENT,
+    POWER_OFF,
+    REPOWER,
+    COMPLETE,
+    MEASURE,
+    ERROR
+};
+
+void start_calibration( float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+void calibration_seek_hardstop(ThrottleRangerStateOutput& out, float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+void calibration_end_movement(ThrottleRangerStateOutput& out, uint32_t timestamp);
+void calibration_power_off(ThrottleRangerStateOutput& out, uint32_t timestamp);
+void calibration_repower(ThrottleRangerStateOutput& out, uint32_t timestamp);
+void calibration_complete(ThrottleRangerStateOutput& out, uint32_t timestamp);
+void calibration_measure(ThrottleRangerStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+void calibration_error(ThrottleRangerStateOutput& out, uint32_t timestamp);
+int calibration_get_phase_id();
+
+static inline CalPhase phase = CalPhase::SEEK_HARDSTOP;
+static inline float cal_fuel_target_position = 0.0f;
+static inline float cal_fuel_hardstop_position = 0.0f;
+static inline bool cal_fuel_found_stop = false;
+static inline float cal_lox_target_position = 0.0f;
+static inline float cal_lox_hardstop_position = 0.0f;
+static inline bool cal_lox_found_stop = false;
+static inline float cal_step_size = 0.002f; // in degrees, how much to move per step
+static inline int cal_rep_counter = 0;
+static inline float cal_pos_error_limit = 0.2f; // positional error limit
+static inline float cal_fuel_starting_error = 0.0f;
+static inline float cal_lox_starting_error = 0.0f;
+static inline uint32_t cal_power_cycle_timestamp = 0;
+
+// thrust control
+
+constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
+constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
+
+// TODO: Should constants be moved to cpp?
+// Physics constants
+constexpr float EFFICIENCY = 0.93f;
+constexpr float LBF_CONVERSION = 0.224809f;
+constexpr float K_SLOPE = -1.132744863732548e-04f;
+constexpr float K_OFFSET = 0.123605503801193f;
+constexpr float ALPHA = 307.6704337316606f;
+constexpr float LOX_AREA_SI = 1.39154e-5f;
+constexpr float PSI_TO_PA = 6894.76f;
+constexpr float FUEL_CV_INJ = 0.5f;
+constexpr float FUEL_SG = 0.806f;
+constexpr float MIN_SAFE_OF = 0.5f;
+constexpr float MAX_SAFE_OF = 3.0f;
+constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
+constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
+
+// Controller constants
+
+static inline float alpha = -1.0f;
+static inline uint32_t low_ptc_start_time_ms = 0;
+static inline float target_of = 1.2f;
+// TODO: Tune controller constants
+constexpr float THRUST_KP = 0.015f;
+constexpr float MAX_CHANGE_ALPHA = 20.0f;
+constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
+constexpr float MIN_ALPHA = 0.0f;
+constexpr float MAX_ALPHA = 0.84f;
+constexpr float MIN_VALVE_POS = 25.0f;
+constexpr float MAX_VALVE_POS = 90.0f;
+
+// Controller state variables
+constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
+constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
+constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
+// Track duration of low chamber pressure for abort logic.
+inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
+{
+    // TODO: Shoudl max be 0.1 or 0.0
+    float dP = std::max(0.1f, p_inj_fuel - p_ch);
+    return 0.06309f * FUEL_CV_INJ * std::sqrt(dP * FUEL_SG);
+}
+
+inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
+{
+    float dP_psi = std::max(0.0f, p_inj_lox - p_ch);
+    float dP_Pa = dP_psi * PSI_TO_PA;
+    float p_inj_safe = std::max(0.0f, p_inj_lox);
+    float K_var = (K_SLOPE * p_inj_safe) + K_OFFSET;
+    float rho_syn = 1141.0f + (ALPHA * p_inj_safe);
+    return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
+}
+
 
     // ISP lookup axes: chamber pressure (pc) vs O/F.
 constexpr int ISP_PC_LEN = 29;
@@ -1676,62 +1805,8 @@ constexpr float lox_valve_grid_internal[] = {
     84.999998f, 84.999998f, 84.999998f};
 
 
+};
 
-constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
-constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
+extern struct k_msgq telemetry_msgq;
 
-// TODO: Should constants be moved to cpp?
-// Physics constants
-constexpr float EFFICIENCY = 0.93f;
-constexpr float LBF_CONVERSION = 0.224809f;
-constexpr float K_SLOPE = -1.132744863732548e-04f;
-constexpr float K_OFFSET = 0.123605503801193f;
-constexpr float ALPHA = 307.6704337316606f;
-constexpr float LOX_AREA_SI = 1.39154e-5f;
-constexpr float PSI_TO_PA = 6894.76f;
-constexpr float FUEL_CV_INJ = 0.5f;
-constexpr float FUEL_SG = 0.806f;
-constexpr float MIN_SAFE_OF = 0.5f;
-constexpr float MAX_SAFE_OF = 3.0f;
-constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
-constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
-
-// Controller constants
-// TODO: Tune controller constants
-constexpr float THRUST_KP = 0.015f;
-constexpr float MAX_CHANGE_ALPHA = 20.0f;
-constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
-constexpr float MIN_ALPHA = 0.0f;
-constexpr float MAX_ALPHA = 0.84f;
-constexpr float MIN_VALVE_POS = 25.0f;
-constexpr float MAX_VALVE_POS = 90.0f;
-
-// Controller state variables
-extern float alpha;
-constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
-constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
-constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
-// Track duration of low chamber pressure for abort logic.
-extern uint32_t low_ptc_start_time_ms;
-extern float target_of;
-inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
-{
-    // TODO: Shoudl max be 0.1 or 0.0
-    float dP = std::max(0.1f, p_inj_fuel - p_ch);
-    return 0.06309f * FUEL_CV_INJ * std::sqrt(dP * FUEL_SG);
-}
-
-inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
-{
-    float dP_psi = std::max(0.0f, p_inj_lox - p_ch);
-    float dP_Pa = dP_psi * PSI_TO_PA;
-    float p_inj_safe = std::max(0.0f, p_inj_lox);
-    float K_var = (K_SLOPE * p_inj_safe) + K_OFFSET;
-    float rho_syn = 1141.0f + (ALPHA * p_inj_safe);
-    return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
-}
-
-
-}
-
-#endif // APP_THROTTLE_RANGER_H
+#endif  // APP_THROTTLE_RANGER_MODULE_H

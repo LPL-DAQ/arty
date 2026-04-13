@@ -449,7 +449,8 @@ message DataPacket {
     ThrottleValveSequenceData throttle_valve_sequence_data = 10;
 
     // THRUST_SEQ
-    ThrottleThrustSequenceData throttle_thrust_sequence_data = 11;
+    ThrottleRangerThrustSequenceData throttle_ranger_thrust_sequence_data = 11;
+    ThrottleHornetThrustSequenceData throttle_hornet_thrust_sequence_data = 11;
 
     // FLIGHT
     ThrottleFlightData throttle_flight_data = 12;
@@ -562,17 +563,17 @@ message ThrottleRangerStateOutput {
     required ThrottleState next_state = 1;
     required bool fuel_on = 3;
     required bool lox_on = 3;
-    optional float thrust = 2;
     optional float fuel_pos = 4;
     optional float lox_pos = 5;
     optional float reset_fuel_pos = 6;
     optional float reset_lox_pos = 7;
+
 }
 message ThrottleHornetStateOutput {
 
     required ThrottleState next_state = 1;
     required bool power_on = 3;
-    optional float thrust = 2;
+    required float pwm = 2;
 }
 
 message RCSRangerStateOutput {
@@ -620,16 +621,6 @@ message ThrottleRangerData {
   required ValveStatus fuel_valve = 13;
   required ValveStatus lox_valve = 14;
 
-  optional float predicted_thrust = 1;
-  optional float predicted_of = 2;
-  optional float mdot_fuel = 3;
-  optional float mdot_lox = 4;
-
-  optional float change_alpha_cmd = 7;
-  optional float clamped_change_alpha_cmd = 8;
-
-  optional float alpha = 9;
-  optional float thrust_from_alpha = 10;
 
 }
 
@@ -681,12 +672,24 @@ message ThrottleValveCalibrationData {
 
 message ThrottleValveSequenceData {}
 
-message ThrottleThrustSequenceData {
+message ThrottleRangerThrustSequenceData {
 
   required float target_thrust = 5;
-
   required float thrust_error = 6;
+
+  required float predicted_thrust = 1;
+  required float predicted_of = 2;
+  required float mdot_fuel = 3;
+  required float mdot_lox = 4;
+
+  required float change_alpha_cmd = 7;
+  required float clamped_change_alpha_cmd = 8;
+
+  required float alpha = 9;
+  required float thrust_from_alpha = 10;
 }
+
+message ThrottleHornetThrustSequenceData
 
 message RCSAbortData {}
 

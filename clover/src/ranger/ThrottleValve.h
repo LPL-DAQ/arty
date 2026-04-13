@@ -1,6 +1,8 @@
 #ifndef ARTY_THROTTLEVALVE_H
 #define ARTY_THROTTLEVALVE_H
 
+// ***This should only be referenced by ThrottleRangerActuator***
+
 #include "../../Error.h"
 #include "../../MutexGuard.h"
 #include <algorithm>

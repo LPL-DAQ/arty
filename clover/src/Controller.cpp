@@ -97,6 +97,17 @@ void Controller::step_control_loop(k_work*)
         TVCRangerActuator::tick(tvc_output);
         auto rcs_output = RCSRangerModule::step_control_loop(data);
         RCSRangerActuator::tick(rcs_output);
+        auto throttle_output = ThrottleRangerModule::step_control_loop(data);
+        ThrottleRangerActuator::tick(throttle_output);
+    #elseif CONFIG_HORNET_TVC
+        auto tvc_output = TVCHornetModule::step_control_loop(data);
+        TVCHornetActuator::tick(tvc_output);
+        auto rcs_output = RCSRangerModule::step_control_loop(data);
+        RCSRangerActuator::tick(rcs_output);
+        auto throttle_output = ThrottleHornetModule::step_control_loop(data);
+        ThrottleHornetActuator::tick(throttle_output);
+    #else
+        LOG_ERR("No actuator module defined. Please define CONFIG_RANGER_TVC or CONFIG_HORNET_TVC in your build configuration.");
     #endif
 
     ThrottleController::step_control_loop(data);
@@ -119,6 +130,8 @@ void Controller::step_control_loop(k_work*)
 }
 
 // TODO: Handlers for here, which change system state and cascade to subsystems
+
+// TODO: reset valve position handler
 
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
