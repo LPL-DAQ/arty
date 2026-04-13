@@ -1,5 +1,5 @@
-#ifndef APP_TVC_CONTROLLER_H
-#define APP_TVC_CONTROLLER_H
+#ifndef APP_TVC_HORNET_MODULE_H
+#define APP_TVC_HORNET_MODULE_H
 
 #include "../sensors/AnalogSensors.h"
 #include "../Error.h"
@@ -10,7 +10,7 @@
 
 typedef TVCState TVCState;
 
-class TVCController {
+class TVCHornetModule {
 public:
 
 
@@ -26,13 +26,10 @@ public:
 
     static std::expected<void, Error> init();
 
-    static void step_control_loop(DataPacket& data);
+    static TVCHornetStateOutput step_control_loop(DataPacket& data);
     // Request handlers
-    static std::expected<void, Error> handle_abort(const AbortRequest& req);
-    static std::expected<void, Error> handle_load_sequence(const TVCLoadSequenceRequest& req);
-    static std::expected<void, Error> handle_start_sequence(const TVCStartSequenceRequest& req);
-    static std::expected<void, Error> handle_unprime(const TVCUnprimeRequest& req);
-    static std::expected<void, Error> handle_halt(const TVCHaltRequest& req);
+    static std::expected<void, Error> load_sequence(const TVCLoadSequenceRequest& req);
+    static std::expected<void, Error> start_sequence(const TVCStartSequenceRequest& req);
 
     static std::expected<void, Error> change_state(TVCState new_state);
     static const char* get_state_name(TVCState state);

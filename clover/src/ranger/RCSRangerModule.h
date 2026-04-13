@@ -1,0 +1,50 @@
+#ifndef APP_RCS_RANGER_MODULE_H
+#define APP_RCS_RANGER_MODULE_H
+
+#include "../sensors/AnalogSensors.h"
+#include "../Error.h"
+#include "../Trace.h"
+#include "clover.pb.h"
+#include <expected>
+#include <zephyr/kernel.h>
+
+typedef RCSState RCSState;
+
+class RCSRangerModule {
+public:
+
+
+    static inline RCSState current_state = RCSState_RCS_STATE_IDLE;
+    static inline uint32_t abort_entry_time = 0;
+    static inline uint32_t sequence_start_time = 0;
+
+
+    static RCSState state()
+    {
+        return current_state;
+    }
+
+    static std::expected<void, Error> init();
+
+    static RCSRangerStateOutput step_control_loop(DataPacket& data);
+    // Request handlers
+    static std::expected<void, Error> load_sequence(const RCSLoadSequenceRequest& req);
+    static std::expected<void, Error> start_sequence(const RCSStartSequenceRequest& req);
+
+    static std::expected<void, Error> change_state(RCSState new_state);
+    static const char* get_state_name(RCSState state);
+    RCSController() = delete;  // Explicitly prevent instantiation
+
+private:
+    static std::pair<RCSStateOutput, RCSIdleData> idle_tick();
+    static std::pair<RCSStateOutput, RCSIdleData> trace_primed_tick();
+    static std::pair<RCSStateOutput, RCSSequenceData> sequence_tick(int64_t current_time, int64_t start_time);
+    static std::pair<RCSStateOutput, RCSFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+    static std::pair<RCSStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
+
+    static inline uint32_t udp_sequence_number = 0;
+};
+
+extern struct k_msgq telemetry_msgq;
+
+#endif  // APP_RCS_RANGER_MODULE_H

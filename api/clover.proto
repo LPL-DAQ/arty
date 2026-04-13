@@ -404,9 +404,23 @@ message DataPacket {
   optional FlightStateOutput flight_state_output = 43;
 
   // Actuators
-  required ThrottleStateOutput throttle_state_output = 32;
-  required RCSStateOutput rcs_state_output = 35;
-  required TVCStateOutput tvc_state_output = 36;
+  oneof  throttle_state_output{
+    ThrottleRangerStateOutput throttle_ranger_state_output = 40;
+    ThrottleHornetStateOutput throttle_hornet_state_output = 40;
+
+  }
+
+  oneof rcs_state_output {
+   RCSRangerStateOutput rcs_ranger_state_output = 35;
+   RCSHornetStateOutput rcs_hornet_state_output = 35;
+  }
+
+ oneof tvc_state_output {
+   TVCRangerStateOutput tvc_ranger_state_output = 35;
+   TVCHornetStateOutput tvc_hornet_state_output = 35;
+  }
+
+
   oneof throttle_actuator_data {
     ThrottleRangerData throttle_ranger_data = 33;
     ThrottleHornetData throttle_hornet_data = 34;
@@ -544,29 +558,48 @@ message FlightSequenceData {}
 message FlightLandingData {}
 message FlightOffData {}
 
-message ThrottleStateOutput {
+message ThrottleRangerStateOutput {
 
-  required ThrottleState next_state = 1;
-  required bool power_on = 3;
-  optional float thrust = 2;
-  optional float fuel_pos = 4;
-  optional float lox_pos = 5;
-  optional float reset_fuel_pos = 6;
-  optional float reset_lox_pos = 7;
+    required ThrottleState next_state = 1;
+    required bool fuel_on = 3;
+    required bool lox_on = 3;
+    optional float thrust = 2;
+    optional float fuel_pos = 4;
+    optional float lox_pos = 5;
+    optional float reset_fuel_pos = 6;
+    optional float reset_lox_pos = 7;
+}
+message ThrottleHornetStateOutput {
+
+    required ThrottleState next_state = 1;
+    required bool power_on = 3;
+    optional float thrust = 2;
 }
 
-message RCSStateOutput {
+message RCSRangerStateOutput {
+  required RCSState next_state = 1;
+  required bool CW = 2;
+  required bool CCW = 3;
+}
+message RCSHornetStateOutput {
   required RCSState next_state = 1;
   required bool CW = 2;
   required bool CCW = 3;
 }
 
-message TVCStateOutput {
+message TVCRangerStateOutput {
   required TVCState next_state = 1;
   required float target_x = 2;
   required float target_y = 3;
 
 }
+message TVCHornetStateOutput {
+  required TVCState next_state = 1;
+  required float target_x = 2;
+  required float target_y = 3;
+
+}
+
 
 // this is what is sent to other controllers, calculated in FlightController
 message FlightControllerOutput{

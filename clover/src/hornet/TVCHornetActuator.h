@@ -4,7 +4,7 @@
 #include <cmath>
 #include "../TVCController.h"
 
-namespace TVCHornet {
+namespace TVCHornetActuator {
 
 std::expected<void, Error> tick(TVCStateOutput& output, DataPacket& data);
 

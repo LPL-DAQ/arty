@@ -4,7 +4,7 @@
 #include <cmath>
 #include "../TVCController.h"
 
-namespace TVCRanger {
+namespace TVCRangerActuator {
 
 std::expected<void, Error> tick(TVCStateOutput& output, DataPacket& data);
 
