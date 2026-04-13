@@ -2,15 +2,22 @@
 #define APP_THROTTLE_RANGER_H
 
 #include <cmath>
+#include "../Error.h"
 #include "../ThrottleController.h"
 
 namespace ThrottleRanger {
 
 std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data);
+std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
+std::expected<void, Error> reset_valve_position(Valve valve, float new_pos_deg);
+std::expected<void, Error> ThrottleHornet::get_block_transition();
+
+void set_throttle_actuator_data_tag(DataPacket& data);
 std::unexpected<void, Error> ThrottleRanger::thrust_trace_tick(ThrottleStateOutput& output, DataPacket& data);
+
+void init_states(ThrottleState new_state);
 void init_calibrate_valve(float fuel_pos, float fuel_pos_enc, float lox_pos, float lox_pos_enc);
 std::pair<ThrottleStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp, float fuel_pos, float lox_pos, float fuel_pos_enc, float lox_pos_enc);
-void init_valve_sequence(bool has_fuel_trace, bool has_lox_trace, float fuel_total_time_ms, float lox_total_time_ms);
 std::pair<ThrottleStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
 Trace& get_fuel_trace();
 Trace& get_lox_trace();

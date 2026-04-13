@@ -10,6 +10,18 @@
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 
+#if defined(CONFIG_RANGER)
+#include "ranger/ThrottleRanger.h"
+namespace ThrottleImpl = ThrottleRanger;
+
+#elif defined(CONFIG_HORNET)
+#include "hornet/ThrottleHornet.h"
+namespace ThrottleImpl = ThrottleHornet;
+#else
+#error "Select either CONFIG_RANGER or CONFIG_HORNET"
+#endif
+
+
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
@@ -202,7 +214,7 @@ void Controller::step_control_loop(k_work*)
 
     // Dispatch to appropriate peripheral controllers based on current state
     // TODO: Check that data passing works properly
-    // TODO: is no step control loops running when idle ok?
+    // TODO: Remove OFF
     if (should_tick_flight()) {
         FlightController::step_control_loop(data);
     } else {
@@ -223,6 +235,7 @@ void Controller::step_control_loop(k_work*)
     } else {
         RCSController::change_state(RCSState_RCS_STATE_OFF);
     }
+    
 
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {

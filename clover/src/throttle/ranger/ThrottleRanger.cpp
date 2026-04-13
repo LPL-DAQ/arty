@@ -45,6 +45,7 @@ static float lox_starting_error = 0.0f;
 static uint32_t power_cycle_timestamp = 0;
 }
 
+
 std::expected<void, Error> ThrottleRanger::tick(ThrottleStateOutput& output, DataPacket& data){
 
     if (output.has_reset_fuel_pos){
@@ -280,6 +281,73 @@ std::unexpected<void, Error> ThrottleRanger::thrust_trace_tick(ThrottleStateOutp
     output.next_state = ThrottleState_THROTTLE_STATE_THRUST_SEQ;
 }
 
+
+std::expected<void, Error> ThrottleRanger::load_valve_sequence(const ThrottleLoadValveSequenceRequest& req)
+{
+    bool has_fuel = req.has_fuel_trace_deg;
+    bool has_lox = req.has_lox_trace_deg;
+    if (!has_fuel && !has_lox) {
+        return std::unexpected(Error::from_cause("No sequences provided in load request"));
+    }
+
+    valve_sequence_has_fuel = has_fuel;
+    valve_sequence_has_lox = has_lox;
+    valve_sequence_fuel_total_time_ms = -1.0f;
+    valve_sequence_lox_total_time_ms = -1.0f;
+
+    if (has_fuel) {
+        auto result = fuel_trace.load(req.fuel_trace_deg);
+        if (!result)
+            return std::unexpected(result.error().context("%s", "Invalid fuel trace"));
+        valve_sequence_fuel_total_time_ms = req.fuel_trace_deg.total_time_ms;
+    }
+
+    if (has_lox) {
+        auto result = lox_trace.load(req.lox_trace_deg);
+        if (!result)
+            return std::unexpected(result.error().context("%s", "Invalid lox trace"));
+        valve_sequence_lox_total_time_ms = req.lox_trace_deg.total_time_ms;
+    }
+
+    return {};
+}
+
+
+std::expected<void, Error> ThrottleRanger::reset_valve_position(Valve valve, float new_pos_deg)
+{
+    switch (valve) {
+    case Valve_FUEL:
+        ThrottleRanger::fuel_reset_pos(new_pos_deg);
+        return {};
+    case Valve_LOX:
+        ThrottleRanger::lox_reset_pos(new_pos_deg);
+        return {};
+    default:
+        return std::unexpected(Error::from_cause("Unknown valve identifier provided to reset command"));
+    }
+}
+
+void ThrottleRanger::set_throttle_actuator_data_tag(DataPacket& data)
+{
+    data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
+}
+
+void ThrottleRanger::init_state(ThrottleState new_state)
+{
+    if (new_state == ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE) {
+        init_calibrate_valve(ThrottleValve::fuel_get_pos_internal(), ThrottleValve::fuel_get_pos_encoder(), ThrottleValve::lox_get_pos_internal(), ThrottleValve::lox_get_pos_encoder());
+    }
+}
+
+void ThrottleRanger::init_calibrate_valve(float fuel_pos, float fuel_pos_enc, float lox_pos, float lox_pos_enc)
+{
+    // The calibrate state will use these current valve positions as its starting point.
+    // No further global initialization is required here.
+    (void)fuel_pos;
+    (void)fuel_pos_enc;
+    (void)lox_pos;
+    (void)lox_pos_enc;
+}
 
 float ThrottleRanger::fuel_get_pos_internal(){
     return FuelValve::get_pos_internal();
