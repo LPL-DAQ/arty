@@ -1,7 +1,7 @@
 #include "ThrottleRangerModule.h"
 #include "../sensors/AnalogSensors.h"
 #include "../server.h"
-
+#include "../FlightController.h"
 #include "../config.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
@@ -146,8 +146,46 @@ std::pair<ThrottleRangerStateOutput, ThrottleFlightData> ThrottleRangerModule::f
 
 std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> ThrottleRangerModule::valve_sequence_tick(int64_t current_time)
 {
-    return ThrottleImpl::valve_sequence_tick(current_time, sequence_start_time);
-}
+    ThrottleRangerStateOutput out{};
+    ThrottleValveSequenceData data{};
+    out.fuel_on = true;
+    out.lox_on = true;
+
+    out.next_state = ThrottleState_THROTTLE_STATE_VALVE_SEQ;  // Assume we stay in this state by default
+
+    float dt = current_time - sequence_start_time;
+
+    if (valve_sequence_has_fuel) {
+        auto f_target = fuel_trace.sample(dt);
+        if (!f_target) {
+            LOG_ERR("Failed to sample fuel trace: %s", f_target.error().build_message().c_str());
+            out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
+            return {out, data};
+        }
+        out.has_fuel_pos = true;
+        out.fuel_pos = *f_target;
+    }
+
+    if (valve_sequence_has_lox) {
+        auto l_target = lox_trace.sample(dt);
+        if (!l_target) {
+            LOG_ERR("Failed to sample lox trace: %s", l_target.error().build_message().c_str());
+            out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
+            return {out, data};
+        }
+        out.has_lox_pos = true;
+        out.lox_pos = *l_target;
+    }
+
+    bool done_fuel = valve_sequence_has_fuel ? dt >= valve_sequence_fuel_total_time_ms : true;
+    bool done_lox = valve_sequence_has_lox ? dt >= valve_sequence_lox_total_time_ms : true;
+
+    if (done_fuel && done_lox) {
+        LOG_INF("Done open loop seq, dt was %f", static_cast<double>(dt));
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
+    }
+
+    return std::make_pair(out, data);}
 
 std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleRangerModule::thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time)
 {
@@ -170,7 +208,6 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
     float target_thrust_lbf = *target_result;
     data.target_thrust = target_thrust_lbf;
 
-    uint32_t current_time = k_uptime_get_32();
     // TODO: Tripple check that the abort stuff works
     // 1. Safety: abort if PTC401 is below threshold for some time
     // TODO: is battery voltage the right thing to check here? that seems wrong
@@ -259,7 +296,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
         // Both failed: Trigger Abort
         LOG_ERR("NO PT 203 / 401");
 
-        output.next_state = ThrottleState_THROTTLE_STATE_ABORT;
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
         return {};
     }
 

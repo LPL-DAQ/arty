@@ -4,9 +4,12 @@
 #include "../sensors/AnalogSensors.h"
 #include "../Error.h"
 #include "../Trace.h"
+#include "../LookupTable.h"
+
 #include "clover.pb.h"
 #include <expected>
 #include <zephyr/kernel.h>
+#include <cmath>
 
 typedef ThrottleState ThrottleState;
 
@@ -144,14 +147,14 @@ static constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value f
 static constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
 static constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
 // Track duration of low chamber pressure for abort logic.
-inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
+static inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
     // TODO: Shoudl max be 0.1 or 0.0
     float dP = std::max(0.1f, p_inj_fuel - p_ch);
     return 0.06309f * FUEL_CV_INJ * std::sqrt(dP * FUEL_SG);
 }
 
-inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
+static inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
 {
     float dP_psi = std::max(0.0f, p_inj_lox - p_ch);
     float dP_Pa = dP_psi * PSI_TO_PA;
