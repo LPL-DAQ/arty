@@ -14,6 +14,7 @@ typedef ThrottleState ThrottleState;
 class ThrottleHornetModule {
 public:
 
+static inline uint32_t abort_entry_time = 0;
 static inline uint32_t sequence_start_time = 0;
 
 
@@ -23,13 +24,12 @@ static ThrottleState state()
     return current_state;
 }
 
-static std::expected<void, Error> init();
 
 static ThrottleHornetStateOutput step_control_loop(DataPacket& data);
 
 // Request handlers
 static std::expected<void, Error> load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
-static std::expected<void, Error> start_thrust_sequence(const ThrottleStartThrustSequenceRequest& req);
+static std::expected<void, Error> start_thrust_sequence();
 
 
 static std::expected<void, Error> change_state(ThrottleState new_state);
@@ -38,9 +38,10 @@ ThrottleHornetModule() = delete;  // Explicitly prevent instantiation
 
 private:
 static std::pair<ThrottleHornetStateOutput, ThrottleIdleData> idle_tick();
-static std::pair<ThrottleHornetStateOutput, ThrottleThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
+static std::pair<ThrottleHornetStateOutput, ThrottleHornetThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
 static std::pair<ThrottleHornetStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
 static std::pair<ThrottleHornetStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
+
 
 static inline float thrust_sequence_total_time_ms = 0.0f;
 

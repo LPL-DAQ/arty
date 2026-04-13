@@ -2,6 +2,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
+#include "../FlightController.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>
@@ -12,21 +13,15 @@
 LOG_MODULE_REGISTER(RCSRangerModule, LOG_LEVEL_INF);
 
 namespace {
-    Trace valve_trace;
-    bool valve_has_trace = false;
-    float valve_total_time = 0.0f;
+    Trace motor_trace;
+    bool motor_has_trace = false;
+    float motor_total_time = 0.0f;
 
     Trace roll_trace;
     bool roll_has_trace = false;
     float roll_total_time = 0.0f;
 }
 
-std::expected<void, Error> RCSRangerModule::init()
-{
-    change_state(RCSState_RCS_STATE_IDLE);
-
-    return {};
-}
 
 RCSRangerStateOutput RCSRangerModule::step_control_loop(DataPacket& data )
 {
@@ -45,15 +40,15 @@ RCSRangerStateOutput RCSRangerModule::step_control_loop(DataPacket& data )
     }
 
     case RCSState_RCS_STATE_VALVE_PRIMED: {
-        auto [valve_primed_out, valve_primed_data] = idle_tick();
-        valve_primed_out.next_state = RCSState_RCS_STATE_VALVE_PRIMED;
+        auto [motor_primed_out, motor_primed_data] = idle_tick();
+        motor_primed_out.next_state = RCSState_RCS_STATE_VALVE_PRIMED;
         data.which_rcs_state_data = DataPacket_rcs_idle_data_tag;
-        data.rcs_state_data.rcs_idle_data = valve_primed_data;
-        out = valve_primed_out;
+        data.rcs_state_data.rcs_idle_data = motor_primed_data;
+        out = motor_primed_out;
         break;
     }
     case RCSState_RCS_STATE_VALVE_SEQ: {
-        auto [seq_out, seq_data] = valve_sequence_tick(current_time, sequence_start_time);
+        auto [seq_out, seq_data] = motor_sequence_tick(current_time, sequence_start_time);
         data.which_rcs_state_data = DataPacket_rcs_valve_sequence_data_tag;
         data.rcs_state_data.rcs_valve_sequence_data = seq_data;
         out = seq_out;
@@ -75,7 +70,7 @@ RCSRangerStateOutput RCSRangerModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick();
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
         data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
         data.rcs_state_data.rcs_flight_data = flight_data;
         out = flight_out;
@@ -100,9 +95,11 @@ RCSRangerStateOutput RCSRangerModule::step_control_loop(DataPacket& data )
     // how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
+    data.which_rcs_state_output = DataPacket_rcs_ranger_state_output_tag;
+    data.rcs_state_output.rcs_ranger_state_output = out;
     data.which_rcs_actuator_data = DataPacket_rcs_ranger_data_tag;
-    data.rcs_state_output = out;
     data.rcs_state = current_state;
+    return out;
 }
 
 
@@ -131,18 +128,14 @@ std::pair<RCSRangerStateOutput, RCSFlightData> RCSRangerModule::flight_tick(cons
 {
     RCSRangerStateOutput out{};
     RCSFlightData data{};
-    float target_x = FlightController::get_x_angular_acceleration();
-    float target_y = FlightController::get_y_angular_acceleration();
     out.next_state = RCSState_RCS_STATE_FLIGHT;
-    out.target_x = target_x;
-    out.target_y = target_y;
     return {out, data};
 }
 
 
-std::pair<RCSStateOutput, RCSRollSequenceData> RCSController::roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<RCSRangerStateOutput, RCSRollSequenceData> RCSRangerModule::roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
-    RCSStateOutput out{};
+    RCSRangerStateOutput out{};
     RCSRollSequenceData data{};
     float dt = current_time - start_time;
 
@@ -180,9 +173,9 @@ std::pair<RCSStateOutput, RCSRollSequenceData> RCSController::roll_sequence_tick
 
     return {out, data};
 }
-std::pair<RCSStateOutput, RCSValveSequenceData> RCSController::valve_sequence_tick(int64_t current_time, int64_t start_time)
+std::pair<RCSRangerStateOutput, RCSValveSequenceData> RCSRangerModule::motor_sequence_tick(int64_t current_time, int64_t start_time)
 {
-    RCSStateOutput out{};
+    RCSRangerStateOutput out{};
     RCSValveSequenceData data{};
     out.CW = false;
     out.CCW = false;
@@ -190,10 +183,10 @@ std::pair<RCSStateOutput, RCSValveSequenceData> RCSController::valve_sequence_ti
 
     float dt = current_time - start_time;
 
-    if (valve_has_trace) {
-        auto target = valve_trace.sample(dt);
+    if (motor_has_trace) {
+        auto target = motor_trace.sample(dt);
         if (!target) {
-            LOG_ERR("Failed to sample valve trace: %s", target.error().build_message().c_str());
+            LOG_ERR("Failed to sample motor trace: %s", target.error().build_message().c_str());
             out.next_state = RCSState_RCS_STATE_IDLE;
             return {out, data};
         }
@@ -208,8 +201,8 @@ std::pair<RCSStateOutput, RCSValveSequenceData> RCSController::valve_sequence_ti
         }
     }
 
-    if (valve_has_trace && dt >= valve_total_time) {
-        LOG_INF("Done RCS valve trace sequence, dt was %f", static_cast<double>(dt));
+    if (motor_has_trace && dt >= motor_total_time) {
+        LOG_INF("Done RCS motor trace sequence, dt was %f", static_cast<double>(dt));
         out.next_state = RCSState_RCS_STATE_IDLE;
     }
 
@@ -232,30 +225,30 @@ std::pair<RCSRangerStateOutput, RCSAbortData> RCSRangerModule::abort_tick(uint32
 }
 
 
-std::expected<void, Error> RCSRangerModule::load_valve_sequence()
+std::expected<void, Error> RCSRangerModule::load_motor_sequence(const RCSLoadValveSequenceRequest& req)
 {
     LOG_INF("Received load sequence request");
 
-    auto result = valve_trace.load(req.trace_deg);
+    auto result = motor_trace.load(req.trace_lbf);
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid trace"));
 
-    valve_has_trace = true;
-    valve_total_time = req.trace_deg.total_time_ms;
+    motor_has_trace = true;
+    motor_total_time = req.trace_lbf.total_time_ms;
 
     change_state(RCSState_RCS_STATE_VALVE_PRIMED);
 
     return {};
 }
 
-std::expected<void, Error> RCSRangerModule::start_valve_sequence()
+std::expected<void, Error> RCSRangerModule::start_motor_sequence()
 {
     sequence_start_time = k_uptime_get();
     change_state(RCSState_RCS_STATE_VALVE_SEQ);
     return {};
 }
 
-std::expected<void, Error> RCSRangerModule::load_roll_sequence()
+std::expected<void, Error> RCSRangerModule::load_roll_sequence(const RCSLoadRollSequenceRequest& req)
 {
     LOG_INF("Received load sequence request");
 
@@ -282,12 +275,14 @@ const char* RCSRangerModule::get_state_name(RCSState state)
     if (state == RCSState_RCS_STATE_IDLE)
         return "Idle";
 
-    if (state == RCSState_RCS_STATE_TRACE_PRIMED)
-        return "Trace Primed";
-    if (state == RCSState_RCS_STATE_TRACE)
-        return "Trace";
-    if (state == RCSState_RCS_STATE_OFF)
-        return "Off";
+    if (state == RCSState_RCS_STATE_VALVE_PRIMED)
+        return "Valve Primed";
+    if (state == RCSState_RCS_STATE_ROLL_PRIMED)
+        return "Roll Primed";
+    if (state == RCSState_RCS_STATE_VALVE_SEQ)
+        return "Valve Sequence";
+    if (state == RCSState_RCS_STATE_ROLL_SEQ)
+        return "Roll Sequence";
     if (state == RCSState_RCS_STATE_FLIGHT)
         return "Flight";
     if (state == RCSState_RCS_STATE_ABORT)

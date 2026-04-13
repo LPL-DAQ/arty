@@ -2,6 +2,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
+#include "../FlightController.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>
@@ -19,18 +20,13 @@ namespace {
 }
 
 
-std::expected<void, Error> TVCHornetModule::init()
-{
-    change_state(TVCState_TVC_STATE_IDLE);
 
-    return {};
-}
 
 TVCHornetStateOutput TVCHornetModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
-    TVCStateOutput out{};
+    TVCHornetStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
@@ -83,9 +79,11 @@ TVCHornetStateOutput TVCHornetModule::step_control_loop(DataPacket& data )
     // how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
+    data.which_tvc_state_output = DataPacket_tvc_hornet_state_output_tag;
+    data.tvc_state_output.tvc_hornet_state_output = out;
     data.which_tvc_actuator_data = DataPacket_tvc_hornet_data_tag;
-    data.tvc_state_output = out;
     data.tvc_state = current_state;
+    return out;
 }
 
 
@@ -100,17 +98,17 @@ std::expected<void, Error> TVCHornetModule::change_state(TVCState new_state)
     return {};
 }
 
-std::pair<TVCStateOutput, TVCIdleData> TVCHornetModule::idle_tick()
+std::pair<TVCHornetStateOutput, TVCIdleData> TVCHornetModule::idle_tick()
 {
-    TVCStateOutput out{};
+    TVCHornetStateOutput out{};
     TVCIdleData data{};
     out.next_state = TVCState_TVC_STATE_IDLE;
     return {out, data};
 }
 
-std::pair<TVCStateOutput, TVCFlightData> TVCHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors)
+std::pair<TVCHornetStateOutput, TVCFlightData> TVCHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors)
 {
-    TVCStateOutput out{};
+    TVCHornetStateOutput out{};
     TVCFlightData data{};
     float target_x = FlightController::get_x_angular_acceleration();
     float target_y = FlightController::get_y_angular_acceleration();
@@ -121,9 +119,9 @@ std::pair<TVCStateOutput, TVCFlightData> TVCHornetModule::flight_tick(const Anal
 }
 
 
-std::pair<TVCStateOutput, TVCSequenceData> TVCHornetModule::sequence_tick(int64_t current_time, int64_t start_time)
+std::pair<TVCHornetStateOutput, TVCSequenceData> TVCHornetModule::sequence_tick(int64_t current_time, int64_t start_time)
 {
-    TVCStateOutput out{};
+    TVCHornetStateOutput out{};
     TVCSequenceData data{};
     out.next_state = TVCState_TVC_STATE_TRACE;
 
@@ -158,9 +156,9 @@ std::pair<TVCStateOutput, TVCSequenceData> TVCHornetModule::sequence_tick(int64_
     return {out, data};
 }
 
-std::pair<TVCStateOutput, TVCAbortData> TVCHornetModule::abort_tick(uint32_t current_time, uint32_t entry_time)
+std::pair<TVCHornetStateOutput, TVCAbortData> TVCHornetModule::abort_tick(uint32_t current_time, uint32_t entry_time)
 {
-    TVCStateOutput out{};
+    TVCHornetStateOutput out{};
     TVCAbortData data{};
 
     if (current_time - entry_time > 500) {
@@ -173,7 +171,7 @@ std::pair<TVCStateOutput, TVCAbortData> TVCHornetModule::abort_tick(uint32_t cur
 }
 
 
-std::expected<void, Error> TVCHornetModule::load_sequence()
+std::expected<void, Error> TVCHornetModule::load_sequence(const TVCLoadSequenceRequest& req)
 {
     LOG_INF("Received load sequence request");
 
@@ -209,8 +207,6 @@ const char* TVCHornetModule::get_state_name(TVCState state)
         return "Trace Primed";
     if (state == TVCState_TVC_STATE_TRACE)
         return "Trace";
-    if (state == TVCState_TVC_STATE_OFF)
-        return "Off";
     if (state == TVCState_TVC_STATE_FLIGHT)
         return "Flight";
     if (state == TVCState_TVC_STATE_ABORT)

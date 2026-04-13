@@ -137,13 +137,6 @@ std::pair<FlightStateOutput, FlightAbortData> FlightController::abort_tick(int64
     return {out, data};
 }
 
-std::pair<FlightStateOutput, FlightOffData> FlightController::off_tick()
-{
-    FlightStateOutput out{};
-    FlightOffData data{};
-    out.next_state = FlightState_FLIGHT_STATE_OFF;
-    return {out, data};
-}
 
 std::expected<void, Error> FlightController::init()
 {
@@ -248,13 +241,6 @@ void FlightController::step_control_loop(DataPacket& data)
         current_output = abort_out;
         break;
     }
-    case FlightState_FLIGHT_STATE_OFF: {
-        auto [off_out, off_data] = off_tick();
-        data.which_flight_state_data = DataPacket_flight_off_data_tag;
-        data.flight_state_data.flight_off_data = off_data;
-        current_output = off_out;
-        break;
-    }
     default: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
@@ -311,8 +297,6 @@ const char* FlightController::get_state_name(FlightState state)
         return "FlightSeq";
     if (state == FlightState_FLIGHT_STATE_LANDING)
         return "Landing";
-    if (state == FlightState_FLIGHT_STATE_OFF)
-        return "Off";
     return "Unknown State";
 }
 // TODO: Flight Controller Server Commands and Handlers

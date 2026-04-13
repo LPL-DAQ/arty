@@ -2,6 +2,7 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
+#include "../FlightController.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>
@@ -21,18 +22,11 @@ namespace {
     float roll_total_time = 0.0f;
 }
 
-std::expected<void, Error> RCSHornetModule::init()
-{
-    change_state(RCSState_RCS_STATE_IDLE);
-
-    return {};
-}
-
-RCSRangerStateOutput RCSHornetModule::step_control_loop(DataPacket& data )
+RCSHornetStateOutput RCSHornetModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
-    RCSRangerStateOutput out{};
+    RCSHornetStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
@@ -75,7 +69,7 @@ RCSRangerStateOutput RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick();
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
         data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
         data.rcs_state_data.rcs_flight_data = flight_data;
         out = flight_out;
@@ -100,9 +94,11 @@ RCSRangerStateOutput RCSHornetModule::step_control_loop(DataPacket& data )
     // how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
+    data.which_rcs_state_output = DataPacket_rcs_hornet_state_output_tag;
+    data.rcs_state_output.rcs_hornet_state_output = out;
     data.which_rcs_actuator_data = DataPacket_rcs_hornet_data_tag;
-    data.rcs_state_output = out;
     data.rcs_state = current_state;
+    return out;
 }
 
 
@@ -117,9 +113,9 @@ std::expected<void, Error> RCSHornetModule::change_state(RCSState new_state)
     return {};
 }
 
-std::pair<RCSRangerStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
+std::pair<RCSHornetStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
 {
-    RCSRangerStateOutput out{};
+    RCSHornetStateOutput out{};
     RCSIdleData data{};
     out.CW = false;
     out.CCW = false;
@@ -127,22 +123,18 @@ std::pair<RCSRangerStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
     return {out, data};
 }
 
-std::pair<RCSRangerStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors)
+std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors)
 {
-    RCSRangerStateOutput out{};
+    RCSHornetStateOutput out{};
     RCSFlightData data{};
-    float target_x = FlightController::get_x_angular_acceleration();
-    float target_y = FlightController::get_y_angular_acceleration();
     out.next_state = RCSState_RCS_STATE_FLIGHT;
-    out.target_x = target_x;
-    out.target_y = target_y;
     return {out, data};
 }
 
 
-std::pair<RCSStateOutput, RCSRollSequenceData> RCSController::roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
-    RCSStateOutput out{};
+    RCSHornetStateOutput out{};
     RCSRollSequenceData data{};
     float dt = current_time - start_time;
 
@@ -180,9 +172,9 @@ std::pair<RCSStateOutput, RCSRollSequenceData> RCSController::roll_sequence_tick
 
     return {out, data};
 }
-std::pair<RCSStateOutput, RCSValveSequenceData> RCSController::valve_sequence_tick(int64_t current_time, int64_t start_time)
+std::pair<RCSHornetStateOutput, RCSValveSequenceData> RCSHornetModule::valve_sequence_tick(int64_t current_time, int64_t start_time)
 {
-    RCSStateOutput out{};
+    RCSHornetStateOutput out{};
     RCSValveSequenceData data{};
     out.CW = false;
     out.CCW = false;
@@ -217,9 +209,9 @@ std::pair<RCSStateOutput, RCSValveSequenceData> RCSController::valve_sequence_ti
 }
 
 
-std::pair<RCSRangerStateOutput, RCSAbortData> RCSHornetModule::abort_tick(uint32_t current_time, uint32_t entry_time)
+std::pair<RCSHornetStateOutput, RCSAbortData> RCSHornetModule::abort_tick(uint32_t current_time, uint32_t entry_time)
 {
-    RCSRangerStateOutput out{};
+    RCSHornetStateOutput out{};
     RCSAbortData data{};
 
     if (current_time - entry_time > 500) {
@@ -232,16 +224,16 @@ std::pair<RCSRangerStateOutput, RCSAbortData> RCSHornetModule::abort_tick(uint32
 }
 
 
-std::expected<void, Error> RCSHornetModule::load_valve_sequence()
+std::expected<void, Error> RCSHornetModule::load_valve_sequence(const RCSLoadValveSequenceRequest& req)
 {
     LOG_INF("Received load sequence request");
 
-    auto result = valve_trace.load(req.trace_deg);
+    auto result = valve_trace.load(req.trace_lbf);
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid trace"));
 
     valve_has_trace = true;
-    valve_total_time = req.trace_deg.total_time_ms;
+    valve_total_time = req.trace_lbf.total_time_ms;
 
     change_state(RCSState_RCS_STATE_VALVE_PRIMED);
 
@@ -255,7 +247,7 @@ std::expected<void, Error> RCSHornetModule::start_valve_sequence()
     return {};
 }
 
-std::expected<void, Error> RCSHornetModule::load_roll_sequence()
+std::expected<void, Error> RCSHornetModule::load_roll_sequence(const RCSLoadRollSequenceRequest& req)
 {
     LOG_INF("Received load sequence request");
 
@@ -282,12 +274,14 @@ const char* RCSHornetModule::get_state_name(RCSState state)
     if (state == RCSState_RCS_STATE_IDLE)
         return "Idle";
 
-    if (state == RCSState_RCS_STATE_TRACE_PRIMED)
-        return "Trace Primed";
-    if (state == RCSState_RCS_STATE_TRACE)
-        return "Trace";
-    if (state == RCSState_RCS_STATE_OFF)
-        return "Off";
+    if (state == RCSState_RCS_STATE_VALVE_PRIMED)
+        return "Valve Primed";
+    if (state == RCSState_RCS_STATE_ROLL_PRIMED)
+        return "Roll Primed";
+    if (state == RCSState_RCS_STATE_VALVE_SEQ)
+        return "Valve Sequence";
+    if (state == RCSState_RCS_STATE_ROLL_SEQ)
+        return "Roll Sequence";
     if (state == RCSState_RCS_STATE_FLIGHT)
         return "Flight";
     if (state == RCSState_RCS_STATE_ABORT)

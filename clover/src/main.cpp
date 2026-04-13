@@ -8,13 +8,10 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "sensors/AnalogSensors.h"
-#include "throttle/ranger/ThrottleValve.h"
+#include "ranger/ThrottleValve.h"
 #include "sensors/lidar.h"
 #include "Controller.h"
-#include "flight/FlightController.h"
-#include "throttle/ThrottleController.h"
-#include "rcs/RCSController.h"
-#include "tvc/TVCController.h"
+#include "FlightController.h"
 #include "server.h"
 
 extern "C" {
@@ -89,23 +86,6 @@ int main(void)
         return 0;
     }
 
-    LOG_INF("Initializing ThrottleController");
-    if (auto result = ThrottleController::init(); !result) {
-        LOG_ERR("Failed to initialize Throttle Controller: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    LOG_INF("Initializing RCSController");
-    if (auto result = RCSController::init(); !result) {
-        LOG_ERR("Failed to initialize RCS Controller: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    LOG_INF("Initializing TVCController");
-    if (auto result = TVCController::init(); !result) {
-        LOG_ERR("Failed to initialize TVC Controller: %s", result.error().build_message().c_str());
-        return 0;
-    }
 
     LOG_INF("Initializing FlightController");
     // Initialize flight controller helper state.

@@ -234,7 +234,7 @@ message RCSUnprimeRequest {}
 
 // Load a valve motor sequence. At least one trace must be set.
 message RCSLoadValveSequenceRequest {
-  optional ControlTrace trace_deg = 1;
+  optional ControlTrace trace_lbf = 1;
 }
 
 // Start a loaded valve motor sequence.
@@ -242,7 +242,7 @@ message RCSStartValveSequenceRequest {}
 
 // Load a Roll sequence.
 message RCSLoadRollSequenceRequest {
-  required ControlTrace Roll_trace_lbf = 1;
+  required ControlTrace trace_deg = 1;
 }
 
 // Start a loaded Roll sequence.
@@ -366,6 +366,8 @@ enum FlightState {
   FLIGHT_STATE_IDLE = 1;
   FLIGHT_STATE_ABORT = 2;
   FLIGHT_STATE_FLIGHT_SEQ = 4;
+  FLIGHT_STATE_TAKEOFF = 5;
+  FLIGHT_STATE_LANDING = 6;
 }
 // next tag: 21
 message DataPacket {
@@ -405,18 +407,18 @@ message DataPacket {
   // Actuators
   oneof  throttle_state_output{
     ThrottleRangerStateOutput throttle_ranger_state_output = 40;
-    ThrottleHornetStateOutput throttle_hornet_state_output = 40;
+    ThrottleHornetStateOutput throttle_hornet_state_output = 51;
 
   }
 
   oneof rcs_state_output {
    RCSRangerStateOutput rcs_ranger_state_output = 35;
-   RCSHornetStateOutput rcs_hornet_state_output = 35;
+   RCSHornetStateOutput rcs_hornet_state_output = 36;
   }
 
  oneof tvc_state_output {
-   TVCRangerStateOutput tvc_ranger_state_output = 35;
-   TVCHornetStateOutput tvc_hornet_state_output = 35;
+   TVCRangerStateOutput tvc_ranger_state_output = 32;
+   TVCHornetStateOutput tvc_hornet_state_output = 41;
   }
 
 
@@ -432,7 +434,7 @@ message DataPacket {
 
   oneof tvc_actuator_data {
     TVCRangerData tvc_ranger_data = 39;
-    TVCHornetData tvc_hornet_data = 40;
+    TVCHornetData tvc_hornet_data = 53;
   }
 
   oneof throttle_state_data {
@@ -450,7 +452,7 @@ message DataPacket {
 
     // THRUST_SEQ
     ThrottleRangerThrustSequenceData throttle_ranger_thrust_sequence_data = 11;
-    ThrottleHornetThrustSequenceData throttle_hornet_thrust_sequence_data = 11;
+    ThrottleHornetThrustSequenceData throttle_hornet_thrust_sequence_data = 52;
 
     // FLIGHT
     ThrottleFlightData throttle_flight_data = 12;
@@ -561,7 +563,7 @@ message FlightOffData {}
 message ThrottleRangerStateOutput {
 
     required ThrottleState next_state = 1;
-    required bool fuel_on = 3;
+    required bool fuel_on = 2;
     required bool lox_on = 3;
     optional float fuel_pos = 4;
     optional float lox_pos = 5;
@@ -689,7 +691,10 @@ message ThrottleRangerThrustSequenceData {
   required float thrust_from_alpha = 10;
 }
 
-message ThrottleHornetThrustSequenceData
+message ThrottleHornetThrustSequenceData{
+    required float target_thrust = 1;
+
+}
 
 message RCSAbortData {}
 

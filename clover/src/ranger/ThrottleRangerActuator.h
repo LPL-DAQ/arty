@@ -2,14 +2,15 @@
 #define APP_THROTTLE_RANGER_H
 
 #include <cmath>
+#include "clover.pb.h"
 #include "../Error.h"
-#include "../ThrottleController.h"
+#include <expected>
 
 namespace ThrottleRangerActuator {
 
 
 
-std::expected<void, Error> tick(ThrottleRangerStateOutput& output, DataPacket& data);
+std::expected<void, Error> tick(ThrottleRangerStateOutput& output, ThrottleRangerData& data);
 std::expected<void, Error> reset_valve_position(Valve valve, float new_pos_deg);
 
 

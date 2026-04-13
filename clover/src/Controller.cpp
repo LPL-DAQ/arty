@@ -1,14 +1,31 @@
 #include "Controller.h"
 #include "ControllerConfig.h"
-#include "flight/FlightController.h"
+#include "FlightController.h"
 #include "server.h"
 #include "config.h"
-#include "throttle/ThrottleController.h"
-#include "rcs/RCSController.h"
-#include "tvc/TVCController.h"
+
+#include "sensors/AnalogSensors.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+
+#if CONFIG_RANGER
+    #include "ranger/TVCRangerModule.h"
+    #include "ranger/TVCRangerActuator.h"
+    #include "ranger/RCSHornetModule.h"
+    #include "ranger/RCSRangerActuator.h"
+    #include "ranger/ThrottleRangerModule.h"
+    #include "ranger/ThrottleRangerActuator.h"
+#elif CONFIG_HORNET
+    #include "hornet/TVCHornetModule.h"
+    #include "hornet/TVCHornetActuator.h"
+    #include "hornet/RCSHornetModule.h"
+    #include "hornet/RCSHornetActuator.h"
+    #include "hornet/ThrottleHornetModule.h"
+    #include "hornet/ThrottleHornetActuator.h"
+#else
+    #error "No configuration defined. Please define CONFIG_RANGER or CONFIG_HORNET in your build configuration."
+#endif
 
 
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
@@ -64,6 +81,9 @@ std::expected<void, Error> Controller::init()
     }
     LOG_INF("Beginning controller ticks");
     k_timer_start(&control_loop_schedule_timer, K_NSEC(NSEC_PER_CONTROL_TICK), K_NSEC(NSEC_PER_CONTROL_TICK));
+
+
+
     return {};
 }
 
@@ -106,11 +126,8 @@ void Controller::step_control_loop(k_work*)
         RCSRangerActuator::tick(rcs_output);
         auto throttle_output = ThrottleHornetModule::step_control_loop(data);
         ThrottleHornetActuator::tick(throttle_output);
-    #else
-        LOG_ERR("No actuator module defined. Please define CONFIG_RANGER_TVC or CONFIG_HORNET_TVC in your build configuration.");
     #endif
 
-    ThrottleController::step_control_loop(data);
 
 
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {

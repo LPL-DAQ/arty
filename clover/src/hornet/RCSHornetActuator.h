@@ -2,11 +2,13 @@
 #define APP_RCS_HORNET_H
 
 #include <cmath>
-#include "../RCSController.h"
+#include "clover.pb.h"
+#include <expected>
+#include "../Error.h"
 
 namespace RCSHornetActuator {
 
-std::expected<void, Error> tick(RCSStateOutput& output, RCSHornetData& data);
+std::expected<void, Error> tick(RCSHornetStateOutput& output, RCSHornetData& data);
 
 }
 

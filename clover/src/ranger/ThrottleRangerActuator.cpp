@@ -1,14 +1,14 @@
 #include "ThrottleRangerActuator.h"
 #include "ThrottleValve.h"
-#include "../../ControllerConfig.h"
-#include "../../LookupTable.h"
+#include "../ControllerConfig.h"
+#include "../LookupTable.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(ThrottleRangerActuator, LOG_LEVEL_INF);
 
 
-std::expected<void, Error> ThrottleRangerActuator::tick(ThrottleRangerStateOutput& output, ThrottleRangerActuatorData data){
+std::expected<void, Error> ThrottleRangerActuator::tick(ThrottleRangerStateOutput& output, ThrottleRangerData& data){
 
     if (output.has_reset_fuel_pos){
         LOG_INF("Resetting fuel valve position to %f", (double)output.reset_fuel_pos);
@@ -22,15 +22,15 @@ std::expected<void, Error> ThrottleRangerActuator::tick(ThrottleRangerStateOutpu
     // ensures that there is always a position to send
     if (!output.has_fuel_pos) {
         output.has_fuel_pos = true;
-        output.fuel_pos = ThrottleValve::fuel_get_pos_internal();
+        output.fuel_pos = FuelValve::get_pos_internal();
     }
     if (!output.has_lox_pos) {
         output.has_lox_pos = true;
-        output.lox_pos = ThrottleValve::lox_get_pos_internal();
+        output.lox_pos = LoxValve::get_pos_internal();
     }
     // todo: why would it ever need to know has_lox_pos?
-    LoxValve::tick(output.power_on, output.has_lox_pos, output.lox_pos);
-    FuelValve::tick(output.power_on, output.has_fuel_pos, output.fuel_pos);
+    LoxValve::tick(output.fuel_on, output.has_lox_pos, output.lox_pos);
+    FuelValve::tick(output.lox_on, output.has_fuel_pos, output.fuel_pos);
 
     data.fuel_valve = {
         .target_pos_deg = output.fuel_pos,

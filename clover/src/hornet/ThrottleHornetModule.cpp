@@ -1,7 +1,7 @@
 #include "ThrottleHornetModule.h"
 #include "../sensors/AnalogSensors.h"
-#include "../HornetModuleConfig.h"
 #include "../server.h"
+#include "../FlightController.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>
@@ -25,14 +25,6 @@ std::expected<void, Error> ThrottleHornetModule::change_state(ThrottleState new_
     current_state = new_state;
 
     LOG_INF("Changed State to %s", get_state_name(current_state));
-
-    return {};
-}
-
-std::expected<void, Error> ThrottleHornetModule::init()
-{
-
-    change_state(ThrottleState_THROTTLE_STATE_IDLE);
 
     return {};
 }
@@ -92,8 +84,9 @@ ThrottleHornetStateOutput ThrottleHornetModule::step_control_loop(DataPacket& da
     }
     }
 
+    data.which_throttle_state_output = DataPacket_throttle_hornet_state_output_tag;
+    data.throttle_state_output.throttle_hornet_state_output = out;
     data.which_throttle_actuator_data = DataPacket_throttle_hornet_data_tag;
-    data.throttle_state_output = out;
 
     // TODO: how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
@@ -117,8 +110,7 @@ std::pair<ThrottleHornetStateOutput, ThrottleFlightData> ThrottleHornetModule::f
     ThrottleFlightData data{};
     //TODO: This should not be a reference
     float target_thrust = FlightController::get_z_acceleration();
-    out.has_thrust = true;
-    out.thrust = target_thrust;
+    out.pwm = 1000.0f;
     out.power_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_FLIGHT;
 
@@ -184,11 +176,10 @@ std::expected<void, Error> ThrottleHornetModule::load_thrust_sequence(const Thro
     return {};
 }
 
-std::expected<void, Error> ThrottleHornetModule::start_thrust_sequence(const ThrottleStartThrustSequenceRequest& req)
+std::expected<void, Error> ThrottleHornetModule::start_thrust_sequence()
 {
     sequence_start_time = k_uptime_get();
-    low_ptc_start_time_ms = 0;
-    alpha = -1.0f;
+
     change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
 
     return {};

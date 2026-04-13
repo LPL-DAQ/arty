@@ -2,11 +2,14 @@
 #define APP_TVC_RANGER_H
 
 #include <cmath>
-#include "../TVCController.h"
+#include "clover.pb.h"
+#include <expected>
+#include "../Error.h"
+
 
 namespace TVCRangerActuator {
 
-std::expected<void, Error> tick(TVCStateOutput& output, DataPacket& data);
+std::expected<void, Error> tick(TVCRangerStateOutput& output, DataPacket& data);
 
 }
 

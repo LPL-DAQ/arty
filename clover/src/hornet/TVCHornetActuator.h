@@ -2,11 +2,13 @@
 #define APP_TVC_HORNET_H
 
 #include <cmath>
-#include "../TVCController.h"
+#include "clover.pb.h"
+#include <expected>
+#include "../Error.h"
 
 namespace TVCHornetActuator {
 
-std::expected<void, Error> tick(TVCStateOutput& output, DataPacket& data);
+std::expected<void, Error> tick(TVCHornetStateOutput& output, DataPacket& data);
 
 }
 

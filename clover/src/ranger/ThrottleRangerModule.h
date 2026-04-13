@@ -28,15 +28,14 @@ static ThrottleState state()
     return current_state;
 }
 
-static std::expected<void, Error> init();
 
 static ThrottleRangerStateOutput step_control_loop(DataPacket& data);
 
 // Request handlers
 static std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
-static std::expected<void, Error> start_valve_sequence(const ThrottleStartValveSequenceRequest& req);
+static std::expected<void, Error> start_valve_sequence();
 static std::expected<void, Error> load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
-static std::expected<void, Error> start_thrust_sequence(const ThrottleStartThrustSequenceRequest& req);
+static std::expected<void, Error> start_thrust_sequence();
 
 static std::expected<void, Error> power_on(const ThrottlePowerOnRequest& req);
 static std::expected<void, Error> power_off(const ThrottlePowerOffRequest& req);
@@ -49,7 +48,7 @@ private:
 static std::pair<ThrottleRangerStateOutput, ThrottleIdleData> idle_tick();
 static std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t current_time);
 static std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
-static std::pair<ThrottleRangerStateOutput, ThrottleThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
+static std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
 static std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
 static std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
 
@@ -90,7 +89,8 @@ void calibration_measure(ThrottleRangerStateOutput& out, float fuel_pos,float fu
 void calibration_error(ThrottleRangerStateOutput& out, uint32_t timestamp);
 int calibration_get_phase_id();
 
-static inline CalPhase phase = CalPhase::SEEK_HARDSTOP;
+static inline CalPhase cal_phase = CalPhase::SEEK_HARDSTOP;
+
 static inline float cal_fuel_target_position = 0.0f;
 static inline float cal_fuel_hardstop_position = 0.0f;
 static inline bool cal_fuel_found_stop = false;

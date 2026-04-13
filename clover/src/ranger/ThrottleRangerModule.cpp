@@ -1,6 +1,5 @@
 #include "ThrottleRangerModule.h"
 #include "../sensors/AnalogSensors.h"
-#include "../RangerModuleConfig.h"
 #include "../server.h"
 
 #include "../config.h"
@@ -33,13 +32,6 @@ std::expected<void, Error> ThrottleRangerModule::change_state(ThrottleState new_
     return {};
 }
 
-std::expected<void, Error> ThrottleRangerModule::init()
-{
-
-    change_state(ThrottleState_THROTTLE_STATE_IDLE);
-
-    return {};
-}
 
 // std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings
 ThrottleRangerStateOutput ThrottleRangerModule::step_control_loop(DataPacket& data)
@@ -117,8 +109,9 @@ ThrottleRangerStateOutput ThrottleRangerModule::step_control_loop(DataPacket& da
     }
     }
 
+    data.which_throttle_state_output = DataPacket_throttle_ranger_state_output_tag;
+    data.throttle_state_output.throttle_ranger_state_output = out;
     data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
-    data.throttle_state_output = out;
 
     // TODO: how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
@@ -143,8 +136,6 @@ std::pair<ThrottleRangerStateOutput, ThrottleFlightData> ThrottleRangerModule::f
     ThrottleFlightData data{};
     //TODO: This should not be a reference
     float target_thrust = FlightController::get_z_acceleration();
-    out.has_thrust = true;
-    out.thrust = target_thrust;
     out.fuel_on = true;
     out.lox_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_FLIGHT;
@@ -319,23 +310,22 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
     fuel_valve_cmd = std::clamp(fuel_valve_cmd, MIN_VALVE_POS, MAX_VALVE_POS);
     lox_valve_cmd = std::clamp(lox_valve_cmd, MIN_VALVE_POS, MAX_VALVE_POS);
 
-    // Populate telemetry data
-    out.has_predicted_thrust = true;
-    out.predicted_thrust = predicted_thrust;
-    out.has_predicted_of = true;
-    out.predicted_of = predicted_of;
-    out.has_mdot_fuel = true;
-    out.mdot_fuel = mdot_f;
-    out.has_mdot_lox = true;
-    out.mdot_lox = mdot_lox;
-    out.has_change_alpha_cmd = true;
-    out.change_alpha_cmd = change_alpha_cmd;
-    out.has_clamped_change_alpha_cmd = true;
-    out.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
-    out.has_alpha = true;
-    out.alpha = alpha;
-    out.has_thrust_from_alpha = true;
-    out.thrust_from_alpha = thrust_from_alpha;
+    // Populate telemetry datadata.has_predicted_thrust = true;
+    data.predicted_thrust = predicted_thrust;
+    data.has_predicted_of = true;
+    data.predicted_of = predicted_of;
+    data.has_mdot_fuel = true;
+    data.mdot_fuel = mdot_f;
+    data.has_mdot_lox = true;
+    data.mdot_lox = mdot_lox;
+    data.has_change_alpha_cmd = true;
+    data.change_alpha_cmd = change_alpha_cmd;
+    data.has_clamped_change_alpha_cmd = true;
+    data.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
+    data.has_alpha = true;
+    data.alpha = alpha;
+    data.has_thrust_from_alpha = true;
+    data.thrust_from_alpha = thrust_from_alpha;
 
 
     // 10. Populate ThrottleControllerOutput
@@ -343,7 +333,8 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
     out.fuel_pos = fuel_valve_cmd;
     out.has_lox_pos = true;
     out.lox_pos = lox_valve_cmd;
-    out.power_on = true;
+    out.fuel_on  = true;
+    out.lox_on = true;
 
     out.next_state = ThrottleState_THROTTLE_STATE_THRUST_SEQ;
     return {out, data};
@@ -374,7 +365,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> ThrottleRange
     ThrottleRangerStateOutput out{};
     ThrottleValveCalibrationData data{};
 
-    switch (phase) {
+    switch (cal_phase) {
         case CalPhase::SEEK_HARDSTOP:
             calibration_seek_hardstop(out, fuel_pos, fuel_pos_enc,
                             lox_pos, lox_pos_enc);
@@ -402,12 +393,12 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> ThrottleRange
         default:
             break;
     }
-    data.fuel_found_hardstop = fuel_found_stop;
-    data.fuel_hardstop_pos = fuel_hardstop_position;
-    data.lox_found_hardstop = lox_found_stop;
-    data.lox_hardstop_pos = lox_hardstop_position;
-    data.fuel_err = fuel_pos - (fuel_pos_enc+ fuel_starting_error);
-    data.lox_err = lox_pos - (lox_pos_enc + lox_starting_error);
+    data.fuel_found_hardstop = cal_fuel_found_stop;
+    data.fuel_hardstop_pos = cal_fuel_hardstop_position;
+    data.lox_found_hardstop = cal_lox_found_stop;
+    data.lox_hardstop_pos = cal_lox_hardstop_position;
+    data.fuel_err = fuel_pos - (fuel_pos_enc+ cal_fuel_starting_error);
+    data.lox_err = lox_pos - (lox_pos_enc + cal_lox_starting_error);
     data.cal_phase = get_phase_id();
 
     return std::make_pair(out, data);
@@ -415,19 +406,19 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> ThrottleRange
 
 void ThrottleRangerModule::start_calibration(float fuel_pos, float fuel_pos_enc, float lox_pos, float lox_pos_enc) {
     // Controller handles actuation now
-    phase = CalPhase::SEEK_HARDSTOP;
-    rep_counter = 0;
-    fuel_found_stop = false;
-    lox_found_stop = false;
-    fuel_hardstop_position = 0.0f;
-    lox_hardstop_position = 0.0f;
-    power_cycle_timestamp = 0;
+    cal_phase = CalPhase::SEEK_HARDSTOP;
+    cal_rep_counter = 0;
+    cal_fuel_found_stop = false;
+    cal_lox_found_stop = false;
+    cal_fuel_hardstop_position = 0.0f;
+    cal_lox_hardstop_position = 0.0f;
+    cal_power_cycle_timestamp = 0;
 
-    fuel_target_position = fuel_pos_enc;
-    lox_target_position = lox_pos_enc;
+    cal_fuel_target_position = fuel_pos_enc;
+    cal_lox_target_position = lox_pos_enc;
 
-    fuel_starting_error = fuel_pos - fuel_pos_enc;
-    lox_starting_error = lox_pos - lox_pos_enc;
+    cal_fuel_starting_error = fuel_pos - fuel_pos_enc;
+    cal_lox_starting_error = lox_pos - lox_pos_enc;
 }
 
 
@@ -449,7 +440,7 @@ std::expected<void, Error> ThrottleRangerModule::load_thrust_sequence(const Thro
     return {};
 }
 
-std::expected<void, Error> ThrottleRangerModule::start_thrust_sequence(const ThrottleStartThrustSequenceRequest& req)
+std::expected<void, Error> ThrottleRangerModule::start_thrust_sequence()
 {
     sequence_start_time = k_uptime_get();
     low_ptc_start_time_ms = 0;
@@ -547,98 +538,101 @@ std::expected<void, Error> ThrottleRangerModule::power_off(const ThrottlePowerOf
 
 
 void ThrottleRangerModule::calibration_seek_hardstop(ThrottleRangerStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
-    out.power_on = true;
-    out.power_on = true;
+    out.fuel_on = true;
+    out.lox_on = true;
 
-    if (!lox_found_stop
-        && std::abs(lox_pos - (lox_starting_error + lox_pos_enc)) <= pos_error_limit
+    if (!cal_lox_found_stop
+        && std::abs(lox_pos - (cal_lox_starting_error + lox_pos_enc)) <= cal_pos_error_limit
     ) {
-            lox_target_position += step_size / (rep_counter+1);
+            cal_lox_target_position += cal_step_size / (cal_rep_counter+1);
             out.has_lox_pos = true;
-            out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
+            out.lox_pos = cal_lox_target_position; // move towards stop, but slow down in later loops
     } else { // when it reaches
-        lox_found_stop = true;
-        lox_hardstop_position = lox_pos_enc;
+        cal_lox_found_stop = true;
+        cal_lox_hardstop_position = lox_pos_enc;
         out.has_lox_pos = true;
         out.lox_pos = lox_pos_enc; // hold position once we find the hardstop
     }
 
 
-    if (!fuel_found_stop
-        && std::abs(fuel_pos - (fuel_starting_error + fuel_pos_enc)) <= pos_error_limit
+    if (!cal_fuel_found_stop
+        && std::abs(fuel_pos - (cal_fuel_starting_error + fuel_pos_enc)) <= cal_pos_error_limit
     ) {
-            fuel_target_position += step_size / (rep_counter+1);
+            cal_fuel_target_position += cal_step_size / (cal_rep_counter+1);
             out.has_fuel_pos = true;
-            out.fuel_pos = fuel_target_position; // move towards stop, but slow down in later loops
+            out.fuel_pos = cal_fuel_target_position; // move towards stop, but slow down in later loops
     } else { // when it reaches
-        fuel_found_stop = true;
-        fuel_hardstop_position = fuel_pos_enc;
+        cal_fuel_found_stop = true;
+        cal_fuel_hardstop_position = fuel_pos_enc;
         out.has_fuel_pos = true;
         out.fuel_pos = fuel_pos_enc; // hold position once we find the hardstop
     }
 
     // if both reached, move away from stop
-    if (fuel_found_stop && lox_found_stop) {
-        fuel_found_stop = false;
-        lox_found_stop = false;
-        rep_counter++;
-        phase = CalPhase::END_MOVEMENT;
+    if (cal_fuel_found_stop && cal_lox_found_stop) {
+        cal_fuel_found_stop = false;
+        cal_lox_found_stop = false;
+        cal_rep_counter++;
+        cal_phase = CalPhase::END_MOVEMENT;
     }
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
 
 void ThrottleRangerModule::calibration_end_movement(ThrottleRangerStateOutput& out, uint32_t timestamp) {
-    ThrottleRanger::fuel_reset_pos(fuel_hardstop_position);
-    ThrottleRanger::lox_reset_pos(lox_hardstop_position);
+    out.has_reset_fuel_pos = true;
+    out.reset_fuel_pos = cal_fuel_hardstop_position;
+    out.has_reset_lox_pos = true;
+    out.reset_lox_pos = cal_lox_hardstop_position;
 
-    out.power_on = true;
-    out.power_on = false;
-    if (power_cycle_timestamp == 0){
-        power_cycle_timestamp = timestamp;
+
+    out.fuel_on = false;
+    out.lox_on = false;
+    if (cal_power_cycle_timestamp == 0){
+        cal_power_cycle_timestamp = timestamp;
     }
-    else if (timestamp - power_cycle_timestamp >= 1000) {
-        phase = CalPhase::POWER_OFF;
+    else if (timestamp - cal_power_cycle_timestamp >= 1000) {
+        cal_phase = CalPhase::POWER_OFF;
     }
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 
 }
 
 void ThrottleRangerModule::calibration_power_off(ThrottleRangerStateOutput& out, uint32_t timestamp) {
-    out.power_on = true;
-    out.power_on = false;
-    if (timestamp - power_cycle_timestamp >= 4000) {
-        phase = CalPhase::REPOWER;
+    out.fuel_on = false;
+    out.lox_on = false;
+    if (timestamp - cal_power_cycle_timestamp >= 4000) {
+        cal_phase = CalPhase::REPOWER;
     }
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
 void ThrottleRangerModule::calibration_repower(ThrottleRangerStateOutput& out, uint32_t timestamp) {
-    out.power_on = true;
-    out.power_on = true;
-    if (timestamp - power_cycle_timestamp >= 5000) {
-        phase = CalPhase::COMPLETE;
+    out.fuel_on = true;
+    out.lox_on = true;
+    if (timestamp - cal_power_cycle_timestamp >= 5000) {
+        cal_phase = CalPhase::COMPLETE;
     }
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 }
 
 void ThrottleRangerModule::calibration_complete(ThrottleRangerStateOutput& out, uint32_t timestamp) {
-    out.power_on = true;
-    out.power_on = true;
+    out.fuel_on = true;
+    out.lox_on = true;
     out.has_fuel_pos = true;
     out.fuel_pos = 95.0f;
     out.has_lox_pos = true;
     out.lox_pos = 95.0f;
-    fuel_found_stop = false;
-    lox_found_stop = false;
-    fuel_starting_error = 0;
-    lox_starting_error = 0;
-    fuel_target_position = 95;
-    lox_target_position = 95;
+    cal_fuel_found_stop = false;
+    cal_lox_found_stop = false;
+    cal_fuel_starting_error = 0;
+    cal_lox_starting_error = 0;
+    cal_fuel_target_position = 95;
+    cal_lox_target_position = 95;
 
     // should be idle, but this is for testing
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
-    if (timestamp - power_cycle_timestamp >= 6500) {
+    if (timestamp - cal_power_cycle_timestamp >= 6500) {
         out.has_reset_fuel_pos = true;
         out.reset_fuel_pos = 95.0f;
         out.has_reset_lox_pos = true;
@@ -650,56 +644,56 @@ void ThrottleRangerModule::calibration_complete(ThrottleRangerStateOutput& out, 
 
 void ThrottleRangerModule::calibration_error(ThrottleRangerStateOutput& out, uint32_t timestamp) {
     // In error, turn off drivers and do not try to move
-    out.power_on = true;
-    out.power_on = false;
+    out.fuel_on = false;
+    out.lox_on = false;
 
-    if (power_cycle_timestamp == 0){
-        power_cycle_timestamp = timestamp;
+    if (cal_power_cycle_timestamp == 0){
+        cal_power_cycle_timestamp = timestamp;
     }
 }
 
 void ThrottleRangerModule::calibration_measure(ThrottleRangerStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc) {
-    out.power_on = true;
-    out.power_on = true;
+    out.fuel_on = true;
+    out.lox_on = true;
 
     if (lox_pos_enc > 10){
-        lox_target_position -= step_size*3;
+        cal_lox_target_position -= cal_step_size*3;
         out.has_lox_pos = true;
-        out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
+        out.lox_pos = cal_lox_target_position; // move towards stop, but slow down in later loops
     }
-    else if (!lox_found_stop
-        && std::abs(lox_pos - (lox_starting_error + lox_pos_enc)) <= pos_error_limit
+    else if (!cal_lox_found_stop
+        && std::abs(lox_pos - (cal_lox_starting_error + lox_pos_enc)) <= cal_pos_error_limit
     ) {
-        lox_target_position -= step_size;
+        cal_lox_target_position -= cal_step_size;
         out.has_lox_pos = true;
-        out.lox_pos = lox_target_position; // move towards stop, but slow down in later loops
+        out.lox_pos = cal_lox_target_position; // move towards stop, but slow down in later loops
     } else { // when it reaches
-        lox_found_stop = true;
-        lox_hardstop_position = lox_pos_enc;
+        cal_lox_found_stop = true;
+        cal_lox_hardstop_position = lox_pos_enc;
         out.has_lox_pos = true;
         out.lox_pos = lox_pos_enc; // hold position once we find the hardstop
     }
 
-    fuel_found_stop = true;
-    fuel_hardstop_position = fuel_pos_enc;
+    cal_fuel_found_stop = true;
+    cal_fuel_hardstop_position = fuel_pos_enc;
     out.has_fuel_pos = true;
     out.fuel_pos = fuel_pos_enc; // hold position once we find the hardstop
 
     // if both reached, move away from stop
     out.next_state = ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE;
 
-    if (fuel_found_stop && lox_found_stop) {
-        fuel_target_position = fuel_hardstop_position;
-        lox_target_position = lox_hardstop_position;
-        // LOG_INF("err: %f, pos %f, enc %f",  std::abs(lox_pos - (lox_starting_error + lox_pos_enc)), lox_pos, lox_pos_enc);
-        // LOG_INF("Fuel hardstop at %f, Lox hardstop at %f", fuel_hardstop_position, lox_hardstop_position);
+    if (cal_fuel_found_stop && cal_lox_found_stop) {
+        cal_fuel_target_position = cal_fuel_hardstop_position;
+        cal_lox_target_position = cal_lox_hardstop_position;
+        // LOG_INF("err: %f, pos %f, enc %f",  std::abs(lox_pos - (cal_lox_starting_error + lox_pos_enc)), lox_pos, lox_pos_enc);
+        // LOG_INF("Fuel hardstop at %f, Lox hardstop at %f", cal_fuel_hardstop_position, cal_lox_hardstop_position);
         out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     }
 }
 
 int ThrottleRangerModule::calibration_get_phase_id() {
 
-    switch (phase) {
+    switch (cal_phase) {
         case CalPhase::SEEK_HARDSTOP:
             return 0;
         case CalPhase::BACK_OFF:
@@ -737,8 +731,6 @@ const char* ThrottleRangerModule::get_state_name(ThrottleState state)
         return "Thrust Primed";
     if (state == ThrottleState_THROTTLE_STATE_THRUST_SEQ)
         return "Thrust Seq";
-    if (state == ThrottleState_THROTTLE_STATE_OFF)
-        return "Off";
     if (state == ThrottleState_THROTTLE_STATE_FLIGHT)
         return "Flight";
     if (state == ThrottleState_THROTTLE_STATE_ABORT)

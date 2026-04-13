@@ -3,8 +3,8 @@
 
 // ***This should only be referenced by ThrottleRangerActuator***
 
-#include "../../Error.h"
-#include "../../MutexGuard.h"
+#include "../Error.h"
+#include "../MutexGuard.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

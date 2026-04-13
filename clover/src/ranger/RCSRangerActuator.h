@@ -2,11 +2,13 @@
 #define APP_RCS_RANGER_H
 
 #include <cmath>
-#include "../RCSController.h"
+#include "clover.pb.h"
+#include <expected>
+#include "../Error.h"
 
 namespace RCSRangerActuator {
 
-std::expected<void, Error> tick(RCSStateOutput& output, RCSRangerData& data);
+std::expected<void, Error> tick(RCSRangerStateOutput& output, RCSRangerData& data);
 
 }
 
