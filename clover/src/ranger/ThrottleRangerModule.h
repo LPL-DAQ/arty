@@ -106,24 +106,24 @@ static inline uint32_t cal_power_cycle_timestamp = 0;
 
 // thrust control
 
-constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
-constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
+static constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
+static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 
 // TODO: Should constants be moved to cpp?
 // Physics constants
-constexpr float EFFICIENCY = 0.93f;
-constexpr float LBF_CONVERSION = 0.224809f;
-constexpr float K_SLOPE = -1.132744863732548e-04f;
-constexpr float K_OFFSET = 0.123605503801193f;
-constexpr float ALPHA = 307.6704337316606f;
-constexpr float LOX_AREA_SI = 1.39154e-5f;
-constexpr float PSI_TO_PA = 6894.76f;
-constexpr float FUEL_CV_INJ = 0.5f;
-constexpr float FUEL_SG = 0.806f;
-constexpr float MIN_SAFE_OF = 0.5f;
-constexpr float MAX_SAFE_OF = 3.0f;
-constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
-constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
+static constexpr float EFFICIENCY = 0.93f;
+static constexpr float LBF_CONVERSION = 0.224809f;
+static constexpr float K_SLOPE = -1.132744863732548e-04f;
+static constexpr float K_OFFSET = 0.123605503801193f;
+static constexpr float ALPHA = 307.6704337316606f;
+static constexpr float LOX_AREA_SI = 1.39154e-5f;
+static constexpr float PSI_TO_PA = 6894.76f;
+static constexpr float FUEL_CV_INJ = 0.5f;
+static constexpr float FUEL_SG = 0.806f;
+static constexpr float MIN_SAFE_OF = 0.5f;
+static constexpr float MAX_SAFE_OF = 3.0f;
+static constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
+static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
 // Controller constants
 
@@ -131,18 +131,18 @@ static inline float alpha = -1.0f;
 static inline uint32_t low_ptc_start_time_ms = 0;
 static inline float target_of = 1.2f;
 // TODO: Tune controller constants
-constexpr float THRUST_KP = 0.015f;
-constexpr float MAX_CHANGE_ALPHA = 20.0f;
-constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
-constexpr float MIN_ALPHA = 0.0f;
-constexpr float MAX_ALPHA = 0.84f;
-constexpr float MIN_VALVE_POS = 25.0f;
-constexpr float MAX_VALVE_POS = 90.0f;
+static constexpr float THRUST_KP = 0.015f;
+static constexpr float MAX_CHANGE_ALPHA = 20.0f;
+static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
+static constexpr float MIN_ALPHA = 0.0f;
+static constexpr float MAX_ALPHA = 0.84f;
+static constexpr float MIN_VALVE_POS = 25.0f;
+static constexpr float MAX_VALVE_POS = 90.0f;
 
 // Controller state variables
-constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
-constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
-constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
+static constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
+static constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
+static constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
 // Track duration of low chamber pressure for abort logic.
 inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
@@ -163,18 +163,18 @@ inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
 
 
     // ISP lookup axes: chamber pressure (pc) vs O/F.
-constexpr int ISP_PC_LEN = 29;
-constexpr int ISP_OF_LEN = 34;
+static constexpr int ISP_PC_LEN = 29;
+static constexpr int ISP_OF_LEN = 34;
 
-constexpr float isp_pc_axis_internal[ISP_PC_LEN] = {1.0f,   16.0f,  31.0f,  46.0f,  61.0f,  76.0f,  91.0f,  100.0f, 106.0f, 115.0f,
+static constexpr float isp_pc_axis_internal[ISP_PC_LEN] = {1.0f,   16.0f,  31.0f,  46.0f,  61.0f,  76.0f,  91.0f,  100.0f, 106.0f, 115.0f,
                                                     130.0f, 145.0f, 160.0f, 175.0f, 190.0f, 205.0f, 220.0f, 235.0f, 250.0f, 265.0f,
                                                     280.0f, 295.0f, 310.0f, 325.0f, 340.0f, 355.0f, 370.0f, 385.0f, 400.0f};
 
-constexpr float isp_of_axis_internal[ISP_OF_LEN] = {0.1000f, 0.2000f, 0.3000f, 0.4000f, 0.5000f, 0.6000f, 0.7000f, 0.8000f, 0.9000f, 1.0000f, 1.1000f, 1.2000f,
+static constexpr float isp_of_axis_internal[ISP_OF_LEN] = {0.1000f, 0.2000f, 0.3000f, 0.4000f, 0.5000f, 0.6000f, 0.7000f, 0.8000f, 0.9000f, 1.0000f, 1.1000f, 1.2000f,
                                                     1.2500f, 1.3000f, 1.3500f, 1.4000f, 1.4500f, 1.5000f, 1.5500f, 1.6000f, 1.7000f, 1.8000f, 1.9000f, 2.0000f,
                                                     2.1000f, 2.2000f, 2.3000f, 2.4000f, 2.5000f, 2.6000f, 2.7000f, 2.8000f, 2.9000f, 3.0000f};
 
-constexpr float isp_data_internal[] = {
+static constexpr float isp_data_internal[] = {
     1210.9f, 1368.0f, 1484.1f, 1564.1f, 1626.5f, 1682.0f, 1737.2f, 1798.2f, 1865.5f, 1933.9f, 2000.1f, 2109.7f, 2189.1f, 2251.5f, 2302.1f, 2346.5f, 2385.0f,
     2417.8f, 2445.2f, 2467.5f, 2498.3f, 2513.1f, 2516.0f, 2511.5f, 2502.5f, 2491.0f, 2477.9f, 2464.2f, 2450.2f, 2436.1f, 2422.1f, 2408.3f, 2394.8f, 2381.5f,
     1251.7f, 1413.1f, 1530.5f, 1617.0f, 1685.7f, 1744.7f, 1798.7f, 1851.6f, 1906.0f, 1963.0f, 2020.5f, 2108.9f, 2177.2f, 2247.4f, 2303.5f, 2350.1f, 2391.5f,
@@ -236,10 +236,10 @@ constexpr float isp_data_internal[] = {
 };
 
 // MPrime lookup axes: target thrust (lbf) vs O/F.
-constexpr int THRUST_AXIS_LEN = 100;
-constexpr int OF_AXIS_LEN = 100;
+static constexpr int THRUST_AXIS_LEN = 100;
+static constexpr int OF_AXIS_LEN = 100;
 
-constexpr float thrust_axis_internal[] = {
+static constexpr float thrust_axis_internal[] = {
     350.000000f, 354.040404f, 358.080808f, 362.121212f, 366.161616f, 370.202020f, 374.242424f, 378.282828f, 382.323232f, 386.363636f, 390.404040f, 394.444444f,
     398.484848f, 402.525253f, 406.565657f, 410.606061f, 414.646465f, 418.686869f, 422.727273f, 426.767677f, 430.808081f, 434.848485f, 438.888889f, 442.929293f,
     446.969697f, 451.010101f, 455.050505f, 459.090909f, 463.131313f, 467.171717f, 471.212121f, 475.252525f, 479.292929f, 483.333333f, 487.373737f, 491.414141f,
@@ -250,7 +250,7 @@ constexpr float thrust_axis_internal[] = {
     689.393939f, 693.434343f, 697.474747f, 701.515152f, 705.555556f, 709.595960f, 713.636364f, 717.676768f, 721.717172f, 725.757576f, 729.797980f, 733.838384f,
     737.878788f, 741.919192f, 745.959596f, 750.000000f};
 
-constexpr float of_axis_internal[] = {
+static constexpr float of_axis_internal[] = {
     1.000000f, 1.006061f, 1.012121f, 1.018182f, 1.024242f, 1.030303f, 1.036364f, 1.042424f, 1.048485f, 1.054545f, 1.060606f, 1.066667f, 1.072727f,
     1.078788f, 1.084848f, 1.090909f, 1.096970f, 1.103030f, 1.109091f, 1.115152f, 1.121212f, 1.127273f, 1.133333f, 1.139394f, 1.145455f, 1.151515f,
     1.157576f, 1.163636f, 1.169697f, 1.175758f, 1.181818f, 1.187879f, 1.193939f, 1.200000f, 1.206061f, 1.212121f, 1.218182f, 1.224242f, 1.230303f,
@@ -260,7 +260,7 @@ constexpr float of_axis_internal[] = {
     1.472727f, 1.478788f, 1.484848f, 1.490909f, 1.496970f, 1.503030f, 1.509091f, 1.515152f, 1.521212f, 1.527273f, 1.533333f, 1.539394f, 1.545455f,
     1.551515f, 1.557576f, 1.563636f, 1.569697f, 1.575758f, 1.581818f, 1.587879f, 1.593939f, 1.600000f};
 
-constexpr float fuel_valve_grid_internal[] = {
+static constexpr float fuel_valve_grid_internal[] = {
     46.575928f, 46.515430f, 46.455637f, 46.396534f, 46.338108f, 46.280346f, 46.223234f, 46.166761f, 46.110914f, 46.055681f, 46.001052f, 45.947015f, 45.893558f,
     45.840673f, 45.788347f, 45.736572f, 45.685338f, 45.632931f, 45.579397f, 45.526448f, 45.474074f, 45.422263f, 45.371005f, 45.320292f, 45.270112f, 45.220458f,
     45.171319f, 45.122687f, 45.074554f, 45.026910f, 44.979747f, 44.933059f, 44.886835f, 44.841070f, 44.781823f, 44.723320f, 44.665546f, 44.608485f, 44.552123f,
@@ -1032,7 +1032,7 @@ constexpr float fuel_valve_grid_internal[] = {
     81.274179f, 79.043562f, 77.151563f, 75.516511f, 74.082348f, 72.809056f, 71.667153f, 70.645217f, 69.743202f, 68.913329f, 68.145945f, 67.433148f, 66.768396f,
     66.146218f, 65.561992f, 65.011786f};
 
-constexpr float lox_valve_grid_internal[] = {
+static constexpr float lox_valve_grid_internal[] = {
     10.718479f, 10.765812f, 10.812497f, 10.858540f, 10.903947f, 10.948724f, 10.992879f, 11.036416f, 11.079344f, 11.121667f, 11.163392f, 11.204525f, 11.245072f,
     11.285039f, 11.324431f, 11.363256f, 11.401517f, 11.434970f, 11.463636f, 11.491780f, 11.519407f, 11.546524f, 11.573136f, 11.599250f, 11.624870f, 11.650003f,
     11.674655f, 11.698831f, 11.722536f, 11.745777f, 11.768558f, 11.790884f, 11.812762f, 11.834196f, 11.812771f, 11.791122f, 11.769254f, 11.747172f, 11.724881f,
