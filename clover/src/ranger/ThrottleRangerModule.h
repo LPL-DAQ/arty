@@ -49,7 +49,7 @@ ThrottleRangerModule() = delete;  // Explicitly prevent instantiation
 
 private:
 static std::pair<ThrottleRangerStateOutput, ThrottleIdleData> idle_tick();
-static std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t current_time);
+static std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc);
 static std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
 static std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
 static std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
@@ -82,15 +82,15 @@ enum class CalPhase {
     ERROR
 };
 
-void start_calibration( float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
-void calibration_seek_hardstop(ThrottleRangerStateOutput& out, float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
-void calibration_end_movement(ThrottleRangerStateOutput& out, uint32_t timestamp);
-void calibration_power_off(ThrottleRangerStateOutput& out, uint32_t timestamp);
-void calibration_repower(ThrottleRangerStateOutput& out, uint32_t timestamp);
-void calibration_complete(ThrottleRangerStateOutput& out, uint32_t timestamp);
-void calibration_measure(ThrottleRangerStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc);
-void calibration_error(ThrottleRangerStateOutput& out, uint32_t timestamp);
-int calibration_get_phase_id();
+static void start_calibration( float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+static void calibration_seek_hardstop(ThrottleRangerStateOutput& out, float fuel_pos, float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+static void calibration_end_movement(ThrottleRangerStateOutput& out, uint32_t timestamp);
+static void calibration_power_off(ThrottleRangerStateOutput& out, uint32_t timestamp);
+static void calibration_repower(ThrottleRangerStateOutput& out, uint32_t timestamp);
+static void calibration_complete(ThrottleRangerStateOutput& out, uint32_t timestamp);
+static void calibration_measure(ThrottleRangerStateOutput& out, float fuel_pos,float fuel_pos_enc,float lox_pos, float lox_pos_enc);
+static void calibration_error(ThrottleRangerStateOutput& out, uint32_t timestamp);
+static int calibration_get_phase_id();
 
 static inline CalPhase cal_phase = CalPhase::SEEK_HARDSTOP;
 

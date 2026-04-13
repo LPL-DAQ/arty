@@ -7,6 +7,7 @@
 #include "clover.pb.h"
 #include <expected>
 #include <zephyr/kernel.h>
+#include "../ControllerConfig.h"
 
 typedef TVCState TVCState;
 

@@ -1,4 +1,5 @@
 #include "ThrottleRangerModule.h"
+#include "../ControllerConfig.h"
 #include "../sensors/AnalogSensors.h"
 #include "../server.h"
 #include "../FlightController.h"
@@ -50,7 +51,8 @@ ThrottleRangerStateOutput ThrottleRangerModule::step_control_loop(DataPacket& da
         break;
     }
     case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE: {
-        auto [cal_out, cal_data] = calibrate_valve_tick(current_time);
+        // TODO: Pass through valve data
+        auto [cal_out, cal_data] = calibrate_valve_tick(current_time, 0.0f,0.0f,0.0f,0.0f);
         data.which_throttle_state_data = DataPacket_throttle_valve_calibration_data_tag;
         data.throttle_state_data.throttle_valve_calibration_data = cal_data;
         out = cal_out;
@@ -117,6 +119,7 @@ ThrottleRangerStateOutput ThrottleRangerModule::step_control_loop(DataPacket& da
     change_state(out.next_state);
 
     data.throttle_state = current_state;
+    return out;
 }
 
 
@@ -349,19 +352,12 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
 
     // Populate telemetry datadata.has_predicted_thrust = true;
     data.predicted_thrust = predicted_thrust;
-    data.has_predicted_of = true;
     data.predicted_of = predicted_of;
-    data.has_mdot_fuel = true;
     data.mdot_fuel = mdot_f;
-    data.has_mdot_lox = true;
     data.mdot_lox = mdot_lox;
-    data.has_change_alpha_cmd = true;
     data.change_alpha_cmd = change_alpha_cmd;
-    data.has_clamped_change_alpha_cmd = true;
     data.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
-    data.has_alpha = true;
     data.alpha = alpha;
-    data.has_thrust_from_alpha = true;
     data.thrust_from_alpha = thrust_from_alpha;
 
 
@@ -436,7 +432,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> ThrottleRange
     data.lox_hardstop_pos = cal_lox_hardstop_position;
     data.fuel_err = fuel_pos - (fuel_pos_enc+ cal_fuel_starting_error);
     data.lox_err = lox_pos - (lox_pos_enc + cal_lox_starting_error);
-    data.cal_phase = get_phase_id();
+    data.cal_phase = calibration_get_phase_id();
 
     return std::make_pair(out, data);
 }
