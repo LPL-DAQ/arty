@@ -41,6 +41,14 @@ public:
     RCSController() = delete;  // Explicitly prevent instantiation
 
 private:
+    static std::pair<RCSStateOutput, RCSIdleData> idle_tick();
+    static std::pair<RCSStateOutput, RCSIdleData> valve_primed_tick();
+    static std::pair<RCSStateOutput, RCSValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
+    static std::pair<RCSStateOutput, RCSIdleData> roll_primed_tick();
+    static std::pair<RCSStateOutput, RCSRollSequenceData> roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
+    static std::pair<RCSStateOutput, RCSFlightData> flight_tick();
+    static std::pair<RCSStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
+
     static inline uint32_t udp_sequence_number = 0;
 };
 

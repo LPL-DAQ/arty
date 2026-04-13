@@ -35,6 +35,13 @@ public:
     FlightController() = delete;  // Explicitly prevent instantiation
 
 private:
+    static std::pair<FlightStateOutput, FlightIdleData> idle_tick();
+    static std::pair<FlightStateOutput, FlightTakeoffData> takeoff_tick(int64_t current_time, int64_t start_time);
+    static std::pair<FlightStateOutput, FlightSequenceData> flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
+    static std::pair<FlightStateOutput, FlightLandingData> landing_tick(int64_t current_time, int64_t start_time);
+    static std::pair<FlightStateOutput, FlightAbortData> abort_tick(int64_t current_time, int64_t entry_time);
+    static std::pair<FlightStateOutput, FlightOffData> off_tick();
+
     static inline FlightStateOutput current_output = FlightStateOutput_init_default;
 };
 

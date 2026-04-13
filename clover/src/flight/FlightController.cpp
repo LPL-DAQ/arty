@@ -2,17 +2,20 @@
 #include "sensors/AnalogSensors.h"
 #include "ControllerConfig.h"
 #include "config.h"
-#include "flight/FlightStateAbort.h"
-#include "flight/FlightStateIdle.h"
-#include "flight/FlightStateTakeoff.h"
-#include "flight/FlightStateFlightSeq.h"
-#include "flight/FlightStateLanding.h"
-#include "flight/FlightStateOff.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
+
+namespace {
+    Trace x_trace;
+    Trace y_trace;
+    Trace z_trace;
+    Trace roll_trace;
+    bool flight_sequence_has_trace = false;
+    float flight_sequence_total_time = 0.0f;
+}
 
 
 // TODO: make throttle, tvc, rcs change states according to how this switches from takeoff -> flight -> landing
@@ -21,63 +24,125 @@ std::expected<void, Error> FlightController::change_state(FlightState new_state)
     if (current_state == new_state)
         return {};
 
-    switch (new_state) {
-    case FlightState_FLIGHT_STATE_IDLE:
-        current_state = new_state;
-        FlightStateIdle::init();
-        break;
-
-    case FlightState_FLIGHT_STATE_TAKEOFF:
-        if (current_state != FlightState_FLIGHT_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Takeoff, must be in Idle", get_state_name(current_state)));
-        }
+    if (new_state == FlightState_FLIGHT_STATE_TAKEOFF ||
+        new_state == FlightState_FLIGHT_STATE_FLIGHT_SEQ ||
+        new_state == FlightState_FLIGHT_STATE_LANDING) {
         sequence_start_time = k_uptime_get();
-        current_state = new_state;
-        FlightStateTakeoff::init();
-        break;
-
-    case FlightState_FLIGHT_STATE_FLIGHT_SEQ:
-        if (current_state != FlightState_FLIGHT_STATE_TAKEOFF) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to FlightSeq, must be in Takeoff", get_state_name(current_state)));
-        }
-        sequence_start_time = k_uptime_get();
-        current_state = new_state;
-        FlightStateFlightSeq::init(0.0f);
-        break;
-
-    case FlightState_FLIGHT_STATE_LANDING:
-        if (current_state != FlightState_FLIGHT_STATE_FLIGHT_SEQ) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Landing, must be in FlightSeq", get_state_name(current_state)));
-        }
-        sequence_start_time = k_uptime_get();
-        current_state = new_state;
-        FlightStateLanding::init();
-        break;
-
-    case FlightState_FLIGHT_STATE_ABORT:
-        if (current_state != FlightState_FLIGHT_STATE_TAKEOFF && current_state != FlightState_FLIGHT_STATE_FLIGHT_SEQ && current_state != FlightState_FLIGHT_STATE_LANDING) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Takeoff, FlightSeq, or Landing", get_state_name(current_state)));
-        }
+    }
+    if (new_state == FlightState_FLIGHT_STATE_ABORT) {
         abort_entry_time = k_uptime_get();
-        FlightStateAbort::init();
-        current_state = new_state;
-        break;
-
-    case FlightState_FLIGHT_STATE_OFF:
-        if (current_state != FlightState_FLIGHT_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Off, must be in Idle", get_state_name(current_state)));
-        }
-        current_state = new_state;
-        FlightStateOff::init();
-        break;
-
-    default:
-        break;
     }
 
+    current_state = new_state;
     LOG_INF("Changed Flight State to %s", get_state_name(current_state));
-
     return {};
+}
+
+std::pair<FlightStateOutput, FlightIdleData> FlightController::idle_tick()
+{
+    FlightStateOutput out{};
+    FlightIdleData data{};
+    out.next_state = FlightState_FLIGHT_STATE_IDLE;
+    return {out, data};
+}
+
+std::pair<FlightStateOutput, FlightTakeoffData> FlightController::takeoff_tick(int64_t current_time, int64_t start_time)
+{
+    FlightStateOutput out{};
+    FlightTakeoffData data{};
+
+    if (current_time - start_time > 1000) {
+        out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;
+    } else {
+        out.next_state = FlightState_FLIGHT_STATE_TAKEOFF;
+    }
+
+    return {out, data};
+}
+
+std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+{
+    FlightStateOutput out{};
+    FlightSequenceData data{};
+
+    float elapsed_time = static_cast<float>(current_time - start_time);
+    if (flight_sequence_total_time > 0.0f && elapsed_time > flight_sequence_total_time) {
+        out.next_state = FlightState_FLIGHT_STATE_LANDING;
+        return {out, data};
+    }
+
+    if (flight_sequence_has_trace) {
+        auto x_target = x_trace.sample(elapsed_time);
+        if (!x_target) {
+            LOG_ERR("Flight sequence X trace sampling failed: %s", x_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        auto y_target = y_trace.sample(elapsed_time);
+        if (!y_target) {
+            LOG_ERR("Flight sequence Y trace sampling failed: %s", y_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        auto z_target = z_trace.sample(elapsed_time);
+        if (!z_target) {
+            LOG_ERR("Flight sequence Z trace sampling failed: %s", z_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        auto roll_target = roll_trace.sample(elapsed_time);
+        if (!roll_target) {
+            LOG_ERR("Flight sequence roll trace sampling failed: %s", roll_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        out.z_acceleration = *z_target;
+        out.x_angular_acceleration = *x_target;
+        out.y_angular_acceleration = *y_target;
+        out.roll_position = *roll_target;
+    }
+    out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;
+    return {out, data};
+}
+
+std::pair<FlightStateOutput, FlightLandingData> FlightController::landing_tick(int64_t current_time, int64_t start_time)
+{
+    FlightStateOutput out{};
+    FlightLandingData data{};
+
+    if (current_time - start_time > 1000) {
+        out.next_state = FlightState_FLIGHT_STATE_IDLE;
+    } else {
+        out.next_state = FlightState_FLIGHT_STATE_LANDING;
+    }
+
+    return {out, data};
+}
+
+std::pair<FlightStateOutput, FlightAbortData> FlightController::abort_tick(int64_t current_time, int64_t entry_time)
+{
+    FlightStateOutput out{};
+    FlightAbortData data{};
+
+    if (current_time - entry_time > 500) {
+        out.next_state = FlightState_FLIGHT_STATE_IDLE;
+    } else {
+        out.next_state = FlightState_FLIGHT_STATE_ABORT;
+    }
+
+    return {out, data};
+}
+
+std::pair<FlightStateOutput, FlightOffData> FlightController::off_tick()
+{
+    FlightStateOutput out{};
+    FlightOffData data{};
+    out.next_state = FlightState_FLIGHT_STATE_OFF;
+    return {out, data};
 }
 
 std::expected<void, Error> FlightController::init()
@@ -94,33 +159,30 @@ std::expected<void, Error> FlightController::handle_load_sequence(const FlightLo
 {
     LOG_INF("Received load flight sequence request");
 
-    if (current_state != FlightState_FLIGHT_STATE_IDLE) {
-        return std::unexpected(Error::from_cause("Cannot load flight sequence from %s, must be in Idle", get_state_name(current_state)));
-    }
-
     if (req.y_position_trace.total_time_ms != req.x_position_trace.total_time_ms ||
         req.z_position_trace.total_time_ms != req.x_position_trace.total_time_ms ||
         req.roll_angle_trace.total_time_ms != req.x_position_trace.total_time_ms) {
         return std::unexpected(Error::from_cause("Flight sequence traces must have the same total_time_ms"));
     }
 
-    auto result_x = FlightStateFlightSeq::get_x_trace().load(req.x_position_trace);
+    auto result_x = x_trace.load(req.x_position_trace);
     if (!result_x)
         return std::unexpected(result_x.error().context("%s", "Invalid X position trace"));
 
-    auto result_y = FlightStateFlightSeq::get_y_trace().load(req.y_position_trace);
+    auto result_y = y_trace.load(req.y_position_trace);
     if (!result_y)
         return std::unexpected(result_y.error().context("%s", "Invalid Y position trace"));
 
-    auto result_z = FlightStateFlightSeq::get_z_trace().load(req.z_position_trace);
+    auto result_z = z_trace.load(req.z_position_trace);
     if (!result_z)
         return std::unexpected(result_z.error().context("%s", "Invalid Z position trace"));
 
-    auto result_roll = FlightStateFlightSeq::get_roll_trace().load(req.roll_angle_trace);
+    auto result_roll = roll_trace.load(req.roll_angle_trace);
     if (!result_roll)
         return std::unexpected(result_roll.error().context("%s", "Invalid roll angle trace"));
 
-    FlightStateFlightSeq::init(req.x_position_trace.total_time_ms);
+    flight_sequence_has_trace = true;
+    flight_sequence_total_time = req.x_position_trace.total_time_ms;
     return {};
 }
 
@@ -152,49 +214,49 @@ void FlightController::step_control_loop(DataPacket& data)
 
     switch (current_state) {
     case FlightState_FLIGHT_STATE_IDLE: {
-        auto [idle_out, idle_data] = FlightStateIdle::tick();
+        auto [idle_out, idle_data] = idle_tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
         data.flight_state_data.flight_idle_data = idle_data;
         current_output = idle_out;
         break;
     }
     case FlightState_FLIGHT_STATE_TAKEOFF: {
-        auto [takeoff_out, takeoff_data] = FlightStateTakeoff::tick(current_time, sequence_start_time);
+        auto [takeoff_out, takeoff_data] = takeoff_tick(current_time, sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_takeoff_data_tag;
         data.flight_state_data.flight_takeoff_data = takeoff_data;
         current_output = takeoff_out;
         break;
     }
     case FlightState_FLIGHT_STATE_FLIGHT_SEQ: {
-        auto [seq_out, seq_data] = FlightStateFlightSeq::tick(data.analog_sensors, current_time, sequence_start_time);
+        auto [seq_out, seq_data] = flight_seq_tick(data.analog_sensors, current_time, sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_sequence_data_tag;
         data.flight_state_data.flight_sequence_data = seq_data;
         current_output = seq_out;
         break;
     }
     case FlightState_FLIGHT_STATE_LANDING: {
-        auto [landing_out, landing_data] = FlightStateLanding::tick(current_time, sequence_start_time);
+        auto [landing_out, landing_data] = landing_tick(current_time, sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_landing_data_tag;
         data.flight_state_data.flight_landing_data = landing_data;
         current_output = landing_out;
         break;
     }
     case FlightState_FLIGHT_STATE_ABORT: {
-        auto [abort_out, abort_data] = FlightStateAbort::tick(current_time, abort_entry_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
         data.which_flight_state_data = DataPacket_flight_abort_data_tag;
         data.flight_state_data.flight_abort_data = abort_data;
         current_output = abort_out;
         break;
     }
     case FlightState_FLIGHT_STATE_OFF: {
-        auto [off_out, off_data] = FlightStateOff::tick();
+        auto [off_out, off_data] = off_tick();
         data.which_flight_state_data = DataPacket_flight_off_data_tag;
         data.flight_state_data.flight_off_data = off_data;
         current_output = off_out;
         break;
     }
     default: {
-        auto [idle_out, idle_data] = FlightStateIdle::tick();
+        auto [idle_out, idle_data] = idle_tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
         data.flight_state_data.flight_idle_data = idle_data;
         current_output = idle_out;

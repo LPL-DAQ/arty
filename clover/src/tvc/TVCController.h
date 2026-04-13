@@ -39,6 +39,12 @@ public:
     TVCController() = delete;  // Explicitly prevent instantiation
 
 private:
+    static std::pair<TVCStateOutput, TVCIdleData> idle_tick();
+    static std::pair<TVCStateOutput, TVCIdleData> trace_primed_tick();
+    static std::pair<TVCStateOutput, TVCSequenceData> sequence_tick(int64_t current_time, int64_t start_time);
+    static std::pair<TVCStateOutput, TVCFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+    static std::pair<TVCStateOutput, TVCAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
+
     static inline uint32_t udp_sequence_number = 0;
 };
 

@@ -52,6 +52,20 @@ public:
     ThrottleController() = delete;  // Explicitly prevent instantiation
 
 private:
+    static std::pair<ThrottleStateOutput, ThrottleIdleData> idle_tick();
+    static std::pair<ThrottleStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t current_time);
+    static std::pair<ThrottleStateOutput, ThrottleIdleData> valve_primed_tick();
+    static std::pair<ThrottleStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
+    static std::pair<ThrottleStateOutput, ThrottleIdleData> thrust_primed_tick();
+    static std::pair<ThrottleStateOutput, ThrottleThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
+    static std::pair<ThrottleStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+    static std::pair<ThrottleStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
+
+    static inline bool valve_sequence_has_fuel = false;
+    static inline bool valve_sequence_has_lox = false;
+    static inline float valve_sequence_fuel_total_time_ms = -1.0f;
+    static inline float valve_sequence_lox_total_time_ms = -1.0f;
+    static inline float thrust_sequence_total_time_ms = 0.0f;
     static inline uint32_t udp_sequence_number = 0;
 };
 

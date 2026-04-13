@@ -1,28 +1,21 @@
 #include "ThrottleController.h"
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
-#include "ThrottleStateAbort.h"
-#include "ThrottleStateFlight.h"
-#include "ranger/ThrottleStateCalibrateValve.h"
-#include "ThrottleStateIdle.h"
-#include "ThrottleStateThrustSeq.h"
-#include "ranger/ThrottleStateValveSeq.h"
 #include "../server.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+#include <utility>
 
 
 #if defined(CONFIG_RANGER)
-#include "ranger/ThrottleStateCalibrateValve.h"
-#include "ranger/ThrottleStateValveSeq.h"
 #include "ranger/ThrottleRanger.h"
 namespace ThrottleImpl = ThrottleRanger;
 
 #elif defined(CONFIG_HORNET)
-#include "hornet/ThrottleHornet.h"   // change path if your real header lives elsewhere
+#include "hornet/ThrottleHornet.h"
 namespace ThrottleImpl = ThrottleHornet;
 #else
 #error "Select either CONFIG_RANGER or CONFIG_HORNET"
@@ -30,83 +23,54 @@ namespace ThrottleImpl = ThrottleHornet;
 
 LOG_MODULE_REGISTER(ThrottleController, LOG_LEVEL_INF);
 
+static Trace throttle_thrust_trace;
 
 std::expected<void, Error> ThrottleController::change_state(ThrottleState new_state)
 {
     if (current_state == new_state)
         return {};
 
-
     switch (new_state) {
     case ThrottleState_THROTTLE_STATE_IDLE:
         current_state = new_state;
-        ThrottleStateIdle::init();
-
         break;
 
-
     case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE:
-        #if defined(CONFIG_RANGER)
-        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Calibrate Valve, must be in Idle", get_state_name(current_state)));
-        }
-        StateCalibrateValve::init(ThrottleImpl::fuel_get_pos_internal(), ThrottleImpl::fuel_get_pos_encoder(), ThrottleImpl::lox_get_pos_internal(), ThrottleImpl::lox_get_pos_encoder());
         current_state = new_state;
-        #endif
+        ThrottleImpl::init_calibrate_valve(
+            ThrottleImpl::fuel_get_pos_internal(),
+            ThrottleImpl::fuel_get_pos_encoder(),
+            ThrottleImpl::lox_get_pos_internal(),
+            ThrottleImpl::lox_get_pos_encoder());
         break;
 
     case ThrottleState_THROTTLE_STATE_VALVE_PRIMED:
-        #if defined(CONFIG_RANGER)
-
-        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Primed, must be in Idle", get_state_name(current_state)));
-        }
-        ThrottleStateIdle::init();
         current_state = new_state;
-        #endif
         break;
 
     case ThrottleState_THROTTLE_STATE_VALVE_SEQ:
-        #if defined(CONFIG_RANGER)
-
-        if (current_state != ThrottleState_THROTTLE_STATE_VALVE_PRIMED) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Valve Seq, must be in Valve Primed", get_state_name(current_state)));
-        }
-
-        // INIT IS IN THE HANDLER
         current_state = new_state;
-        #endif
+        ThrottleImpl::init_valve_sequence(
+            valve_sequence_has_fuel,
+            valve_sequence_has_lox,
+            valve_sequence_fuel_total_time_ms,
+            valve_sequence_lox_total_time_ms);
         break;
 
     case ThrottleState_THROTTLE_STATE_THRUST_PRIMED:
-        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Primed, must be in Idle", get_state_name(current_state)));
-        }
-        ThrottleStateIdle::init();
+        current_state = new_state;
+        ThrottleImpl::init_thrust_sequence(thrust_sequence_total_time_ms);
+        break;
+
+    case ThrottleState_THROTTLE_STATE_THRUST_SEQ:
         current_state = new_state;
         break;
 
     case ThrottleState_THROTTLE_STATE_FLIGHT:
-        if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Flight, must be in Idle", get_state_name(current_state)));
-        }
-        current_state = new_state;
-        ThrottleStateFlight::init();
-        break;
-
-    case ThrottleState_THROTTLE_STATE_THRUST_SEQ:
-        if (current_state != ThrottleState_THROTTLE_STATE_THRUST_PRIMED) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Thrust Seq, must be in Thrust Primed", get_state_name(current_state)));
-        }
-        // INIT IS IN THE HANDLER
         current_state = new_state;
         break;
 
     case ThrottleState_THROTTLE_STATE_ABORT:
-        if (current_state != ThrottleState_THROTTLE_STATE_THRUST_SEQ && current_state != ThrottleState_THROTTLE_STATE_VALVE_SEQ && current_state != ThrottleState_THROTTLE_STATE_FLIGHT) {
-            return std::unexpected(Error::from_cause("Cannot switch from %s to Abort, must be in Valve Seq, Thrust Seq, or Flight", get_state_name(current_state)));
-        }
-        ThrottleStateAbort::init();
         current_state = new_state;
         break;
     default:
@@ -147,74 +111,63 @@ void ThrottleController::step_control_loop(DataPacket& data)
     // --- PROCEDURAL LOGIC DISPATCHER ---
     switch (current_state) {
     case ThrottleState_THROTTLE_STATE_IDLE: {
-        auto [idle_out, idle_data] = ThrottleStateIdle::tick();
+        auto [idle_out, idle_data] = idle_tick();
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
         data.throttle_state_data.throttle_idle_data = idle_data;
         out = idle_out;
         break;
     }
     case ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE: {
-        #if defined(CONFIG_RANGER)
-
-        auto [cal_out, cal_data] = StateCalibrateValve::tick(
-            current_time, ThrottleImpl::fuel_get_pos_internal(), ThrottleImpl::lox_get_pos_internal(), ThrottleImpl::fuel_get_pos_encoder(), ThrottleImpl::lox_get_pos_encoder());
+        auto [cal_out, cal_data] = calibrate_valve_tick(current_time);
         data.which_throttle_state_data = DataPacket_throttle_valve_calibration_data_tag;
         data.throttle_state_data.throttle_valve_calibration_data = cal_data;
         out = cal_out;
-        #endif
         break;
     }
     case ThrottleState_THROTTLE_STATE_VALVE_PRIMED: {
-        #if defined(CONFIG_RANGER)
-
-        auto [primed_out, primed_data] = ThrottleStateIdle::tick();
-        primed_out.next_state = ThrottleState_THROTTLE_STATE_VALVE_PRIMED;
+        auto [primed_out, primed_data] = valve_primed_tick();
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
         data.throttle_state_data.throttle_idle_data = primed_data;
         out = primed_out;
-        #endif
         break;
     }
     case ThrottleState_THROTTLE_STATE_VALVE_SEQ: {
-        #if defined(CONFIG_RANGER)
-        auto [seq_out, seq_data] = ThrottleStateValveSeq::tick(current_time, sequence_start_time);
+        auto [seq_out, seq_data] = valve_sequence_tick(current_time);
         data.which_throttle_state_data = DataPacket_throttle_valve_sequence_data_tag;
         data.throttle_state_data.throttle_valve_sequence_data = seq_data;
         out = seq_out;
-        #endif
         break;
     }
     case ThrottleState_THROTTLE_STATE_THRUST_PRIMED: {
-        auto [thrust_primed_out, thrust_primed_data] = ThrottleStateIdle::tick();
-        thrust_primed_out.next_state = ThrottleState_THROTTLE_STATE_THRUST_PRIMED;
+        auto [thrust_primed_out, thrust_primed_data] = thrust_primed_tick();
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
         data.throttle_state_data.throttle_idle_data = thrust_primed_data;
         out = thrust_primed_out;
         break;
     }
     case ThrottleState_THROTTLE_STATE_THRUST_SEQ: {
-        auto [thrust_out, thrust_data] = StateThrustSeq::tick(data.analog_sensors, current_time, sequence_start_time);
+        auto [thrust_out, thrust_data] = thrust_sequence_tick(data.analog_sensors, current_time);
         data.which_throttle_state_data = DataPacket_throttle_thrust_sequence_data_tag;
         data.throttle_state_data.throttle_thrust_sequence_data = thrust_data;
         out = thrust_out;
         break;
     }
     case ThrottleState_THROTTLE_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = ThrottleStateFlight::tick(data.analog_sensors);
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
         data.which_throttle_state_data = DataPacket_throttle_flight_data_tag;
         data.throttle_state_data.throttle_flight_data = flight_data;
         out = flight_out;
         break;
     }
     case ThrottleState_THROTTLE_STATE_ABORT: {
-        auto [abort_out, abort_data] = ThrottleStateAbort::tick(current_time, abort_entry_time, DEFAULT_FUEL_POS, DEFAULT_LOX_POS);
+        auto [abort_out, abort_data] = abort_tick(current_time);
         data.which_throttle_state_data = DataPacket_throttle_abort_data_tag;
         data.throttle_state_data.throttle_abort_data = abort_data;
         out = abort_out;
         break;
     }
     default: {
-        auto [idle_out, idle_data] = ThrottleStateIdle::tick();
+        auto [idle_out, idle_data] = idle_tick();
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
         data.throttle_state_data.throttle_idle_data = idle_data;
         out = idle_out;
@@ -272,10 +225,11 @@ std::expected<void, Error> ThrottleController::handle_load_thrust_sequence(const
 {
     LOG_INF("Received load thrust sequence request");
 
-    auto result = StateThrustSeq::get_trace().load(req.thrust_trace_lbf);
+    auto result = throttle_thrust_trace.load(req.thrust_trace_lbf);
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid thrust trace"));
-    StateThrustSeq::init(req.thrust_trace_lbf.total_time_ms);
+
+    thrust_sequence_total_time_ms = req.thrust_trace_lbf.total_time_ms;
 
     auto ret = change_state(ThrottleState_THROTTLE_STATE_THRUST_PRIMED);
     if (!ret.has_value()) {
@@ -296,6 +250,7 @@ std::expected<void, Error> ThrottleController::handle_start_thrust_sequence(cons
     return {};
 }
 
+// TODO: fix this so it is done in a way that actually makes
 std::expected<void, Error> ThrottleController::handle_load_valve_sequence(const ThrottleLoadValveSequenceRequest& req)
 {
     #if defined(CONFIG_RANGER)
@@ -306,32 +261,28 @@ std::expected<void, Error> ThrottleController::handle_load_valve_sequence(const 
         return std::unexpected(Error::from_cause("No sequences provided in load request"));
     }
 
-    if (has_fuel && has_lox) {
+    valve_sequence_has_fuel = has_fuel;
+    valve_sequence_has_lox = has_lox;
+    valve_sequence_fuel_total_time_ms = -1.0f;
+    valve_sequence_lox_total_time_ms = -1.0f;
 
-        auto result = ThrottleStateValveSeq::get_fuel_trace().load(req.fuel_trace_deg);
+    if (has_fuel) {
+        auto result = ThrottleImpl::get_fuel_trace().load(req.fuel_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid fuel trace"));
-        result = ThrottleStateValveSeq::get_lox_trace().load(req.lox_trace_deg);
+        valve_sequence_fuel_total_time_ms = req.fuel_trace_deg.total_time_ms;
+    }
+
+    if (has_lox) {
+        auto result = ThrottleImpl::get_lox_trace().load(req.lox_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        ThrottleStateValveSeq::init(true, true, req.fuel_trace_deg.total_time_ms, req.lox_trace_deg.total_time_ms);
-    }
-    else if (has_fuel) {
-        auto result = ThrottleStateValveSeq::get_fuel_trace().load(req.fuel_trace_deg);
-        if (!result)
-            return std::unexpected(result.error().context("%s", "Invalid fuel trace"));
-        ThrottleStateValveSeq::init(true, false, req.fuel_trace_deg.total_time_ms, -1.0f);
-    }
-    else if (has_lox) {
-        auto result = ThrottleStateValveSeq::get_lox_trace().load(req.lox_trace_deg);
-        if (!result)
-            return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        ThrottleStateValveSeq::init(false, true, -1.0f, req.lox_trace_deg.total_time_ms);
+        valve_sequence_lox_total_time_ms = req.lox_trace_deg.total_time_ms;
     }
 
     auto ret = change_state(ThrottleState_THROTTLE_STATE_VALVE_PRIMED);
     if (!ret.has_value()) {
-        return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
+        return std::unexpected(ret.error().context("Failed to change state to valve primed"));
     }
     #endif
     return {};
@@ -445,6 +396,108 @@ std::expected<void, Error> ThrottleController::handle_power_off(const ThrottlePo
         return std::unexpected(Error::from_cause("Unknown valve identifier provided to power off command"));
     }
     return {};
+}
+
+std::pair<ThrottleStateOutput, ThrottleIdleData> ThrottleController::idle_tick()
+{
+    ThrottleStateOutput out{};
+    ThrottleIdleData data{};
+    out.power_on = true;
+    out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
+    return {out, data};
+}
+
+std::pair<ThrottleStateOutput, ThrottleValveCalibrationData> ThrottleController::calibrate_valve_tick(uint32_t current_time)
+{
+    return ThrottleImpl::calibrate_valve_tick(
+        current_time,
+        ThrottleImpl::fuel_get_pos_internal(),
+        ThrottleImpl::lox_get_pos_internal(),
+        ThrottleImpl::fuel_get_pos_encoder(),
+        ThrottleImpl::lox_get_pos_encoder());
+}
+
+std::pair<ThrottleStateOutput, ThrottleIdleData> ThrottleController::valve_primed_tick()
+{
+    auto [out, data] = idle_tick();
+    out.next_state = ThrottleState_THROTTLE_STATE_VALVE_PRIMED;
+    return {out, data};
+}
+
+std::pair<ThrottleStateOutput, ThrottleValveSequenceData> ThrottleController::valve_sequence_tick(int64_t current_time)
+{
+    return ThrottleImpl::valve_sequence_tick(current_time, sequence_start_time);
+}
+
+std::pair<ThrottleStateOutput, ThrottleIdleData> ThrottleController::thrust_primed_tick()
+{
+    auto [out, data] = idle_tick();
+    out.next_state = ThrottleState_THROTTLE_STATE_THRUST_PRIMED;
+    return {out, data};
+}
+
+std::pair<ThrottleStateOutput, ThrottleThrustSequenceData> ThrottleController::thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time)
+{
+    ThrottleStateOutput out{};
+    ThrottleThrustSequenceData data{};
+
+    float elapsed_time = current_time - sequence_start_time;
+    if (elapsed_time > thrust_sequence_total_time_ms) {
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
+        return {out, data};
+    }
+
+    auto target_result = throttle_thrust_trace.sample(elapsed_time);
+    if (!target_result) {
+        LOG_ERR("Failed to sample thrust_trace: %s", target_result.error().build_message().c_str());
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
+        return {out, data};
+    }
+
+    float target_thrust_lbf = *target_result;
+    out.has_thrust = true;
+    out.thrust = target_thrust_lbf;
+    out.power_on = true;
+    out.next_state = ThrottleState_THROTTLE_STATE_THRUST_SEQ;
+
+    data.target_thrust = target_thrust_lbf;
+    data.thrust_error = 0.0f;
+
+    return {out, data};
+}
+
+std::pair<ThrottleStateOutput, ThrottleFlightData> ThrottleController::flight_tick(const AnalogSensorReadings& analog_sensors)
+{
+    ThrottleStateOutput out{};
+    ThrottleFlightData data{};
+
+    float target_thrust = FlightController::get_z_acceleration();
+    out.has_thrust = true;
+    out.thrust = target_thrust;
+    out.power_on = true;
+    out.next_state = ThrottleState_THROTTLE_STATE_FLIGHT;
+
+    return {out, data};
+}
+
+std::pair<ThrottleStateOutput, ThrottleAbortData> ThrottleController::abort_tick(uint32_t current_time)
+{
+    ThrottleStateOutput out{};
+    ThrottleAbortData data{};
+
+    out.power_on = true;
+    out.has_fuel_pos = true;
+    out.fuel_pos = DEFAULT_FUEL_POS;
+    out.has_lox_pos = true;
+    out.lox_pos = DEFAULT_LOX_POS;
+
+    if (current_time - abort_entry_time > 500) {
+        out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
+    } else {
+        out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
+    }
+
+    return {out, data};
 }
 
 const char* ThrottleController::get_state_name(ThrottleState state)

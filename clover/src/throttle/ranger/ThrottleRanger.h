@@ -7,6 +7,15 @@
 namespace ThrottleRanger {
 
 std::expected<void, Error> tick(ThrottleStateOutput& output, DataPacket& data);
+std::unexpected<void, Error> ThrottleRanger::thrust_trace_tick(ThrottleStateOutput& output, DataPacket& data);
+void init_calibrate_valve(float fuel_pos, float fuel_pos_enc, float lox_pos, float lox_pos_enc);
+std::pair<ThrottleStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp, float fuel_pos, float lox_pos, float fuel_pos_enc, float lox_pos_enc);
+void init_valve_sequence(bool has_fuel_trace, bool has_lox_trace, float fuel_total_time_ms, float lox_total_time_ms);
+std::pair<ThrottleStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
+Trace& get_fuel_trace();
+Trace& get_lox_trace();
+void init_thrust_sequence(float total_time_ms);
+
 // fuel, lox
 float fuel_get_pos_internal();
 float fuel_get_pos_encoder();
