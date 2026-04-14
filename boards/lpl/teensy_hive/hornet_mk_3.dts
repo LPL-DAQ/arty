@@ -5,6 +5,7 @@ Hornet Mk. 3 board.
 /dts-v1/;
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-arm.h>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
 #define ANALOG_SENSORS_ADC_OVERSAMPLING 5
@@ -53,6 +54,13 @@ TODO:
 
     chosen {
         zephyr,console = &cdc_acm_uart0;
+    };
+
+    psram: memory@70000000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x70000000 0x01000000>;
+        zephyr,memory-region = "PSRAM";
+        zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
     };
 };
 
@@ -240,4 +248,22 @@ TODO:
 &enet_mac {
     /delete-property/ nxp,unique-mac;
     local-mac-address = [ 67 67 67 67 67 67  ];
+};
+
+&flexspi2 {
+    status = "okay";
+    reg = <0x402a4000 0x4000>, <0x70000000 DT_SIZE_M(16)>;
+    reg-names = "reg_base", "ahb";
+
+    ahb-bufferable;
+    ahb-cacheable;
+    ahb-prefetch;
+
+    psram0: psram@0 {
+        compatible = "nxp,imx-flexspi-aps6404l";
+        reg = <0x0 DT_SIZE_M(16)>;
+        spi-max-frequency = <84000000>;
+
+        status = "okay";
+    };
 };
