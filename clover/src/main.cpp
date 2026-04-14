@@ -14,23 +14,19 @@
 #include "FlightController.h"
 #include "server.h"
 
-extern "C" {
-#include <app/drivers/blink.h>
-}
+#ifdef CONFIG_HORNET
+
+#elif CONFIG_RANGER
+#include "ThrottleValve.h"
+
+#else
+#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
+#endif
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 int main(void)
 {
-
-    // Status LED
-    const struct device* blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
-    if (!device_is_ready(blink)) {
-        LOG_ERR("Blink LED device not ready");
-        return 0;
-    }
-    blink_set_period_ms(blink, 1000u);
-
     // Serial over USB setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB is not enabled.");
@@ -55,6 +51,8 @@ int main(void)
     //     return 0;
     // }
 
+#ifdef CONFIG_RANGER
+
     LOG_INF("Initializing fuel throttle valve");
     if (auto result = FuelValve::init(); !result) {
         LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
@@ -66,6 +64,8 @@ int main(void)
         LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
         return 0;
     }
+
+#endif
 
     // LOG_INF("Initializing LiDAR");
     // int err = lidar_init();

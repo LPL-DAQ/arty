@@ -3,6 +3,16 @@
 #include "flight/FlightController.h"
 #include "MutexGuard.h"
 #include "server.h"
+
+#ifdef CONFIG_HORNET
+
+#elif CONFIG_RANGER
+#include "ThrottleValve.h"
+
+#else
+#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
+#endif
+
 #include "config.h"
 
 #include "sensors/AnalogSensors.h"

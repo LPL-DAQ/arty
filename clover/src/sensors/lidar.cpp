@@ -67,7 +67,7 @@ K_THREAD_DEFINE(lidar_tid, 2048, lidar_thread, nullptr, nullptr, nullptr, 5, 0, 
 
 int lidar_init()
 {
-    lidar_1 = DEVICE_DT_GET(DT_NODELABEL(lpuart4));  // LiDAR is connected to UART4 (pins 7 & 8)
+    lidar_1 = DEVICE_DT_GET(DT_NODELABEL(lpuart2));  // LiDAR is connected to UART4 (pins 7 & 8)
     if (!device_is_ready(lidar_1)) {
         LOG_ERR("LiDAR 1 device not ready");
         return -ENODEV;
