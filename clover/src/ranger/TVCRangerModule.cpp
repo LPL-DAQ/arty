@@ -84,8 +84,6 @@ void TVCRangerModule::step_control_loop(DataPacket& data )
     data.tvc_state = current_state;
 }
 
-
-
 std::expected<void, Error> TVCRangerModule::change_state(TVCState new_state)
 {
     if (current_state == new_state)
