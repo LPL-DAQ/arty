@@ -14,8 +14,7 @@
 typedef ThrottleState ThrottleState;
 
 
-class ThrottleRangerModule {
-public:
+namespace ThrottleRangerModule {
 // Define nominal safe positions
 static constexpr float DEFAULT_FUEL_POS = 81.0f;
 static constexpr float DEFAULT_LOX_POS = 74.0f;
@@ -31,29 +30,26 @@ static ThrottleState state()
     return current_state;
 }
 
-
-static ThrottleRangerStateOutput step_control_loop(DataPacket& data);
+ThrottleRangerStateOutput step_control_loop(DataPacket& data);
 
 // Request handlers
-static std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
-static std::expected<void, Error> start_valve_sequence();
-static std::expected<void, Error> load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
-static std::expected<void, Error> start_thrust_sequence();
+std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
+std::expected<void, Error> start_valve_sequence();
+std::expected<void, Error> load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
+std::expected<void, Error> start_thrust_sequence();
 
-static std::expected<void, Error> power_on(const ThrottlePowerOnRequest& req);
-static std::expected<void, Error> power_off(const ThrottlePowerOffRequest& req);
+std::expected<void, Error> power_on(const ThrottlePowerOnRequest& req);
+std::expected<void, Error> power_off(const ThrottlePowerOffRequest& req);
 
-static std::expected<void, Error> change_state(ThrottleState new_state);
-static const char* get_state_name(ThrottleState state);
-ThrottleRangerModule() = delete;  // Explicitly prevent instantiation
+std::expected<void, Error> change_state(ThrottleState new_state);
+const char* get_state_name(ThrottleState state);
 
-private:
-static std::pair<ThrottleRangerStateOutput, ThrottleIdleData> idle_tick();
-static std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc);
-static std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
-static std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
-static std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
-static std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
+std::pair<ThrottleRangerStateOutput, ThrottleIdleData> idle_tick();
+std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc);
+std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
+std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
+std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
 
 static inline bool valve_sequence_has_fuel = false;
 static inline bool valve_sequence_has_lox = false;
@@ -1808,7 +1804,7 @@ static constexpr float lox_valve_grid_internal[] = {
     84.999998f, 84.999998f, 84.999998f};
 
 
-};
+}
 
 extern struct k_msgq telemetry_msgq;
 

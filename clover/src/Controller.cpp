@@ -10,19 +10,26 @@
 #include <zephyr/logging/log.h>
 
 #if CONFIG_RANGER
-    #include "ranger/TVCRangerModule.h"
-    #include "ranger/TVCRangerActuator.h"
-    #include "ranger/RCSHornetModule.h"
-    #include "ranger/RCSRangerActuator.h"
-    #include "ranger/ThrottleRangerModule.h"
-    #include "ranger/ThrottleRangerActuator.h"
+#include "ranger/TVCRangerModule.h"
+#include "ranger/TVCRangerActuator.h"
+#include "ranger/RCSHornetModule.h"
+#include "ranger/RCSRangerActuator.h"
+#include "ranger/ThrottleRangerModule.h"
+#include "ranger/ThrottleRangerActuator.h"
+namespace ThrottleImpl = ThrottleRangerModule;
+namespace TVCImpl = TVCRangerModule;
+namespace RCSImpl = RCSRangerModule;
+
 #elif CONFIG_HORNET
-    #include "hornet/TVCHornetModule.h"
-    #include "hornet/TVCHornetActuator.h"
-    #include "hornet/RCSHornetModule.h"
-    #include "hornet/RCSHornetActuator.h"
-    #include "hornet/ThrottleHornetModule.h"
-    #include "hornet/ThrottleHornetActuator.h"
+#include "hornet/TVCHornetModule.h"
+#include "hornet/TVCHornetActuator.h"
+#include "hornet/RCSHornetModule.h"
+#include "hornet/RCSHornetActuator.h"
+#include "hornet/ThrottleHornetModule.h"
+#include "hornet/ThrottleHornetActuator.h"
+namespace ThrottleImpl = ThrottleHornetModule;
+namespace TVCImpl = TVCHornetModule;
+namespace RCSImpl = RCSHornetModule;
 #else
     #error "No configuration defined. Please define CONFIG_RANGER or CONFIG_HORNET in your build configuration."
 #endif
@@ -37,15 +44,17 @@ K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
 k_work_q controller_step_work_q;
 
 
+
 std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
     if (current_state == new_state)
         return {};
 
-
     current_state = new_state;
     return {};
 }
+
+
 
 K_WORK_DEFINE(control_loop, Controller::step_control_loop);
 
@@ -112,23 +121,28 @@ void Controller::step_control_loop(k_work*)
     // TODO: Remove OFF
     FlightController::step_control_loop(data);
 
-    #if CONFIG_RANGER_TVC
+    #if CONFIG_RANGER
         auto tvc_output = TVCRangerModule::step_control_loop(data);
         TVCRangerActuator::tick(tvc_output);
         auto rcs_output = RCSRangerModule::step_control_loop(data);
         RCSRangerActuator::tick(rcs_output);
         auto throttle_output = ThrottleRangerModule::step_control_loop(data);
         ThrottleRangerActuator::tick(throttle_output);
-    #elseif CONFIG_HORNET_TVC
+    #elif CONFIG_HORNET
         auto tvc_output = TVCHornetModule::step_control_loop(data);
         TVCHornetActuator::tick(tvc_output);
-        auto rcs_output = RCSRangerModule::step_control_loop(data);
-        RCSRangerActuator::tick(rcs_output);
+        auto rcs_output = RCSHornetModule::step_control_loop(data);
+        RCSHornetActuator::tick(rcs_output);
         auto throttle_output = ThrottleHornetModule::step_control_loop(data);
         ThrottleHornetActuator::tick(throttle_output);
     #endif
 
-
+    data.state = current_state;
+    data.throttle_state = throttle_output.next_state;
+    data.tvc_state = tvc_output.next_state;
+    data.rcs_state = rcs_output.next_state;
+    data.controller_timing.controller_tick_time_ns = (k_cycle_get_64() - start_cycle) * (1e9f / SystemCoreClock);
+    data.sequence_number = 0; // TODO: how is this supposed to be set?
 
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {
@@ -145,11 +159,7 @@ void Controller::step_control_loop(k_work*)
     }
 
 }
-
-// TODO: Handlers for here, which change system state and cascade to subsystems
-
-// TODO: reset valve position handler
-
+// TODO: Throttle valve seq vs throttle thrust seq
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_INF("Received abort request");
@@ -160,6 +170,266 @@ std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
     }
     return {};
 }
+
+// TODO: Move state checkers into the change_state method. Only checks on the request itself should be done in handler
+
+std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const ThrottleLoadValveSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Throttle valve sequence load rejected unless system is idle"));
+    }
+
+    if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Throttle must be idle before loading a valve sequence"));
+    }
+    #if CONFIG_RANGER
+        return ThrottleRangerModule::load_valve_sequence(req);
+    #else // CONFIG_HORNET
+    return std::unexpected(Error::from_cause("Must be ranger config for valve sequences"));
+    #endif
+
+}
+
+std::expected<void, Error> Controller::handle_load_throttle_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Throttle thrust sequence load rejected unless system is idle"));
+    }
+
+    if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Throttle must be idle before loading a thrust sequence"));
+    }
+
+    return ThrottleImpl::load_thrust_sequence(req);
+}
+
+std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const RCSLoadValveSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("RCS valve sequence load rejected unless system is idle"));
+    }
+
+    if (RCSImpl::state() != RCSState_RCS_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("RCS must be idle before loading a valve or motor sequence"));
+    }
+
+    #if CONFIG_RANGER
+    return RCSRangerModule::load_motor_sequence(req);
+    #else // CONFIG_HORNET
+    return RCSHornetModule::load_valve_sequence(req);
+    #endif
+}
+
+std::expected<void, Error> Controller::handle_load_rcs_roll_sequence(const RCSLoadRollSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("RCS roll sequence load rejected unless system is idle"));
+    }
+
+    if (RCSImpl::state() != RCSState_RCS_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("RCS must be idle before loading a roll sequence"));
+    }
+
+    return RCSImpl::load_roll_sequence(req);
+}
+
+std::expected<void, Error> Controller::handle_load_tvc_sequence(const TVCLoadSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("TVC load sequence rejected unless system is idle"));
+    }
+
+    if (TVCImpl::state() != TVCState_TVC_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("TVC must be idle before loading a sequence"));
+    }
+
+    return TVCImpl::load_sequence(req);
+}
+
+std::expected<void, Error> Controller::handle_load_flight_sequence(const FlightLoadSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Flight load sequence rejected unless system is idle"));
+    }
+    if (FlightController::state() != FlightState_FLIGHT_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Flight controller must be idle before loading a sequence"));
+    }
+    return FlightController::load_sequence(req);
+}
+
+std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(const ThrottleStartValveSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_THROTTLE_PRIMED ) {
+        return std::unexpected(Error::from_cause("Throttle valve sequence start rejected unless system is primed"));
+    }
+
+    #if CONFIG_RANGER
+    auto ret = ThrottleRangerModule::start_valve_sequence();
+    if (!ret.has_value()) {
+        return ret;
+    }
+    return change_state(SystemState_STATE_THROTTLE);
+    #else
+        return std::unexpected(Error::from_cause("Throttle valve sequence start unsupported on Hornet"));
+    #endif
+}
+
+std::expected<void, Error> Controller::handle_start_throttle_thrust_sequence(const ThrottleStartThrustSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_THROTTLE_PRIMED) {
+        return std::unexpected(Error::from_cause("Throttle thrust sequence start rejected unless system is primed"));
+    }
+
+    auto ret = ThrottleImpl::start_thrust_sequence();
+    if (!ret.has_value()) {
+        return ret;
+    }
+
+    return change_state(SystemState_STATE_THROTTLE);
+}
+
+std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const RCSStartValveSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_RCS_PRIMED) {
+        return std::unexpected(Error::from_cause("RCS valve sequence start rejected unless system is RCS primed"));
+    }
+
+#if CONFIG_RANGER
+    auto ret = RCSRangerModule::start_motor_sequence();
+#elif CONFIG_HORNET
+    auto ret = RCSHornetModule::start_valve_sequence();
+#endif
+    if (!ret.has_value()) {
+        return ret;
+    }
+
+    return change_state(SystemState_STATE_RCS);
+}
+
+std::expected<void, Error> Controller::handle_start_rcs_roll_sequence(const RCSStartRollSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_RCS_PRIMED) {
+        return std::unexpected(Error::from_cause("RCS roll sequence start rejected unless system is RCS primed"));
+    }
+
+    auto ret = RCSImpl::start_roll_sequence();
+    if (!ret.has_value()) {
+        return ret;
+    }
+
+    return change_state(SystemState_STATE_RCS);
+}
+
+std::expected<void, Error> Controller::handle_start_tvc_sequence(const TVCStartSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_TVC_PRIMED && current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
+        return std::unexpected(Error::from_cause("TVC sequence start rejected unless system is primed"));
+    }
+
+    auto ret = TVCImpl::start_sequence();
+    if (!ret.has_value()) {
+        return ret;
+    }
+
+    return change_state(current_state == SystemState_STATE_STATIC_FIRE_PRIMED ? SystemState_STATE_STATIC_FIRE : SystemState_STATE_TVC);
+}
+
+std::expected<void, Error> Controller::handle_start_flight_sequence(const FlightStartSequenceRequest& req)
+{
+    if (current_state != SystemState_STATE_FLIGHT_PRIMED) {
+        return std::unexpected(Error::from_cause("Flight start rejected unless system is Flight Primed"));
+    }
+
+    auto ret = FlightController::start_sequence();
+    if (!ret.has_value()) {
+        return ret;
+    }
+
+    return change_state(SystemState_STATE_FLIGHT);
+}
+
+std::expected<void, Error> Controller::handle_prime(const PrimeRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Prime request rejected unless system is idle"));
+    }
+
+    switch (req.target) {
+    case PrimeTarget_PRIME_TARGET_THROTTLE:
+        if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_THRUST_PRIMED) {
+            return std::unexpected(Error::from_cause("Throttle must be primed before system prime"));
+        }
+        return change_state(SystemState_STATE_THROTTLE_PRIMED);
+
+    case PrimeTarget_PRIME_TARGET_TVC:
+        if (TVCImpl::state() != TVCState_TVC_STATE_TRACE_PRIMED) {
+            return std::unexpected(Error::from_cause("TVC must be primed before system prime"));
+        }
+        return change_state(SystemState_STATE_TVC_PRIMED);
+
+    case PrimeTarget_PRIME_TARGET_RCS:
+        if (RCSImpl::state() != RCSState_RCS_STATE_ROLL_PRIMED) {
+            return std::unexpected(Error::from_cause("RCS must be primed before system prime"));
+        }
+        return change_state(SystemState_STATE_RCS_PRIMED);
+
+    case PrimeTarget_PRIME_TARGET_STATIC_FIRE:
+        if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_THRUST_PRIMED || TVCImpl::state() != TVCState_TVC_STATE_TRACE_PRIMED) {
+            return std::unexpected(Error::from_cause("Static fire prime requires both Throttle and TVC to be primed"));
+        }
+        return change_state(SystemState_STATE_STATIC_FIRE_PRIMED);
+
+    default:
+        return std::unexpected(Error::from_cause("Unknown prime target: %d", req.target));
+    }
+}
+
+std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
+{
+    HaltTarget target = req.has_target ? req.target : HaltTarget_HALT_TARGET_ALL;
+
+    if (target == HaltTarget_HALT_TARGET_ALL) {
+
+        FlightController::change_state(FlightState_FLIGHT_STATE_IDLE);
+        ThrottleImpl::change_state(ThrottleState_THROTTLE_STATE_IDLE);
+        TVCImpl::change_state(TVCState_TVC_STATE_IDLE);
+        RCSImpl::change_state(RCSState_RCS_STATE_IDLE);
+
+        return change_state(SystemState_STATE_IDLE);
+    }
+
+    switch (target) {
+    case HaltTarget_HALT_TARGET_THROTTLE:
+        ThrottleImpl::change_state(ThrottleState_THROTTLE_STATE_IDLE);
+        return {};
+
+    case HaltTarget_HALT_TARGET_TVC:
+        TVCImpl::change_state(TVCState_TVC_STATE_IDLE);
+        return {};
+
+    case HaltTarget_HALT_TARGET_RCS:
+        RCSImpl::change_state(RCSState_RCS_STATE_IDLE);
+        return {};
+
+    case HaltTarget_HALT_TARGET_FLIGHT: {
+        FlightController::change_state(FlightState_FLIGHT_STATE_IDLE);
+        return {};
+    }
+    default:
+        return std::unexpected(Error::from_cause("Unknown halt target: %d", target));
+    }
+}
+
+std::expected<void, Error> Controller::handle_calibrate_throttle(const ThrottleCalibrateValveRequest& req)
+{
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("Throttle calibration rejected unless system is idle"));
+    }
+
+    return ThrottleImpl::change_state(ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE);
+
+}
+
 
 const char* Controller::get_state_name(SystemState state)
 {
@@ -175,10 +445,18 @@ const char* Controller::get_state_name(SystemState state)
         return "TVC";
     if (state == SystemState_STATE_RCS)
         return "RCS";
-    if (state == SystemState_STATE_TVC_THROTTLE)
-        return "TVC_Throttle";
-    if (state == SystemState_STATE_TVC_THROTTLE_RCS)
-        return "TVC_Throttle_RCS";
+    if (state == SystemState_STATE_FLIGHT_PRIMED)
+        return "Flight_Primed";
+    if (state == SystemState_STATE_THROTTLE_PRIMED)
+        return "Throttle_Primed";
+    if (state == SystemState_STATE_TVC_PRIMED)
+        return "TVC_Primed";
+    if (state == SystemState_STATE_RCS_PRIMED)
+        return "RCS_Primed";
+    if (state == SystemState_STATE_STATIC_FIRE_PRIMED)
+        return "Static_Fire_Primed";
+    if (state == SystemState_STATE_STATIC_FIRE)
+        return "Static_Fire";
     return "Unknown State";  // Unknown state
 }
 

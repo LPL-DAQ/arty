@@ -72,6 +72,10 @@ message Request {
     FlightStartSequenceRequest flight_start_sequence = 32;
     // Transitions (FLIGHT_SEQ, LANDING, TAKEOFF) -> IDLE
     FlightHaltRequest flight_halt = 33;
+    // System-level halt that may target one module or all modules.
+    HaltRequest halt = 34;
+    // System-level prime request for broader system priming.
+    PrimeRequest prime = 35;
   }
 }
 
@@ -280,6 +284,31 @@ message FlightLoadSequenceRequest {
 
 message FlightStartSequenceRequest {}
 
+message HaltRequest {
+  optional HaltTarget target = 1;
+}
+
+message PrimeRequest {
+  required PrimeTarget target = 1;
+}
+
+enum HaltTarget {
+  HALT_TARGET_UNKNOWN = 0;
+  HALT_TARGET_ALL = 1;
+  HALT_TARGET_THROTTLE = 2;
+  HALT_TARGET_TVC = 3;
+  HALT_TARGET_RCS = 4;
+  HALT_TARGET_FLIGHT = 5;
+}
+
+enum PrimeTarget {
+  PRIME_TARGET_UNKNOWN = 0;
+  PRIME_TARGET_THROTTLE = 1;
+  PRIME_TARGET_TVC = 2;
+  PRIME_TARGET_RCS = 3;
+  PRIME_TARGET_STATIC_FIRE = 4;
+}
+
 // Control sequences
 message ControlTrace {
   required uint32 total_time_ms = 1;
@@ -316,11 +345,15 @@ enum SystemState {
   STATE_UNKNOWN = 0;
   STATE_IDLE = 1;
   STATE_FLIGHT = 2;
+  STATE_FLIGHT_PRIMED = 12;
   STATE_THROTTLE = 3;
+  STATE_THROTTLE_PRIMED = 16;
   STATE_TVC = 4;
+  STATE_TVC_PRIMED = 13;
   STATE_RCS = 5;
-  STATE_TVC_THROTTLE = 6;
-  STATE_TVC_THROTTLE_RCS = 7;
+  STATE_RCS_PRIMED = 14;
+  STATE_STATIC_FIRE = 6;
+  STATE_STATIC_FIRE_PRIMED = 15;
   STATE_ABORT = 8;
   // takeoff, landing. To implement later
   STATE_FLIGHT_STARTUP = 9;

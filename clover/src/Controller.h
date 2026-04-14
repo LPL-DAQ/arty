@@ -25,6 +25,21 @@ public:
     static void step_control_loop(k_work*);
     // Request handlers
     static std::expected<void, Error> handle_abort(const AbortRequest& req);
+    static std::expected<void, Error> handle_halt(const HaltRequest& req);
+    static std::expected<void, Error> handle_prime(const PrimeRequest& req);
+    static std::expected<void, Error> handle_calibrate_throttle(const ThrottleCalibrateValveRequest& req);
+    static std::expected<void, Error> handle_load_throttle_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_throttle_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_load_rcs_valve_sequence(const RCSLoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_rcs_roll_sequence(const RCSLoadRollSequenceRequest& req);
+    static std::expected<void, Error> handle_load_tvc_sequence(const TVCLoadSequenceRequest& req);
+    static std::expected<void, Error> handle_start_throttle_valve_sequence(const ThrottleStartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_throttle_thrust_sequence(const ThrottleStartThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_start_rcs_valve_sequence(const RCSStartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_rcs_roll_sequence(const RCSStartRollSequenceRequest& req);
+    static std::expected<void, Error> handle_start_tvc_sequence(const TVCStartSequenceRequest& req);
+    static std::expected<void, Error> handle_load_flight_sequence(const FlightLoadSequenceRequest& req);
+    static std::expected<void, Error> handle_start_flight_sequence(const FlightStartSequenceRequest& req);
     static std::expected<void, Error> change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);
 

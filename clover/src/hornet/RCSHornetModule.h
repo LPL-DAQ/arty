@@ -10,40 +10,36 @@
 
 typedef RCSState RCSState;
 
-class RCSHornetModule {
-public:
-
+namespace RCSHornetModule {
 
     static inline RCSState current_state = RCSState_RCS_STATE_IDLE;
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
-
 
     static RCSState state()
     {
         return current_state;
     }
 
-    static RCSHornetStateOutput step_control_loop(DataPacket& data);
+    RCSHornetStateOutput step_control_loop(DataPacket& data);
     // Request handlers
-    static std::expected<void, Error> load_valve_sequence(const RCSLoadValveSequenceRequest& req);
-    static std::expected<void, Error> load_roll_sequence(const RCSLoadRollSequenceRequest& req);
-    static std::expected<void, Error> start_valve_sequence();
-    static std::expected<void, Error> start_roll_sequence();
+    std::expected<void, Error> load_valve_sequence(const RCSLoadValveSequenceRequest& req);
+    std::expected<void, Error> load_roll_sequence(const RCSLoadRollSequenceRequest& req);
+    std::expected<void, Error> start_valve_sequence();
+    std::expected<void, Error> start_roll_sequence();
 
-    static std::expected<void, Error> change_state(RCSState new_state);
-    static const char* get_state_name(RCSState state);
-    RCSHornetModule() = delete;  // Explicitly prevent instantiation
+    std::expected<void, Error> change_state(RCSState new_state);
+    const char* get_state_name(RCSState state);
 
-    static std::pair<RCSHornetStateOutput, RCSIdleData> idle_tick();
-    static std::pair<RCSHornetStateOutput, RCSValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
-    static std::pair<RCSHornetStateOutput, RCSRollSequenceData> roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
-    static std::pair<RCSHornetStateOutput, RCSFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
-    static std::pair<RCSHornetStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
-private:
+    std::pair<RCSHornetStateOutput, RCSIdleData> idle_tick();
+    std::pair<RCSHornetStateOutput, RCSValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
+    std::pair<RCSHornetStateOutput, RCSRollSequenceData> roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
+    std::pair<RCSHornetStateOutput, RCSFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+    std::pair<RCSHornetStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
 
     static inline uint32_t udp_sequence_number = 0;
-};
+
+} // namespace RCSHornetModule
 
 extern struct k_msgq telemetry_msgq;
 

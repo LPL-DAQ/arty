@@ -92,6 +92,9 @@ std::expected<void, Error> TVCHornetModule::change_state(TVCState new_state)
 {
     if (current_state == new_state)
         return {};
+    else if (new_state == TVCState_TVC_STATE_ABORT){
+        abort_entry_time = k_uptime_get();
+    }
 
     current_state = new_state;
     LOG_INF("Changed TVC State to %s", get_state_name(current_state));

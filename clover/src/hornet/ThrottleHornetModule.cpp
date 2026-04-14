@@ -19,8 +19,14 @@ std::expected<void, Error> ThrottleHornetModule::change_state(ThrottleState new_
     if (current_state == new_state)
         return {};
 
+
+
      if (new_state == ThrottleState_THROTTLE_STATE_THRUST_SEQ){
         start_thrust_sequence();
+    } else if (new_state == ThrottleState_THROTTLE_STATE_ABORT){
+        abort_entry_time = k_uptime_get();
+    } else if (new_state == ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE || new_state == ThrottleState_THROTTLE_STATE_VALVE_PRIMED || new_state == ThrottleState_THROTTLE_STATE_VALVE_SEQ){
+        return std::unexpected(Error::from_cause("ThrottleHornetModule does not support valve states"));
     }
     current_state = new_state;
 

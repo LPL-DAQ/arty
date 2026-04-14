@@ -107,6 +107,9 @@ std::expected<void, Error> RCSHornetModule::change_state(RCSState new_state)
 {
     if (current_state == new_state)
         return {};
+    else if (new_state == RCSState_RCS_STATE_ABORT){
+        abort_entry_time = k_uptime_get();
+    }
 
     current_state = new_state;
     LOG_INF("Changed RCS State to %s", get_state_name(current_state));

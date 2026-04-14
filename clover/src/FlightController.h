@@ -12,6 +12,13 @@
 
 class FlightController {
 public:
+
+
+    static FlightState state()
+    {
+        return current_state;
+    }
+
     static inline FlightState current_state = FlightState_FLIGHT_STATE_IDLE;
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
@@ -19,9 +26,8 @@ public:
     static std::expected<void, Error> init();
     static void step_control_loop(DataPacket& data);
 
-    static std::expected<void, Error> handle_load_sequence(const FlightLoadSequenceRequest& req);
-    static std::expected<void, Error> handle_start_sequence(const FlightStartSequenceRequest& req);
-    static std::expected<void, Error> handle_halt(const FlightHaltRequest& req);
+    static std::expected<void, Error> load_sequence(const FlightLoadSequenceRequest& req);
+    static std::expected<void, Error> start_sequence();
 
     static const FlightStateOutput& get_output();
     static float get_z_acceleration();

@@ -24,6 +24,8 @@ std::expected<void, Error> ThrottleRangerModule::change_state(ThrottleState new_
 
     } else if (new_state == ThrottleState_THROTTLE_STATE_THRUST_SEQ){
         start_thrust_sequence();
+    } else if (new_state == ThrottleState_THROTTLE_STATE_ABORT){
+        abort_entry_time = k_uptime_get();
     }
 
     current_state = new_state;

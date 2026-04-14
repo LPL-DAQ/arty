@@ -148,7 +148,7 @@ std::expected<void, Error> FlightController::init()
     return {};
 }
 
-std::expected<void, Error> FlightController::handle_load_sequence(const FlightLoadSequenceRequest& req)
+std::expected<void, Error> FlightController::load_sequence(const FlightLoadSequenceRequest& req)
 {
     LOG_INF("Received load flight sequence request");
 
@@ -179,7 +179,7 @@ std::expected<void, Error> FlightController::handle_load_sequence(const FlightLo
     return {};
 }
 
-std::expected<void, Error> FlightController::handle_start_sequence(const FlightStartSequenceRequest& req)
+std::expected<void, Error> FlightController::start_sequence()
 {
     LOG_INF("Received start flight sequence request");
     sequence_start_time = k_uptime_get();
@@ -189,17 +189,6 @@ std::expected<void, Error> FlightController::handle_start_sequence(const FlightS
     }
     return {};
 }
-
-std::expected<void, Error> FlightController::handle_halt(const FlightHaltRequest& req)
-{
-    LOG_INF("Received halt request");
-    auto ret = change_state(FlightState_FLIGHT_STATE_IDLE);
-    if (!ret.has_value()) {
-        return std::unexpected(ret.error().context("Failed to change state to idle"));
-    }
-    return {};
-}
-
 
 void FlightController::step_control_loop(DataPacket& data)
 {
@@ -241,6 +230,7 @@ void FlightController::step_control_loop(DataPacket& data)
         current_output = abort_out;
         break;
     }
+
     default: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
