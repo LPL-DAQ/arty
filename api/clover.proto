@@ -232,7 +232,7 @@ enum SystemState {
   STATE_ABORT = 7;
 }
 
-// next tag: 21
+// next tag: 23
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -259,6 +259,8 @@ message DataPacket {
 
   // Sensors
   required AnalogSensorReadings analog_sensors = 19;
+  optional LidarReading lidar_1 = 21;
+  optional LidarReading lidar_2 = 22;
 
   // Actuators
   required ValveStatus fuel_valve = 3;
@@ -334,6 +336,11 @@ message AnalogSensorReadings {
 
   // Hornet
   optional float battery_voltage = 21;
+}
+
+message LidarReading {
+  required float distance_m = 1;
+  required float strength = 2;
 }
 
 message IdleData {}
