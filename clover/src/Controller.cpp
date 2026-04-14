@@ -1,6 +1,6 @@
 #include "Controller.h"
 #include "ControllerConfig.h"
-#include "FlightController.h"
+#include "flight/FlightController.h"
 #include "MutexGuard.h"
 #include "server.h"
 #include "config.h"

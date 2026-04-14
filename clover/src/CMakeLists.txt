@@ -10,7 +10,7 @@ target_sources(app PRIVATE
 )
 
 add_subdirectory(sensors)
-
+add_subdirectory(flight)
 
 if(CONFIG_HORNET)
     message(NOTICE "Building with Hornet sources")
