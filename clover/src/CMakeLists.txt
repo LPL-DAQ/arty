@@ -13,5 +13,5 @@ target_sources(app PRIVATE main.cpp
     StateAbort.cpp
     AnalogSensors.cpp
     MutexGuard.cpp
-    PWMServo.cpp
+    PwmActuator.cpp
     )

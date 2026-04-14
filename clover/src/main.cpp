@@ -7,15 +7,15 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
-#include "PWMServo.h"
+#include "PwmActuator.h"
 
 LOG_MODULE_REGISTER(pwm_test, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 int main(void)
 {
-LOG_INF("hi");
-    // USB serial setup — same pattern as your main.cpp
+    LOG_INF("hi");
+    // USB serial setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB not enabled");
         return 0;
@@ -50,10 +50,10 @@ LOG_INF("hi");
     LOG_INF("ServoR armed");
 
     // -------------------------------------------------------------------------
-    // Sweep: center → full left → full right → center
-    // Each position held for 1 second, tick() called at 10ms
+    // Sweep: full left → full right → center
+    // set_target_angle() sets the target, tick() drives the PWM at 10ms rate
     // -------------------------------------------------------------------------
-    struct {
+    static const struct {
         float deg;
         const char* label;
     } positions[] = {
@@ -65,20 +65,21 @@ LOG_INF("hi");
     for (auto& pos : positions) {
         LOG_INF("Moving to %s", pos.label);
 
-        // Command for 1 second at 10ms tick rate = 100 ticks
+        // Set target once — tick() will write PWM each call
+        ServoR::set_target_angle(pos.deg);
+
+        // Hold for 10 seconds at 10ms tick rate = 1000 ticks
         for (int i = 0; i < 1000; ++i) {
-            if (auto r = ServoR::tick(pos.deg); !r) {
+            if (auto r = ServoR::tick(); !r) {
                 LOG_ERR("tick() failed at step %d", i);
                 return 0;
             }
             k_sleep(K_MSEC(10));
         }
 
-        LOG_INF("Held. Commanded: %.1f deg ",
-                ServoR::get_angle_commanded(),
-                ServoR::get_pulse_us());
-        LOG_INF("done g"); 
-
+        LOG_INF("Held. Commanded: %.1f deg",
+                (double)ServoR::get_angle_running());
+        LOG_INF("done %s", pos.label);
     }
 
     // -------------------------------------------------------------------------
@@ -91,9 +92,9 @@ LOG_INF("hi");
     LOG_INF("ServoR disarmed");
 
     // One tick to confirm min pulse written
-    ServoR::tick(0.0f);
-    LOG_INF("Final pulse: %lf us  (expect ~%d us)",
-            ServoR::get_pulse_us(), 1000);
+    ServoR::tick();
+    LOG_INF("Final pulse: %u us  (expect ~1000 us)",
+            (uint32_t)ServoR::get_pulse_us());
 
     LOG_INF("PWM test complete");
     return 0;
