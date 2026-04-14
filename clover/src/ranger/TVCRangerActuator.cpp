@@ -6,7 +6,7 @@
 
 LOG_MODULE_REGISTER(TVCRangerActuator, LOG_LEVEL_INF);
 
-std::expected<void, Error> tick(TVCRangerStateOutput& output, DataPacket& data){
+std::expected<void, Error> tick(TVCRangerStateOutput& output, TVCRangerActuatorData& actuator_data){
     // fill in actuator data
     // this is where adit (i think) code goes
 

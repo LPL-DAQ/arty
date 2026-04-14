@@ -21,7 +21,7 @@ namespace TVCHornetModule {
         return current_state;
     }
 
-    TVCHornetStateOutput step_control_loop(DataPacket& data);
+    void step_control_loop(DataPacket& data);
     // Request handlers
     std::expected<void, Error> load_sequence(const TVCLoadSequenceRequest& req);
     std::expected<void, Error> start_sequence();
@@ -32,7 +32,7 @@ namespace TVCHornetModule {
     std::pair<TVCHornetStateOutput, TVCIdleData> idle_tick();
     std::pair<TVCHornetStateOutput, TVCIdleData> trace_primed_tick();
     std::pair<TVCHornetStateOutput, TVCSequenceData> sequence_tick(int64_t current_time, int64_t start_time);
-    std::pair<TVCHornetStateOutput, TVCFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+    std::pair<TVCHornetStateOutput, TVCFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
     std::pair<TVCHornetStateOutput, TVCAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
 
     static inline uint32_t udp_sequence_number = 0;

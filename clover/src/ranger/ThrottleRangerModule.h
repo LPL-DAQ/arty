@@ -30,7 +30,7 @@ static ThrottleState state()
     return current_state;
 }
 
-ThrottleRangerStateOutput step_control_loop(DataPacket& data);
+void step_control_loop(DataPacket& data);
 
 // Request handlers
 std::expected<void, Error> load_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
@@ -48,7 +48,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleIdleData> idle_tick();
 std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_valve_tick(uint32_t timestamp,float fuel_pos, float lox_pos,float fuel_pos_enc, float lox_pos_enc);
 std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
 std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
-std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
 std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
 
 static inline bool valve_sequence_has_fuel = false;

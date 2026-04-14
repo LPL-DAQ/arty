@@ -22,7 +22,7 @@ static ThrottleState state()
     return current_state;
 }
 
-ThrottleHornetStateOutput step_control_loop(DataPacket& data);
+void step_control_loop(DataPacket& data);
 
 // Request handlers
 std::expected<void, Error> load_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
@@ -33,7 +33,7 @@ const char* get_state_name(ThrottleState state);
 
 std::pair<ThrottleHornetStateOutput, ThrottleIdleData> idle_tick();
 std::pair<ThrottleHornetStateOutput, ThrottleHornetThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
-std::pair<ThrottleHornetStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+std::pair<ThrottleHornetStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
 std::pair<ThrottleHornetStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
 
 static inline float thrust_sequence_total_time_ms = 0.0f;

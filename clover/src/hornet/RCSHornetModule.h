@@ -21,7 +21,7 @@ namespace RCSHornetModule {
         return current_state;
     }
 
-    RCSHornetStateOutput step_control_loop(DataPacket& data);
+    void step_control_loop(DataPacket& data);
     // Request handlers
     std::expected<void, Error> load_valve_sequence(const RCSLoadValveSequenceRequest& req);
     std::expected<void, Error> load_roll_sequence(const RCSLoadRollSequenceRequest& req);
@@ -34,7 +34,7 @@ namespace RCSHornetModule {
     std::pair<RCSHornetStateOutput, RCSIdleData> idle_tick();
     std::pair<RCSHornetStateOutput, RCSValveSequenceData> valve_sequence_tick(int64_t current_time, int64_t start_time);
     std::pair<RCSHornetStateOutput, RCSRollSequenceData> roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
-    std::pair<RCSHornetStateOutput, RCSFlightData> flight_tick(const AnalogSensorReadings& analog_sensors);
+    std::pair<RCSHornetStateOutput, RCSFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
     std::pair<RCSHornetStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
 
     static inline uint32_t udp_sequence_number = 0;

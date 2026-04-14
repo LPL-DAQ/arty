@@ -37,7 +37,7 @@ std::expected<void, Error> ThrottleRangerModule::change_state(ThrottleState new_
 
 
 // std::optional<std::pair<AnalogSensorReadings, float>> analog_sensors_readings
-ThrottleRangerStateOutput ThrottleRangerModule::step_control_loop(DataPacket& data)
+void ThrottleRangerModule::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();
     uint64_t start_cycle = k_cycle_get_64();
@@ -91,7 +91,7 @@ ThrottleRangerStateOutput ThrottleRangerModule::step_control_loop(DataPacket& da
         break;
     }
     case ThrottleState_THROTTLE_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output);
         data.which_throttle_state_data = DataPacket_throttle_flight_data_tag;
         data.throttle_state_data.throttle_flight_data = flight_data;
         out = flight_out;
@@ -135,12 +135,12 @@ std::pair<ThrottleRangerStateOutput, ThrottleIdleData> ThrottleRangerModule::idl
     return {out, data};
 }
 
-std::pair<ThrottleRangerStateOutput, ThrottleFlightData> ThrottleRangerModule::flight_tick(const AnalogSensorReadings& analog_sensors)
+std::pair<ThrottleRangerStateOutput, ThrottleFlightData> ThrottleRangerModule::flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output)
 {
     ThrottleRangerStateOutput out{};
     ThrottleFlightData data{};
     //TODO: This should not be a reference
-    float target_thrust = FlightController::get_z_acceleration();
+    float target_thrust = flight_output.z_acceleration;
     out.fuel_on = true;
     out.lox_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_FLIGHT;

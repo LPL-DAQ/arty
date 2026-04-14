@@ -122,29 +122,23 @@ void Controller::step_control_loop(k_work*)
     FlightController::step_control_loop(data);
 
     #if CONFIG_RANGER
-        auto tvc_output = TVCRangerModule::step_control_loop(data);
-        TVCRangerActuator::tick(tvc_output, data);
-        data.tvc_state = tvc_output.next_state;
+        TVCRangerModule::step_control_loop(data);
+        TVCRangerActuator::tick(data.tvc_state_output.ranger_state_output, data.tvc_actuator_data.tvc_ranger_data);
 
-        auto rcs_output = RCSRangerModule::step_control_loop(data);
-        RCSRangerActuator::tick(rcs_output, data.rcs_actuator_data.rcs_ranger_data);
-        data.rcs_state = rcs_output.next_state;
+        RCSRangerModule::step_control_loop(data);
+        RCSRangerActuator::tick(data.rcs_state_output.ranger_state_output, data.rcs_actuator_data.rcs_ranger_data);
 
-        auto throttle_output = ThrottleRangerModule::step_control_loop(data);
-        ThrottleRangerActuator::tick(throttle_output, data.throttle_actuator_data.throttle_ranger_data);
-        data.throttle_state = throttle_output.next_state;
+        ThrottleRangerModule::step_control_loop(data);
+        ThrottleRangerActuator::tick(data.throttle_state_output.ranger_state_output, data.throttle_actuator_data.throttle_ranger_data);
     #elif CONFIG_HORNET
-        auto tvc_output = TVCHornetModule::step_control_loop(data);
-        TVCHornetActuator::tick(tvc_output, data);
-        data.tvc_state = tvc_output.next_state;
+        TVCHornetModule::step_control_loop(data);
+        TVCHornetActuator::tick(data.tvc_state_output.hornet_state_output, data.tvc_actuator_data.tvc_hornet_data);
 
-        auto rcs_output = RCSHornetModule::step_control_loop(data);
-        RCSHornetActuator::tick(rcs_output, data.rcs_actuator_data.rcs_hornet_data);
-        data.rcs_state = rcs_output.next_state;
+        RCSHornetModule::step_control_loop(data);
+        RCSHornetActuator::tick(data.rcs_state_output.hornet_state_output, data.rcs_actuator_data.rcs_hornet_data);
 
-        auto throttle_output = ThrottleHornetModule::step_control_loop(data);
-        ThrottleHornetActuator::tick(throttle_output, data.throttle_actuator_data.throttle_hornet_data);
-        data.throttle_state = throttle_output.next_state;
+        ThrottleHornetModule::step_control_loop(data);
+        ThrottleHornetActuator::tick(data.throttle_state_output.hornet_state_output, data.throttle_actuator_data.throttle_hornet_data);
     #endif
 
     data.state = current_state;

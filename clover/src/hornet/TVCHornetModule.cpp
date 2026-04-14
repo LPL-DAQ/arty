@@ -22,7 +22,7 @@ namespace {
 
 
 
-TVCHornetStateOutput TVCHornetModule::step_control_loop(DataPacket& data )
+void TVCHornetModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
@@ -47,7 +47,7 @@ TVCHornetStateOutput TVCHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case TVCState_TVC_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output);
         data.which_tvc_state_data = DataPacket_tvc_flight_data_tag;
         data.tvc_state_data.tvc_flight_data = flight_data;
         out = flight_out;
@@ -109,12 +109,12 @@ std::pair<TVCHornetStateOutput, TVCIdleData> TVCHornetModule::idle_tick()
     return {out, data};
 }
 
-std::pair<TVCHornetStateOutput, TVCFlightData> TVCHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors)
+std::pair<TVCHornetStateOutput, TVCFlightData> TVCHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output)
 {
     TVCHornetStateOutput out{};
     TVCFlightData data{};
-    float target_x = FlightController::get_x_angular_acceleration();
-    float target_y = FlightController::get_y_angular_acceleration();
+    float target_x = flight_output.x_angular_acceleration;
+    float target_y = flight_output.y_angular_acceleration;
     out.next_state = TVCState_TVC_STATE_FLIGHT;
     out.target_x = target_x;
     out.target_y = target_y;

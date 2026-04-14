@@ -23,7 +23,7 @@ namespace {
 }
 
 
-RCSRangerStateOutput RCSRangerModule::step_control_loop(DataPacket& data )
+void RCSRangerModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
@@ -70,7 +70,7 @@ RCSRangerStateOutput RCSRangerModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output);
         data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
         data.rcs_state_data.rcs_flight_data = flight_data;
         out = flight_out;
@@ -127,7 +127,7 @@ std::pair<RCSRangerStateOutput, RCSIdleData> RCSRangerModule::idle_tick()
     return {out, data};
 }
 
-std::pair<RCSRangerStateOutput, RCSFlightData> RCSRangerModule::flight_tick(const AnalogSensorReadings& analog_sensors)
+std::pair<RCSRangerStateOutput, RCSFlightData> RCSRangerModule::flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output)
 {
     RCSRangerStateOutput out{};
     RCSFlightData data{};

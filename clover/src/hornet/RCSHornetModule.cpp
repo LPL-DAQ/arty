@@ -22,7 +22,7 @@ namespace {
     float roll_total_time = 0.0f;
 }
 
-RCSHornetStateOutput RCSHornetModule::step_control_loop(DataPacket& data )
+void RCSHornetModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
@@ -69,7 +69,7 @@ RCSHornetStateOutput RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick(data.analog_sensors);
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output);
         data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
         data.rcs_state_data.rcs_flight_data = flight_data;
         out = flight_out;
@@ -126,7 +126,7 @@ std::pair<RCSHornetStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
     return {out, data};
 }
 
-std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors)
+std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output)
 {
     RCSHornetStateOutput out{};
     RCSFlightData data{};

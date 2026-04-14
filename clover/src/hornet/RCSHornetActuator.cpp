@@ -10,7 +10,6 @@ std::expected<void, Error> RCSHornetActuator::tick(RCSHornetStateOutput& output,
     // fill in actuator data
     // this is where adit (i think) code goes
 
-    
     return {};
 }
 
