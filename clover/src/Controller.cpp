@@ -58,13 +58,11 @@ static void set_abort_entry_time(uint32_t timestamp)
     Controller::abort_entry_time = timestamp;
 }
 
-
-
-std::expected<void, Error> Controller::change_state(SystemState new_state)
+static std::expected<void, Error> change_state(SystemState new_state)
 {
-    MutexGuard guard{&controller_state_lock};
-    if (current_state == new_state)
+    if (Controller::current_state == new_state) {
         return {};
+    }
 
     switch (new_state) {
     case SystemState_STATE_IDLE:
@@ -76,37 +74,37 @@ std::expected<void, Error> Controller::change_state(SystemState new_state)
     case SystemState_STATE_RCS_PRIMED:
     case SystemState_STATE_FLIGHT_PRIMED:
     case SystemState_STATE_STATIC_FIRE_PRIMED:
-        if (current_state != SystemState_STATE_IDLE) {
-            return std::unexpected(Error::from_cause("%s request rejected unless system is idle", get_state_name(new_state)));
+        if (Controller::current_state != SystemState_STATE_IDLE) {
+            return std::unexpected(Error::from_cause("%s request rejected unless system is idle", Controller::get_state_name(new_state)));
         }
         break;
 
     case SystemState_STATE_THROTTLE:
-        if (current_state != SystemState_STATE_THROTTLE_PRIMED) {
+        if (Controller::current_state != SystemState_STATE_THROTTLE_PRIMED) {
             return std::unexpected(Error::from_cause("System state change to Throttle only allowed from Throttle Primed"));
         }
         break;
 
     case SystemState_STATE_TVC:
-        if (current_state != SystemState_STATE_TVC_PRIMED) {
+        if (Controller::current_state != SystemState_STATE_TVC_PRIMED) {
             return std::unexpected(Error::from_cause("System state change to TVC only allowed from TVC Primed"));
         }
         break;
 
     case SystemState_STATE_STATIC_FIRE:
-        if (current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
+        if (Controller::current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
             return std::unexpected(Error::from_cause("System state change to Static Fire only allowed from Static Fire Primed"));
         }
         break;
 
     case SystemState_STATE_RCS:
-        if (current_state != SystemState_STATE_RCS_PRIMED) {
+        if (Controller::current_state != SystemState_STATE_RCS_PRIMED) {
             return std::unexpected(Error::from_cause("System state change to RCS only allowed from RCS Primed"));
         }
         break;
 
     case SystemState_STATE_FLIGHT:
-        if (current_state != SystemState_STATE_FLIGHT_PRIMED) {
+        if (Controller::current_state != SystemState_STATE_FLIGHT_PRIMED) {
             return std::unexpected(Error::from_cause("System state change to Flight only allowed from Flight Primed"));
         }
         break;
@@ -115,10 +113,9 @@ std::expected<void, Error> Controller::change_state(SystemState new_state)
         return std::unexpected(Error::from_cause("System state change to unsupported state: %d", new_state));
     }
 
-    current_state = new_state;
+    Controller::current_state = new_state;
     return {};
 }
-
 
 
 K_WORK_DEFINE(control_loop, Controller::step_control_loop);
@@ -166,7 +163,6 @@ static int step_control_loop_debounce_warn_count = 0;
 void Controller::step_control_loop(k_work*)
 {
     int64_t current_time = k_uptime_get();
-    // TODO: What was start_cycle used for?
     uint64_t start_cycle = k_cycle_get_64();
     DataPacket data = DataPacket_init_default;
 
@@ -182,8 +178,6 @@ void Controller::step_control_loop(k_work*)
     daq_client_status daq_status = get_daq_client_status();
 
     // Dispatch to appropriate peripheral controllers based on current state
-    // TODO: Check that data passing works properly
-    // TODO: Remove OFF
     FlightController::step_control_loop(data);
 
     #if CONFIG_RANGER
@@ -229,7 +223,8 @@ void Controller::step_control_loop(k_work*)
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_INF("Received abort request");
-    set_abort_entry_time(k_uptime_get());
+    MutexGuard guard{&controller_state_lock};
+    Controller::abort_entry_time = k_uptime_get();
     auto ret = change_state(SystemState_STATE_ABORT);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to abort"));
@@ -237,28 +232,27 @@ std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
     return {};
 }
 
-// TODO: Move state checkers into the change_state method. Only checks on the request itself should be done in handler
-
 std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const ThrottleLoadValveSequenceRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle valve sequence load rejected unless system is idle"));
     }
 
     if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle must be idle before loading a valve sequence"));
     }
-    #if CONFIG_RANGER
-        return ThrottleRangerModule::load_valve_sequence(req);
-    #else // CONFIG_HORNET
+#if CONFIG_RANGER
+    return ThrottleRangerModule::load_valve_sequence(req);
+#else // CONFIG_HORNET
     return std::unexpected(Error::from_cause("Must be ranger config for valve sequences"));
-    #endif
-
+#endif
 }
 
 std::expected<void, Error> Controller::handle_load_throttle_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle thrust sequence load rejected unless system is idle"));
     }
 
@@ -271,7 +265,8 @@ std::expected<void, Error> Controller::handle_load_throttle_thrust_sequence(cons
 
 std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const RCSLoadValveSequenceRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("RCS valve sequence load rejected unless system is idle"));
     }
 
@@ -279,16 +274,17 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const RCSL
         return std::unexpected(Error::from_cause("RCS must be idle before loading a valve or motor sequence"));
     }
 
-    #if CONFIG_RANGER
+#if CONFIG_RANGER
     return RCSRangerModule::load_motor_sequence(req);
-    #else // CONFIG_HORNET
+#else // CONFIG_HORNET
     return RCSHornetModule::load_valve_sequence(req);
-    #endif
+#endif
 }
 
 std::expected<void, Error> Controller::handle_load_rcs_roll_sequence(const RCSLoadRollSequenceRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("RCS roll sequence load rejected unless system is idle"));
     }
 
@@ -301,7 +297,8 @@ std::expected<void, Error> Controller::handle_load_rcs_roll_sequence(const RCSLo
 
 std::expected<void, Error> Controller::handle_load_tvc_sequence(const TVCLoadSequenceRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("TVC load sequence rejected unless system is idle"));
     }
 
@@ -314,7 +311,8 @@ std::expected<void, Error> Controller::handle_load_tvc_sequence(const TVCLoadSeq
 
 std::expected<void, Error> Controller::handle_load_flight_sequence(const FlightLoadSequenceRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Flight load sequence rejected unless system is idle"));
     }
     if (FlightController::state() != FlightState_FLIGHT_STATE_IDLE) {
@@ -325,19 +323,21 @@ std::expected<void, Error> Controller::handle_load_flight_sequence(const FlightL
 
 std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(const ThrottleStartValveSequenceRequest& req)
 {
-    #if CONFIG_RANGER
+    MutexGuard guard{&controller_state_lock};
+#if CONFIG_RANGER
     auto ret = ThrottleRangerModule::start_valve_sequence();
     if (!ret.has_value()) {
         return ret;
     }
     return change_state(SystemState_STATE_THROTTLE);
-    #else
-        return std::unexpected(Error::from_cause("Throttle valve sequence start unsupported on Hornet"));
-    #endif
+#else
+    return std::unexpected(Error::from_cause("Throttle valve sequence start unsupported on Hornet"));
+#endif
 }
 
 std::expected<void, Error> Controller::handle_start_throttle_thrust_sequence(const ThrottleStartThrustSequenceRequest& req)
 {
+    MutexGuard guard{&controller_state_lock};
     auto ret = ThrottleImpl::start_thrust_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -348,6 +348,7 @@ std::expected<void, Error> Controller::handle_start_throttle_thrust_sequence(con
 
 std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const RCSStartValveSequenceRequest& req)
 {
+    MutexGuard guard{&controller_state_lock};
 #if CONFIG_RANGER
     auto ret = RCSRangerModule::start_motor_sequence();
 #elif CONFIG_HORNET
@@ -362,6 +363,7 @@ std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const RCS
 
 std::expected<void, Error> Controller::handle_start_rcs_roll_sequence(const RCSStartRollSequenceRequest& req)
 {
+    MutexGuard guard{&controller_state_lock};
     auto ret = RCSImpl::start_roll_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -372,16 +374,18 @@ std::expected<void, Error> Controller::handle_start_rcs_roll_sequence(const RCSS
 
 std::expected<void, Error> Controller::handle_start_tvc_sequence(const TVCStartSequenceRequest& req)
 {
+    MutexGuard guard{&controller_state_lock};
     auto ret = TVCImpl::start_sequence();
     if (!ret.has_value()) {
         return ret;
     }
 
-    return change_state(get_current_system_state() == SystemState_STATE_STATIC_FIRE_PRIMED ? SystemState_STATE_STATIC_FIRE : SystemState_STATE_TVC);
+    return change_state(current_state == SystemState_STATE_STATIC_FIRE_PRIMED ? SystemState_STATE_STATIC_FIRE : SystemState_STATE_TVC);
 }
 
 std::expected<void, Error> Controller::handle_start_flight_sequence(const FlightStartSequenceRequest& req)
 {
+    MutexGuard guard{&controller_state_lock};
     auto ret = FlightController::start_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -392,6 +396,7 @@ std::expected<void, Error> Controller::handle_start_flight_sequence(const Flight
 
 std::expected<void, Error> Controller::handle_prime(const PrimeRequest& req)
 {
+    MutexGuard guard{&controller_state_lock};
     switch (req.target) {
     case PrimeTarget_PRIME_TARGET_THROTTLE:
         if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_THRUST_PRIMED) {
@@ -421,10 +426,10 @@ std::expected<void, Error> Controller::handle_prime(const PrimeRequest& req)
         return std::unexpected(Error::from_cause("Unknown prime target: %d", req.target));
     }
 }
-// TODO: need to prevent this if switch isnt allowed
+
 std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
 {
-    // system must be in or move it idle. If it isnt or can't, then no other state can be set to idle
+    MutexGuard guard{&controller_state_lock};
     auto ret = change_state(SystemState_STATE_IDLE);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to idle"));
@@ -438,7 +443,7 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
         TVCImpl::change_state(TVCState_TVC_STATE_IDLE);
         RCSImpl::change_state(RCSState_RCS_STATE_IDLE);
 
-        return change_state(SystemState_STATE_IDLE);
+        return {}
     }
 
     switch (target) {
@@ -465,12 +470,12 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
 
 std::expected<void, Error> Controller::handle_calibrate_throttle(const ThrottleCalibrateValveRequest& req)
 {
-    if (get_current_system_state() != SystemState_STATE_IDLE) {
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle calibration rejected unless system is idle"));
     }
 
     return ThrottleImpl::change_state(ThrottleState_THROTTLE_STATE_CALIBRATE_VALVE);
-
 }
 
 

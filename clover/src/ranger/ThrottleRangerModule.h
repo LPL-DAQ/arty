@@ -58,10 +58,7 @@ static Trace throttle_thrust_trace;
 static Trace fuel_trace;
 static Trace lox_trace;
 
-// TODO: is this used anywhere?
 static inline uint32_t udp_sequence_number = 0;
-
-
 
 // cal
 enum class CalPhase {
@@ -105,7 +102,6 @@ static inline uint32_t cal_power_cycle_timestamp = 0;
 static constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
 static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 
-// TODO: Should constants be moved to cpp?
 // Physics constants
 static constexpr float EFFICIENCY = 0.93f;
 static constexpr float LBF_CONVERSION = 0.224809f;

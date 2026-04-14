@@ -112,6 +112,7 @@ MaxLengthString<MAX_ERR_MESSAGE_SIZE> Error::build_message()
     }
 
     k_sched_unlock();
+    k_mutex_unlock(&context_guard);
 
     return message;
 }

@@ -107,7 +107,6 @@ void ThrottleHornetModule::step_control_loop(DataPacket& data)
     data.throttle_state_output.throttle_hornet_state_output = out;
     data.which_throttle_actuator_data = DataPacket_throttle_hornet_data_tag;
 
-    // TODO: how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
     data.throttle_state = state();
@@ -127,7 +126,6 @@ std::pair<ThrottleHornetStateOutput, ThrottleFlightData> ThrottleHornetModule::f
 {
     ThrottleHornetStateOutput out{};
     ThrottleFlightData data{};
-    //TODO: This should not be a reference
     float target_thrust = flight_output.z_acceleration;
     out.pwm = 1000.0f;
     out.power_on = true;

@@ -132,7 +132,6 @@ void ThrottleRangerModule::step_control_loop(DataPacket& data)
     data.throttle_state_output.throttle_ranger_state_output = out;
     data.which_throttle_actuator_data = DataPacket_throttle_ranger_data_tag;
 
-    // TODO: how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
     data.throttle_state = state();
@@ -153,7 +152,6 @@ std::pair<ThrottleRangerStateOutput, ThrottleFlightData> ThrottleRangerModule::f
 {
     ThrottleRangerStateOutput out{};
     ThrottleFlightData data{};
-    //TODO: This should not be a reference
     float target_thrust = flight_output.z_acceleration;
     out.fuel_on = true;
     out.lox_on = true;
@@ -256,7 +254,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
             low_ptc_start_time_ms = current_time;
         }
         else if (current_time - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
-            // TODO: Fix float to double cast
+            // TODO: Fix float to double cast (From noah: is this still an issue?)
             LOG_ERR("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS);
             out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
             return {};
@@ -574,8 +572,6 @@ ThrottleState ThrottleRangerModule::state()
     MutexGuard guard{&throttle_ranger_module_lock};
     return current_state;
 }
-
-
 
 // TODO: currently completely dysfunctional idk who or why this was made like this
 std::expected<void, Error> ThrottleRangerModule::power_on(const ThrottlePowerOnRequest& req)

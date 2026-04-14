@@ -19,7 +19,6 @@
 
 #include "FlightController.h"
 #include "server.h"
-// TODO: check if all handlers are called somewhere in here for all systems
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
 constexpr size_t MAX_MESSAGE_SIZE = 1024 * 8;

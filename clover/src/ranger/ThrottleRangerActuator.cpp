@@ -28,7 +28,7 @@ std::expected<void, Error> ThrottleRangerActuator::tick(ThrottleRangerStateOutpu
         output.has_lox_pos = true;
         output.lox_pos = LoxValve::get_pos_internal();
     }
-    // todo: why would it ever need to know has_lox_pos?
+    // TODO: why would it ever need to know has_lox_pos?
     LoxValve::tick(output.fuel_on, output.has_lox_pos, output.lox_pos);
     FuelValve::tick(output.lox_on, output.has_fuel_pos, output.fuel_pos);
 

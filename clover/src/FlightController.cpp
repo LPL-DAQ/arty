@@ -116,8 +116,7 @@ void FlightController::step_control_loop(DataPacket& data)
     }
 
 }
-
-// TODO: make throttle, tvc, rcs change states according to how this switches from takeoff -> flight -> landing
+// TODO: remove takeoff and landing, move them into system states. They can be filled in later
 std::expected<void, Error> FlightController::change_state(FlightState new_state)
 {
     MutexGuard guard{&flight_controller_lock};
@@ -325,4 +324,3 @@ const char* FlightController::get_state_name(FlightState state)
         return "Landing";
     return "Unknown State";
 }
-// TODO: Flight Controller Server Commands and Handlers
