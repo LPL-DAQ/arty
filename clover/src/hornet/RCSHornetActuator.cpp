@@ -6,7 +6,7 @@
 
 LOG_MODULE_REGISTER(RCSHornetActuator, LOG_LEVEL_INF);
 
-std::expected<void, Error> tick(RCSHornetStateOutput& output, RCSHornetData& data){
+std::expected<void, Error> RCSHornetActuator::tick(RCSHornetStateOutput& output, RCSHornetData& data){
     // fill in actuator data
     // this is where adit (i think) code goes
 

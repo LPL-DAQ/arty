@@ -123,24 +123,31 @@ void Controller::step_control_loop(k_work*)
 
     #if CONFIG_RANGER
         auto tvc_output = TVCRangerModule::step_control_loop(data);
-        TVCRangerActuator::tick(tvc_output);
+        TVCRangerActuator::tick(tvc_output, data);
+        data.tvc_state = tvc_output.next_state;
+
         auto rcs_output = RCSRangerModule::step_control_loop(data);
-        RCSRangerActuator::tick(rcs_output);
+        RCSRangerActuator::tick(rcs_output, data.rcs_actuator_data.rcs_ranger_data);
+        data.rcs_state = rcs_output.next_state;
+
         auto throttle_output = ThrottleRangerModule::step_control_loop(data);
-        ThrottleRangerActuator::tick(throttle_output);
+        ThrottleRangerActuator::tick(throttle_output, data.throttle_actuator_data.throttle_ranger_data);
+        data.throttle_state = throttle_output.next_state;
     #elif CONFIG_HORNET
         auto tvc_output = TVCHornetModule::step_control_loop(data);
-        TVCHornetActuator::tick(tvc_output);
+        TVCHornetActuator::tick(tvc_output, data);
+        data.tvc_state = tvc_output.next_state;
+
         auto rcs_output = RCSHornetModule::step_control_loop(data);
-        RCSHornetActuator::tick(rcs_output);
+        RCSHornetActuator::tick(rcs_output, data.rcs_actuator_data.rcs_hornet_data);
+        data.rcs_state = rcs_output.next_state;
+
         auto throttle_output = ThrottleHornetModule::step_control_loop(data);
-        ThrottleHornetActuator::tick(throttle_output);
+        ThrottleHornetActuator::tick(throttle_output, data.throttle_actuator_data.throttle_hornet_data);
+        data.throttle_state = throttle_output.next_state;
     #endif
 
     data.state = current_state;
-    data.throttle_state = throttle_output.next_state;
-    data.tvc_state = tvc_output.next_state;
-    data.rcs_state = rcs_output.next_state;
     data.controller_timing.controller_tick_time_ns = (k_cycle_get_64() - start_cycle) * (1e9f / SystemCoreClock);
     data.sequence_number = 0; // TODO: how is this supposed to be set?
 

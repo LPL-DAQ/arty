@@ -6,7 +6,7 @@
 
 LOG_MODULE_REGISTER(TVCHornetActuator, LOG_LEVEL_INF);
 
-std::expected<void, Error> tick(TVCHornetStateOutput& output, DataPacket& data){
+std::expected<void, Error> TVCHornetActuator::tick(TVCHornetStateOutput& output, DataPacket& data){
     // fill in actuator data
     // this is where adit (i think) code goes
 
