@@ -1,4 +1,5 @@
 #include "FlightController.h"
+#include "MutexGuard.h"
 #include "sensors/AnalogSensors.h"
 #include "ControllerConfig.h"
 #include "config.h"
@@ -7,6 +8,26 @@
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
+
+K_MUTEX_DEFINE(flight_controller_lock);
+
+static FlightState get_flight_controller_state()
+{
+    MutexGuard guard{&flight_controller_lock};
+    return FlightController::current_state;
+}
+
+static uint32_t get_flight_controller_sequence_start_time()
+{
+    MutexGuard guard{&flight_controller_lock};
+    return FlightController::sequence_start_time;
+}
+
+static uint32_t get_flight_controller_abort_entry_time()
+{
+    MutexGuard guard{&flight_controller_lock};
+    return FlightController::abort_entry_time;
+}
 
 namespace {
     Trace x_trace;
@@ -24,40 +45,52 @@ void FlightController::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();
 
-    switch (current_state) {
+    FlightState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+    {
+        MutexGuard guard{&flight_controller_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+    }
+
+    FlightStateOutput local_output{};
+
+    switch (local_state) {
     case FlightState_FLIGHT_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
         data.flight_state_data.flight_idle_data = idle_data;
-        current_output = idle_out;
+        local_output = idle_out;
         break;
     }
     case FlightState_FLIGHT_STATE_TAKEOFF: {
-        auto [takeoff_out, takeoff_data] = takeoff_tick(current_time, sequence_start_time);
+        auto [takeoff_out, takeoff_data] = takeoff_tick(current_time, local_sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_takeoff_data_tag;
         data.flight_state_data.flight_takeoff_data = takeoff_data;
-        current_output = takeoff_out;
+        local_output = takeoff_out;
         break;
     }
     case FlightState_FLIGHT_STATE_FLIGHT_SEQ: {
-        auto [seq_out, seq_data] = flight_seq_tick(data.analog_sensors, current_time, sequence_start_time);
+        auto [seq_out, seq_data] = flight_seq_tick(data.analog_sensors, current_time, local_sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_sequence_data_tag;
         data.flight_state_data.flight_sequence_data = seq_data;
-        current_output = seq_out;
+        local_output = seq_out;
         break;
     }
     case FlightState_FLIGHT_STATE_LANDING: {
-        auto [landing_out, landing_data] = landing_tick(current_time, sequence_start_time);
+        auto [landing_out, landing_data] = landing_tick(current_time, local_sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_landing_data_tag;
         data.flight_state_data.flight_landing_data = landing_data;
-        current_output = landing_out;
+        local_output = landing_out;
         break;
     }
     case FlightState_FLIGHT_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_flight_state_data = DataPacket_flight_abort_data_tag;
         data.flight_state_data.flight_abort_data = abort_data;
-        current_output = abort_out;
+        local_output = abort_out;
         break;
     }
 
@@ -65,24 +98,29 @@ void FlightController::step_control_loop(DataPacket& data)
         auto [idle_out, idle_data] = idle_tick();
         data.which_flight_state_data = DataPacket_flight_idle_data_tag;
         data.flight_state_data.flight_idle_data = idle_data;
-        current_output = idle_out;
+        local_output = idle_out;
         break;
     }
     }
 
-    auto ret = change_state(current_output.next_state);
+    auto ret = change_state(local_output.next_state);
     if (!ret.has_value()) {
         LOG_ERR("Error while changing flight state: %s", ret.error().build_message().c_str());
     }
 
-    data.flight_state_output = current_output;
-    data.flight_state = current_state;
+    data.flight_state_output = local_output;
+    {
+        MutexGuard guard{&flight_controller_lock};
+        current_output = local_output;
+        data.flight_state = current_state;
+    }
 
 }
 
 // TODO: make throttle, tvc, rcs change states according to how this switches from takeoff -> flight -> landing
 std::expected<void, Error> FlightController::change_state(FlightState new_state)
 {
+    MutexGuard guard{&flight_controller_lock};
     if (current_state == new_state)
         return {};
 
@@ -127,13 +165,21 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
     FlightStateOutput out{};
     FlightSequenceData data{};
 
+    float local_flight_sequence_total_time;
+    bool local_flight_sequence_has_trace;
+    {
+        MutexGuard guard{&flight_controller_lock};
+        local_flight_sequence_total_time = flight_sequence_total_time;
+        local_flight_sequence_has_trace = flight_sequence_has_trace;
+    }
+
     float elapsed_time = static_cast<float>(current_time - start_time);
-    if (flight_sequence_total_time > 0.0f && elapsed_time > flight_sequence_total_time) {
+    if (local_flight_sequence_total_time > 0.0f && elapsed_time > local_flight_sequence_total_time) {
         out.next_state = FlightState_FLIGHT_STATE_LANDING;
         return {out, data};
     }
 
-    if (flight_sequence_has_trace) {
+    if (local_flight_sequence_has_trace) {
         auto x_target = x_trace.sample(elapsed_time);
         if (!x_target) {
             LOG_ERR("Flight sequence X trace sampling failed: %s", x_target.error().build_message().c_str());
@@ -236,20 +282,33 @@ std::expected<void, Error> FlightController::load_sequence(const FlightLoadSeque
     if (!result_roll)
         return std::unexpected(result_roll.error().context("%s", "Invalid roll angle trace"));
 
-    flight_sequence_has_trace = true;
-    flight_sequence_total_time = req.x_position_trace.total_time_ms;
+    {
+        MutexGuard guard{&flight_controller_lock};
+        flight_sequence_has_trace = true;
+        flight_sequence_total_time = req.x_position_trace.total_time_ms;
+    }
+
     return {};
 }
 
 std::expected<void, Error> FlightController::start_sequence()
 {
     LOG_INF("Received start flight sequence request");
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&flight_controller_lock};
+        sequence_start_time = k_uptime_get();
+    }
     auto ret = change_state(FlightState_FLIGHT_STATE_TAKEOFF);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to takeoff"));
     }
     return {};
+}
+
+FlightState FlightController::state()
+{
+    MutexGuard guard{&flight_controller_lock};
+    return current_state;
 }
 
 const char* FlightController::get_state_name(FlightState state)

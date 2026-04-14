@@ -1,4 +1,5 @@
 #include "TVCHornetModule.h"
+#include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
@@ -11,6 +12,8 @@
 #include "TVCHornetActuator.h"
 
 LOG_MODULE_REGISTER(TVCHornetModule, LOG_LEVEL_INF);
+
+K_MUTEX_DEFINE(tvc_hornet_module_lock);
 
 namespace {
     Trace x_trace;
@@ -26,10 +29,20 @@ void TVCHornetModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
+    TVCState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+    {
+        MutexGuard guard{&tvc_hornet_module_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+    }
+
     TVCHornetStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
-    switch (current_state) {
+    switch (local_state) {
     case TVCState_TVC_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_tvc_state_data = DataPacket_tvc_idle_data_tag;
@@ -54,14 +67,14 @@ void TVCHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case TVCState_TVC_STATE_TRACE: {
-        auto [seq_out, seq_data] = sequence_tick(current_time, sequence_start_time);
+        auto [seq_out, seq_data] = sequence_tick(current_time, local_sequence_start_time);
         data.which_tvc_state_data = DataPacket_tvc_sequence_data_tag;
         data.tvc_state_data.tvc_sequence_data = seq_data;
         out = seq_out;
         break;
     }
     case TVCState_TVC_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_tvc_state_data = DataPacket_tvc_abort_data_tag;
         data.tvc_state_data.tvc_abort_data = abort_data;
         out = abort_out;
@@ -82,13 +95,14 @@ void TVCHornetModule::step_control_loop(DataPacket& data )
     data.which_tvc_state_output = DataPacket_tvc_hornet_state_output_tag;
     data.tvc_state_output.tvc_hornet_state_output = out;
     data.which_tvc_actuator_data = DataPacket_tvc_hornet_data_tag;
-    data.tvc_state = current_state;
+    data.tvc_state = state();
 }
 
 
 
 std::expected<void, Error> TVCHornetModule::change_state(TVCState new_state)
 {
+    MutexGuard guard{&tvc_hornet_module_lock};
     if (current_state == new_state)
         return {};
     else if (new_state == TVCState_TVC_STATE_ABORT){
@@ -129,7 +143,15 @@ std::pair<TVCHornetStateOutput, TVCSequenceData> TVCHornetModule::sequence_tick(
 
     float dt = current_time - start_time;
 
-    if (sequence_has_trace) {
+    bool local_sequence_has_trace;
+    float local_sequence_total_time;
+    {
+        MutexGuard guard{&tvc_hornet_module_lock};
+        local_sequence_has_trace = sequence_has_trace;
+        local_sequence_total_time = sequence_total_time;
+    }
+
+    if (local_sequence_has_trace) {
         auto x_target = x_trace.sample(dt);
         if (!x_target) {
             LOG_ERR("Failed to sample X trace: %s", x_target.error().build_message().c_str());
@@ -150,7 +172,7 @@ std::pair<TVCHornetStateOutput, TVCSequenceData> TVCHornetModule::sequence_tick(
         data.y_angle_deg = *y_target;
     }
 
-    if (sequence_has_trace && dt >= sequence_total_time) {
+    if (local_sequence_has_trace && dt >= local_sequence_total_time) {
         LOG_INF("Done TVC trace sequence, dt was %f", static_cast<double>(dt));
         out.next_state = TVCState_TVC_STATE_IDLE;
     }
@@ -185,8 +207,11 @@ std::expected<void, Error> TVCHornetModule::load_sequence(const TVCLoadSequenceR
     if (!result_y)
         return std::unexpected(result_y.error().context("%s", "Invalid Y trace"));
 
-    sequence_has_trace = true;
-    sequence_total_time = req.x_angle_trace_deg.total_time_ms;
+    {
+        MutexGuard guard{&tvc_hornet_module_lock};
+        sequence_has_trace = true;
+        sequence_total_time = req.x_angle_trace_deg.total_time_ms;
+    }
 
     change_state(TVCState_TVC_STATE_TRACE_PRIMED);
 
@@ -195,9 +220,18 @@ std::expected<void, Error> TVCHornetModule::load_sequence(const TVCLoadSequenceR
 
 std::expected<void, Error> TVCHornetModule::start_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&tvc_hornet_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
     change_state(TVCState_TVC_STATE_TRACE);
     return {};
+}
+
+TVCState TVCHornetModule::state()
+{
+    MutexGuard guard{&tvc_hornet_module_lock};
+    return current_state;
 }
 
 const char* TVCHornetModule::get_state_name(TVCState state)

@@ -1,4 +1,5 @@
 #include "ThrottleRangerModule.h"
+#include "MutexGuard.h"
 #include "../ControllerConfig.h"
 #include "../sensors/AnalogSensors.h"
 #include "../server.h"
@@ -12,19 +13,21 @@
 
 LOG_MODULE_REGISTER(ThrottleRangerModule, LOG_LEVEL_INF);
 
+K_MUTEX_DEFINE(throttle_ranger_module_lock);
+
 
 
 std::expected<void, Error> ThrottleRangerModule::change_state(ThrottleState new_state)
 {
+    MutexGuard guard{&throttle_ranger_module_lock};
     if (current_state == new_state)
         return {};
 
-    if (new_state == ThrottleState_THROTTLE_STATE_VALVE_SEQ){
-        start_valve_sequence();
-
-    } else if (new_state == ThrottleState_THROTTLE_STATE_THRUST_SEQ){
-        start_thrust_sequence();
-    } else if (new_state == ThrottleState_THROTTLE_STATE_ABORT){
+    if (new_state == ThrottleState_THROTTLE_STATE_VALVE_SEQ) {
+        sequence_start_time = k_uptime_get();
+    } else if (new_state == ThrottleState_THROTTLE_STATE_THRUST_SEQ) {
+        sequence_start_time = k_uptime_get();
+    } else if (new_state == ThrottleState_THROTTLE_STATE_ABORT) {
         abort_entry_time = k_uptime_get();
     }
 
@@ -43,8 +46,20 @@ void ThrottleRangerModule::step_control_loop(DataPacket& data)
     uint64_t start_cycle = k_cycle_get_64();
     ThrottleRangerStateOutput out{};
 
+    ThrottleState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+
+    {
+        MutexGuard guard{&throttle_ranger_module_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+
+    }
+
     // --- PROCEDURAL LOGIC DISPATCHER ---
-    switch (current_state) {
+    switch (local_state) {
     case ThrottleState_THROTTLE_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
@@ -98,7 +113,7 @@ void ThrottleRangerModule::step_control_loop(DataPacket& data)
         break;
     }
     case ThrottleState_THROTTLE_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_throttle_state_data = DataPacket_throttle_abort_data_tag;
         data.throttle_state_data.throttle_abort_data = abort_data;
         out = abort_out;
@@ -120,7 +135,7 @@ void ThrottleRangerModule::step_control_loop(DataPacket& data)
     // TODO: how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
-    data.throttle_state = current_state;
+    data.throttle_state = state();
 }
 
 
@@ -154,12 +169,26 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> ThrottleRangerMo
     ThrottleValveSequenceData data{};
     out.fuel_on = true;
     out.lox_on = true;
+    bool local_valve_sequence_has_fuel;
+    bool local_valve_sequence_has_lox;
+    float local_valve_sequence_fuel_total_time_ms;
+    float local_valve_sequence_lox_total_time_ms;
+
+    uint32_t local_sequence_start_time;
+    {
+        MutexGuard guard{&throttle_ranger_module_lock};
+        local_sequence_start_time = sequence_start_time;
+        local_valve_sequence_has_fuel = valve_sequence_has_fuel;
+        local_valve_sequence_has_lox = valve_sequence_has_lox;
+        local_valve_sequence_fuel_total_time_ms = valve_sequence_fuel_total_time_ms;
+        local_valve_sequence_lox_total_time_ms = valve_sequence_lox_total_time_ms;
+    }
 
     out.next_state = ThrottleState_THROTTLE_STATE_VALVE_SEQ;  // Assume we stay in this state by default
 
-    float dt = current_time - sequence_start_time;
+    float dt = current_time - local_sequence_start_time;
 
-    if (valve_sequence_has_fuel) {
+    if (local_valve_sequence_has_fuel) {
         auto f_target = fuel_trace.sample(dt);
         if (!f_target) {
             LOG_ERR("Failed to sample fuel trace: %s", f_target.error().build_message().c_str());
@@ -170,7 +199,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> ThrottleRangerMo
         out.fuel_pos = *f_target;
     }
 
-    if (valve_sequence_has_lox) {
+    if (local_valve_sequence_has_lox) {
         auto l_target = lox_trace.sample(dt);
         if (!l_target) {
             LOG_ERR("Failed to sample lox trace: %s", l_target.error().build_message().c_str());
@@ -181,8 +210,8 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> ThrottleRangerMo
         out.lox_pos = *l_target;
     }
 
-    bool done_fuel = valve_sequence_has_fuel ? dt >= valve_sequence_fuel_total_time_ms : true;
-    bool done_lox = valve_sequence_has_lox ? dt >= valve_sequence_lox_total_time_ms : true;
+    bool done_fuel = local_valve_sequence_has_fuel ? dt >= local_valve_sequence_fuel_total_time_ms : true;
+    bool done_lox = local_valve_sequence_has_lox ? dt >= local_valve_sequence_lox_total_time_ms : true;
 
     if (done_fuel && done_lox) {
         LOG_INF("Done open loop seq, dt was %f", static_cast<double>(dt));
@@ -196,7 +225,14 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
     ThrottleRangerStateOutput out{};
     ThrottleRangerThrustSequenceData data{};
 
-    float elapsed_time = current_time - sequence_start_time;
+    uint32_t local_sequence_start_time;
+    float thrust_sequence_total_time_ms;
+    {
+        MutexGuard guard{&throttle_ranger_module_lock};
+        local_sequence_start_time = sequence_start_time;
+    }
+
+    float elapsed_time = current_time - local_sequence_start_time;
     if (elapsed_time > thrust_sequence_total_time_ms) {
         out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
         return {out, data};
@@ -374,7 +410,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> ThrottleR
     return {out, data};
 }
 
-std::pair<ThrottleRangerStateOutput, ThrottleAbortData> ThrottleRangerModule::abort_tick(uint32_t current_time)
+std::pair<ThrottleRangerStateOutput, ThrottleAbortData> ThrottleRangerModule::abort_tick(uint32_t current_time, uint32_t entry_time)
 {
     ThrottleRangerStateOutput out{};
     ThrottleAbortData data{};
@@ -386,7 +422,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleAbortData> ThrottleRangerModule::ab
     out.has_lox_pos = true;
     out.lox_pos = DEFAULT_LOX_POS;
 
-    if (current_time - abort_entry_time > 500) {
+    if (current_time - entry_time > 500) {
         out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     } else {
         out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
@@ -440,6 +476,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> ThrottleRange
 
 void ThrottleRangerModule::start_calibration(float fuel_pos, float fuel_pos_enc, float lox_pos, float lox_pos_enc) {
     // Controller handles actuation now
+    MutexGuard guard{&throttle_ranger_module_lock};
     cal_phase = CalPhase::SEEK_HARDSTOP;
     cal_rep_counter = 0;
     cal_fuel_found_stop = false;
@@ -464,22 +501,26 @@ std::expected<void, Error> ThrottleRangerModule::load_thrust_sequence(const Thro
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid thrust trace"));
 
-    thrust_sequence_total_time_ms = req.thrust_trace_lbf.total_time_ms;
-
-    auto ret = change_state(ThrottleState_THROTTLE_STATE_THRUST_PRIMED);
-    if (!ret.has_value()) {
-        return std::unexpected(ret.error().context("Failed to change state to thrust primed"));
+    {
+        MutexGuard guard{&throttle_ranger_module_lock};
+        thrust_sequence_total_time_ms = req.thrust_trace_lbf.total_time_ms;
     }
+
+    change_state(ThrottleState_THROTTLE_STATE_THRUST_PRIMED);
+
 
     return {};
 }
 
 std::expected<void, Error> ThrottleRangerModule::start_thrust_sequence()
 {
-    sequence_start_time = k_uptime_get();
-    low_ptc_start_time_ms = 0;
-    alpha = -1.0f;
     change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
+
+    {
+        MutexGuard guard{&throttle_ranger_module_lock};
+        low_ptc_start_time_ms = 0;
+        alpha = -1.0f;
+    }
 
     return {};
 }
@@ -492,23 +533,32 @@ std::expected<void, Error> ThrottleRangerModule::load_valve_sequence(const Throt
         return std::unexpected(Error::from_cause("No sequences provided in load request"));
     }
 
-    valve_sequence_has_fuel = has_fuel;
-    valve_sequence_has_lox = has_lox;
-    valve_sequence_fuel_total_time_ms = -1.0f;
-    valve_sequence_lox_total_time_ms = -1.0f;
+    {
+        MutexGuard guard{&throttle_ranger_module_lock};
+        valve_sequence_has_fuel = has_fuel;
+        valve_sequence_has_lox = has_lox;
+        valve_sequence_fuel_total_time_ms = -1.0f;
+        valve_sequence_lox_total_time_ms = -1.0f;
+    }
 
     if (has_fuel) {
         auto result = fuel_trace.load(req.fuel_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid fuel trace"));
-        valve_sequence_fuel_total_time_ms = req.fuel_trace_deg.total_time_ms;
+        {
+            MutexGuard guard{&throttle_ranger_module_lock};
+            valve_sequence_fuel_total_time_ms = req.fuel_trace_deg.total_time_ms;
+        }
     }
 
     if (has_lox) {
         auto result = lox_trace.load(req.lox_trace_deg);
         if (!result)
             return std::unexpected(result.error().context("%s", "Invalid lox trace"));
-        valve_sequence_lox_total_time_ms = req.lox_trace_deg.total_time_ms;
+        {
+            MutexGuard guard{&throttle_ranger_module_lock};
+            valve_sequence_lox_total_time_ms = req.lox_trace_deg.total_time_ms;
+        }
     }
 
     return {};
@@ -516,9 +566,13 @@ std::expected<void, Error> ThrottleRangerModule::load_valve_sequence(const Throt
 
 std::expected<void, Error> ThrottleRangerModule::start_valve_sequence()
 {
-    sequence_start_time = k_uptime_get();
-    change_state(ThrottleState_THROTTLE_STATE_VALVE_SEQ);
-    return {};
+    return change_state(ThrottleState_THROTTLE_STATE_VALVE_SEQ);
+}
+
+ThrottleState ThrottleRangerModule::state()
+{
+    MutexGuard guard{&throttle_ranger_module_lock};
+    return current_state;
 }
 
 
@@ -528,6 +582,7 @@ std::expected<void, Error> ThrottleRangerModule::power_on(const ThrottlePowerOnR
 {
     LOG_INF("Received power on valve request");
 
+    MutexGuard guard{&throttle_ranger_module_lock};
     if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot turn valve on unless system is IDLE"));
     }
@@ -551,6 +606,7 @@ std::expected<void, Error> ThrottleRangerModule::power_off(const ThrottlePowerOf
 {
     LOG_INF("Received power off valve request");
 
+    MutexGuard guard{&throttle_ranger_module_lock};
     if (current_state != ThrottleState_THROTTLE_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Cannot turn valve off unless system is IDLE"));
     }

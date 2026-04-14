@@ -1,4 +1,5 @@
 #include "TVCRangerModule.h"
+#include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
@@ -11,6 +12,8 @@
 #include "TVCRangerActuator.h"
 
 LOG_MODULE_REGISTER(TVCRangerModule, LOG_LEVEL_INF);
+
+K_MUTEX_DEFINE(tvc_ranger_module_lock);
 
 namespace {
     Trace x_trace;
@@ -27,8 +30,18 @@ void TVCRangerModule::step_control_loop(DataPacket& data )
 
     TVCRangerStateOutput out{};
 
+    TVCState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+    {
+        MutexGuard guard{&tvc_ranger_module_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+    }
+
     // --- PROCEDURAL LOGIC DISPATCHER ---
-    switch (current_state) {
+    switch (local_state) {
     case TVCState_TVC_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_tvc_state_data = DataPacket_tvc_idle_data_tag;
@@ -53,14 +66,14 @@ void TVCRangerModule::step_control_loop(DataPacket& data )
         break;
     }
     case TVCState_TVC_STATE_TRACE: {
-        auto [seq_out, seq_data] = sequence_tick(current_time, sequence_start_time);
+        auto [seq_out, seq_data] = sequence_tick(current_time, local_sequence_start_time);
         data.which_tvc_state_data = DataPacket_tvc_sequence_data_tag;
         data.tvc_state_data.tvc_sequence_data = seq_data;
         out = seq_out;
         break;
     }
     case TVCState_TVC_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_tvc_state_data = DataPacket_tvc_abort_data_tag;
         data.tvc_state_data.tvc_abort_data = abort_data;
         out = abort_out;
@@ -81,11 +94,12 @@ void TVCRangerModule::step_control_loop(DataPacket& data )
     data.which_tvc_state_output = DataPacket_tvc_ranger_state_output_tag;
     data.tvc_state_output.tvc_ranger_state_output = out;
     data.which_tvc_actuator_data = DataPacket_tvc_ranger_data_tag;
-    data.tvc_state = current_state;
+    data.tvc_state = state();
 }
 
 std::expected<void, Error> TVCRangerModule::change_state(TVCState new_state)
 {
+    MutexGuard guard{&tvc_ranger_module_lock};
     if (current_state == new_state)
         return {};
     else if (new_state == TVCState_TVC_STATE_ABORT){
@@ -182,8 +196,11 @@ std::expected<void, Error> TVCRangerModule::load_sequence(const TVCLoadSequenceR
     if (!result_y)
         return std::unexpected(result_y.error().context("%s", "Invalid Y trace"));
 
-    sequence_has_trace = true;
-    sequence_total_time = req.x_angle_trace_deg.total_time_ms;
+    {
+        MutexGuard guard{&tvc_ranger_module_lock};
+        sequence_has_trace = true;
+        sequence_total_time = req.x_angle_trace_deg.total_time_ms;
+    }
 
     change_state(TVCState_TVC_STATE_TRACE_PRIMED);
 
@@ -192,9 +209,18 @@ std::expected<void, Error> TVCRangerModule::load_sequence(const TVCLoadSequenceR
 
 std::expected<void, Error> TVCRangerModule::start_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&tvc_ranger_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
     change_state(TVCState_TVC_STATE_TRACE);
     return {};
+}
+
+TVCState TVCRangerModule::state()
+{
+    MutexGuard guard{&tvc_ranger_module_lock};
+    return current_state;
 }
 
 const char* TVCRangerModule::get_state_name(TVCState state)

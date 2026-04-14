@@ -1,4 +1,5 @@
 #include "RCSHornetModule.h"
+#include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
@@ -11,6 +12,8 @@
 #include "RCSHornetActuator.h"
 
 LOG_MODULE_REGISTER(RCSHornetModule, LOG_LEVEL_INF);
+
+K_MUTEX_DEFINE(rcs_hornet_module_lock);
 
 namespace {
     Trace valve_trace;
@@ -26,10 +29,20 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
 {
     int64_t current_time = k_uptime_get();
 
+    RCSState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+    }
+
     RCSHornetStateOutput out{};
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
-    switch (current_state) {
+    switch (local_state) {
     case RCSState_RCS_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_rcs_state_data = DataPacket_rcs_idle_data_tag;
@@ -47,7 +60,7 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_VALVE_SEQ: {
-        auto [seq_out, seq_data] = valve_sequence_tick(current_time, sequence_start_time);
+        auto [seq_out, seq_data] = valve_sequence_tick(current_time, local_sequence_start_time);
         data.which_rcs_state_data = DataPacket_rcs_valve_sequence_data_tag;
         data.rcs_state_data.rcs_valve_sequence_data = seq_data;
         out = seq_out;
@@ -62,7 +75,7 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_ROLL_SEQ: {
-        auto [roll_out, roll_data] = roll_sequence_tick(data.analog_sensors, current_time, sequence_start_time);
+        auto [roll_out, roll_data] = roll_sequence_tick(data.analog_sensors, current_time, local_sequence_start_time);
         data.which_rcs_state_data = DataPacket_rcs_roll_sequence_data_tag;
         data.rcs_state_data.rcs_roll_sequence_data = roll_data;
         out = roll_out;
@@ -76,7 +89,7 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_rcs_state_data = DataPacket_rcs_abort_data_tag;
         data.rcs_state_data.rcs_abort_data = abort_data;
         out = abort_out;
@@ -97,13 +110,14 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
     data.which_rcs_state_output = DataPacket_rcs_hornet_state_output_tag;
     data.rcs_state_output.rcs_hornet_state_output = out;
     data.which_rcs_actuator_data = DataPacket_rcs_hornet_data_tag;
-    data.rcs_state = current_state;
+    data.rcs_state = state();
 }
 
 
 
 std::expected<void, Error> RCSHornetModule::change_state(RCSState new_state)
 {
+    MutexGuard guard{&rcs_hornet_module_lock};
     if (current_state == new_state)
         return {};
     else if (new_state == RCSState_RCS_STATE_ABORT){
@@ -113,6 +127,12 @@ std::expected<void, Error> RCSHornetModule::change_state(RCSState new_state)
     current_state = new_state;
     LOG_INF("Changed RCS State to %s", get_state_name(current_state));
     return {};
+}
+
+RCSState RCSHornetModule::state()
+{
+    MutexGuard guard{&rcs_hornet_module_lock};
+    return current_state;
 }
 
 std::pair<RCSHornetStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
@@ -140,7 +160,15 @@ std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_seque
     RCSRollSequenceData data{};
     float dt = current_time - start_time;
 
-    if (roll_has_trace) {
+    bool local_roll_has_trace;
+    float local_roll_total_time;
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        local_roll_has_trace = roll_has_trace;
+        local_roll_total_time = roll_total_time;
+    }
+
+    if (local_roll_has_trace) {
         auto target = roll_trace.sample(dt);
         if (!target) {
             LOG_ERR("Failed to sample roll trace: %s", target.error().build_message().c_str());
@@ -167,7 +195,7 @@ std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_seque
     }
 
     out.next_state = RCSState_RCS_STATE_ROLL_SEQ;
-    if (roll_has_trace && dt >= roll_total_time) {
+    if (local_roll_has_trace && dt >= local_roll_total_time) {
         LOG_INF("Done RCS roll trace sequence, dt was %f", static_cast<double>(dt));
         out.next_state = RCSState_RCS_STATE_IDLE;
     }
@@ -184,7 +212,15 @@ std::pair<RCSHornetStateOutput, RCSValveSequenceData> RCSHornetModule::valve_seq
 
     float dt = current_time - start_time;
 
-    if (valve_has_trace) {
+    bool local_valve_has_trace;
+    float local_valve_total_time;
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        local_valve_has_trace = valve_has_trace;
+        local_valve_total_time = valve_total_time;
+    }
+
+    if (local_valve_has_trace) {
         auto target = valve_trace.sample(dt);
         if (!target) {
             LOG_ERR("Failed to sample valve trace: %s", target.error().build_message().c_str());
@@ -202,7 +238,7 @@ std::pair<RCSHornetStateOutput, RCSValveSequenceData> RCSHornetModule::valve_seq
         }
     }
 
-    if (valve_has_trace && dt >= valve_total_time) {
+    if (local_valve_has_trace && dt >= local_valve_total_time) {
         LOG_INF("Done RCS valve trace sequence, dt was %f", static_cast<double>(dt));
         out.next_state = RCSState_RCS_STATE_IDLE;
     }
@@ -234,8 +270,11 @@ std::expected<void, Error> RCSHornetModule::load_valve_sequence(const RCSLoadVal
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid trace"));
 
-    valve_has_trace = true;
-    valve_total_time = req.trace_lbf.total_time_ms;
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        valve_has_trace = true;
+        valve_total_time = req.trace_lbf.total_time_ms;
+    }
 
     change_state(RCSState_RCS_STATE_VALVE_PRIMED);
 
@@ -244,7 +283,10 @@ std::expected<void, Error> RCSHornetModule::load_valve_sequence(const RCSLoadVal
 
 std::expected<void, Error> RCSHornetModule::start_valve_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
     change_state(RCSState_RCS_STATE_VALVE_SEQ);
     return {};
 }
@@ -257,8 +299,11 @@ std::expected<void, Error> RCSHornetModule::load_roll_sequence(const RCSLoadRoll
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid trace"));
 
-    roll_has_trace = true;
-    roll_total_time = req.trace_deg.total_time_ms;
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        roll_has_trace = true;
+        roll_total_time = req.trace_deg.total_time_ms;
+    }
 
     change_state(RCSState_RCS_STATE_ROLL_PRIMED);
 
@@ -267,7 +312,10 @@ std::expected<void, Error> RCSHornetModule::load_roll_sequence(const RCSLoadRoll
 
 std::expected<void, Error> RCSHornetModule::start_roll_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&rcs_hornet_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
     change_state(RCSState_RCS_STATE_ROLL_SEQ);
     return {};
 }

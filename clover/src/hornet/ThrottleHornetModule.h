@@ -17,10 +17,7 @@ static inline uint32_t abort_entry_time = 0;
 static inline uint32_t sequence_start_time = 0;
 
 static inline ThrottleState current_state = ThrottleState_THROTTLE_STATE_IDLE;
-static ThrottleState state()
-{
-    return current_state;
-}
+ThrottleState state();
 
 void step_control_loop(DataPacket& data);
 
@@ -34,7 +31,7 @@ const char* get_state_name(ThrottleState state);
 std::pair<ThrottleHornetStateOutput, ThrottleIdleData> idle_tick();
 std::pair<ThrottleHornetStateOutput, ThrottleHornetThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
 std::pair<ThrottleHornetStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
-std::pair<ThrottleHornetStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
+std::pair<ThrottleHornetStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
 
 static inline float thrust_sequence_total_time_ms = 0.0f;
 

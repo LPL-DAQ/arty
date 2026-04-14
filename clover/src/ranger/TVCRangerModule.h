@@ -17,10 +17,7 @@ namespace TVCRangerModule {
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
 
-    static TVCState state()
-    {
-        return current_state;
-    }
+    TVCState state();
 
     void step_control_loop(DataPacket& data);
     // Request handlers

@@ -1,4 +1,5 @@
 #include "ThrottleHornetModule.h"
+#include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../server.h"
 #include "../FlightController.h"
@@ -12,14 +13,14 @@
 
 LOG_MODULE_REGISTER(ThrottleHornetModule, LOG_LEVEL_INF);
 
+K_MUTEX_DEFINE(throttle_hornet_module_lock);
 
 
 std::expected<void, Error> ThrottleHornetModule::change_state(ThrottleState new_state)
 {
+    MutexGuard guard{&throttle_hornet_module_lock};
     if (current_state == new_state)
         return {};
-
-
 
      if (new_state == ThrottleState_THROTTLE_STATE_THRUST_SEQ){
         start_thrust_sequence();
@@ -42,8 +43,20 @@ void ThrottleHornetModule::step_control_loop(DataPacket& data)
     uint64_t start_cycle = k_cycle_get_64();
     ThrottleHornetStateOutput out{};
 
+    ThrottleState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+    float local_thrust_sequence_total_time_ms;
+    {
+        MutexGuard guard{&throttle_hornet_module_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+        local_thrust_sequence_total_time_ms = thrust_sequence_total_time_ms;
+    }
+
     // --- PROCEDURAL LOGIC DISPATCHER ---
-    switch (current_state) {
+    switch (local_state) {
     case ThrottleState_THROTTLE_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_throttle_state_data = DataPacket_throttle_idle_data_tag;
@@ -75,7 +88,7 @@ void ThrottleHornetModule::step_control_loop(DataPacket& data)
         break;
     }
     case ThrottleState_THROTTLE_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_throttle_state_data = DataPacket_throttle_abort_data_tag;
         data.throttle_state_data.throttle_abort_data = abort_data;
         out = abort_out;
@@ -97,7 +110,7 @@ void ThrottleHornetModule::step_control_loop(DataPacket& data)
     // TODO: how to pass this upward? it shouldnt change its own state, controller should
     change_state(out.next_state);
 
-    data.throttle_state = current_state;
+    data.throttle_state = state();
 }
 
 
@@ -128,8 +141,16 @@ std::pair<ThrottleHornetStateOutput, ThrottleHornetThrustSequenceData> ThrottleH
     ThrottleHornetStateOutput out{};
     ThrottleHornetThrustSequenceData data{};
 
-    float elapsed_time = current_time - sequence_start_time;
-    if (elapsed_time > thrust_sequence_total_time_ms) {
+    uint32_t local_sequence_start_time;
+    float local_thrust_sequence_total_time_ms;
+    {
+        MutexGuard guard{&throttle_hornet_module_lock};
+        local_sequence_start_time = sequence_start_time;
+        local_thrust_sequence_total_time_ms = thrust_sequence_total_time_ms;
+    }
+
+    float elapsed_time = current_time - local_sequence_start_time;
+    if (elapsed_time > local_thrust_sequence_total_time_ms) {
         out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
         return {out, data};
     }
@@ -148,14 +169,14 @@ std::pair<ThrottleHornetStateOutput, ThrottleHornetThrustSequenceData> ThrottleH
     return {out, data};
 }
 
-std::pair<ThrottleHornetStateOutput, ThrottleAbortData> ThrottleHornetModule::abort_tick(uint32_t current_time)
+std::pair<ThrottleHornetStateOutput, ThrottleAbortData> ThrottleHornetModule::abort_tick(uint32_t current_time, uint32_t entry_time)
 {
     ThrottleHornetStateOutput out{};
     ThrottleAbortData data{};
 
     out.power_on = true;
 
-    if (current_time - abort_entry_time > 500) {
+    if (current_time - entry_time > 500) {
         out.next_state = ThrottleState_THROTTLE_STATE_IDLE;
     } else {
         out.next_state = ThrottleState_THROTTLE_STATE_ABORT;
@@ -174,21 +195,32 @@ std::expected<void, Error> ThrottleHornetModule::load_thrust_sequence(const Thro
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid thrust trace"));
 
-    thrust_sequence_total_time_ms = req.thrust_trace_lbf.total_time_ms;
+    {
+        MutexGuard guard{&throttle_hornet_module_lock};
+        thrust_sequence_total_time_ms = req.thrust_trace_lbf.total_time_ms;
+    }
 
     change_state(ThrottleState_THROTTLE_STATE_THRUST_PRIMED);
-
 
     return {};
 }
 
 std::expected<void, Error> ThrottleHornetModule::start_thrust_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&throttle_hornet_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
 
     change_state(ThrottleState_THROTTLE_STATE_THRUST_SEQ);
 
     return {};
+}
+
+ThrottleState ThrottleHornetModule::state()
+{
+    MutexGuard guard{&throttle_hornet_module_lock};
+    return current_state;
 }
 
 const char* ThrottleHornetModule::get_state_name(ThrottleState state)

@@ -1,6 +1,7 @@
 #include "Controller.h"
 #include "ControllerConfig.h"
 #include "FlightController.h"
+#include "MutexGuard.h"
 #include "server.h"
 #include "config.h"
 
@@ -43,10 +44,25 @@ K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
 k_work_q controller_step_work_q;
 
+K_MUTEX_DEFINE(controller_state_lock);
+
+static SystemState get_current_system_state()
+{
+    MutexGuard guard{&controller_state_lock};
+    return Controller::current_state;
+}
+
+static void set_abort_entry_time(uint32_t timestamp)
+{
+    MutexGuard guard{&controller_state_lock};
+    Controller::abort_entry_time = timestamp;
+}
+
 
 
 std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
+    MutexGuard guard{&controller_state_lock};
     if (current_state == new_state)
         return {};
 
@@ -181,16 +197,16 @@ void Controller::step_control_loop(k_work*)
         ThrottleRangerActuator::tick(data.throttle_state_output.ranger_state_output, data.throttle_actuator_data.throttle_ranger_data);
     #elif CONFIG_HORNET
         TVCHornetModule::step_control_loop(data);
-        TVCHornetActuator::tick(data.tvc_state_output.hornet_state_output, data.tvc_actuator_data.tvc_hornet_data);
+        TVCHornetActuator::tick(data.tvc_state_output.tvc_hornet_state_output, data);
 
         RCSHornetModule::step_control_loop(data);
-        RCSHornetActuator::tick(data.rcs_state_output.hornet_state_output, data.rcs_actuator_data.rcs_hornet_data);
+        RCSHornetActuator::tick(data.rcs_state_output.rcs_hornet_state_output, data.rcs_actuator_data.rcs_hornet_data);
 
         ThrottleHornetModule::step_control_loop(data);
-        ThrottleHornetActuator::tick(data.throttle_state_output.hornet_state_output, data.throttle_actuator_data.throttle_hornet_data);
+        ThrottleHornetActuator::tick(data.throttle_state_output.throttle_hornet_state_output, data.throttle_actuator_data.throttle_hornet_data);
     #endif
 
-    data.state = current_state;
+    data.state = get_current_system_state();
     data.controller_timing.controller_tick_time_ns = (k_cycle_get_64() - start_cycle) * (1e9f / SystemCoreClock);
     data.sequence_number = 0; // TODO: how is this supposed to be set?
 
@@ -213,7 +229,7 @@ void Controller::step_control_loop(k_work*)
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_INF("Received abort request");
-    abort_entry_time = k_uptime_get();
+    set_abort_entry_time(k_uptime_get());
     auto ret = change_state(SystemState_STATE_ABORT);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("Failed to change state to abort"));
@@ -225,7 +241,7 @@ std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 
 std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const ThrottleLoadValveSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle valve sequence load rejected unless system is idle"));
     }
 
@@ -242,7 +258,7 @@ std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const
 
 std::expected<void, Error> Controller::handle_load_throttle_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle thrust sequence load rejected unless system is idle"));
     }
 
@@ -255,7 +271,7 @@ std::expected<void, Error> Controller::handle_load_throttle_thrust_sequence(cons
 
 std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const RCSLoadValveSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("RCS valve sequence load rejected unless system is idle"));
     }
 
@@ -272,7 +288,7 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const RCSL
 
 std::expected<void, Error> Controller::handle_load_rcs_roll_sequence(const RCSLoadRollSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("RCS roll sequence load rejected unless system is idle"));
     }
 
@@ -285,7 +301,7 @@ std::expected<void, Error> Controller::handle_load_rcs_roll_sequence(const RCSLo
 
 std::expected<void, Error> Controller::handle_load_tvc_sequence(const TVCLoadSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("TVC load sequence rejected unless system is idle"));
     }
 
@@ -298,7 +314,7 @@ std::expected<void, Error> Controller::handle_load_tvc_sequence(const TVCLoadSeq
 
 std::expected<void, Error> Controller::handle_load_flight_sequence(const FlightLoadSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Flight load sequence rejected unless system is idle"));
     }
     if (FlightController::state() != FlightState_FLIGHT_STATE_IDLE) {
@@ -361,7 +377,7 @@ std::expected<void, Error> Controller::handle_start_tvc_sequence(const TVCStartS
         return ret;
     }
 
-    return change_state(current_state == SystemState_STATE_STATIC_FIRE_PRIMED ? SystemState_STATE_STATIC_FIRE : SystemState_STATE_TVC);
+    return change_state(get_current_system_state() == SystemState_STATE_STATIC_FIRE_PRIMED ? SystemState_STATE_STATIC_FIRE : SystemState_STATE_TVC);
 }
 
 std::expected<void, Error> Controller::handle_start_flight_sequence(const FlightStartSequenceRequest& req)
@@ -405,13 +421,18 @@ std::expected<void, Error> Controller::handle_prime(const PrimeRequest& req)
         return std::unexpected(Error::from_cause("Unknown prime target: %d", req.target));
     }
 }
-
+// TODO: need to prevent this if switch isnt allowed
 std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
 {
+    // system must be in or move it idle. If it isnt or can't, then no other state can be set to idle
+    auto ret = change_state(SystemState_STATE_IDLE);
+    if (!ret.has_value()) {
+        return std::unexpected(ret.error().context("Failed to change state to idle"));
+    }
+
     HaltTarget target = req.has_target ? req.target : HaltTarget_HALT_TARGET_ALL;
 
     if (target == HaltTarget_HALT_TARGET_ALL) {
-
         FlightController::change_state(FlightState_FLIGHT_STATE_IDLE);
         ThrottleImpl::change_state(ThrottleState_THROTTLE_STATE_IDLE);
         TVCImpl::change_state(TVCState_TVC_STATE_IDLE);
@@ -444,7 +465,7 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
 
 std::expected<void, Error> Controller::handle_calibrate_throttle(const ThrottleCalibrateValveRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
+    if (get_current_system_state() != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("Throttle calibration rejected unless system is idle"));
     }
 

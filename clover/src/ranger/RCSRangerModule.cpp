@@ -1,4 +1,5 @@
 #include "RCSRangerModule.h"
+#include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
@@ -11,6 +12,8 @@
 #include "RCSRangerActuator.h"
 
 LOG_MODULE_REGISTER(RCSRangerModule, LOG_LEVEL_INF);
+
+K_MUTEX_DEFINE(rcs_ranger_module_lock);
 
 namespace {
     Trace motor_trace;
@@ -29,8 +32,18 @@ void RCSRangerModule::step_control_loop(DataPacket& data )
 
     RCSRangerStateOutput out{};
 
+    RCSState local_state;
+    uint32_t local_sequence_start_time;
+    uint32_t local_abort_entry_time;
+    {
+        MutexGuard guard{&rcs_ranger_module_lock};
+        local_state = current_state;
+        local_sequence_start_time = sequence_start_time;
+        local_abort_entry_time = abort_entry_time;
+    }
+
     // --- PROCEDURAL LOGIC DISPATCHER ---
-    switch (current_state) {
+    switch (local_state) {
     case RCSState_RCS_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
         data.which_rcs_state_data = DataPacket_rcs_idle_data_tag;
@@ -48,7 +61,7 @@ void RCSRangerModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_VALVE_SEQ: {
-        auto [seq_out, seq_data] = motor_sequence_tick(current_time, sequence_start_time);
+        auto [seq_out, seq_data] = motor_sequence_tick(current_time, local_sequence_start_time);
         data.which_rcs_state_data = DataPacket_rcs_valve_sequence_data_tag;
         data.rcs_state_data.rcs_valve_sequence_data = seq_data;
         out = seq_out;
@@ -63,7 +76,7 @@ void RCSRangerModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_ROLL_SEQ: {
-        auto [roll_out, roll_data] = roll_sequence_tick(data.analog_sensors, current_time, sequence_start_time);
+        auto [roll_out, roll_data] = roll_sequence_tick(data.analog_sensors, current_time, local_sequence_start_time);
         data.which_rcs_state_data = DataPacket_rcs_roll_sequence_data_tag;
         data.rcs_state_data.rcs_roll_sequence_data = roll_data;
         out = roll_out;
@@ -77,7 +90,7 @@ void RCSRangerModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
+        auto [abort_out, abort_data] = abort_tick(current_time, local_abort_entry_time);
         data.which_rcs_state_data = DataPacket_rcs_abort_data_tag;
         data.rcs_state_data.rcs_abort_data = abort_data;
         out = abort_out;
@@ -98,13 +111,14 @@ void RCSRangerModule::step_control_loop(DataPacket& data )
     data.which_rcs_state_output = DataPacket_rcs_ranger_state_output_tag;
     data.rcs_state_output.rcs_ranger_state_output = out;
     data.which_rcs_actuator_data = DataPacket_rcs_ranger_data_tag;
-    data.rcs_state = current_state;
+    data.rcs_state = state();
 }
 
 
 
 std::expected<void, Error> RCSRangerModule::change_state(RCSState new_state)
 {
+    MutexGuard guard{&rcs_ranger_module_lock};
     if (current_state == new_state)
         return {};
     else if (new_state == RCSState_RCS_STATE_ABORT){
@@ -235,8 +249,11 @@ std::expected<void, Error> RCSRangerModule::load_motor_sequence(const RCSLoadVal
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid trace"));
 
-    motor_has_trace = true;
-    motor_total_time = req.trace_lbf.total_time_ms;
+    {
+        MutexGuard guard{&rcs_ranger_module_lock};
+        motor_has_trace = true;
+        motor_total_time = req.trace_lbf.total_time_ms;
+    }
 
     change_state(RCSState_RCS_STATE_VALVE_PRIMED);
 
@@ -245,7 +262,10 @@ std::expected<void, Error> RCSRangerModule::load_motor_sequence(const RCSLoadVal
 
 std::expected<void, Error> RCSRangerModule::start_motor_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&rcs_ranger_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
     change_state(RCSState_RCS_STATE_VALVE_SEQ);
     return {};
 }
@@ -258,8 +278,11 @@ std::expected<void, Error> RCSRangerModule::load_roll_sequence(const RCSLoadRoll
     if (!result)
         return std::unexpected(result.error().context("%s", "Invalid trace"));
 
-    roll_has_trace = true;
-    roll_total_time = req.trace_deg.total_time_ms;
+    {
+        MutexGuard guard{&rcs_ranger_module_lock};
+        roll_has_trace = true;
+        roll_total_time = req.trace_deg.total_time_ms;
+    }
 
     change_state(RCSState_RCS_STATE_ROLL_PRIMED);
 
@@ -268,10 +291,20 @@ std::expected<void, Error> RCSRangerModule::load_roll_sequence(const RCSLoadRoll
 
 std::expected<void, Error> RCSRangerModule::start_roll_sequence()
 {
-    sequence_start_time = k_uptime_get();
+    {
+        MutexGuard guard{&rcs_ranger_module_lock};
+        sequence_start_time = k_uptime_get();
+    }
     change_state(RCSState_RCS_STATE_ROLL_SEQ);
     return {};
 }
+
+RCSState RCSRangerModule::state()
+{
+    MutexGuard guard{&rcs_ranger_module_lock};
+    return current_state;
+}
+
 const char* RCSRangerModule::get_state_name(RCSState state)
 {
     if (state == RCSState_RCS_STATE_IDLE)

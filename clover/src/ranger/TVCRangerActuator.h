@@ -9,7 +9,7 @@
 
 namespace TVCRangerActuator {
 
-std::expected<void, Error> tick(TVCRangerStateOutput& output, TVCRangerActuatorData& actuator_data);
+std::expected<void, Error> tick(TVCRangerStateOutput& output, TVCRangerData& actuator_data);
 
 }
 

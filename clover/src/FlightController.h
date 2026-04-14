@@ -16,10 +16,7 @@ namespace FlightController {
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
 
-    static FlightState state()
-    {
-        return current_state;
-    }
+    FlightState state();
 
     std::expected<void, Error> init();
     void step_control_loop(DataPacket& data);
@@ -27,7 +24,6 @@ namespace FlightController {
     std::expected<void, Error> load_sequence(const FlightLoadSequenceRequest& req);
     std::expected<void, Error> start_sequence();
 
-    const FlightStateOutput& get_output();
 
     std::expected<void, Error> change_state(FlightState new_state);
     const char* get_state_name(FlightState state);

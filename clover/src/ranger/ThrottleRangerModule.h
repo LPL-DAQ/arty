@@ -25,10 +25,7 @@ static inline bool fuel_powered = true;
 static inline bool lox_powered = true;
 
 static inline ThrottleState current_state = ThrottleState_THROTTLE_STATE_IDLE;
-static ThrottleState state()
-{
-    return current_state;
-}
+ThrottleState state();
 
 void step_control_loop(DataPacket& data);
 
@@ -49,7 +46,7 @@ std::pair<ThrottleRangerStateOutput, ThrottleValveCalibrationData> calibrate_val
 std::pair<ThrottleRangerStateOutput, ThrottleValveSequenceData> valve_sequence_tick(int64_t current_time);
 std::pair<ThrottleRangerStateOutput, ThrottleRangerThrustSequenceData> thrust_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time);
 std::pair<ThrottleRangerStateOutput, ThrottleFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
-std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time);
+std::pair<ThrottleRangerStateOutput, ThrottleAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
 
 static inline bool valve_sequence_has_fuel = false;
 static inline bool valve_sequence_has_lox = false;
