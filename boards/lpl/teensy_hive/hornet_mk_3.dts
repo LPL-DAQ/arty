@@ -5,6 +5,7 @@ Hornet Mk. 3 board.
 /dts-v1/;
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
 #define ANALOG_SENSORS_ADC_OVERSAMPLING 5
@@ -49,6 +50,20 @@ TODO:
         analog-sensor-adcs = <&adc1 &adc2>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+
+        
+        /* PWM channels — accessed via PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), <name>) */
+        pwms = <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_l     Pin 2  AD_B0_09  FlexPWM2.3 A */
+               <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_r     Pin 3  EMC_05    FlexPWM4.2 B */
+               <&flexpwm2_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,   /* motor_beta1 Pin 9  B0_11     FlexPWM2.2 B */
+               <&flexpwm4_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_beta2 Pin 22 AD_B1_08  FlexPWM4.0 A */
+               <&flexpwm4_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_beta3 Pin 23 AD_B1_09  FlexPWM4.1 A */
+               <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_beta4 Pin 28 EMC_32    FlexPWM3.1 B */
+               <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* motor_cr    Pin 29 EMC_31    FlexPWM3.1 A */
+
+        pwm-names = "servo_l", "servo_r",
+                    "motor_beta1", "motor_beta2", "motor_beta3", "motor_beta4",
+                    "motor_cr";
     };
 
     chosen {
@@ -114,6 +129,75 @@ TODO:
                      <&iomuxc_gpio_ad_b1_01_gpio1_io17>,
                      <&iomuxc_gpio_ad_b1_10_gpio1_io26>;
             bias-disable; // These should be pulled down by voltage divider
+             drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* AD_B0_09 -> FlexPWM2_PWMA3 (servo_l) */
+    pinmux_flexpwm2_pwm3: pinmux_flexpwm2_pwm3 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b0_09_flexpwm2_pwma3>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* Pin 3: EMC_05 -> FlexPWM4_PWMB2 (servo_r) */
+    pinmux_flexpwm4_pwm2: pinmux_flexpwm4_pwm2 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_05_flexpwm4_pwmb2>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* Pin 9: B0_11 -> FlexPWM2_PWMB2 (motor_beta1) */
+    pinmux_flexpwm2_pwm2_b: pinmux_flexpwm2_pwm2_b {
+        group0 {
+        pinmux = <&iomuxc_gpio_b0_11_flexpwm2_pwmb2>;
+        bias-disable;
+        drive-strength = "r0-6";
+        slew-rate = "slow";
+        nxp,speed = "100-mhz";
+        };
+    };
+
+    /* Pin 22: AD_B1_08 -> FlexPWM4_PWMA0 (motor_beta2) */
+    pinmux_flexpwm4_pwm0: pinmux_flexpwm4_pwm0 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_08_flexpwm4_pwma0>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* Pin 23: AD_B1_09 -> FlexPWM4_PWMA1 (motor_beta3) */
+    pinmux_flexpwm4_pwm1: pinmux_flexpwm4_pwm1 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_09_flexpwm4_pwma1>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* Pin 28: EMC_32 -> FlexPWM3_PWMB1 (motor_beta4)
+       Pin 29: EMC_31 -> FlexPWM3_PWMA1 (motor_cr)
+       Both on FlexPWM3 submodule 1, so combine in one pinctrl group */
+    pinmux_flexpwm3_pwm1: pinmux_flexpwm3_pwm1 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_32_flexpwm3_pwmb1>,
+                     <&iomuxc_gpio_emc_31_flexpwm3_pwma1>;
+            bias-disable;
             drive-strength = "r0-6";
             slew-rate = "slow";
             nxp,speed = "100-mhz";
@@ -228,6 +312,52 @@ TODO:
         zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
         zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
+};
+
+/* ------------------------------------------------------------------ */
+/* FlexPWM submodule enables with pinctrl — unchanged                 */
+/* ------------------------------------------------------------------ */
+
+/* servo_l — AD_B0_09 (FlexPWM2 submodule 3, A) */
+&flexpwm2_pwm3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm2_pwm3>;
+    status = "okay";
+};
+
+/* motor_beta1 — Pin 6 (FlexPWM2 submodule 2, A) */
+&flexpwm2_pwm2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm2_pwm2_b>;
+    status = "okay";
+};
+
+/* motor_beta4 (Pin 28, B) + motor_cr (Pin 29, A) — FlexPWM3 submodule 1 */
+&flexpwm3_pwm1 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm3_pwm1>;
+    status = "okay";
+};
+
+/* motor_beta2 — Pin 22 (FlexPWM4 submodule 0, A) */
+&flexpwm4_pwm0 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm4_pwm0>;
+    status = "okay";
+};
+
+/* motor_beta3 — Pin 23 (FlexPWM4 submodule 1, A) */
+&flexpwm4_pwm1 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm4_pwm1>;
+    status = "okay";
+};
+
+/* servo_r — Pin 3 (FlexPWM4 submodule 2, B) */
+&flexpwm4_pwm2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm4_pwm2>;
+    status = "okay";
 };
 
 &zephyr_udc0 {
