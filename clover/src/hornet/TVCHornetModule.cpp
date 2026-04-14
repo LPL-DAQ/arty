@@ -83,7 +83,6 @@ void TVCHornetModule::step_control_loop(DataPacket& data )
     data.tvc_state_output.tvc_hornet_state_output = out;
     data.which_tvc_actuator_data = DataPacket_tvc_hornet_data_tag;
     data.tvc_state = current_state;
-    return out;
 }
 
 

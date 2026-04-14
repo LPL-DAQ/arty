@@ -121,7 +121,6 @@ void ThrottleRangerModule::step_control_loop(DataPacket& data)
     change_state(out.next_state);
 
     data.throttle_state = current_state;
-    return out;
 }
 
 

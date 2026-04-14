@@ -99,7 +99,6 @@ void RCSRangerModule::step_control_loop(DataPacket& data )
     data.rcs_state_output.rcs_ranger_state_output = out;
     data.which_rcs_actuator_data = DataPacket_rcs_ranger_data_tag;
     data.rcs_state = current_state;
-    return out;
 }
 
 
