@@ -501,5 +501,4 @@ std::optional<std::pair<AnalogSensorReadings, float>> AnalogSensors::read()
     has_reading = false;
 
     return {{sensor_readings, sense_time_ns}};
-    // return std::make_optional(std::make_pair(sensor_readings, sense_time_ns));
 }

@@ -1,6 +1,6 @@
 target_sources(app PRIVATE main.cpp
     server.cpp
-    lidar.cpp
+    Lidar.cpp
     Controller.cpp
     Error.cpp
     Trace.cpp

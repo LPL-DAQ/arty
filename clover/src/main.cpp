@@ -9,7 +9,7 @@
 
 #include "AnalogSensors.h"
 #include "Controller.h"
-#include "lidar.h"
+#include "Lidar.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
@@ -65,16 +65,22 @@ int main(void)
 
 #endif
 
-    // LOG_INF("Initializing LiDAR");
-    // int err = lidar_init();
-    // if (err) {
-    //     LOG_ERR("Failed to initialize LiDAR");
-    //     return 0;
-    // }
-
+    // Sensors
     LOG_INF("Initializing analog sensors");
     if (auto result = AnalogSensors::init(); !result) {
         LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing Lidar 1");
+    if (auto result = Lidar1::init(); !result) {
+        LOG_ERR("Failed to initialize Lidar 1: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing Lidar 2");
+    if (auto result = Lidar2::init(); !result) {
+        LOG_ERR("Failed to initialize Lidar 2: %s", result.error().build_message().c_str());
         return 0;
     }
 
