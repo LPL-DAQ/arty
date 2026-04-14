@@ -38,9 +38,6 @@ namespace {
     float flight_sequence_total_time = 0.0f;
 }
 
-
-
-
 void FlightController::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();

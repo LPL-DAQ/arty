@@ -436,6 +436,8 @@ message DataPacket {
   // Flight
   required FlightState flight_state = 42;
   optional FlightStateOutput flight_state_output = 43;
+  
+  required EstimatedState estimated_state = 54;
 
   // Actuators
   oneof  throttle_state_output{
@@ -639,6 +641,21 @@ message TVCHornetStateOutput {
 // this is what is sent to other controllers, calculated in FlightController
 message FlightControllerOutput{
 
+}
+
+// Estimated vehicle state for telemetry and flight path monitoring.
+message EstimatedState {
+  required float pitch_deg = 1;
+  required float yaw_deg = 2;
+  required float roll_deg = 3;
+
+  required float x_m = 4;
+  required float y_m = 5;
+  required float z_m = 6;
+
+  required float vx_m_s = 7;
+  required float vy_m_s = 8;
+  required float vz_m_s = 9;
 }
 
 // this is what is sent to FlightController

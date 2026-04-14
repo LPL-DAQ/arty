@@ -1,6 +1,7 @@
 #include "Controller.h"
 #include "ControllerConfig.h"
 #include "flight/FlightController.h"
+#include "flight/StateEstimator.h"
 #include "MutexGuard.h"
 #include "server.h"
 #include "config.h"
@@ -177,7 +178,8 @@ void Controller::step_control_loop(k_work*)
 
     daq_client_status daq_status = get_daq_client_status();
 
-    // Dispatch to appropriate peripheral controllers based on current state
+    // Dispatch to state estimation and peripheral controllers based on current state
+    StateEstimator::step_control_loop(data);
     FlightController::step_control_loop(data);
 
     #if CONFIG_RANGER
