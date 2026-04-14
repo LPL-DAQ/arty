@@ -18,6 +18,68 @@ namespace {
 }
 
 
+
+
+void FlightController::step_control_loop(DataPacket& data)
+{
+    int64_t current_time = k_uptime_get();
+
+    switch (current_state) {
+    case FlightState_FLIGHT_STATE_IDLE: {
+        auto [idle_out, idle_data] = idle_tick();
+        data.which_flight_state_data = DataPacket_flight_idle_data_tag;
+        data.flight_state_data.flight_idle_data = idle_data;
+        current_output = idle_out;
+        break;
+    }
+    case FlightState_FLIGHT_STATE_TAKEOFF: {
+        auto [takeoff_out, takeoff_data] = takeoff_tick(current_time, sequence_start_time);
+        data.which_flight_state_data = DataPacket_flight_takeoff_data_tag;
+        data.flight_state_data.flight_takeoff_data = takeoff_data;
+        current_output = takeoff_out;
+        break;
+    }
+    case FlightState_FLIGHT_STATE_FLIGHT_SEQ: {
+        auto [seq_out, seq_data] = flight_seq_tick(data.analog_sensors, current_time, sequence_start_time);
+        data.which_flight_state_data = DataPacket_flight_sequence_data_tag;
+        data.flight_state_data.flight_sequence_data = seq_data;
+        current_output = seq_out;
+        break;
+    }
+    case FlightState_FLIGHT_STATE_LANDING: {
+        auto [landing_out, landing_data] = landing_tick(current_time, sequence_start_time);
+        data.which_flight_state_data = DataPacket_flight_landing_data_tag;
+        data.flight_state_data.flight_landing_data = landing_data;
+        current_output = landing_out;
+        break;
+    }
+    case FlightState_FLIGHT_STATE_ABORT: {
+        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
+        data.which_flight_state_data = DataPacket_flight_abort_data_tag;
+        data.flight_state_data.flight_abort_data = abort_data;
+        current_output = abort_out;
+        break;
+    }
+
+    default: {
+        auto [idle_out, idle_data] = idle_tick();
+        data.which_flight_state_data = DataPacket_flight_idle_data_tag;
+        data.flight_state_data.flight_idle_data = idle_data;
+        current_output = idle_out;
+        break;
+    }
+    }
+
+    auto ret = change_state(current_output.next_state);
+    if (!ret.has_value()) {
+        LOG_ERR("Error while changing flight state: %s", ret.error().build_message().c_str());
+    }
+
+    data.flight_state_output = current_output;
+    data.flight_state = current_state;
+
+}
+
 // TODO: make throttle, tvc, rcs change states according to how this switches from takeoff -> flight -> landing
 std::expected<void, Error> FlightController::change_state(FlightState new_state)
 {
@@ -188,91 +250,6 @@ std::expected<void, Error> FlightController::start_sequence()
         return std::unexpected(ret.error().context("Failed to change state to takeoff"));
     }
     return {};
-}
-
-void FlightController::step_control_loop(DataPacket& data)
-{
-    int64_t current_time = k_uptime_get();
-
-    switch (current_state) {
-    case FlightState_FLIGHT_STATE_IDLE: {
-        auto [idle_out, idle_data] = idle_tick();
-        data.which_flight_state_data = DataPacket_flight_idle_data_tag;
-        data.flight_state_data.flight_idle_data = idle_data;
-        current_output = idle_out;
-        break;
-    }
-    case FlightState_FLIGHT_STATE_TAKEOFF: {
-        auto [takeoff_out, takeoff_data] = takeoff_tick(current_time, sequence_start_time);
-        data.which_flight_state_data = DataPacket_flight_takeoff_data_tag;
-        data.flight_state_data.flight_takeoff_data = takeoff_data;
-        current_output = takeoff_out;
-        break;
-    }
-    case FlightState_FLIGHT_STATE_FLIGHT_SEQ: {
-        auto [seq_out, seq_data] = flight_seq_tick(data.analog_sensors, current_time, sequence_start_time);
-        data.which_flight_state_data = DataPacket_flight_sequence_data_tag;
-        data.flight_state_data.flight_sequence_data = seq_data;
-        current_output = seq_out;
-        break;
-    }
-    case FlightState_FLIGHT_STATE_LANDING: {
-        auto [landing_out, landing_data] = landing_tick(current_time, sequence_start_time);
-        data.which_flight_state_data = DataPacket_flight_landing_data_tag;
-        data.flight_state_data.flight_landing_data = landing_data;
-        current_output = landing_out;
-        break;
-    }
-    case FlightState_FLIGHT_STATE_ABORT: {
-        auto [abort_out, abort_data] = abort_tick(current_time, abort_entry_time);
-        data.which_flight_state_data = DataPacket_flight_abort_data_tag;
-        data.flight_state_data.flight_abort_data = abort_data;
-        current_output = abort_out;
-        break;
-    }
-
-    default: {
-        auto [idle_out, idle_data] = idle_tick();
-        data.which_flight_state_data = DataPacket_flight_idle_data_tag;
-        data.flight_state_data.flight_idle_data = idle_data;
-        current_output = idle_out;
-        break;
-    }
-    }
-
-    auto ret = change_state(current_output.next_state);
-    if (!ret.has_value()) {
-        LOG_ERR("Error while changing flight state: %s", ret.error().build_message().c_str());
-    }
-
-    data.flight_state_output = current_output;
-    data.flight_state = current_state;
-
-}
-
-const FlightStateOutput& FlightController::get_output()
-{
-    return current_output;
-}
-
-float FlightController::get_z_acceleration()
-{
-    return current_output.z_acceleration;
-}
-
-float FlightController::get_x_angular_acceleration()
-{
-    return current_output.x_angular_acceleration;
-}
-
-float FlightController::get_y_angular_acceleration()
-{
-    return current_output.y_angular_acceleration;
-}
-
-float FlightController::get_roll_position()
-{
-    return current_output.roll_position;
 }
 
 const char* FlightController::get_state_name(FlightState state)

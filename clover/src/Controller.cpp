@@ -50,6 +50,55 @@ std::expected<void, Error> Controller::change_state(SystemState new_state)
     if (current_state == new_state)
         return {};
 
+    switch (new_state) {
+    case SystemState_STATE_IDLE:
+    case SystemState_STATE_ABORT:
+        break;
+
+    case SystemState_STATE_THROTTLE_PRIMED:
+    case SystemState_STATE_TVC_PRIMED:
+    case SystemState_STATE_RCS_PRIMED:
+    case SystemState_STATE_FLIGHT_PRIMED:
+    case SystemState_STATE_STATIC_FIRE_PRIMED:
+        if (current_state != SystemState_STATE_IDLE) {
+            return std::unexpected(Error::from_cause("%s request rejected unless system is idle", get_state_name(new_state)));
+        }
+        break;
+
+    case SystemState_STATE_THROTTLE:
+        if (current_state != SystemState_STATE_THROTTLE_PRIMED) {
+            return std::unexpected(Error::from_cause("System state change to Throttle only allowed from Throttle Primed"));
+        }
+        break;
+
+    case SystemState_STATE_TVC:
+        if (current_state != SystemState_STATE_TVC_PRIMED) {
+            return std::unexpected(Error::from_cause("System state change to TVC only allowed from TVC Primed"));
+        }
+        break;
+
+    case SystemState_STATE_STATIC_FIRE:
+        if (current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
+            return std::unexpected(Error::from_cause("System state change to Static Fire only allowed from Static Fire Primed"));
+        }
+        break;
+
+    case SystemState_STATE_RCS:
+        if (current_state != SystemState_STATE_RCS_PRIMED) {
+            return std::unexpected(Error::from_cause("System state change to RCS only allowed from RCS Primed"));
+        }
+        break;
+
+    case SystemState_STATE_FLIGHT:
+        if (current_state != SystemState_STATE_FLIGHT_PRIMED) {
+            return std::unexpected(Error::from_cause("System state change to Flight only allowed from Flight Primed"));
+        }
+        break;
+
+    default:
+        return std::unexpected(Error::from_cause("System state change to unsupported state: %d", new_state));
+    }
+
     current_state = new_state;
     return {};
 }
@@ -260,10 +309,6 @@ std::expected<void, Error> Controller::handle_load_flight_sequence(const FlightL
 
 std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(const ThrottleStartValveSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_THROTTLE_PRIMED ) {
-        return std::unexpected(Error::from_cause("Throttle valve sequence start rejected unless system is primed"));
-    }
-
     #if CONFIG_RANGER
     auto ret = ThrottleRangerModule::start_valve_sequence();
     if (!ret.has_value()) {
@@ -277,10 +322,6 @@ std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(cons
 
 std::expected<void, Error> Controller::handle_start_throttle_thrust_sequence(const ThrottleStartThrustSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_THROTTLE_PRIMED) {
-        return std::unexpected(Error::from_cause("Throttle thrust sequence start rejected unless system is primed"));
-    }
-
     auto ret = ThrottleImpl::start_thrust_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -291,10 +332,6 @@ std::expected<void, Error> Controller::handle_start_throttle_thrust_sequence(con
 
 std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const RCSStartValveSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_RCS_PRIMED) {
-        return std::unexpected(Error::from_cause("RCS valve sequence start rejected unless system is RCS primed"));
-    }
-
 #if CONFIG_RANGER
     auto ret = RCSRangerModule::start_motor_sequence();
 #elif CONFIG_HORNET
@@ -309,10 +346,6 @@ std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const RCS
 
 std::expected<void, Error> Controller::handle_start_rcs_roll_sequence(const RCSStartRollSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_RCS_PRIMED) {
-        return std::unexpected(Error::from_cause("RCS roll sequence start rejected unless system is RCS primed"));
-    }
-
     auto ret = RCSImpl::start_roll_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -323,10 +356,6 @@ std::expected<void, Error> Controller::handle_start_rcs_roll_sequence(const RCSS
 
 std::expected<void, Error> Controller::handle_start_tvc_sequence(const TVCStartSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_TVC_PRIMED && current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
-        return std::unexpected(Error::from_cause("TVC sequence start rejected unless system is primed"));
-    }
-
     auto ret = TVCImpl::start_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -337,10 +366,6 @@ std::expected<void, Error> Controller::handle_start_tvc_sequence(const TVCStartS
 
 std::expected<void, Error> Controller::handle_start_flight_sequence(const FlightStartSequenceRequest& req)
 {
-    if (current_state != SystemState_STATE_FLIGHT_PRIMED) {
-        return std::unexpected(Error::from_cause("Flight start rejected unless system is Flight Primed"));
-    }
-
     auto ret = FlightController::start_sequence();
     if (!ret.has_value()) {
         return ret;
@@ -351,10 +376,6 @@ std::expected<void, Error> Controller::handle_start_flight_sequence(const Flight
 
 std::expected<void, Error> Controller::handle_prime(const PrimeRequest& req)
 {
-    if (current_state != SystemState_STATE_IDLE) {
-        return std::unexpected(Error::from_cause("Prime request rejected unless system is idle"));
-    }
-
     switch (req.target) {
     case PrimeTarget_PRIME_TARGET_THROTTLE:
         if (ThrottleImpl::state() != ThrottleState_THROTTLE_STATE_THRUST_PRIMED) {
