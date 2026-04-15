@@ -161,7 +161,7 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     return out;
 }
 
-static float verticalPID(EstimatedState state, float dt){
+static float verticalPID(EstimatedState state){
 
     // outerloop on position
     if (loopCount % 3 == 0)
@@ -173,6 +173,12 @@ static float verticalPID(EstimatedState state, float dt){
     return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
 
+// TODO: Fill in RCS controol code
+static std::array<bool,2> rollControl(EstimatedState state){
+    // input of roll angle and angular rate
+    return {false, false}
+
+}
 
 std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
@@ -222,10 +228,18 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
             return {out, data};
         }
 
-        out.z_acceleration = *z_target;
-        out.x_angular_acceleration = *x_target;
-        out.y_angular_acceleration = *y_target;
-        out.roll_position = *roll_target;
+        des_state.position.z = *ztarget;
+        des_state.position.x = *x_target;
+        des_state.position.y = y_target;
+        des_state.roll_position = *roll_target
+
+        std::array<float, 2> angular_out = lateralPID(data.estimated_state);
+        out.x_angular_acceleration = angular_out[0];
+        out.y_angular_acceleration = angular_out[1];
+        out.z_acceleration = verticalPID(data.estimated_state);
+        std::array<bool,2> rcs_out = rollControl(data.estimated_state);
+        out.roll_cw = rcs_out[0];
+        out.roll_ccw = rcs_out[1];
     }
     out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;
     return {out, data};

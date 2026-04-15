@@ -669,7 +669,8 @@ message DesiredState {
   required 3DVector position = 1;
   required float world_tilt_x = 2;
   requried float world_tilt_y = 3;
-  required float vz_m_s = 4;
+  required float roll_position = 4;
+  required float vz_m_s = 5;
 
 }
 
@@ -679,7 +680,8 @@ message FlightStateOutput {
   required float z_acceleration = 2;
   required float x_angular_acceleration = 3;
   required float y_angular_acceleration = 4;
-  required float roll_position = 5;
+  required bool roll_cw = 5;
+  required bool roll_ccw = 6; 
 
 }
 
