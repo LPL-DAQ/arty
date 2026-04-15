@@ -4,9 +4,14 @@
 #include "ControllerConfig.h"
 #include "config.h"
 #include "PID.h"
+#include <Eigen/Core> // how do we get this?
+#include <Eigen/Geometry>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+#include <cmath>
 
 LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
 
@@ -36,6 +41,16 @@ static float get_weight_lbf(){
     return
 }
 
+static void resetPIDs()
+{
+    pidXTilt.reset();
+    pidYTilt.reset();
+    pidX.reset();
+    pidY.reset();
+    pidZ.reset();
+    pidZVelocity.reset();
+}
+
 namespace {
     Trace x_trace;
     Trace y_trace;
@@ -44,8 +59,8 @@ namespace {
     bool flight_sequence_has_trace = false;
     float flight_sequence_total_time = 0.0f;
     // TODO: Tune, including adding integral terms (is requried)
-    PID pidYaw(0.385, 0.0, 0.44);   // about the X axis
-    PID pidPitch(0.385, 0.0, 0.44);   // about the Y axis
+    PID pidXTilt(0.385, 0.0, 0.44);   // about the X axis
+    PID pidYTilt(0.385, 0.0, 0.44);   // about the Y axis
     PID pidX(0, 0, 0);              // needs tuning
     PID pidY(0, 0, 0);              // needs tuning
     PID pidZ(0.075, 0.01, 0);
@@ -58,16 +73,122 @@ namespace {
 
     const float maxGimble = 12.0;   // degrees, this is an estimate
     const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
+
+    constexpr float DEG2RAD_F = 0.0174532925f;
+
+    DesiredState des_state = DesiredState_init_default;
 }
 
-void resetPIDs()
+std::expected<void, Error> FlightController::init()
 {
-    pidYaw.reset();
-    pidPitch.reset();
-    pidX.reset();
-    pidY.reset();
-    pidZ.reset();
-    pidZVelocity.reset();
+    LOG_INF("Initializing FlightController state");
+    change_state(FlightState_FLIGHT_STATE_IDLE);
+
+    // integral cant command more than 1/3rd output range
+    pidXTilt.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
+    pidYTilt.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
+    pidXTilt.setDerivativeLowPass(10.0);  // 10 Hz
+    pidYTilt.setDerivativeLowPass(10.0); // 10 Hz
+
+    pidZ.setIntegralZone(0.05); // only use intelgral within 5 cm of target
+    pidZ.setOutputLimits(-0.075, 0.075); // Max thrust variance from weight
+
+    return {};
+}
+
+
+// returns {xOutput, yOutput} for tvc thrust angles
+static std::array<float, 2> rotationalPID(float x_tilt, float y_tilt, float dt)
+{
+    // Compute PID outputs
+    std::array<float, 2> out{};
+    out[0] = pidXTilt.calculate(des_state.body_tilt_x, x_tilt, dt);
+    out[1] = pidYTilt.calculate(des_state.body_tilt_y, y_tilt, dt);
+
+    return out;
+}
+
+// returns {xOutput, yOutput} for thruster angles, encapsualtes rotational PID
+std::array<float, 2> lateralPID(EstimatedState state, float dt)
+{
+    // TODO: Make sure this doesnt make the roll = z axis rotation assumption (3% error cause)
+    // outerloop on position
+    if (loopCount % 3 == 0)
+    {
+        // Compute desired tilt in world frame
+        desState.tiltX = pidX.calculate(desState.x, 0, dt);
+        desState.tiltY = pidY.calculate(desState.y, 0, dt);
+
+        // Rotate desired tilt from world frame to body frame
+        Eigen::Quaterniond q_wb(state.R_WB.qw, state.R_WB.qx, state.R_WB.qy, state.R_WB.qz)
+        q_wb = q_wb.normalized();
+        Eigen::Vector3d cmd_w(world_tilt_x, world_tilt_y, 0.0);
+        Eigen::Vector3d cmd_b = q_wb * cmd_w;
+        des_state.body_tilt_x = cmd_b.x();
+        des_state.body_tilt_y = cmd_b.y();
+
+    }
+    // innerloop on rotation
+    return rotationalPID(dt);
+}
+
+
+
+std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+{
+    FlightStateOutput out{};
+    FlightSequenceData data{};
+
+    float local_flight_sequence_total_time;
+    bool local_flight_sequence_has_trace;
+    {
+        MutexGuard guard{&flight_controller_lock};
+        local_flight_sequence_total_time = flight_sequence_total_time;
+        local_flight_sequence_has_trace = flight_sequence_has_trace;
+    }
+
+    float elapsed_time = static_cast<float>(current_time - start_time);
+    if (local_flight_sequence_total_time > 0.0f && elapsed_time > local_flight_sequence_total_time) {
+        out.next_state = FlightState_FLIGHT_STATE_LANDING;
+        return {out, data};
+    }
+
+    if (local_flight_sequence_has_trace) {
+        auto x_target = x_trace.sample(elapsed_time);
+        if (!x_target) {
+            LOG_ERR("Flight sequence X trace sampling failed: %s", x_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        auto y_target = y_trace.sample(elapsed_time);
+        if (!y_target) {
+            LOG_ERR("Flight sequence Y trace sampling failed: %s", y_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        auto z_target = z_trace.sample(elapsed_time);
+        if (!z_target) {
+            LOG_ERR("Flight sequence Z trace sampling failed: %s", z_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        auto roll_target = roll_trace.sample(elapsed_time);
+        if (!roll_target) {
+            LOG_ERR("Flight sequence roll trace sampling failed: %s", roll_target.error().build_message().c_str());
+            out.next_state = FlightState_FLIGHT_STATE_ABORT;
+            return {out, data};
+        }
+
+        out.z_acceleration = *z_target;
+        out.x_angular_acceleration = *x_target;
+        out.y_angular_acceleration = *y_target;
+        out.roll_position = *roll_target;
+    }
+    out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;
+    return {out, data};
 }
 
 void FlightController::step_control_loop(DataPacket& data)
@@ -188,63 +309,6 @@ std::pair<FlightStateOutput, FlightTakeoffData> FlightController::takeoff_tick(i
     return {out, data};
 }
 
-std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
-{
-    FlightStateOutput out{};
-    FlightSequenceData data{};
-
-    float local_flight_sequence_total_time;
-    bool local_flight_sequence_has_trace;
-    {
-        MutexGuard guard{&flight_controller_lock};
-        local_flight_sequence_total_time = flight_sequence_total_time;
-        local_flight_sequence_has_trace = flight_sequence_has_trace;
-    }
-
-    float elapsed_time = static_cast<float>(current_time - start_time);
-    if (local_flight_sequence_total_time > 0.0f && elapsed_time > local_flight_sequence_total_time) {
-        out.next_state = FlightState_FLIGHT_STATE_LANDING;
-        return {out, data};
-    }
-
-    if (local_flight_sequence_has_trace) {
-        auto x_target = x_trace.sample(elapsed_time);
-        if (!x_target) {
-            LOG_ERR("Flight sequence X trace sampling failed: %s", x_target.error().build_message().c_str());
-            out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
-        }
-
-        auto y_target = y_trace.sample(elapsed_time);
-        if (!y_target) {
-            LOG_ERR("Flight sequence Y trace sampling failed: %s", y_target.error().build_message().c_str());
-            out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
-        }
-
-        auto z_target = z_trace.sample(elapsed_time);
-        if (!z_target) {
-            LOG_ERR("Flight sequence Z trace sampling failed: %s", z_target.error().build_message().c_str());
-            out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
-        }
-
-        auto roll_target = roll_trace.sample(elapsed_time);
-        if (!roll_target) {
-            LOG_ERR("Flight sequence roll trace sampling failed: %s", roll_target.error().build_message().c_str());
-            out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
-        }
-
-        out.z_acceleration = *z_target;
-        out.x_angular_acceleration = *x_target;
-        out.y_angular_acceleration = *y_target;
-        out.roll_position = *roll_target;
-    }
-    out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;
-    return {out, data};
-}
-
 std::pair<FlightStateOutput, FlightLandingData> FlightController::landing_tick(int64_t current_time, int64_t start_time)
 {
     FlightStateOutput out{};
@@ -271,24 +335,6 @@ std::pair<FlightStateOutput, FlightAbortData> FlightController::abort_tick(int64
     }
 
     return {out, data};
-}
-
-
-std::expected<void, Error> FlightController::init()
-{
-    LOG_INF("Initializing FlightController state");
-    change_state(FlightState_FLIGHT_STATE_IDLE);
-
-    // integral cant command more than 1/3rd output range
-    pidYaw.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
-    pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
-    pidYaw.setDerivativeLowPass(10.0);  // 10 Hz
-    pidPitch.setDerivativeLowPass(10.0); // 10 Hz
-
-    pidZ.setIntegralZone(0.05); // only use intelgral within 5 cm of target
-    pidZ.setOutputLimits(-0.075, 0.075); // Max thrust variance from weight
-
-    return {};
 }
 
 std::expected<void, Error> FlightController::load_sequence(const FlightLoadSequenceRequest& req)

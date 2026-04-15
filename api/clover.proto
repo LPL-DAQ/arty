@@ -436,7 +436,7 @@ message DataPacket {
   // Flight
   required FlightState flight_state = 42;
   optional FlightStateOutput flight_state_output = 43;
-  
+
   required EstimatedState estimated_state = 54;
 
   // Actuators
@@ -643,19 +643,34 @@ message FlightControllerOutput{
 
 }
 
+
+message 3DVector {
+  required float x;
+  required float y;
+  required float z;
+}
+
+message Quaternion {
+  required float qw = 10;
+  required float qx = 1;
+  required float qy = 2;
+  required float qz = 3;
+}
+
 // Estimated vehicle state for telemetry and flight path monitoring.
 message EstimatedState {
-  required float pitch_deg = 1;
-  required float yaw_deg = 2;
-  required float roll_deg = 3;
+  required Quaternion R_WB = 1; // world to body
+  required 3DVector position = 2;
+  required 3DVector velocity = 3;
 
-  required float x_m = 4;
-  required float y_m = 5;
-  required float z_m = 6;
+}
 
-  required float vx_m_s = 7;
-  required float vy_m_s = 8;
-  required float vz_m_s = 9;
+message DesiredState {
+  required 3DVector position = 1;
+  required float body_tilt_x = 2;
+  requried float body_tilt_y = 3;
+  required float vz_m_s = 4;
+
 }
 
 // this is what is sent to FlightController
