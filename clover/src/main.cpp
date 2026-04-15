@@ -11,7 +11,7 @@
 #include "ranger/ThrottleValve.h"
 #include "sensors/lidar.h"
 #include "Controller.h"
-#include "FlightController.h"
+#include "flight/FlightController.h"
 #include "server.h"
 
 extern "C" {

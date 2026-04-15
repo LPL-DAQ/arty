@@ -1,7 +1,7 @@
 #pragma once
 #include <limits>
 #include <cmath>
-#include "util/Math.h"
+#include "math.h"
 #ifdef abs
 #undef abs // allow std::abs despite Arduino macro
 #endif
@@ -19,7 +19,7 @@ public:
     {
 
         if (std::isnan(prev_meas_))
-        {   
+        {
 
             prev_meas_ = measurement;
             // First call: just proportional action.
@@ -44,11 +44,11 @@ public:
         }
         prev_meas_ = measurement;
 
-        // Optional 1stâ€‘order lowâ€‘pass on derivative: y += a*(x - y)
+        // Optional 1st-order low-pass on derivative: y += a*(x - y)
         double deriv_term = deriv_raw;
         if (use_deriv_lp_)
         {
-            const double rc = 1.0 / (2.0 * M_PI * std::max(deriv_cutoff_hz_, 1e-6));
+            const double rc = 1.0 / (2.0 * pi * std::max(deriv_cutoff_hz_, 1e-6));
             const double a = dt / (rc + dt);
             deriv_state_ += a * (deriv_raw - deriv_state_);
             deriv_term = deriv_state_;
@@ -152,6 +152,8 @@ private:
     double kd_{};
 
     // State
+    const double pi = std::acos(-1.0);
+
     double integral_ = 0.0;
     double prev_meas_ = std::numeric_limits<double>::quiet_NaN();
 
@@ -159,6 +161,7 @@ private:
     bool use_deriv_lp_ = false;
     double deriv_cutoff_hz_ = 0.0;
     double deriv_state_ = 0.0;
+
 
     // Limits
     bool use_output_limits_ = false;

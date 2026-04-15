@@ -445,7 +445,7 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
         TVCImpl::change_state(TVCState_TVC_STATE_IDLE);
         RCSImpl::change_state(RCSState_RCS_STATE_IDLE);
 
-        return {}
+        return {};
     }
 
     switch (target) {

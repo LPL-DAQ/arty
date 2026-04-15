@@ -1,5 +1,6 @@
-#pragma once
-#include <Arduino.h>
+#ifndef APP_MATH_H
+#define APP_MATH_H
+#include <cstdint>
 
 namespace util
 {
@@ -22,3 +23,4 @@ namespace util
     return static_cast<uint16_t>(mapFloat(deg, minDeg, maxDeg, minUs, maxUs));
   }
 }
+#endif

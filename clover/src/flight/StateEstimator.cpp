@@ -20,7 +20,6 @@ void reset()
 void step_control_loop(DataPacket& data)
 {
     estimate_ = EstimatedState_init_default;
-    data.has_estimated_state = true;
     data.estimated_state = estimate_;
 }
 

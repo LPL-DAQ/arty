@@ -3,7 +3,6 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
-#include "../FlightController.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>

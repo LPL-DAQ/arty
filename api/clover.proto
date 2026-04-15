@@ -644,10 +644,10 @@ message FlightControllerOutput{
 }
 
 
-message 3DVector {
-  required float x;
-  required float y;
-  required float z;
+message Vector3D {
+  required float x = 1;
+  required float y = 2;
+  required float z = 3;
 }
 
 message Quaternion {
@@ -660,15 +660,15 @@ message Quaternion {
 // Estimated vehicle state for telemetry and flight path monitoring.
 message EstimatedState {
   required Quaternion R_WB = 1; // world to body
-  required 3DVector position = 2;
-  required 3DVector velocity = 3;
+  required Vector3D position = 2;
+  required Vector3D velocity = 3;
 
 }
 
 message DesiredState {
-  required 3DVector position = 1;
+  required Vector3D position = 1;
   required float world_tilt_x = 2;
-  requried float world_tilt_y = 3;
+  required float world_tilt_y = 3;
   required float roll_position = 4;
   required float vz_m_s = 5;
 

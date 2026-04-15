@@ -2,7 +2,6 @@
 #include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../server.h"
-#include "../FlightController.h"
 
 #include "../config.h"
 #include <zephyr/kernel.h>

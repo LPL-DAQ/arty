@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.13.1)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
+
 # For god's sake, why isn't this set automatically?
 set(CMAKE_CPP_COMPILER "${CROSS_COMPILE}g++")
 

@@ -4,6 +4,7 @@
 #include "ControllerConfig.h"
 #include "config.h"
 #include "PID.h"
+#include <array>
 #include <Eigen/Core> // how do we get this?
 #include <Eigen/Geometry>
 #include <zephyr/kernel.h>
@@ -38,7 +39,7 @@ static uint32_t get_flight_controller_abort_entry_time()
 // TODO: implement fr with varrying mass estimate
 static float get_weight_lbf(){
     MutexGuard guard{&flight_controller_lock};
-    return
+    return 0.0f;
 }
 
 static void resetPIDs()
@@ -65,7 +66,8 @@ namespace {
     PID pidY(0, 0, 0);              // needs tuning
     PID pidZ(0.075, 0.01, 0);
     PID pidZVelocity(0, 0, 0);      // needs tuning
-    float dt = 0.001 // TODO: 1000hz for now?
+    static uint32_t loopCount = 0;
+    float dt = 0.001; // TODO: 1000hz for now?
 
     // Mounting offset between IMU sensor frame and rocket body frame (deg)
     constexpr float IMU_TO_BODY_YAW_DEG = 0.0f;
@@ -98,7 +100,7 @@ std::expected<void, Error> FlightController::init()
     return {};
 }
 
-// returns {xOutput, yOutput} for thruster angles, encapsualtes rotational PID
+// returns {xOutput, yOutput} for thruster angles, encapsulates rotational PID
 static std::array<float, 2> lateralPID(EstimatedState state)
 {
     // TODO: Make sure this doesnt make the roll = z axis rotation assumption (3% error cause)
@@ -119,12 +121,9 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     if (loopCount % 3 == 0)
     {
         float outer_dt = 3.0f * dt; // assuming this function runs every dt
-
-        // Desired tilt vector in WORLD frame
-        float world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
-        float world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
-
-        // Store desired world-frame tilt command
+        // world tilt
+        float world_tilt_x = pidX.calculate(des_state.position.x, state.x_m, outer_dt);
+        float world_tilt_y = pidY.calculate(des_state.position.y, state.y_m, outer_dt);
         des_state.world_tilt_x = world_tilt_x;
         des_state.world_tilt_y = world_tilt_y;
     }
@@ -159,7 +158,6 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     out[1] = pidYTilt.calculate(0.0f, static_cast<float>(tilt_error_b.y()), dt);
 
     return out;
-    return out;
 }
 
 static float verticalPID(EstimatedState state){
@@ -167,17 +165,17 @@ static float verticalPID(EstimatedState state){
     // outerloop on position
     if (loopCount % 3 == 0)
     {
-        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.z, dt);
+        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.z_m, dt);
     }
     // innerloop on velocity
-    float desired_acceleration = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
+    float desired_acceleration = pidZVelocity.calculate(des_state.vz_m_s, state.vz_m_s, dt);
     return desired_acceleration;
 }
 
 // TODO: Fill in RCS controol code
 static std::array<bool,2> rollControl(EstimatedState state){
     // input of roll angle and angular rate
-    return {false, false}
+    return {false, false};
 
 }
 
@@ -234,10 +232,10 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
             return {out, data};
         }
 
-        des_state.position.z = *ztarget;
+        des_state.position.z = *z_target;
         des_state.position.x = *x_target;
-        des_state.position.y = y_target;
-        des_state.roll_position = *roll_target
+        des_state.position.y = *y_target;
+        des_state.roll_position = *roll_target;
 
         std::array<float, 2> angular_out = lateralPID(data.estimated_state);
         out.x_angular_acceleration = angular_out[0];
