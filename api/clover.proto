@@ -681,7 +681,7 @@ message FlightStateOutput {
   required float x_angular_acceleration = 3;
   required float y_angular_acceleration = 4;
   required bool roll_cw = 5;
-  required bool roll_ccw = 6; 
+  required bool roll_ccw = 6;
 
 }
 
@@ -698,14 +698,14 @@ message ThrottleHornetData{
 }
 
 message TVCRangerData {
-  required float x_pos = 1;
-  required float y_pos = 2;
+  required float x_angle = 1;
+  required float y_angle = 2;
 
 }
 
 message TVCHornetData {
-  required float x_pos = 1;
-  required float y_pos = 2;
+  required float x_angle = 1;
+  required float y_angle = 2;
 }
 
 message RCSRangerData {

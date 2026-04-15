@@ -153,7 +153,8 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     Eigen::Vector3d tilt_error_b = q_wb * tilt_error_w;
 
     // Inner loop on body-axis tilt error
-    // TODO: Check if this needs a negative sign
+    // TODO: Check if this needs a negative sign.
+    // TODO: do i need to unscale because of the TVC thrust scaling?
     out[0] = pidXTilt.calculate(0.0f, static_cast<float>(tilt_error_b.x()), dt);
     out[1] = pidYTilt.calculate(0.0f, static_cast<float>(tilt_error_b.y()), dt);
 
@@ -169,8 +170,8 @@ static float verticalPID(EstimatedState state){
         des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.z, dt);
     }
     // innerloop on velocity
-    float desThrottle = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
-    return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
+    float desired_acceleration = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
+    return desired_acceleration;
 }
 
 // TODO: Fill in RCS controol code
@@ -178,6 +179,11 @@ static std::array<bool,2> rollControl(EstimatedState state){
     // input of roll angle and angular rate
     return {false, false}
 
+}
+
+static float thrustScale(float tvc_x_rad, float tvc_y_rad)
+{
+    return 1.0f / (std::cos(tvc_x_rad) * std::cos(tvc_y_rad));
 }
 
 std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
@@ -236,7 +242,12 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
         std::array<float, 2> angular_out = lateralPID(data.estimated_state);
         out.x_angular_acceleration = angular_out[0];
         out.y_angular_acceleration = angular_out[1];
-        out.z_acceleration = verticalPID(data.estimated_state);
+
+        // TODO: note that scaling due to TVC angle may introduce destabilizing distrubances
+        float desired_accel = verticalPID(data.estimated_state);
+        desired_accel = desired_accel * thrustScale(data.tvc_actuator_data.x_angle, data.tvc_actuator_data.y_angle)
+        out.z_acceleration = desired_accel;
+
         std::array<bool,2> rcs_out = rollControl(data.estimated_state);
         out.roll_cw = rcs_out[0];
         out.roll_ccw = rcs_out[1];
