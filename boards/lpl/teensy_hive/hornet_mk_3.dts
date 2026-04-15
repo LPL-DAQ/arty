@@ -7,9 +7,6 @@ Hornet Mk. 3 board.
 #include <../boards/pjrc/teensy4/teensy41.dts>
 #include <zephyr/dt-bindings/memory-attr/memory-attr-arm.h>
 
-#define ANALOG_SENSORS_ADC_RESOLUTION 12
-#define ANALOG_SENSORS_ADC_OVERSAMPLING 5
-
 /*
 TODO:
 - LoRa radio
@@ -35,30 +32,13 @@ TODO:
         lora-tranceiver = &sx1276;
     };
 
-    zephyr,user {
-        // ADC channels used by AnalogSensors.
-        analog-sensor-max-adc-channels = <16>;
-        io-channels = <&adc2 3>,
-                      <&adc1 5>,
-                      <&adc1 6>,
-                      <&adc1 8>,
-                      <&adc1 9>,
-                      <&adc1 10>,
-                      <&adc1 11>,
-                      <&adc1 12>,
-                      <&adc1 15>;
-        analog-sensor-adcs = <&adc1 &adc2>;
-        analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-        analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-    };
-
     chosen {
         zephyr,console = &cdc_acm_uart0;
     };
 
     psram: memory@70000000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x70000000 0x01000000>;
+        reg = <0x70000000 DT_SIZE_M(128)>;
         zephyr,memory-region = "PSRAM";
         zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
     };
@@ -109,135 +89,6 @@ TODO:
     };
 };
 
-// Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
-&pinctrl {
-    pinmux_adc1: pinmux_adc1 {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_04_gpio1_io20>,
-                     <&iomuxc_gpio_ad_b1_05_gpio1_io21>,
-                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>,
-                     <&iomuxc_gpio_ad_b1_07_gpio1_io23>,
-                     <&iomuxc_gpio_ad_b1_06_gpio1_io22>,
-                     <&iomuxc_gpio_ad_b1_00_gpio1_io16>,
-                     <&iomuxc_gpio_ad_b1_01_gpio1_io17>,
-                     <&iomuxc_gpio_ad_b1_10_gpio1_io26>;
-            bias-disable; // These should be pulled down by voltage divider
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-    pinmux_adc2: pinmux_adc2 {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_14_gpio1_io30>; // A12, pin 26
-            bias-disable; // These should be pulled down by voltage divider
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-};
-
-// Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/adc/nxp%2Cmcux-12b1msps-sar.
-&adc1 {
-    // She's broken, he's...
-    status = "okay";
-    pinctrl-0 = <&pinmux_adc1>;
-    pinctrl-names = "default";
-    #address-cells = <1>;
-    #size-cells = <0>;
-
-    channel@5 {
-        reg = <0x5>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@6 {
-        reg = <0x6>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@8 {
-        reg = <0x8>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@9 {
-        reg = <0x9>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@a {
-        reg = <0xa>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@b {
-        reg = <0xb>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@c {
-        reg = <0xc>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-
-    channel@f {
-        reg = <0xf>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-};
-
-// ADC for battery sense
-&adc2 {
-    status = "okay";
-    pinctrl-0 = <&pinmux_adc2>;
-    pinctrl-names = "default";
-    #address-cells = <1>;
-    #size-cells = <0>;
-
-    channel@3 {
-        reg = <0x5>;
-        zephyr,gain = "ADC_GAIN_1";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-        zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
-        zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-    };
-};
-
 &zephyr_udc0 {
     cdc_acm_uart0: cdc_acm_uart0 {
         compatible = "zephyr,cdc-acm-uart";
@@ -252,17 +103,23 @@ TODO:
 
 &flexspi2 {
     status = "okay";
-    reg = <0x402a4000 0x4000>, <0x70000000 DT_SIZE_M(16)>;
+    label = "FLEXSPI2";
+    reg = <0x402a4000 0x4000>, <0x70000000 DT_SIZE_M(128)>;
     reg-names = "reg_base", "ahb";
 
-    ahb-bufferable;
-    ahb-cacheable;
-    ahb-prefetch;
+    ahb-boundary = "1024";
 
+    //ahb-bufferable;
+    //ahb-cacheable;
+    //ahb-prefetch;
+
+    /* APS6404L*/
     psram0: psram@0 {
         compatible = "nxp,imx-flexspi-aps6404l";
-        reg = <0x0 DT_SIZE_M(16)>;
-        spi-max-frequency = <84000000>;
+        reg = <0x0>;
+        size = <DT_SIZE_M(128)>;
+
+        spi-max-frequency = <50000000>;
 
         status = "okay";
     };
