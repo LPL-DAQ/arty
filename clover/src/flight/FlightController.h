@@ -18,6 +18,8 @@ namespace FlightController {
 
     FlightState state();
 
+    void resetPIDs();
+
     std::expected<void, Error> init();
     void step_control_loop(DataPacket& data);
 

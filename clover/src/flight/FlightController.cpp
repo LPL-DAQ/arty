@@ -3,6 +3,7 @@
 #include "sensors/AnalogSensors.h"
 #include "ControllerConfig.h"
 #include "config.h"
+#include "PID.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -29,6 +30,12 @@ static uint32_t get_flight_controller_abort_entry_time()
     return FlightController::abort_entry_time;
 }
 
+// TODO: implement fr with varrying mass estimate
+static float get_weight_lbf(){
+    MutexGuard guard{&flight_controller_lock};
+    return
+}
+
 namespace {
     Trace x_trace;
     Trace y_trace;
@@ -36,6 +43,31 @@ namespace {
     Trace roll_trace;
     bool flight_sequence_has_trace = false;
     float flight_sequence_total_time = 0.0f;
+    // TODO: Tune, including adding integral terms (is requried)
+    PID pidYaw(0.385, 0.0, 0.44);   // about the X axis
+    PID pidPitch(0.385, 0.0, 0.44);   // about the Y axis
+    PID pidX(0, 0, 0);              // needs tuning
+    PID pidY(0, 0, 0);              // needs tuning
+    PID pidZ(0.075, 0.01, 0);
+    PID pidZVelocity(0, 0, 0);      // needs tuning
+
+    // Mounting offset between IMU sensor frame and rocket body frame (deg)
+    constexpr float IMU_TO_BODY_YAW_DEG = 0.0f;
+    constexpr float IMU_TO_BODY_PITCH_DEG = 0.0f;
+    constexpr float IMU_TO_BODY_ROLL_DEG = 0.0f;
+
+    const float maxGimble = 12.0;   // degrees, this is an estimate
+    const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
+}
+
+void resetPIDs()
+{
+    pidYaw.reset();
+    pidPitch.reset();
+    pidX.reset();
+    pidY.reset();
+    pidZ.reset();
+    pidZVelocity.reset();
 }
 
 void FlightController::step_control_loop(DataPacket& data)
@@ -245,10 +277,17 @@ std::pair<FlightStateOutput, FlightAbortData> FlightController::abort_tick(int64
 std::expected<void, Error> FlightController::init()
 {
     LOG_INF("Initializing FlightController state");
-    auto ret = change_state(FlightState_FLIGHT_STATE_IDLE);
-    if (!ret.has_value()) {
-        return std::unexpected(ret.error().context("Failed to change flight state to idle"));
-    }
+    change_state(FlightState_FLIGHT_STATE_IDLE);
+
+    // integral cant command more than 1/3rd output range
+    pidYaw.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
+    pidPitch.setIntegralLimits(-maxGimble / 3, maxGimble / 3);
+    pidYaw.setDerivativeLowPass(10.0);  // 10 Hz
+    pidPitch.setDerivativeLowPass(10.0); // 10 Hz
+
+    pidZ.setIntegralZone(0.05); // only use intelgral within 5 cm of target
+    pidZ.setOutputLimits(-0.075, 0.075); // Max thrust variance from weight
+
     return {};
 }
 
