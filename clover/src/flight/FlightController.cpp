@@ -65,6 +65,7 @@ namespace {
     PID pidY(0, 0, 0);              // needs tuning
     PID pidZ(0.075, 0.01, 0);
     PID pidZVelocity(0, 0, 0);      // needs tuning
+    float dt = 0.001 // TODO: 1000hz for now?
 
     // Mounting offset between IMU sensor frame and rocket body frame (deg)
     constexpr float IMU_TO_BODY_YAW_DEG = 0.0f;
@@ -77,6 +78,7 @@ namespace {
     constexpr float DEG2RAD_F = 0.0174532925f;
 
     DesiredState des_state = DesiredState_init_default;
+
 }
 
 std::expected<void, Error> FlightController::init()
@@ -96,42 +98,80 @@ std::expected<void, Error> FlightController::init()
     return {};
 }
 
-
-// returns {xOutput, yOutput} for tvc thrust angles
-static std::array<float, 2> rotationalPID(float x_tilt, float y_tilt, float dt)
+// returns {xOutput, yOutput} for thruster angles, encapsualtes rotational PID
+static std::array<float, 2> lateralPID(EstimatedState state)
 {
-    // Compute PID outputs
+    // TODO: Make sure this doesnt make the roll = z axis rotation assumption (3% error cause)
     std::array<float, 2> out{};
-    out[0] = pidXTilt.calculate(des_state.body_tilt_x, x_tilt, dt);
-    out[1] = pidYTilt.calculate(des_state.body_tilt_y, y_tilt, dt);
 
+    Eigen::Quaterniond q_wb(
+        state.R_WB.qw,
+        state.R_WB.qx,
+        state.R_WB.qy,
+        state.R_WB.qz
+    );
+    q_wb.normalize();
+
+    // Inverse of world->body gives body->world
+    Eigen::Quaterniond q_bw = q_wb.conjugate();
+
+    // Outer loop on position
+    if (loopCount % 3 == 0)
+    {
+        float outer_dt = 3.0f * dt; // assuming this function runs every dt
+
+        // Desired tilt vector in WORLD frame
+        float world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
+        float world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
+
+        // Store desired world-frame tilt command
+        des_state.world_tilt_x = world_tilt_x;
+        des_state.world_tilt_y = world_tilt_y;
+    }
+
+    // body Z axis expressed in world
+    Eigen::Vector3d body_z_w = q_bw * Eigen::Vector3d::UnitZ();
+
+    // the tilt of the rocket in world frame
+    Eigen::Vector3d actual_tilt_w(
+        body_z_w.x(),
+        body_z_w.y(),
+        0.0
+    );
+
+    // Desired tilt in world frame
+    Eigen::Vector3d desired_tilt_w(
+        des_state.world_tilt_x,
+        des_state.world_tilt_y,
+        0.0
+    );
+
+    // Tilt error in world frame
+    Eigen::Vector3d tilt_error_w = desired_tilt_w - actual_tilt_w;
+
+    // Express tilt error in body frame
+    Eigen::Vector3d tilt_error_b = q_wb * tilt_error_w;
+
+    // Inner loop on body-axis tilt error
+    // TODO: Check if this needs a negative sign
+    out[0] = pidXTilt.calculate(0.0f, static_cast<float>(tilt_error_b.x()), dt);
+    out[1] = pidYTilt.calculate(0.0f, static_cast<float>(tilt_error_b.y()), dt);
+
+    return out;
     return out;
 }
 
-// returns {xOutput, yOutput} for thruster angles, encapsualtes rotational PID
-std::array<float, 2> lateralPID(EstimatedState state, float dt)
-{
-    // TODO: Make sure this doesnt make the roll = z axis rotation assumption (3% error cause)
+static float verticalPID(EstimatedState state, float dt){
+
     // outerloop on position
     if (loopCount % 3 == 0)
     {
-        // Compute desired tilt in world frame
-        desState.tiltX = pidX.calculate(desState.x, 0, dt);
-        desState.tiltY = pidY.calculate(desState.y, 0, dt);
-
-        // Rotate desired tilt from world frame to body frame
-        Eigen::Quaterniond q_wb(state.R_WB.qw, state.R_WB.qx, state.R_WB.qy, state.R_WB.qz)
-        q_wb = q_wb.normalized();
-        Eigen::Vector3d cmd_w(world_tilt_x, world_tilt_y, 0.0);
-        Eigen::Vector3d cmd_b = q_wb * cmd_w;
-        des_state.body_tilt_x = cmd_b.x();
-        des_state.body_tilt_y = cmd_b.y();
-
+        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.z, dt);
     }
-    // innerloop on rotation
-    return rotationalPID(dt);
+    // innerloop on velocity
+    float desThrottle = pidZVelocity.calculate(desState.zVel, state.zVel, dt);
+    return util::clamp(desThrottle / maxThrottleN, 0.0f, 1.0f);
 }
-
 
 
 std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)

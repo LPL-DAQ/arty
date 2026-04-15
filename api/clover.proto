@@ -667,8 +667,8 @@ message EstimatedState {
 
 message DesiredState {
   required 3DVector position = 1;
-  required float body_tilt_x = 2;
-  requried float body_tilt_y = 3;
+  required float world_tilt_x = 2;
+  requried float world_tilt_y = 3;
   required float vz_m_s = 4;
 
 }
