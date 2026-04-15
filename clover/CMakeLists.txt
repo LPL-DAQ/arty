@@ -10,10 +10,10 @@ message(STATUS "C++ compiler: ${CMAKE_CPP_COMPILER}")
 project(app)
 
 # Add nanopb dependency
-list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
-include(nanopb)
+# list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
+# include(nanopb)
 
 zephyr_include_directories(src)
-zephyr_nanopb_sources(app ../api/clover.proto)
+# zephyr_nanopb_sources(app ../api/clover.proto)
 
 add_subdirectory(src)

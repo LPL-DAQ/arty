@@ -24,7 +24,7 @@
 
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
+K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 200, 1);
 
 // Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
@@ -267,19 +267,18 @@ void Controller::step_control_loop(k_work*)
         // .is_on = LoxValve::get_power_on(),
     };
 
-    if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
-        if (step_control_loop_debounce_warn_count < 5) {
-            LOG_WRN("Telemetry queue full, packet dropped");
-        }
-        else if (step_control_loop_debounce_warn_count == 5) {
-            LOG_WRN("Telemetry queue full, packet dropped (silencing further warnings)");
-        }
-        step_control_loop_debounce_warn_count++;
-    }
-    else {
-        // Reset warning count
-        step_control_loop_debounce_warn_count = 0;
-    }
+// Disable telemetry during testing
+// if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
+//     if (step_control_loop_debounce_warn_count < 5) {
+//         LOG_WRN("Telemetry queue full, packet dropped");
+//     }
+//     else if (step_control_loop_debounce_warn_count == 5) {
+//         LOG_WRN("Telemetry queue full, packet dropped (silencing further warnings)");
+//     }
+//     step_control_loop_debounce_warn_count++;
+// } else {
+//     step_control_loop_debounce_warn_count = 0;
+// }
 
     // Trigger sensor readings for next tick.
     AnalogSensors::start_sense();
