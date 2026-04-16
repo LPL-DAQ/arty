@@ -12,11 +12,16 @@ public:
     PID(double kp, double ki, double kd)
         : kp_(kp), ki_(ki), kd_(kd) {}
 
+
+
+
     // Calculate control output given a setpoint and a measurement.
-    // dt is computed internally from steady_clock; on the first call,
-    // derivative and integral are not applied to avoid a large transient.
-    double calculate(double setpoint, double measurement, double dt)
+    // dt is computed internally from steady_clock;
+    // on the first call, derivative and integral are not applied to avoid a large transient.
+
+    double calculate(double setpoint, double measurement, double measurement_d, double dt)
     {
+
 
         if (std::isnan(prev_meas_))
         {
@@ -39,8 +44,7 @@ public:
         double deriv_raw = 0.0;
         if (!std::isnan(prev_meas_))
         {
-            const double dmeas = measurement - prev_meas_;
-            deriv_raw = -dmeas / std::max(dt, 1e-9); // negative sign: d(error)/dt = -d(meas)/dt
+            deriv_raw = -measurement_d / std::max(dt, 1e-9); // negative sign: d(error)/dt = -d(meas)/dt
         }
         prev_meas_ = measurement;
 
@@ -67,6 +71,20 @@ public:
         double output = kp_ * error + integral_output + kd_ * deriv_term;
 
         return clampOutput(output);
+    }
+
+    // uses previous measurement to calculate derivative
+    double calculate(double setpoint, double measurement, double dt)
+    {
+        // Derivative on measurement to reduce derivative kick
+        double deriv_raw = 0.0;
+        if (!std::isnan(prev_meas_))
+        {
+            const double dmeas = measurement - prev_meas_;
+        }
+
+        return calculate(setpoint, measurement, dmeas, dt);
+
     }
 
     // Reset internal state (integral, derivative filter). Optionally set a new integral value.

@@ -3,7 +3,7 @@
 #include "sensors/AnalogSensors.h"
 #include "ControllerConfig.h"
 #include "config.h"
-#include "PID.h"
+#include "../PID.h"
 #include <array>
 #include <Eigen/Core> // how do we get this?
 #include <Eigen/Geometry>
@@ -38,7 +38,8 @@ namespace {
     PID pidZ(0.075, 0.01, 0);
     PID pidZVelocity(0, 0, 0);      // needs tuning
     static uint32_t loopCount = 0;
-    float dt = 0.001; // TODO: 1000hz for now?
+
+    float dt = 0.001; // TODO: make this an actual DT measurement ( or at least research if i should)
 
     // Mounting offset between IMU sensor frame and rocket body frame (deg)
     constexpr float IMU_TO_BODY_YAW_DEG = 0.0f;
@@ -135,6 +136,7 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     // Inner loop on body-axis tilt error
     // TODO: Check if this needs a negative sign.
     // TODO: do i need to unscale because of the TVC thrust scaling?
+    // TODO: find angular rates to feed to derivative
     out[0] = pidXTilt.calculate(0.0f, static_cast<float>(tilt_error_b.x()), dt);
     out[1] = pidYTilt.calculate(0.0f, static_cast<float>(tilt_error_b.y()), dt);
 

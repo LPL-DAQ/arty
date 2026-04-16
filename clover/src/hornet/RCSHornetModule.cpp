@@ -3,8 +3,8 @@
 #include "../sensors/AnalogSensors.h"
 #include "../ControllerConfig.h"
 #include "../server.h"
-
 #include "../config.h"
+#include "../PID.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -22,6 +22,15 @@ namespace {
     Trace roll_trace;
     bool roll_has_trace = false;
     float roll_total_time = 0.0f;
+
+    PID roll_pid(2, 0, 5);
+    int64_t previous_timestamp = 0;
+    int64_t p_timer = 0;
+    int8_t p_valve = 0;
+    float min_pulse = 0.10;
+    float deadzone = 0.15;
+    float hysteresis = 0.05;
+
 }
 
 void RCSHornetModule::step_control_loop(DataPacket& data )
@@ -144,19 +153,59 @@ std::pair<RCSHornetStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
     return {out, data};
 }
 
-std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors, float roll_position)
+// TODO: i need to fill in all the [Module][State]Data bits, i havent kept up
+std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(EstimatedState& state, float desired_roll_position)
 {
     RCSHornetStateOutput out{};
     RCSFlightData data{};
+
+    int64_t dt = k_uptime_get() - previous_timestamp;
+
+    // TODO: turn state quaternion into roll position (is this just qw? idts)
+    float roll_position = 0.0;
+    // TODO: i need angular rates in the state estimate
+    float roll_velocity = 0.0;
+
+    float control_effort = roll_pid.calculate(desired_roll_position, roll_position, dt);
+
+    if (p_timer > 0){
+        p_timer -= dt;
+        if (p_timer < 0){
+            p_timer = 0;
+        }
+    }
+
+    else if (p_valve == 0){
+        if (control_effort > deadzone){
+            p_valve = 1;
+            p_timer = min_pulse;
+        }
+        else if (control_effort < -deadzone) {
+            p_valve = -1;
+            p_timer = min_pulse;
+        }
+    }
+    else if (p_valve == 1) {
+        if (control_effort < (deadzone - hysteresis)){
+            p_valve = 0;
+        }
+    }
+
+    else if (p_valve == -1) {
+        if (control_effort > -(deadzone - hysteresis)){
+            p_valve = 0;
+        }
+    }
+
     // Roll control based on position goes here
-    out.CW = false;
-    out.CCW = false;
     out.next_state = RCSState_RCS_STATE_FLIGHT;
+    out.CW = p_valve == -1;
+    out.CCW = p_valve == 1;
     return {out, data};
 }
 
 // so roll control would need to be in here which means it's duped between hornet/ranger, but that's okay i guess
-std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_sequence_tick(EstimatedState& state, int64_t current_time, int64_t start_time)
 {
     RCSHornetStateOutput out{};
     RCSRollSequenceData data{};
@@ -180,7 +229,7 @@ std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_seque
         }
 
         float roll_position = *target;
-        auto [control_out, control_data] = flight_tick(analog_sensors, roll_position);
+        auto [control_out, control_data] = flight_tick(state, roll_position);
         out.CW = control_out.CW;
         out.CCW = control_out.CCW;
 
