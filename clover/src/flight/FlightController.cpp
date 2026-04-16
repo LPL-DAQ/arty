@@ -82,7 +82,7 @@ std::expected<void, Error> FlightController::init()
     return {};
 }
 
-// returns {xOutput, yOutput} for thruster angles, encapsulates rotational PID
+// returns {xOutput, yOutput} for angular acceleration along the given axis
 static std::array<float, 2> lateralPID(EstimatedState state)
 {
     std::array<float, 2> out{};
@@ -143,9 +143,6 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     out[1] = pidYTilt.calculate(0.0f, static_cast<float>(axis_error_b.y()), dt);
 
     return out;
-
-
-
 }
 
 static float verticalPID(EstimatedState state){
