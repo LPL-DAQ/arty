@@ -29,13 +29,12 @@ enum class MotorKind {
 // -----------------------------------------------------------------------------
 // Stateless PWM base with last-commanded pulse tracking.
 // init() verifies hardware and writes the low/min pulse.
-// tick() clamps and writes a pulse.
+// tick() clamps and writes a pulse. Requires init() to have succeeded first.
 // -----------------------------------------------------------------------------
 template<
     const pwm_dt_spec PwmDt,
     int MinPulseUs,
-    int MaxPulseUs,
-    int ArmingMs = 0>
+    int MaxPulseUs>
 class PwmActuator {
 protected:
     static constexpr float k_min_pulse_us = static_cast<float>(MinPulseUs);
@@ -43,6 +42,7 @@ protected:
     static constexpr const pwm_dt_spec& pwm_gpio = PwmDt;
 
     inline static uint32_t last_pulse_us = static_cast<uint32_t>(MinPulseUs);
+    inline static bool initialized = false;
 
     static uint32_t clamp_pulse_us(uint32_t pulse_us) {
         const uint32_t min = static_cast<uint32_t>(k_min_pulse_us);
@@ -63,8 +63,8 @@ protected:
 public:
     static std::expected<void, Error> init(const char* prefix) {
         LOG_MODULE_DECLARE(pwm_actuator);
-        LOG_INF("%s Initializing... pulse range [%d, %d] us  arming %d ms",
-                prefix, MinPulseUs, MaxPulseUs, ArmingMs);
+        LOG_INF("%s Initializing... pulse range [%d, %d] us",
+                prefix, MinPulseUs, MaxPulseUs);
 
         if (!pwm_is_ready_dt(&pwm_gpio)) {
             LOG_ERR("%s PWM not ready", prefix);
@@ -77,6 +77,7 @@ public:
             return result;
         }
 
+        initialized = true;
         LOG_INF("%s Ready.", prefix);
         return {};
     }
@@ -84,9 +85,9 @@ public:
     static std::expected<void, Error> tick(const char* prefix, uint32_t pulse_us) {
         LOG_MODULE_DECLARE(pwm_actuator);
 
-        if (!pwm_is_ready_dt(&pwm_gpio)) {
+        if (!initialized) {
             LOG_WRN("%s tick() called before init()", prefix);
-            return std::unexpected(Error::from_device_not_ready(pwm_gpio.dev).context("PWM not ready"));
+            return std::unexpected(Error::from_code(-ECANCELED).context("Not initialized"));
         }
 
         return write_pulse_us(clamp_pulse_us(pulse_us));
@@ -105,8 +106,8 @@ template<
     const pwm_dt_spec PwmDt,
     int MinPulseUs = 1000,
     int MaxPulseUs = 2000>
-class Servo : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0> {
-    using Base = PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0>;
+class Servo : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs> {
+    using Base = PwmActuator<PwmDt, MinPulseUs, MaxPulseUs>;
 
     static consteval const char* kind_to_str(ServoKind k) {
         switch (k) {
@@ -139,10 +140,9 @@ template<
     MotorKind Kind,
     const pwm_dt_spec PwmDt,
     int MinPulseUs = 1000,
-    int MaxPulseUs = 2000,
-    int ArmingMs   = 2000>
-class EscMotor : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, ArmingMs> {
-    using Base = PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, ArmingMs>;
+    int MaxPulseUs = 2000>
+class EscMotor : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs> {
+    using Base = PwmActuator<PwmDt, MinPulseUs, MaxPulseUs>;
 
     static consteval const char* kind_to_str(MotorKind k) {
         switch (k) {
@@ -204,18 +204,12 @@ typedef EscMotor<
 
 typedef EscMotor<
     MotorKind::MOTOR_TOP,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top),
-    1000,
-    2000,
-    3000>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top)>
     MotorTop;
 
 typedef EscMotor<
     MotorKind::MOTOR_BOTTOM,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom),
-    1000,
-    2000,
-    3000>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom)>
     MotorBottom;
 
 #endif
