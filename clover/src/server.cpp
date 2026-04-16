@@ -12,10 +12,10 @@
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
 
-#include "ranger/ThrottleValve.h"
 #include "clover.pb.h"
 // ADDED: Replaced sequencer.h with our new static Controller which handles the state machine safely.
 #include "Controller.h"
+#include "MutexGuard.h"
 
 #include "server.h"
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);

@@ -6,7 +6,7 @@
 
 LOG_MODULE_REGISTER(RCSRangerActuator, LOG_LEVEL_INF);
 
-std::expected<void, Error> tick(RCSRangerStateOutput& output, RCSRangerData& data){
+std::expected<void, Error> RCSRangerActuator::tick(RCSRangerStateOutput& output, RCSRangerData& data){
     // fill in actuator data
     // this is where adit (i think) code goes
 

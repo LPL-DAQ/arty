@@ -12,6 +12,8 @@ target_link_libraries(app PRIVATE Eigen3::Eigen)
 
 add_subdirectory(sensors)
 add_subdirectory(flight)
+# add_subdirectory(hornet)
+# add_subdirectory(ranger)
 
 if(CONFIG_HORNET)
     message(NOTICE "Building with Hornet sources")

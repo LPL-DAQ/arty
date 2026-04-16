@@ -33,7 +33,7 @@ namespace FlightController {
 
     std::pair<FlightStateOutput, FlightIdleData> idle_tick();
     std::pair<FlightStateOutput, FlightTakeoffData> takeoff_tick(int64_t current_time, int64_t start_time);
-    std::pair<FlightStateOutput, FlightSequenceData> flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
+    std::pair<FlightStateOutput, FlightSequenceData> flight_seq_tick(DataPacket& data, int64_t current_time, int64_t start_time);
     std::pair<FlightStateOutput, FlightLandingData> landing_tick(int64_t current_time, int64_t start_time);
     std::pair<FlightStateOutput, FlightAbortData> abort_tick(int64_t current_time, int64_t entry_time);
 

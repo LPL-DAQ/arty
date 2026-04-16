@@ -14,7 +14,7 @@
 #if CONFIG_RANGER
 #include "ranger/TVCRangerModule.h"
 #include "ranger/TVCRangerActuator.h"
-#include "ranger/RCSHornetModule.h"
+#include "ranger/RCSRangerModule.h"
 #include "ranger/RCSRangerActuator.h"
 #include "ranger/ThrottleRangerModule.h"
 #include "ranger/ThrottleRangerActuator.h"
@@ -138,6 +138,21 @@ std::expected<void, Error> Controller::init()
     // Other sensors here...
     k_sched_unlock();
 
+    // init actuators
+#if CONFIG_RANGER
+    LOG_INF("Initializing fuel throttle valve");
+    if (auto result = FuelValve::init(); !result) {
+        LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing lox throttle valve");
+    if (auto result = LoxValve::init(); !result) {
+        LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
+        return 0;
+    }
+#endif
+
     LOG_INF("Pausing for initial sensor readings to complete");
     k_sleep(K_MSEC(500));
 
@@ -184,13 +199,13 @@ void Controller::step_control_loop(k_work*)
 
     #if CONFIG_RANGER
         TVCRangerModule::step_control_loop(data);
-        TVCRangerActuator::tick(data.tvc_state_output.ranger_state_output, data.tvc_actuator_data.tvc_ranger_data);
+        TVCRangerActuator::tick(data.tvc_state_output.tvc_ranger_state_output, data.tvc_actuator_data.tvc_ranger_data);
 
         RCSRangerModule::step_control_loop(data);
-        RCSRangerActuator::tick(data.rcs_state_output.ranger_state_output, data.rcs_actuator_data.rcs_ranger_data);
+        RCSRangerActuator::tick(data.rcs_state_output.rcs_ranger_state_output, data.rcs_actuator_data.rcs_ranger_data);
 
         ThrottleRangerModule::step_control_loop(data);
-        ThrottleRangerActuator::tick(data.throttle_state_output.ranger_state_output, data.throttle_actuator_data.throttle_ranger_data);
+        ThrottleRangerActuator::tick(data.throttle_state_output.throttle_ranger_state_output, data.throttle_actuator_data.throttle_ranger_data);
     #elif CONFIG_HORNET
         TVCHornetModule::step_control_loop(data);
         TVCHornetActuator::tick(data.tvc_state_output.tvc_hornet_state_output, data);

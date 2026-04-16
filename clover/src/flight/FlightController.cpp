@@ -24,32 +24,10 @@ static FlightState get_flight_controller_state()
     return FlightController::current_state;
 }
 
-static uint32_t get_flight_controller_sequence_start_time()
-{
-    MutexGuard guard{&flight_controller_lock};
-    return FlightController::sequence_start_time;
-}
-
-static uint32_t get_flight_controller_abort_entry_time()
-{
-    MutexGuard guard{&flight_controller_lock};
-    return FlightController::abort_entry_time;
-}
-
 // TODO: implement fr with varrying mass estimate
 static float get_weight_lbf(){
     MutexGuard guard{&flight_controller_lock};
     return 0.0f;
-}
-
-static void resetPIDs()
-{
-    pidXTilt.reset();
-    pidYTilt.reset();
-    pidX.reset();
-    pidY.reset();
-    pidZ.reset();
-    pidZVelocity.reset();
 }
 
 namespace {
@@ -81,6 +59,16 @@ namespace {
 
     DesiredState des_state = DesiredState_init_default;
 
+}
+
+void FlightController::resetPIDs()
+{
+    pidXTilt.reset();
+    pidYTilt.reset();
+    pidX.reset();
+    pidY.reset();
+    pidZ.reset();
+    pidZVelocity.reset();
 }
 
 std::expected<void, Error> FlightController::init()
@@ -122,8 +110,8 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     {
         float outer_dt = 3.0f * dt; // assuming this function runs every dt
         // world tilt
-        float world_tilt_x = pidX.calculate(des_state.position.x, state.x_m, outer_dt);
-        float world_tilt_y = pidY.calculate(des_state.position.y, state.y_m, outer_dt);
+        float world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
+        float world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
         des_state.world_tilt_x = world_tilt_x;
         des_state.world_tilt_y = world_tilt_y;
     }
@@ -165,10 +153,10 @@ static float verticalPID(EstimatedState state){
     // outerloop on position
     if (loopCount % 3 == 0)
     {
-        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.z_m, dt);
+        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, dt);
     }
     // innerloop on velocity
-    float desired_acceleration = pidZVelocity.calculate(des_state.vz_m_s, state.vz_m_s, dt);
+    float desired_acceleration = pidZVelocity.calculate(des_state.vz_m_s, state.velocity.z, dt);
     return desired_acceleration;
 }
 
@@ -184,10 +172,10 @@ static float thrustScale(float tvc_x_rad, float tvc_y_rad)
     return 1.0f / (std::cos(tvc_x_rad) * std::cos(tvc_y_rad));
 }
 
-std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
+std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(DataPacket& data, int64_t current_time, int64_t start_time)
 {
     FlightStateOutput out{};
-    FlightSequenceData data{};
+    FlightSequenceData flight_data{};
 
     float local_flight_sequence_total_time;
     bool local_flight_sequence_has_trace;
@@ -200,7 +188,7 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
     float elapsed_time = static_cast<float>(current_time - start_time);
     if (local_flight_sequence_total_time > 0.0f && elapsed_time > local_flight_sequence_total_time) {
         out.next_state = FlightState_FLIGHT_STATE_LANDING;
-        return {out, data};
+        return {out, flight_data};
     }
 
     if (local_flight_sequence_has_trace) {
@@ -208,28 +196,28 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
         if (!x_target) {
             LOG_ERR("Flight sequence X trace sampling failed: %s", x_target.error().build_message().c_str());
             out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
+            return {out, flight_data};
         }
 
         auto y_target = y_trace.sample(elapsed_time);
         if (!y_target) {
             LOG_ERR("Flight sequence Y trace sampling failed: %s", y_target.error().build_message().c_str());
             out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
+            return {out, flight_data};
         }
 
         auto z_target = z_trace.sample(elapsed_time);
         if (!z_target) {
             LOG_ERR("Flight sequence Z trace sampling failed: %s", z_target.error().build_message().c_str());
             out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
+            return {out, flight_data};
         }
 
         auto roll_target = roll_trace.sample(elapsed_time);
         if (!roll_target) {
             LOG_ERR("Flight sequence roll trace sampling failed: %s", roll_target.error().build_message().c_str());
             out.next_state = FlightState_FLIGHT_STATE_ABORT;
-            return {out, data};
+            return {out, flight_data};
         }
 
         des_state.position.z = *z_target;
@@ -243,15 +231,25 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
 
         // TODO: note that scaling due to TVC angle may introduce destabilizing distrubances
         float desired_accel = verticalPID(data.estimated_state);
-        desired_accel = desired_accel * thrustScale(data.tvc_actuator_data.x_angle, data.tvc_actuator_data.y_angle)
+        float tvc_x_rad = 0.0f;
+        float tvc_y_rad = 0.0f;
+        if (data.which_tvc_actuator_data == DataPacket_tvc_ranger_data_tag) {
+            tvc_x_rad = data.tvc_actuator_data.tvc_ranger_data.x_angle * DEG2RAD_F;
+            tvc_y_rad = data.tvc_actuator_data.tvc_ranger_data.y_angle * DEG2RAD_F;
+        } else if (data.which_tvc_actuator_data == DataPacket_tvc_hornet_data_tag) {
+            tvc_x_rad = data.tvc_actuator_data.tvc_hornet_data.x_angle * DEG2RAD_F;
+            tvc_y_rad = data.tvc_actuator_data.tvc_hornet_data.y_angle * DEG2RAD_F;
+        }
+        desired_accel = desired_accel * thrustScale(tvc_x_rad, tvc_y_rad);
         out.z_acceleration = desired_accel;
 
         std::array<bool,2> rcs_out = rollControl(data.estimated_state);
         out.roll_cw = rcs_out[0];
         out.roll_ccw = rcs_out[1];
     }
+    // TODO: Fill out flight data
     out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;
-    return {out, data};
+    return {out, flight_data};
 }
 
 void FlightController::step_control_loop(DataPacket& data)
@@ -286,7 +284,7 @@ void FlightController::step_control_loop(DataPacket& data)
         break;
     }
     case FlightState_FLIGHT_STATE_FLIGHT_SEQ: {
-        auto [seq_out, seq_data] = flight_seq_tick(data.analog_sensors, current_time, local_sequence_start_time);
+        auto [seq_out, seq_data] = flight_seq_tick(data, current_time, local_sequence_start_time);
         data.which_flight_state_data = DataPacket_flight_sequence_data_tag;
         data.flight_state_data.flight_sequence_data = seq_data;
         local_output = seq_out;

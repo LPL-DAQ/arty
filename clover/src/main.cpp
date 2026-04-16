@@ -8,8 +8,6 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "sensors/AnalogSensors.h"
-#include "ranger/ThrottleValve.h"
-#include "sensors/lidar.h"
 #include "Controller.h"
 #include "flight/FlightController.h"
 #include "server.h"
@@ -55,18 +53,6 @@ int main(void)
     //     return 0;
     // }
 
-    LOG_INF("Initializing fuel throttle valve");
-    if (auto result = FuelValve::init(); !result) {
-        LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    LOG_INF("Initializing lox throttle valve");
-    if (auto result = LoxValve::init(); !result) {
-        LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
     // LOG_INF("Initializing LiDAR");
     // int err = lidar_init();
     // if (err) {
@@ -80,6 +66,8 @@ int main(void)
         return 0;
     }
 
+
+    // initializes actuators 
     LOG_INF("Initializing Controller");
     if (auto result = Controller::init(); !result) {
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());

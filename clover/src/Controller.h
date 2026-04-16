@@ -40,7 +40,6 @@ public:
     static std::expected<void, Error> handle_start_tvc_sequence(const TVCStartSequenceRequest& req);
     static std::expected<void, Error> handle_load_flight_sequence(const FlightLoadSequenceRequest& req);
     static std::expected<void, Error> handle_start_flight_sequence(const FlightStartSequenceRequest& req);
-    static std::expected<void, Error> change_state(SystemState new_state);
     static const char* get_state_name(SystemState state);
 
     static bool should_tick_throttle();
