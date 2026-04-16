@@ -680,8 +680,7 @@ message FlightStateOutput {
   required float z_acceleration = 2;
   required float x_angular_acceleration = 3;
   required float y_angular_acceleration = 4;
-  required bool roll_cw = 5;
-  required bool roll_ccw = 6;
+  required bool roll_position = 5;
 
 }
 
@@ -716,7 +715,7 @@ message RCSRangerData {
 
 message RCSHornetData {
   required bool cw_power_on = 1;
-  required bool cw_power_off = 2;
+  required bool cww_power_on = 2;
 
 }
 

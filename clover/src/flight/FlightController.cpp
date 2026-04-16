@@ -153,13 +153,6 @@ static float verticalPID(EstimatedState state){
     return desired_acceleration;
 }
 
-// TODO: Fill in RCS controol code
-static std::array<bool,2> rollControl(EstimatedState state){
-    // input of roll angle and angular rate
-    return {false, false};
-
-}
-
 static float thrustScale(float tvc_x_rad, float tvc_y_rad)
 {
     return 1.0f / (std::cos(tvc_x_rad) * std::cos(tvc_y_rad));
@@ -236,9 +229,8 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
         desired_accel = desired_accel * thrustScale(tvc_x_rad, tvc_y_rad);
         out.z_acceleration = desired_accel;
 
-        std::array<bool,2> rcs_out = rollControl(data.estimated_state);
-        out.roll_cw = rcs_out[0];
-        out.roll_ccw = rcs_out[1];
+        out.roll_position = *roll_target;
+
     }
     // TODO: Fill out flight data
     out.next_state = FlightState_FLIGHT_STATE_FLIGHT_SEQ;

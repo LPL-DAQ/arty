@@ -81,7 +81,7 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output);
+        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output.roll_position);
         data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
         data.rcs_state_data.rcs_flight_data = flight_data;
         out = flight_out;
@@ -144,21 +144,23 @@ std::pair<RCSHornetStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
     return {out, data};
 }
 
-std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output)
+std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(const AnalogSensorReadings& analog_sensors, float roll_position)
 {
     RCSHornetStateOutput out{};
     RCSFlightData data{};
+    // Roll control based on position goes here
+    out.CW = false;
+    out.CCW = false;
     out.next_state = RCSState_RCS_STATE_FLIGHT;
     return {out, data};
 }
 
-
+// so roll control would need to be in here which means it's duped between hornet/ranger, but that's okay i guess
 std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time)
 {
     RCSHornetStateOutput out{};
     RCSRollSequenceData data{};
     float dt = current_time - start_time;
-
     bool local_roll_has_trace;
     float local_roll_total_time;
     {
@@ -177,17 +179,11 @@ std::pair<RCSHornetStateOutput, RCSRollSequenceData> RCSHornetModule::roll_seque
             return {out, data};
         }
 
-        float value = *target;
-        if (value > 0.0f) {
-            out.CW = true;
-            out.CCW = false;
-        } else if (value < 0.0f) {
-            out.CW = false;
-            out.CCW = true;
-        } else {
-            out.CW = false;
-            out.CCW = false;
-        }
+        float roll_position = *target;
+        auto [control_out, control_data] = flight_tick(analog_sensors, roll_position);
+        out.CW = control_out.CW;
+        out.CCW = control_out.CCW;
+
     } else {
         out.CW = false;
         out.CCW = false;
@@ -227,6 +223,7 @@ std::pair<RCSHornetStateOutput, RCSValveSequenceData> RCSHornetModule::valve_seq
             return {out, data};
         }
 
+        // + for CW, - for CCW, 0 for none
         float value = *target;
         if (value > 0.0f) {
             out.CW = true;
@@ -234,7 +231,13 @@ std::pair<RCSHornetStateOutput, RCSValveSequenceData> RCSHornetModule::valve_seq
         } else if (value < 0.0f) {
             out.CW = false;
             out.CCW = true;
+        }else {
+            out.CW = false;
+            out.CCW = false;
         }
+    } else {
+        out.CW = false;
+        out.CCW = false;
     }
 
     if (local_valve_has_trace && dt >= local_valve_total_time) {

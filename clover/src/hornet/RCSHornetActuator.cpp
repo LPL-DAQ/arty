@@ -9,9 +9,12 @@
 LOG_MODULE_REGISTER(RCSHornetActuator, LOG_LEVEL_INF);
 
 std::expected<void, Error> RCSHornetActuator::tick(RCSHornetStateOutput& output, RCSHornetData& data){
-    const float cw_throttle  = output.CW  ? 1.0f : 0.0f;
-    const float ccw_throttle = output.CCW ? 1.0f : 0.0f;
+    const float throttle_value = 1.0f;
+    const float cw_throttle  = output.CW  ? throttle_value : 0.0f;
+    const float ccw_throttle = output.CCW ? throttle_value : 0.0f;
 
+
+    // TODO: Check which actually corresponds to what
     auto err = MotorBeta1::set_target_throttle(cw_throttle);
     if (!err) return err;
     err = MotorBeta2::set_target_throttle(ccw_throttle);
@@ -31,7 +34,7 @@ std::expected<void, Error> RCSHornetActuator::tick(RCSHornetStateOutput& output,
     if (!err) return err;
 
     data.cw_power_on = output.CW;
-    data.cw_power_off = !output.CW;
+    data.cww_power_on = output.CCW;
     return {};
 }
 
