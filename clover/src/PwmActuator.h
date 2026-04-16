@@ -1,6 +1,7 @@
 #ifndef ARTY_PWM_ACTUATOR_ZEPHYR_H
 #define ARTY_PWM_ACTUATOR_ZEPHYR_H
 
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -9,24 +10,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include "MutexGuard.h"
+#include "Error.h"
 
-enum class Error {
-    // Hardware
-    PWM_NOT_READY,
-    PWM_WRITE_FAILED,
 
-    // State
-    NOT_INITIALIZED,
-    NOT_ARMED,
-    FAULT_ACTIVE,
-    WRONG_STATE,
-    ALREADY_ARMED,
-    ALREADY_DISARMED,
-
-    // Command
-    OUT_OF_RANGE,
-    ARM_FAILED,
-};
 
 enum class ServoKind {
     SERVO_X,
@@ -51,7 +37,7 @@ enum class MotorKind {
 //
 // -----------------------------------------------------------------------------
 template<
-    const pwm_dt_spec& PwmDt,
+    const pwm_dt_spec PwmDt,
     int MinPulseUs,
     int MaxPulseUs,
     int ArmingMs   = 0>
@@ -76,16 +62,22 @@ protected:
     static std::expected<void, Error> write_pulse_us(uint32_t pulse_us) {
         constexpr uint32_t period_ns = 20000u * 1000u;
         const int err = pwm_set_dt(&pwm_gpio, period_ns, pulse_us * 1000u);
-        if (err) return std::unexpected(Error::PWM_WRITE_FAILED);
+        if (err) return std::unexpected(Error::from_code(err).context("PWM write failed"));
         commanded_pulse_us = static_cast<float>(pulse_us);
         return {};
+    }
+
+    static uint32_t clamp_pulse_us(uint32_t pulse_us) {
+        const uint32_t min = static_cast<uint32_t>(k_min_pulse_us);
+        const uint32_t max = static_cast<uint32_t>(k_max_pulse_us);
+        return pulse_us < min ? min : (pulse_us > max ? max : pulse_us);
     }
 
     // Zero the PWM signal entirely.
     static std::expected<void, Error> write_zero() {
         constexpr uint32_t period_ns = 20000u * 1000u;
         const int err = pwm_set_dt(&pwm_gpio, period_ns, 0u);
-        if (err) return std::unexpected(Error::PWM_WRITE_FAILED);
+        if (err) return std::unexpected(Error::from_code(err).context("PWM write zero failed"));
         commanded_pulse_us = 0.0f;
         return {};
     }
@@ -129,7 +121,7 @@ public:
         // 3. Verify PWM hardware.
         if (!pwm_is_ready_dt(&pwm_gpio)) {
             LOG_ERR("%s PWM not ready", prefix);
-            return std::unexpected(Error::PWM_NOT_READY);
+            return std::unexpected(Error::from_device_not_ready(pwm_gpio.dev).context("PWM not ready"));
         }
 
         // 4. Transition to DISARMED.
@@ -164,7 +156,7 @@ public:
         // 3. Verify PWM hardware.
         if (!pwm_is_ready_dt(&pwm_gpio)) {
             LOG_ERR("%s PWM not ready", prefix);
-            return std::unexpected(Error::PWM_NOT_READY);
+            return std::unexpected(Error::from_device_not_ready(pwm_gpio.dev).context("PWM not ready"));
         }
 
         // 4. Transition to DISARMED.
@@ -184,20 +176,20 @@ public:
 
         if (state == ActuatorState::ARMED) {
             LOG_WRN("%s arm() called but already ARMED", prefix);
-            return std::unexpected(Error::ALREADY_ARMED);
+            return std::unexpected(Error::from_cause("Already armed"));
         }
         if (state == ActuatorState::FAIL_SAFE) {
             LOG_WRN("%s arm() rejected — FAIL_SAFE in progress", prefix);
-            return std::unexpected(Error::WRONG_STATE);
+            return std::unexpected(Error::from_cause("Cannot arm while in FAIL_SAFE"));
         }
         if (state == ActuatorState::OFF) {
             LOG_WRN("%s arm() called before init_state()", prefix);
-            return std::unexpected(Error::NOT_INITIALIZED);
+            return std::unexpected(Error::from_cause("Not initialized"));
         }
         if (fault_active) {
             LOG_WRN("%s arm() rejected — fault active. Call clear_fault() first.",
                     prefix);
-            return std::unexpected(Error::FAULT_ACTIVE);
+            return std::unexpected(Error::from_cause("Fault active. Call clear_fault() first."));
         }
 
         {
@@ -216,10 +208,10 @@ public:
 
         if (state == ActuatorState::OFF) {
             LOG_WRN("%s disarm() called before init_state()", prefix);
-            return std::unexpected(Error::NOT_INITIALIZED);
+            return std::unexpected(Error::from_cause("Not initialized"));
         }
         if (state == ActuatorState::DISARMED) {
-            return std::unexpected(Error::ALREADY_DISARMED);
+            return std::unexpected(Error::from_cause("Already disarmed"));
         }
 
         LOG_INF("%s Disarming", prefix);
@@ -277,7 +269,7 @@ public:
 
         if (state == ActuatorState::OFF) [[unlikely]] {
             LOG_WRN("%s tick() called before init_state()", prefix);
-            return std::unexpected(Error::NOT_INITIALIZED);
+            return std::unexpected(Error::from_cause("Not initialized"));
         }
 
         last_tick_ms = k_uptime_get();
@@ -304,18 +296,16 @@ public:
         return {};
     }
 
-static std::expected<void, Error> tick_base(const char* prefix, uint32_t pulse_us) {
-    LOG_MODULE_DECLARE(pwm_actuator);
-
-    if (state == ActuatorState::OFF) [[unlikely]] {
-        LOG_WRN("%s tick() called before init()", prefix);
-        return std::unexpected(Error::NOT_INITIALIZED);
+    static std::expected<void, Error> tick_base(const char* prefix, uint32_t pulse_us) {
+        LOG_MODULE_DECLARE(pwm_actuator);
+        if (state == ActuatorState::OFF) [[unlikely]] {
+            LOG_WRN("%s tick() called before init()", prefix);
+            return std::unexpected(Error::from_cause("Not initialized"));
+        }
+        last_tick_ms = k_uptime_get();
+        return write_pulse_us(clamp_pulse_us(pulse_us));
     }
 
-    last_tick_ms = k_uptime_get();
-    write_pulse_us(pulse_us);
-    return {};
-}
 
     static ActuatorState get_state()          { return state; }
     static bool          is_armed()           { return state == ActuatorState::ARMED; }
@@ -432,7 +422,7 @@ public:
 
     static std::expected<void, Error> set_target_angle(float deg) {
         if (deg < k_min_deg || deg > k_max_deg)
-            return std::unexpected(Error::OUT_OF_RANGE);
+            return std::unexpected(Error::from_cause("Angle %.2f out of range [%.2f, %.2f]", deg, k_min_deg, k_max_deg));
         target_deg = deg;
         return {};
     }
@@ -524,7 +514,7 @@ public:
     }
 
     static std::expected<void, Error> tick_state() {
-        auto result = Base::tick_base(kind_to_str(Kind));
+        auto result = Base::tick_base_state(kind_to_str(Kind));
         if (!result) return result;
 
         if (Base::state == Base::ActuatorState::ARMED) {
@@ -542,7 +532,7 @@ public:
 
     static std::expected<void, Error> set_target_throttle(float throttle) {
         if (throttle < 0.0f || throttle > 1.0f)
-            return std::unexpected(Error::OUT_OF_RANGE);
+            return std::unexpected(Error::from_cause("Throttle %.2f out of range [0.0, 1.0]", throttle));
         target_throttle = throttle;
         return {};
     }
