@@ -2,11 +2,11 @@
 #include "MutexGuard.h"
 #include "../sensors/AnalogSensors.h"
 #include "../server.h"
-
 #include "../config.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+#include <cmath>
 #include <utility>
 
 
@@ -55,6 +55,8 @@ void ThrottleHornetModule::step_control_loop(DataPacket& data)
     }
 
     // --- PROCEDURAL LOGIC DISPATCHER ---
+
+    // TODO: Make a pwm sequence
     switch (local_state) {
     case ThrottleState_THROTTLE_STATE_IDLE: {
         auto [idle_out, idle_data] = idle_tick();
@@ -125,8 +127,17 @@ std::pair<ThrottleHornetStateOutput, ThrottleFlightData> ThrottleHornetModule::f
 {
     ThrottleHornetStateOutput out{};
     ThrottleFlightData data{};
-    float target_thrust = flight_output.z_acceleration;
-    out.throttle_percent = 0.0f;
+
+    float mass_kg = 6.8 // TODO: get a real measurement, also probably put this var somewhere more important
+
+    float target_thrust = flight_output.z_acceleration * mass_kg;
+
+    // linear best fit based on one test on old motor at full battery.
+    // TODO: get new and more data for the current motor
+    float best_fit_output = (target_thrust + 32.5271) / 121.53;
+    // fit is only valid between 0.63 and 1 -- should follow a PWM sequence below that
+    out.throttle_percent = std::clamp(best_fit_output, 0.63, 1);
+
     out.power_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_FLIGHT;
 
