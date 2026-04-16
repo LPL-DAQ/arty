@@ -28,8 +28,19 @@ enum class Error {
     ARM_FAILED,
 };
 
-enum class ServoKind  { SERVO_L, SERVO_R};
-enum class MotorKind  { BETA1, BETA2, BETA3, BETA4, CR5025 };
+enum class ServoKind {
+    SERVO_X,
+    SERVO_Y
+};
+
+enum class MotorKind {
+    BETA_TOP,
+    BETA_BOTTOM,
+    BETA_CW,
+    BETA_CCW,
+    MOTOR_TOP,
+    MOTOR_BOTTOM
+};
 
 // -----------------------------------------------------------------------------
 // PwmActuator
@@ -53,13 +64,13 @@ protected:
 
     enum class ActuatorState { OFF, DISARMED, ARMED, FAIL_SAFE };
 
-    inline static ActuatorState state     = ActuatorState::OFF;
-    inline static ActuatorState prevState = ActuatorState::OFF;
+    inline static ActuatorState state      = ActuatorState::OFF;
+    inline static ActuatorState prevState  = ActuatorState::OFF;
 
-    inline static k_mutex actuator_lock     = {};
-    inline static bool    fault_active      = false;
+    inline static k_mutex actuator_lock      = {};
+    inline static bool    fault_active       = false;
     inline static float   commanded_pulse_us = k_min_pulse_us;
-    inline static int64_t last_tick_ms      = 0;
+    inline static int64_t last_tick_ms       = 0;
 
 
     static std::expected<void, Error> write_pulse_us(uint32_t pulse_us) {
@@ -98,7 +109,7 @@ protected:
 
 public:
 
-    static std::expected<void, Error> init(const char* prefix) {
+    static std::expected<void, Error> init_state(const char* prefix) {
         LOG_MODULE_DECLARE(pwm_actuator);
         LOG_INF("%s Initializing... pulse range [%d, %d] us  arming %d ms",
                 prefix, MinPulseUs, MaxPulseUs, ArmingMs);
@@ -109,10 +120,10 @@ public:
         // 2. Full state reset.
         {
             MutexGuard lock(&actuator_lock);
-            commanded_pulse_us   = k_min_pulse_us;
-            fault_active         = false;
-            state                = ActuatorState::OFF;
-            prevState            = ActuatorState::OFF;
+            commanded_pulse_us = k_min_pulse_us;
+            fault_active       = false;
+            state              = ActuatorState::OFF;
+            prevState          = ActuatorState::OFF;
         }
 
         // 3. Verify PWM hardware.
@@ -133,6 +144,41 @@ public:
         return {};
     }
 
+    static std::expected<void, Error> init(const char* prefix) {
+        LOG_MODULE_DECLARE(pwm_actuator);
+        LOG_INF("%s Initializing... pulse range [%d, %d] us  arming %d ms",
+                prefix, MinPulseUs, MaxPulseUs, ArmingMs);
+
+        // 1. Mutex first — valid before any early return.
+        k_mutex_init(&actuator_lock);
+
+        // 2. Full state reset.
+        {
+            MutexGuard lock(&actuator_lock);
+            commanded_pulse_us = k_min_pulse_us;
+            fault_active       = false;
+            state              = ActuatorState::OFF;
+            prevState          = ActuatorState::OFF;
+        }
+
+        // 3. Verify PWM hardware.
+        if (!pwm_is_ready_dt(&pwm_gpio)) {
+            LOG_ERR("%s PWM not ready", prefix);
+            return std::unexpected(Error::PWM_NOT_READY);
+        }
+
+        // 4. Transition to DISARMED.
+        last_tick_ms = k_uptime_get();
+        {
+            MutexGuard lock(&actuator_lock);
+            state     = ActuatorState::ARMED;
+            prevState = ActuatorState::ARMED;
+        }
+
+        LOG_INF("%s Ready.", prefix);
+        return {};
+    }
+
     static std::expected<void, Error> arm(const char* prefix) {
         LOG_MODULE_DECLARE(pwm_actuator);
 
@@ -145,7 +191,7 @@ public:
             return std::unexpected(Error::WRONG_STATE);
         }
         if (state == ActuatorState::OFF) {
-            LOG_WRN("%s arm() called before init()", prefix);
+            LOG_WRN("%s arm() called before init_state()", prefix);
             return std::unexpected(Error::NOT_INITIALIZED);
         }
         if (fault_active) {
@@ -169,7 +215,7 @@ public:
         LOG_MODULE_DECLARE(pwm_actuator);
 
         if (state == ActuatorState::OFF) {
-            LOG_WRN("%s disarm() called before init()", prefix);
+            LOG_WRN("%s disarm() called before init_state()", prefix);
             return std::unexpected(Error::NOT_INITIALIZED);
         }
         if (state == ActuatorState::DISARMED) {
@@ -200,7 +246,7 @@ public:
 
     static std::expected<void, Error> emergency_stop(const char* prefix) {
         LOG_MODULE_DECLARE(pwm_actuator);
-        LOG_ERR("%s EMERGENCY STOP — PWM zeroed. Call init() to recover.",
+        LOG_ERR("%s EMERGENCY STOP — PWM zeroed. Call init_state() to recover.",
                 prefix);
 
         auto result = write_zero();
@@ -226,11 +272,11 @@ public:
         LOG_INF("%s Fault cleared. Call arm() to resume.", prefix);
     }
 
-    static std::expected<void, Error> tick_base(const char* prefix) {
+    static std::expected<void, Error> tick_base_state(const char* prefix) {
         LOG_MODULE_DECLARE(pwm_actuator);
 
         if (state == ActuatorState::OFF) [[unlikely]] {
-            LOG_WRN("%s tick() called before init()", prefix);
+            LOG_WRN("%s tick() called before init_state()", prefix);
             return std::unexpected(Error::NOT_INITIALIZED);
         }
 
@@ -258,13 +304,26 @@ public:
         return {};
     }
 
-    static ActuatorState get_state()         { return state; }
-    static bool          is_armed()          { return state == ActuatorState::ARMED; }
-    static bool          is_disarmed()       { return state == ActuatorState::DISARMED; }
-    static bool          is_faulted()        { return fault_active; }
-    static bool          is_fail_safe_active(){ return state == ActuatorState::FAIL_SAFE; }
-    static float         get_pulse_us()      { return commanded_pulse_us; }
-    static int64_t       get_last_tick_ms()  { return last_tick_ms; }
+static std::expected<void, Error> tick_base(const char* prefix, uint32_t pulse_us) {
+    LOG_MODULE_DECLARE(pwm_actuator);
+
+    if (state == ActuatorState::OFF) [[unlikely]] {
+        LOG_WRN("%s tick() called before init()", prefix);
+        return std::unexpected(Error::NOT_INITIALIZED);
+    }
+
+    last_tick_ms = k_uptime_get();
+    write_pulse_us(pulse_us);
+    return {};
+}
+
+    static ActuatorState get_state()          { return state; }
+    static bool          is_armed()           { return state == ActuatorState::ARMED; }
+    static bool          is_disarmed()        { return state == ActuatorState::DISARMED; }
+    static bool          is_faulted()         { return fault_active; }
+    static bool          is_fail_safe_active() { return state == ActuatorState::FAIL_SAFE; }
+    static float         get_pulse_us()       { return commanded_pulse_us; }
+    static int64_t       get_last_tick_ms()   { return last_tick_ms; }
 
 };
 
@@ -292,9 +351,9 @@ class Servo : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0>
 {
     using Base = PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0>;
 
-    static constexpr float k_min_deg      = static_cast<float>(MinDeg);
-    static constexpr float k_max_deg      = static_cast<float>(MaxDeg);
-    static constexpr float k_neutral_deg  = static_cast<float>(NeutralDeg);
+    static constexpr float k_min_deg     = static_cast<float>(MinDeg);
+    static constexpr float k_max_deg     = static_cast<float>(MaxDeg);
+    static constexpr float k_neutral_deg = static_cast<float>(NeutralDeg);
     static constexpr float k_deadband_deg = static_cast<float>(DeadbandDegX10) / 10.0f;
 
     // Target angle — tracked between tick() calls.
@@ -315,8 +374,8 @@ class Servo : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0>
 
     static consteval const char* kind_to_str(ServoKind k) {
         switch (k) {
-        case ServoKind::SERVO_L: return "[servo_l]";
-        case ServoKind::SERVO_R: return "[servo_r]";
+        case ServoKind::SERVO_X:       return "[servo_x]";
+        case ServoKind::SERVO_Y:       return "[servo_y]";
         }
         return "[servo]";
     }
@@ -349,9 +408,9 @@ public:
         Base::clear_fault(kind_to_str(Kind));
     }
 
-    static std::expected<void, Error> tick() {
+    static std::expected<void, Error> tick_state() {
         // Run base state machine — handles DISARMED, FAIL_SAFE, OFF.
-        auto result = Base::tick_base(kind_to_str(Kind));
+        auto result = Base::tick_base_state(kind_to_str(Kind));
         if (!result) return result;
 
         // ARMED — write PWM toward target_deg set by set_target_angle().
@@ -362,6 +421,12 @@ public:
             }
         }
 
+        return {};
+    }
+
+    static std::expected<void, Error> tick(uint32_t pulse_us) {
+        auto result = Base::tick_base(kind_to_str(Kind),pulse_us);
+        if (!result) return result;
         return {};
     }
 
@@ -418,16 +483,17 @@ class EscMotor : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, ArmingMs> {
             0.0f, 1.0f);
     }
 
-    static consteval const char* kind_to_str(MotorKind k) {
-        switch (k) {
-        case MotorKind::BETA1: return "[beta1]";
-        case MotorKind::BETA2: return "[beta2]";
-        case MotorKind::BETA3: return "[beta3]";
-        case MotorKind::BETA4: return "[beta4]";
-        case MotorKind::CR5025: return "[cr5025]";
-        }
-        return "[motor]";
+static consteval const char* kind_to_str(MotorKind k) {
+    switch (k) {
+    case MotorKind::BETA_TOP:    return "[beta_top]";
+    case MotorKind::BETA_BOTTOM: return "[beta_bottom]";
+    case MotorKind::BETA_CW:     return "[beta_cw]";
+    case MotorKind::BETA_CCW:    return "[beta_ccw]";
+    case MotorKind::MOTOR_TOP:   return "[motor_top]";
+    case MotorKind::MOTOR_BOTTOM:return "[motor_bottom]";
     }
+    return "[motor]";
+}
 
 public:
     EscMotor() = delete;
@@ -457,7 +523,7 @@ public:
         Base::clear_fault(kind_to_str(Kind));
     }
 
-    static std::expected<void, Error> tick() {
+    static std::expected<void, Error> tick_state() {
         auto result = Base::tick_base(kind_to_str(Kind));
         if (!result) return result;
 
@@ -465,6 +531,12 @@ public:
             return Base::write_pulse_us(throttle_to_pulse_us(target_throttle));
         }
 
+        return {};
+    }
+
+    static std::expected<void, Error> tick(uint32_t pulse_us) {
+        auto result = Base::tick_base(kind_to_str(Kind), pulse_us);
+        if (!result) return result;
         return {};
     }
 
@@ -487,27 +559,62 @@ public:
 
 };
 
-extern const pwm_dt_spec servo_l_pwm;
-extern const pwm_dt_spec servo_r_pwm;
-extern const pwm_dt_spec motor_beta1_pwm;
-extern const pwm_dt_spec motor_beta2_pwm;
-extern const pwm_dt_spec motor_beta3_pwm;
-extern const pwm_dt_spec motor_beta4_pwm;
-extern const pwm_dt_spec motor_cr_pwm;
+typedef Servo<
+    ServoKind::SERVO_X,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_x)>
+    ServoX;
 
-using ServoL    = Servo<ServoKind::SERVO_L, servo_l_pwm>;
-using ServoR    = Servo<ServoKind::SERVO_R, servo_r_pwm>;
+typedef Servo<
+    ServoKind::SERVO_Y,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_y)>
+    ServoY;
 
-using MotorBeta1 = EscMotor<MotorKind::BETA1, motor_beta1_pwm>;
-using MotorBeta2 = EscMotor<MotorKind::BETA2, motor_beta2_pwm>;
-using MotorBeta3 = EscMotor<MotorKind::BETA3, motor_beta3_pwm>;
-using MotorBeta4 = EscMotor<MotorKind::BETA4, motor_beta4_pwm>;
+typedef Servo<
+    ServoKind::SERVO_TOP,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_top)>
+    ServoTop;
 
-using MotorCR = EscMotor<
-    MotorKind::CR5025,
-    motor_cr_pwm,
+typedef Servo<
+    ServoKind::SERVO_BOTTOM,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_bottom)>
+    ServoBottom;
+
+
+typedef EscMotor<
+    MotorKind::BETA_TOP,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_top)>
+    BetaTop;
+
+typedef EscMotor<
+    MotorKind::BETA_BOTTOM,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_bottom)>
+    BetaBottom;
+
+typedef EscMotor<
+    MotorKind::BETA_CW,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_cw)>
+    BetaCW;
+
+typedef EscMotor<
+    MotorKind::BETA_CCW,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_ccw)>
+    BetaCCW;
+
+
+typedef EscMotor<
+    MotorKind::MOTOR_TOP,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top),
     1000,
     2000,
-    3000>;
+    3000>
+    MotorTop;
+
+typedef EscMotor<
+    MotorKind::MOTOR_BOTTOM,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom),
+    1000,
+    2000,
+    3000>
+    MotorBottom;
 
 #endif
