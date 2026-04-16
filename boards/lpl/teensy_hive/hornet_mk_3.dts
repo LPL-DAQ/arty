@@ -51,18 +51,19 @@ TODO:
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
-        /* PWM channels — accessed via PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), <name>) */
-        servo_x_pwm = <&flexpwm1_pwm2 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;   /* Pin 24 */
-        servo_y_pwm = <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>;   /* Pin 25 */
+        pwms =
+            <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_top     Pin 28  EMC_32    FlexPWM3.1 B */
+            <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_bottom  Pin 29  EMC_31    FlexPWM3.1 A */
+            <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 36  EMC_38    FlexPWM1.3 B */
+            <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_y      Pin 25  AD_B0_13  FlexPWM1.2 X */
+            <&flexpwm1_pwm2 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_x      Pin 24  AD_B0_12  FlexPWM1.2 X */
+            <&flexpwm1_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_ccw     Pin 37  EMC_39    FlexPWM1.3 A */
+            <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_top    Pin 3   EMC_05    FlexPWM4.2 B */
+            <&flexpwm2_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* servo_bottom Pin 4   EMC_06    FlexPWM2.0 A */
 
-        beta_top_pwm = <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* Pin 28 */
-        beta_bottom_pwm = <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;/* Pin 29 */
-
-        beta_cw_pwm = <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>;   /* Pin 30 */
-        beta_ccw_pwm = <&flexpwm1_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* Pin 31 */
-
-        motor_top_pwm = <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>; /* Pin 3 */
-        motor_bottom_pwm = <&flexpwm2_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>; /* Pin 4 */
+        pwm-names = "servo_x", "servo_y",
+                    "beta_top", "beta_bottom", "beta_cw", "beta_ccw",
+                    "motor_top", "motor_bottom";
     };
 
     chosen {

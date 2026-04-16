@@ -340,14 +340,14 @@ static std::expected<void, Error> tick_base(const char* prefix, uint32_t pulse_u
 
 template<
     ServoKind Kind,
-    pwm_dt_spec PwmDtInit,
+    pwm_dt_spec PwmDt,
     int MinPulseUs     = 1000,
     int MaxPulseUs     = 2000,
     int MinDeg         = -90,
     int MaxDeg         =  90,
     int NeutralDeg     =   0,
     int DeadbandDegX10 =  10>
-class Servo : public PwmActuator<PwmDtInit, MinPulseUs, MaxPulseUs, 0>
+class Servo : public PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0>
 {
     using Base = PwmActuator<PwmDt, MinPulseUs, MaxPulseUs, 0>;
 
@@ -460,7 +460,7 @@ public:
 
 template<
     MotorKind Kind,
-    pwm_dt_spec PwmDtInit,
+    pwm_dt_spec PwmDt,
     int MinPulseUs = 1000,
     int MaxPulseUs = 2000,
     int ArmingMs   = 2000>
@@ -561,47 +561,37 @@ public:
 
 typedef Servo<
     ServoKind::SERVO_X,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), servo_x_pwm)>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_x)>
     ServoX;
 
 typedef Servo<
     ServoKind::SERVO_Y,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), servo_y_pwm)>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_y)>
     ServoY;
-
-typedef Servo<
-    ServoKind::SERVO_TOP,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), servo_top_pwm)>
-    ServoTop;
-
-typedef Servo<
-    ServoKind::SERVO_BOTTOM,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), servo_bottom_pwm)>
-    ServoBottom;
 
 typedef EscMotor<
     MotorKind::BETA_TOP,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), beta_top_pwm)>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_top)>
     BetaTop;
 
 typedef EscMotor<
     MotorKind::BETA_BOTTOM,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), beta_bottom_pwm)>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_bottom)>
     BetaBottom;
 
 typedef EscMotor<
     MotorKind::BETA_CW,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), beta_cw_pwm)>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_cw)>
     BetaCW;
 
 typedef EscMotor<
     MotorKind::BETA_CCW,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), beta_ccw_pwm)>
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_ccw)>
     BetaCCW;
 
 typedef EscMotor<
     MotorKind::MOTOR_TOP,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), motor_top_pwm),
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top),
     1000,
     2000,
     3000>
@@ -609,10 +599,9 @@ typedef EscMotor<
 
 typedef EscMotor<
     MotorKind::MOTOR_BOTTOM,
-    PWM_DT_SPEC_GET(DT_PATH(zephyr_user), motor_bottom_pwm),
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom),
     1000,
     2000,
     3000>
     MotorBottom;
-
 #endif
