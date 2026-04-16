@@ -12,6 +12,15 @@
 #include "flight/FlightController.h"
 #include "server.h"
 
+#ifdef CONFIG_HORNET
+
+#elif CONFIG_RANGER
+#include "ThrottleValve.h"
+
+#else
+#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
+#endif
+
 extern "C" {
 #include <app/drivers/blink.h>
 }
@@ -20,15 +29,6 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 int main(void)
 {
-
-    // Status LED
-    const struct device* blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
-    if (!device_is_ready(blink)) {
-        LOG_ERR("Blink LED device not ready");
-        return 0;
-    }
-    blink_set_period_ms(blink, 1000u);
-
     // Serial over USB setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB is not enabled.");
@@ -67,7 +67,7 @@ int main(void)
     }
 
 
-    // initializes actuators 
+    // initializes actuators
     LOG_INF("Initializing Controller");
     if (auto result = Controller::init(); !result) {
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());

@@ -218,8 +218,10 @@ void Controller::step_control_loop(k_work*)
     #endif
 
     data.state = get_current_system_state();
-    data.controller_timing.controller_tick_time_ns = (k_cycle_get_64() - start_cycle) * (1e9f / SystemCoreClock);
+    data.controller_timing.controller_tick_time_ns = static_cast<float>(k_cycle_get_64() - start_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
     data.sequence_number = 0; // TODO: how is this supposed to be set?
+    data.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;
+
 
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
         if (step_control_loop_debounce_warn_count < 5) {
