@@ -126,7 +126,7 @@ std::pair<ThrottleHornetStateOutput, ThrottleFlightData> ThrottleHornetModule::f
     ThrottleHornetStateOutput out{};
     ThrottleFlightData data{};
     float target_thrust = flight_output.z_acceleration;
-    out.pwm = 1000.0f;
+    out.throttle_percent = 0.0f;
     out.power_on = true;
     out.next_state = ThrottleState_THROTTLE_STATE_FLIGHT;
 

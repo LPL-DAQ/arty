@@ -610,7 +610,7 @@ message ThrottleHornetStateOutput {
 
     required ThrottleState next_state = 1;
     required bool power_on = 3;
-    required float pwm = 2;
+    required float throttle_percent = 2;
 }
 
 message RCSRangerStateOutput {
@@ -694,7 +694,7 @@ message ThrottleRangerData {
 }
 
 message ThrottleHornetData{
-  required float pwm_signal = 1;
+  required float throttle_percent = 1;
 }
 
 message TVCRangerData {
