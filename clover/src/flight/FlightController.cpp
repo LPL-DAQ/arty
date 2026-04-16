@@ -160,11 +160,6 @@ static float verticalPID(EstimatedState state){
     return desired_acceleration;
 }
 
-static float thrustScale(float tvc_x_rad, float tvc_y_rad)
-{
-    return 1.0f / (std::cos(tvc_x_rad) * std::cos(tvc_y_rad));
-}
-
 std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_tick(DataPacket& data, int64_t current_time, int64_t start_time)
 {
     FlightStateOutput out{};
@@ -219,21 +214,12 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
         des_state.roll_position = *roll_target;
 
         std::array<float, 2> angular_out = lateralPID(data.estimated_state);
+        // TODO: in rocket body reference, this should be y and z no?
         out.x_angular_acceleration = angular_out[0];
         out.y_angular_acceleration = angular_out[1];
 
-        // TODO: note that scaling due to TVC angle may introduce destabilizing distrubances
+        // TODO: technically should scale by tvc, but i feel like thatd add unneeded disturbance for 3% max error
         float desired_accel = verticalPID(data.estimated_state);
-        float tvc_x_rad = 0.0f;
-        float tvc_y_rad = 0.0f;
-        if (data.which_tvc_actuator_data == DataPacket_tvc_ranger_data_tag) {
-            tvc_x_rad = data.tvc_actuator_data.tvc_ranger_data.x_angle * DEG2RAD_F;
-            tvc_y_rad = data.tvc_actuator_data.tvc_ranger_data.y_angle * DEG2RAD_F;
-        } else if (data.which_tvc_actuator_data == DataPacket_tvc_hornet_data_tag) {
-            tvc_x_rad = data.tvc_actuator_data.tvc_hornet_data.x_angle * DEG2RAD_F;
-            tvc_y_rad = data.tvc_actuator_data.tvc_hornet_data.y_angle * DEG2RAD_F;
-        }
-        desired_accel = desired_accel * thrustScale(tvc_x_rad, tvc_y_rad);
         out.z_acceleration = desired_accel;
 
         out.roll_position = *roll_target;
