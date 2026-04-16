@@ -12,10 +12,6 @@
 
 namespace FlightController {
 
-    static inline FlightState current_state = FlightState_FLIGHT_STATE_IDLE;
-    static inline uint32_t abort_entry_time = 0;
-    static inline uint32_t sequence_start_time = 0;
-
     FlightState state();
 
     void resetPIDs();

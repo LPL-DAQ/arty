@@ -18,18 +18,6 @@ LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
 
 K_MUTEX_DEFINE(flight_controller_lock);
 
-static FlightState get_flight_controller_state()
-{
-    MutexGuard guard{&flight_controller_lock};
-    return FlightController::current_state;
-}
-
-// TODO: implement fr with varrying mass estimate
-static float get_weight_lbf(){
-    MutexGuard guard{&flight_controller_lock};
-    return 0.0f;
-}
-
 namespace {
     Trace x_trace;
     Trace y_trace;
@@ -37,6 +25,11 @@ namespace {
     Trace roll_trace;
     bool flight_sequence_has_trace = false;
     float flight_sequence_total_time = 0.0f;
+
+    FlightState current_state = FlightState_FLIGHT_STATE_IDLE;
+    uint32_t abort_entry_time = 0;
+    uint32_t sequence_start_time = 0;
+
     // TODO: Tune, including adding integral terms (is requried)
     PID pidXTilt(0.385, 0.0, 0.44);   // about the X axis
     PID pidYTilt(0.385, 0.0, 0.44);   // about the Y axis
