@@ -5,6 +5,7 @@
 #include "../server.h"
 #include "../config.h"
 #include "../PID.h"
+#include <Eigen/Geometry>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -154,15 +155,17 @@ std::pair<RCSHornetStateOutput, RCSIdleData> RCSHornetModule::idle_tick()
 }
 
 // TODO: i need to fill in all the [Module][State]Data bits, i havent kept up
+// TODO: make everything follow NED
 std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(EstimatedState& state, float desired_roll_position)
 {
     RCSHornetStateOutput out{};
     RCSFlightData data{};
 
     int64_t dt = k_uptime_get() - previous_timestamp;
-
-    // TODO: turn state quaternion into roll position (is this just qw? idts)
-    float roll_position = 0.0;
+    
+    // yaw, pitch, roll
+    Eigen::Vector3f euler = q.toRotationMatrix().eulerAngles(2, 1, 0);
+    double roll_position = euler[2];
     // TODO: i need angular rates in the state estimate
     float roll_velocity = 0.0;
 
