@@ -60,6 +60,9 @@ TODO:
 &lpuart1 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&pinmux_lpuart1>;
+    pinctrl-1 = <&pinmux_lpuart1_sleep>;
+    pinctrl-names = "default", "sleep";
 };
 
 // TF-02 Pro LiDARs
@@ -128,6 +131,25 @@ TODO:
             nxp,speed = "100-mhz";
         };
     };
+
+    pinmux_lpuart1: pinmux_lpuart1 {
+    group0 {
+        pinmux = <&iomuxc_gpio_ad_b0_12_lpuart1_tx>,
+                 <&iomuxc_gpio_ad_b0_13_lpuart1_rx>;
+        drive-strength = "r0-6";
+        slew-rate = "slow";
+        nxp,speed = "100-mhz";
+    };
+};
+
+pinmux_lpuart1_sleep: pinmux_lpuart1_sleep {
+    group0 {
+        pinmux = <&iomuxc_gpio_ad_b0_12_lpuart1_tx>;
+        drive-strength = "r0-6";
+        slew-rate = "slow";
+        nxp,speed = "100-mhz";
+    };
+};
 };
 
 // Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/adc/nxp%2Cmcux-12b1msps-sar.
