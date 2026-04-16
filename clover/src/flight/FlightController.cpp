@@ -47,7 +47,7 @@ namespace {
     constexpr float IMU_TO_BODY_ROLL_DEG = 0.0f;
 
     const float maxGimble = 12.0;   // degrees, this is an estimate
-    const float maxTiltDeg = 15.0;  // What we dont want the rocket to tilt more than (deg)
+    const float maxTiltDeg = 8.0;  // What we dont want the rocket to purposefully tilt more than
 
     constexpr float DEG2RAD_F = 0.0174532925f;
 
@@ -85,7 +85,6 @@ std::expected<void, Error> FlightController::init()
 // returns {xOutput, yOutput} for thruster angles, encapsulates rotational PID
 static std::array<float, 2> lateralPID(EstimatedState state)
 {
-    // TODO: Make sure this doesnt make the roll = z axis rotation assumption (3% error cause)
     std::array<float, 2> out{};
 
     Eigen::Quaterniond q_wb(
@@ -96,51 +95,57 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     );
     q_wb.normalize();
 
-    // Inverse of world->body gives body->world
     Eigen::Quaterniond q_bw = q_wb.conjugate();
 
-    // Outer loop on position
+    // Outer loop: desired literal tilt angles
     if (loopCount % 3 == 0)
     {
-        float outer_dt = 3.0f * dt; // assuming this function runs every dt
-        // world tilt
-        float world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
-        float world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
-        des_state.world_tilt_x = world_tilt_x;
-        des_state.world_tilt_y = world_tilt_y;
+        float outer_dt = 3.0f * dt;
+
+        des_state.tilt_x_des = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
+        des_state.tilt_y_des = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
+
+        // Clamp if needed
+        des_state.tilt_x_des = std::clamp(des_state.tilt_x_des, -maxTiltDeg, maxTiltDeg);
+        des_state.tilt_y_des = std::clamp(des_state.tilt_y_des, -maxTiltDeg, maxTiltDeg);
     }
 
-    // body Z axis expressed in world
-    Eigen::Vector3d body_z_w = q_bw * Eigen::Vector3d::UnitZ();
+    // Actual vertical axis in world
+    Eigen::Vector3d z_act_w = q_bw * Eigen::Vector3d::UnitZ();
 
-    // the tilt of the rocket in world frame
-    Eigen::Vector3d actual_tilt_w(
-        body_z_w.x(),
-        body_z_w.y(),
-        0.0
+    // Debug values: literal actual tilt angles
+    // TODO: have these logged in some way
+    tilt_x_act = std::atan2(z_act_w.x(), z_act_w.z());
+    tilt_y_act = std::atan2(z_act_w.y(), z_act_w.z());
+
+    // Desired thrust axis in world from desired literal tilt angles
+    Eigen::Vector3d z_des_w(
+        std::tan(des_state.tilt_x_des),
+        std::tan(des_state.tilt_y_des),
+        1.0
     );
+    z_des_w.normalize();
 
-    // Desired tilt in world frame
-    Eigen::Vector3d desired_tilt_w(
-        des_state.world_tilt_x,
-        des_state.world_tilt_y,
-        0.0
-    );
+    // Desired thrust axis expressed in body frame
+    Eigen::Vector3d z_des_b = q_wb * z_des_w;
 
-    // Tilt error in world frame
-    Eigen::Vector3d tilt_error_w = desired_tilt_w - actual_tilt_w;
-
-    // Express tilt error in body frame
-    Eigen::Vector3d tilt_error_b = q_wb * tilt_error_w;
+    // Body-frame reduced attitude error
+    // Unit Z because we are in body frame
+    Eigen::Vector3d axis_error_b = Eigen::Vector3d::UnitZ().cross(z_des_b);
 
     // Inner loop on body-axis tilt error
     // TODO: Check if this needs a negative sign.
     // TODO: do i need to unscale because of the TVC thrust scaling?
     // TODO: find angular rates to feed to derivative
-    out[0] = pidXTilt.calculate(0.0f, static_cast<float>(tilt_error_b.x()), dt);
-    out[1] = pidYTilt.calculate(0.0f, static_cast<float>(tilt_error_b.y()), dt);
+
+    // Feed body-axis error
+    out[0] = pidXTilt.calculate(0.0f, static_cast<float>(axis_error_b.x()), dt);
+    out[1] = pidYTilt.calculate(0.0f, static_cast<float>(axis_error_b.y()), dt);
 
     return out;
+
+
+
 }
 
 static float verticalPID(EstimatedState state){
