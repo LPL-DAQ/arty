@@ -40,6 +40,8 @@ namespace RCSImpl = RCSHornetModule;
 
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
+K_MUTEX_DEFINE(controller_state_lock);
+
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 100, 1);
 
 // Controller tick workqueue thread
@@ -50,14 +52,9 @@ k_work_q controller_step_work_q;
 static int recent_packets_attempted = 0;
 static int recent_packets_dropped = 0;
 
-std::expected<void, Error> Controller::change_state(SystemState new_state)
-{
-    MutexGuard guard{&controller_state_lock};
-    return Controller::current_state;
-}
-
 static std::expected<void, Error> change_state(SystemState new_state)
 {
+    MutexGuard guard{&controller_state_lock};
     if (Controller::current_state == new_state) {
         return {};
     }
@@ -254,7 +251,7 @@ void Controller::step_control_loop(k_work*)
         ThrottleHornetActuator::tick(data.throttle_state_output.throttle_hornet_state_output, data.throttle_actuator_data.throttle_hornet_data);
     #endif
 
-    data.state = get_current_system_state();
+    data.state = current_state;
     data.controller_timing.controller_tick_time_ns = static_cast<float>(k_cycle_get_64() - start_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
     data.sequence_number = 0; // TODO: how is this supposed to be set?
     data.daq_last_pinged_ns = static_cast<float>(daq_status.last_pinged_ms) * 1e6f;

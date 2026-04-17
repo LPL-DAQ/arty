@@ -10,7 +10,7 @@
 #include "sensors/AnalogSensors.h"
 #include "Controller.h"
 #include "flight/FlightController.h"
-#include "lidar.h"
+#include "sensors/lidar.h"
 #include "server.h"
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
