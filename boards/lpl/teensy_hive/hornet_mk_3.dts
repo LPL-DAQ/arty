@@ -38,7 +38,7 @@ TODO:
 
     psram: memory@70000000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x70000000 DT_SIZE_M(128)>;
+        reg = <0x70000000 0x1000000>;   // 16MB
         zephyr,memory-region = "PSRAM";
         zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
     };
@@ -101,26 +101,38 @@ TODO:
     local-mac-address = [ 67 67 67 67 67 67  ];
 };
 
+&pinctrl {
+    pinmux_flexspi2: pinmux_flexspi2 {
+        group0 {
+            pinmux = <
+                &iomuxc_gpio_emc_24_flexspi2_a_ss0_b
+                &iomuxc_gpio_emc_25_flexspi2_a_sclk
+                &iomuxc_gpio_emc_26_flexspi2_a_data0
+                &iomuxc_gpio_emc_27_flexspi2_a_data1
+                &iomuxc_gpio_emc_28_flexspi2_a_data2
+                &iomuxc_gpio_emc_29_flexspi2_a_data3
+            >;
+            drive-strength = "r0-6";
+            slew-rate = "fast";
+            nxp,speed = "100-mhz";
+        };
+    };
+};
+
 &flexspi2 {
     status = "okay";
-    label = "FLEXSPI2";
-    reg = <0x402a4000 0x4000>, <0x70000000 DT_SIZE_M(128)>;
-    reg-names = "reg_base", "ahb";
+    pinctrl-0 = <&pinmux_flexspi2>;
+    pinctrl-names = "default";
 
+    reg = <0x402a4000 0x4000>, <0x70000000 0x01000000>;
+    reg-names = "reg_base", "ahb";
     ahb-boundary = "1024";
 
-    //ahb-bufferable;
-    //ahb-cacheable;
-    //ahb-prefetch;
-
-    /* APS6404L*/
-    psram0: psram@0 {
+    aps6404l: aps6404l@0 {
         compatible = "nxp,imx-flexspi-aps6404l";
-        reg = <0x0>;
-        size = <DT_SIZE_M(128)>;
-
+        reg = <0>;
+        size = <134217728>;   /* 128 Mbit = 16 MB */
         spi-max-frequency = <50000000>;
-
         status = "okay";
     };
 };
