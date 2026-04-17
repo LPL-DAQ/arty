@@ -136,6 +136,7 @@ std::expected<void, Error> Controller::init()
     LOG_INF("Triggering initial sensor readings");
     k_sched_lock();
     AnalogSensors::start_sense();
+    StateEstimator::init();
     // Other sensors here...
     k_sched_unlock();
 
@@ -227,6 +228,12 @@ void Controller::step_control_loop(k_work*)
         // TODO: uncomment this
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
+
+    // TODO: make this exist with real sensors
+    GNCSensorReadings gnc_sensor_readings = GNCSensorReadings_init_default;
+    // TODO: do the tie thing below but for each sensor. Maybe these aren't held together by one bit, and each sensor has its own thing?
+    data.gnc_sensors = gnc_sensor_readings;
+
 
     daq_client_status daq_status = get_daq_client_status();
 

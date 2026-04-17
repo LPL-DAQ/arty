@@ -1,31 +1,41 @@
 #include "StateEstimator.h"
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(StateEstimator, LOG_LEVEL_INF);
 
-namespace StateEstimator {
+namespace  {
 
-void init()
+    static inline EstimatedState estimate = EstimatedState_init_default;
+    static inline uint64_t last_time_ms = 0;
+    static inline bool has_last_time = false;
+}
+
+
+void StateEstimator::init()
 {
     reset();
 }
 
-void reset()
+void StateEstimator::reset()
 {
-    estimate_ = {};
-    last_time_ns_ = 0;
-    has_last_time_ = false;
+    estimate = EstimatedState_init_default;
+    last_time_ms = 0;
+    has_last_time = false;
 }
 
-void step_control_loop(DataPacket& data)
+void StateEstimator::step_control_loop(DataPacket& data)
 {
-    estimate_ = EstimatedState_init_default;
-    data.estimated_state = estimate_;
+    GNCSensorReadings& sensors = data.gnc_sensors;
+    estimate.position = sensors.javad_position;
+        // edit z for lidar
+    estimate.velocity = sensors.javad_velocity;
+    estimate.R_WB = sensors.vn_q;
+
+    data.estimated_state = estimate;
+    // TODO: some checking about when the last update from sensors were and whatnot
+    last_time_ms = k_uptime_get();
+    has_last_time = true;
+
 }
 
-const EstimatedState& estimate()
-{
-    return estimate_;
-}
-
-} // namespace StateEstimator

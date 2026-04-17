@@ -432,6 +432,7 @@ message DataPacket {
 
   // Sensors
   required AnalogSensorReadings analog_sensors = 19;
+  required GNCSensorReadings gnc_sensors = 55;
 
   // Flight
   required FlightState flight_state = 42;
@@ -586,6 +587,19 @@ message AnalogSensorReadings {
 
   // Hornet
   optional float battery_voltage = 21;
+}
+
+// TODO: Should this be in analog sensors?
+message GNCSensorReadings {
+  required Quaternion vn_q = 1;
+  // Angular rate?
+  // other vn data?
+  required Vector3D javad_position = 2;
+  required Vector3D javad_velocity = 3;
+  // other javad data?
+  required float lidar_1_distance = 4;
+  required float lidar_2_distance = 5;
+  // other lidar data?
 }
 
 message FlightIdleData {}
