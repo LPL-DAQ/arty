@@ -78,7 +78,6 @@ public:
     double calculate(double setpoint, double measurement, double dt)
     {
         // Derivative on measurement to reduce derivative kick
-        double deriv_raw = 0.0;
         double dmeas = 0.0;
         if (!std::isnan(prev_meas_))
         {

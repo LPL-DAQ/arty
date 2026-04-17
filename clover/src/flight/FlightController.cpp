@@ -229,6 +229,12 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
 
 void FlightController::step_control_loop(DataPacket& data)
 {
+    // TODO: remove later
+    if (loopCount % 5000 == 0) {
+        LOG_INF("5k Step");
+    }
+    loopCount +=1;
+
     int64_t current_time = k_uptime_get();
 
     FlightState local_state;
