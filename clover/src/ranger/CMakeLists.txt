@@ -7,5 +7,4 @@ target_sources(app PRIVATE
     ThrottleValve.cpp
     TVCRangerActuator.cpp
     TVCRangerModule.cpp
-
     )

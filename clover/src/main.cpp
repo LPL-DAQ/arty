@@ -10,16 +10,8 @@
 #include "sensors/AnalogSensors.h"
 #include "Controller.h"
 #include "flight/FlightController.h"
+#include "lidar.h"
 #include "server.h"
-
-#ifdef CONFIG_HORNET
-
-#elif CONFIG_RANGER
-#include "ThrottleValve.h"
-
-#else
-#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
-#endif
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
