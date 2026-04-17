@@ -221,7 +221,7 @@ TODO:
     #size-cells = <0>;
 
     channel@3 {
-        reg = <0x5>;
+        reg = <0x3>;
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
