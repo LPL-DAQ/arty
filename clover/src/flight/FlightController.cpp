@@ -102,8 +102,8 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     {
         float outer_dt = 3.0f * dt;
 
-        des_state.world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
-        des_state.world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
+        des_state.world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, state.velocity.x, outer_dt);
+        des_state.world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, state.velocity.y, outer_dt);
 
         // Clamp if needed
         des_state.world_tilt_x = std::clamp(des_state.world_tilt_x, -maxTiltDeg, maxTiltDeg);
