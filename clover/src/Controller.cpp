@@ -282,7 +282,7 @@ void Controller::step_control_loop(k_work*)
     }
 
 }
-// TODO: Throttle valve seq vs throttle thrust seq
+// TODO: Throttle valve seq vs throttle thrust seq (just check if it all works alr)
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_INF("Received abort request");

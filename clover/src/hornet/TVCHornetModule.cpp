@@ -15,8 +15,8 @@ LOG_MODULE_REGISTER(TVCHornetModule, LOG_LEVEL_INF);
 K_MUTEX_DEFINE(tvc_hornet_module_lock);
 
 namespace {
-    Trace x_trace;
-    Trace y_trace;
+    Trace pitch_trace;
+    Trace yaw_trace;
     bool sequence_has_trace = false;
     float sequence_total_time = 0.0f;
 }
@@ -125,11 +125,11 @@ std::pair<TVCHornetStateOutput, TVCFlightData> TVCHornetModule::flight_tick(cons
 {
     TVCHornetStateOutput out{};
     TVCFlightData data{};
-    float target_x = flight_output.x_angular_acceleration;
-    float target_y = flight_output.y_angular_acceleration;
+    float target_pitch = flight_output.pitch_angular_acceleration;
+    float target_yaw = flight_output.yaw_angular_acceleration;
     out.next_state = TVCState_TVC_STATE_FLIGHT;
-    out.target_x = target_x;
-    out.target_y = target_y;
+    out.target_pitch = target_pitch;
+    out.target_yaw = target_yaw;
     return {out, data};
 }
 
@@ -151,24 +151,24 @@ std::pair<TVCHornetStateOutput, TVCSequenceData> TVCHornetModule::sequence_tick(
     }
 
     if (local_sequence_has_trace) {
-        auto x_target = x_trace.sample(dt);
-        if (!x_target) {
-            LOG_ERR("Failed to sample X trace: %s", x_target.error().build_message().c_str());
+        auto pitch_target = pitch_trace.sample(dt);
+        if (!pitch_target) {
+            LOG_ERR("Failed to sample X trace: %s", pitch_target.error().build_message().c_str());
             out.next_state = TVCState_TVC_STATE_IDLE;
             return {out, data};
         }
 
-        auto y_target = y_trace.sample(dt);
-        if (!y_target) {
-            LOG_ERR("Failed to sample Y trace: %s", y_target.error().build_message().c_str());
+        auto yaw_target = yaw_trace.sample(dt);
+        if (!yaw_target) {
+            LOG_ERR("Failed to sample Y trace: %s", yaw_target.error().build_message().c_str());
             out.next_state = TVCState_TVC_STATE_IDLE;
             return {out, data};
         }
 
-        out.target_x = *x_target;
-        out.target_y = *y_target;
-        data.x_angle_deg = *x_target;
-        data.y_angle_deg = *y_target;
+        out.target_pitch = *pitch_target;
+        out.target_yaw = *yaw_target;
+        data.pitch_angle_deg = *pitch_target;
+        data.yaw_angle_deg = *yaw_target;
     }
 
     if (local_sequence_has_trace && dt >= local_sequence_total_time) {
@@ -198,18 +198,18 @@ std::expected<void, Error> TVCHornetModule::load_sequence(const TVCLoadSequenceR
 {
     LOG_INF("Received load sequence request");
 
-    auto result_x = x_trace.load(req.x_angle_trace_deg);
-    if (!result_x)
-        return std::unexpected(result_x.error().context("%s", "Invalid X trace"));
+    auto result_pitch = pitch_trace.load(req.pitch_angle_trace_deg);
+    if (!result_pitch)
+        return std::unexpected(result_pitch.error().context("%s", "Invalid X trace"));
 
-    auto result_y = y_trace.load(req.y_angle_trace_deg);
-    if (!result_y)
-        return std::unexpected(result_y.error().context("%s", "Invalid Y trace"));
+    auto result_yaw = yaw_trace.load(req.yaw_angle_trace_deg);
+    if (!result_yaw)
+        return std::unexpected(result_yaw.error().context("%s", "Invalid Y trace"));
 
     {
         MutexGuard guard{&tvc_hornet_module_lock};
         sequence_has_trace = true;
-        sequence_total_time = req.x_angle_trace_deg.total_time_ms;
+        sequence_total_time = req.pitch_angle_trace_deg.total_time_ms;
     }
 
     change_state(TVCState_TVC_STATE_TRACE_PRIMED);

@@ -212,8 +212,8 @@ std::pair<FlightStateOutput, FlightSequenceData> FlightController::flight_seq_ti
 
         std::array<float, 2> angular_out = lateralPID(data.estimated_state);
         // TODO: in rocket body reference, this should be y and z no?
-        out.x_angular_acceleration = angular_out[0];
-        out.y_angular_acceleration = angular_out[1];
+        out.pitch_angular_acceleration = angular_out[0];
+        out.yaw_angular_acceleration = angular_out[1];
 
         // TODO: technically should scale by tvc, but i feel like thatd add unneeded disturbance for 3% max error
         float desired_accel = verticalPID(data.estimated_state);

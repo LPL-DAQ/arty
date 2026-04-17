@@ -264,8 +264,8 @@ message TVCUnprimeRequest {}
 
 // Load a sequence. Traces for X and Y angles must be set.
 message TVCLoadSequenceRequest {
-  required ControlTrace x_angle_trace_deg = 1;
-  required ControlTrace y_angle_trace_deg = 2;
+  required ControlTrace pitch_angle_trace_deg = 1;
+  required ControlTrace yaw_angle_trace_deg = 2;
 }
 
 // Start a loaded sequence.
@@ -640,14 +640,14 @@ message RCSHornetStateOutput {
 
 message TVCRangerStateOutput {
   required TVCState next_state = 1;
-  required float target_x = 2;
-  required float target_y = 3;
+  required float target_pitch = 2;
+  required float target_yaw = 3;
 
 }
 message TVCHornetStateOutput {
   required TVCState next_state = 1;
-  required float target_x = 2;
-  required float target_y = 3;
+  required float target_pitch = 2;
+  required float target_yaw = 3;
 
 }
 
@@ -692,8 +692,8 @@ message DesiredState {
 message FlightStateOutput {
   required FlightState next_state = 1;
   required float z_acceleration = 2;
-  required float x_angular_acceleration = 3;
-  required float y_angular_acceleration = 4;
+  required float pitch_angular_acceleration = 3;
+  required float yaw_angular_acceleration = 4;
   required float roll_position = 5;
 
 }
@@ -711,14 +711,14 @@ message ThrottleHornetData{
 }
 
 message TVCRangerData {
-  required float x_angle = 1;
-  required float y_angle = 2;
+  required float pitch_angle = 1;
+  required float yaw_angle = 2;
 
 }
 
 message TVCHornetData {
-  required float x_angle = 1;
-  required float y_angle = 2;
+  required float pitch_angle = 1;
+  required float yaw_angle = 2;
 }
 
 message RCSRangerData {
@@ -790,8 +790,8 @@ message TVCAbortData {}
 message TVCIdleData {}
 
 message TVCSequenceData {
-  required float x_angle_deg = 1;
-  required float y_angle_deg = 2;
+  required float pitch_angle_deg = 1;
+  required float yaw_angle_deg = 2;
 }
 
 message ThrottleFlightData {
