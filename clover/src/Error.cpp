@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 

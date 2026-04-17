@@ -12,7 +12,7 @@ LOG_MODULE_REGISTER(ThrottleHornetActuator, LOG_LEVEL_INF);
 std::expected<void, Error> ThrottleHornetActuator::tick(ThrottleHornetStateOutput& output, ThrottleHornetData& data){
     float throttle = 0.0f;
     if (output.power_on) {
-        throttle = std::clamp(out.throttle_percent,0.0f,1.0f);
+        throttle = std::clamp(output.throttle_percent, 0.0f, 1.0f);
     }
 
     auto err = MotorCR::set_target_throttle(throttle);

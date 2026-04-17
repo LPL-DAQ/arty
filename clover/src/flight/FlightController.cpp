@@ -102,12 +102,12 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     {
         float outer_dt = 3.0f * dt;
 
-        des_state.tilt_x_des = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
-        des_state.tilt_y_des = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
+        des_state.world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, outer_dt);
+        des_state.world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, outer_dt);
 
         // Clamp if needed
-        des_state.tilt_x_des = std::clamp(des_state.tilt_x_des, -maxTiltDeg, maxTiltDeg);
-        des_state.tilt_y_des = std::clamp(des_state.tilt_y_des, -maxTiltDeg, maxTiltDeg);
+        des_state.world_tilt_x = std::clamp(des_state.world_tilt_x, -maxTiltDeg, maxTiltDeg);
+        des_state.world_tilt_y = std::clamp(des_state.world_tilt_y, -maxTiltDeg, maxTiltDeg);
     }
 
     // Actual vertical axis in world
@@ -115,13 +115,13 @@ static std::array<float, 2> lateralPID(EstimatedState state)
 
     // Debug values: literal actual tilt angles
     // TODO: have these logged in some way
-    tilt_x_act = std::atan2(z_act_w.x(), z_act_w.z());
-    tilt_y_act = std::atan2(z_act_w.y(), z_act_w.z());
+    float tilt_x_act = std::atan2(z_act_w.x(), z_act_w.z());
+    float tilt_y_act = std::atan2(z_act_w.y(), z_act_w.z());
 
     // Desired thrust axis in world from desired literal tilt angles
     Eigen::Vector3d z_des_w(
-        std::tan(des_state.tilt_x_des),
-        std::tan(des_state.tilt_y_des),
+        std::tan(des_state.world_tilt_x),
+        std::tan(des_state.world_tilt_y),
         1.0
     );
     z_des_w.normalize();

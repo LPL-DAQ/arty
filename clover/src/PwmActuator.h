@@ -8,25 +8,9 @@
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include "Error.h"
 #include "MutexGuard.h"
 
-enum class Error {
-    // Hardware
-    PWM_NOT_READY,
-    PWM_WRITE_FAILED,
-
-    // State
-    NOT_INITIALIZED,
-    NOT_ARMED,
-    FAULT_ACTIVE,
-    WRONG_STATE,
-    ALREADY_ARMED,
-    ALREADY_DISARMED,
-
-    // Command
-    OUT_OF_RANGE,
-    ARM_FAILED,
-};
 
 enum class ServoKind  { SERVO_L, SERVO_R};
 enum class MotorKind  { BETA1, BETA2, BETA3, BETA4, CR5025 };
@@ -65,7 +49,7 @@ protected:
     static std::expected<void, Error> write_pulse_us(uint32_t pulse_us) {
         constexpr uint32_t period_ns = 20000u * 1000u;
         const int err = pwm_set_dt(&pwm_gpio, period_ns, pulse_us * 1000u);
-        if (err) return std::unexpected(Error::PWM_WRITE_FAILED);
+        if (err) return std::unexpected(Error::from_cause("PWM_WRITE_FAILED"));
         commanded_pulse_us = static_cast<float>(pulse_us);
         return {};
     }
@@ -74,7 +58,7 @@ protected:
     static std::expected<void, Error> write_zero() {
         constexpr uint32_t period_ns = 20000u * 1000u;
         const int err = pwm_set_dt(&pwm_gpio, period_ns, 0u);
-        if (err) return std::unexpected(Error::PWM_WRITE_FAILED);
+        if (err) return std::unexpected(Error::from_cause("PWM_WRITE_FAILED"));
         commanded_pulse_us = 0.0f;
         return {};
     }
@@ -118,7 +102,7 @@ public:
         // 3. Verify PWM hardware.
         if (!pwm_is_ready_dt(&pwm_gpio)) {
             LOG_ERR("%s PWM not ready", prefix);
-            return std::unexpected(Error::PWM_NOT_READY);
+            return std::unexpected(Error::from_cause("PWM_NOT_READY"));
         }
 
         // 4. Transition to DISARMED.
@@ -138,20 +122,20 @@ public:
 
         if (state == ActuatorState::ARMED) {
             LOG_WRN("%s arm() called but already ARMED", prefix);
-            return std::unexpected(Error::ALREADY_ARMED);
+            return std::unexpected(Error::from_cause("ALREADY_ARMED"));
         }
         if (state == ActuatorState::FAIL_SAFE) {
             LOG_WRN("%s arm() rejected — FAIL_SAFE in progress", prefix);
-            return std::unexpected(Error::WRONG_STATE);
+            return std::unexpected(Error::from_cause("WRONG_STATE"));
         }
         if (state == ActuatorState::OFF) {
             LOG_WRN("%s arm() called before init()", prefix);
-            return std::unexpected(Error::NOT_INITIALIZED);
+            return std::unexpected(Error::from_cause("NOT_INITIALIZED"));
         }
         if (fault_active) {
             LOG_WRN("%s arm() rejected — fault active. Call clear_fault() first.",
                     prefix);
-            return std::unexpected(Error::FAULT_ACTIVE);
+            return std::unexpected(Error::from_cause("FAULT_ACTIVE"));
         }
 
         {
@@ -170,10 +154,10 @@ public:
 
         if (state == ActuatorState::OFF) {
             LOG_WRN("%s disarm() called before init()", prefix);
-            return std::unexpected(Error::NOT_INITIALIZED);
+            return std::unexpected(Error::from_cause("NOT_INITIALIZED"));
         }
         if (state == ActuatorState::DISARMED) {
-            return std::unexpected(Error::ALREADY_DISARMED);
+            return std::unexpected(Error::from_cause("ALREADY_DISARMED"));
         }
 
         LOG_INF("%s Disarming", prefix);
@@ -231,7 +215,7 @@ public:
 
         if (state == ActuatorState::OFF) [[unlikely]] {
             LOG_WRN("%s tick() called before init()", prefix);
-            return std::unexpected(Error::NOT_INITIALIZED);
+            return std::unexpected(Error::from_cause("NOT_INITIALIZED"));
         }
 
         last_tick_ms = k_uptime_get();
@@ -367,7 +351,7 @@ public:
 
     static std::expected<void, Error> set_target_angle(float deg) {
         if (deg < k_min_deg || deg > k_max_deg)
-            return std::unexpected(Error::OUT_OF_RANGE);
+            return std::unexpected(Error::from_cause("OUT_OF_RANGE"));
         target_deg = deg;
         return {};
     }
@@ -470,7 +454,7 @@ public:
 
     static std::expected<void, Error> set_target_throttle(float throttle) {
         if (throttle < 0.0f || throttle > 1.0f)
-            return std::unexpected(Error::OUT_OF_RANGE);
+            return std::unexpected(Error::from_cause("OUT_OF_RANGE"));
         target_throttle = throttle;
         return {};
     }

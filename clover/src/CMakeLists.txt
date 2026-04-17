@@ -6,6 +6,7 @@ target_sources(app PRIVATE
     LookupTable.cpp
     MutexGuard.cpp
     Trace.cpp
+    PwmActuator.cpp
 )
 find_package(Eigen3 REQUIRED)
 target_link_libraries(app PRIVATE Eigen3::Eigen)

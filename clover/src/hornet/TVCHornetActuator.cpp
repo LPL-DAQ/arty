@@ -23,7 +23,7 @@ std::expected<void, Error> TVCHornetActuator::tick(TVCHornetStateOutput& output,
     if (!err) return err;
 
     data.which_tvc_actuator_data = DataPacket_tvc_hornet_data_tag;
-    data.tvc_hornet_data.x_angle = x_angle;
-    data.tvc_hornet_data.y_angle = y_angle;
+    data.tvc_actuator_data.tvc_hornet_data.x_angle = x_angle;
+    data.tvc_actuator_data.tvc_hornet_data.y_angle = y_angle;
     return {};
 }

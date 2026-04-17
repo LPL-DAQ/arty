@@ -435,7 +435,7 @@ message DataPacket {
 
   // Flight
   required FlightState flight_state = 42;
-  optional FlightStateOutput flight_state_output = 43;
+  required FlightStateOutput flight_state_output = 43;
 
   required EstimatedState estimated_state = 54;
 
@@ -680,7 +680,7 @@ message FlightStateOutput {
   required float z_acceleration = 2;
   required float x_angular_acceleration = 3;
   required float y_angular_acceleration = 4;
-  required bool roll_position = 5;
+  required float roll_position = 5;
 
 }
 

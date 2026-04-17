@@ -1,7 +1,8 @@
 #pragma once
+#include <algorithm>
 #include <limits>
 #include <cmath>
-#include "math.h"
+#include "math_util.h"
 #ifdef abs
 #undef abs // allow std::abs despite Arduino macro
 #endif
@@ -78,9 +79,10 @@ public:
     {
         // Derivative on measurement to reduce derivative kick
         double deriv_raw = 0.0;
+        double dmeas = 0.0;
         if (!std::isnan(prev_meas_))
         {
-            const double dmeas = measurement - prev_meas_;
+            dmeas = measurement - prev_meas_;
         }
 
         return calculate(setpoint, measurement, dmeas, dt);

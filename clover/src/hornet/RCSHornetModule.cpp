@@ -84,14 +84,14 @@ void RCSHornetModule::step_control_loop(DataPacket& data )
         break;
     }
     case RCSState_RCS_STATE_ROLL_SEQ: {
-        auto [roll_out, roll_data] = roll_sequence_tick(data.analog_sensors, current_time, local_sequence_start_time);
+        auto [roll_out, roll_data] = roll_sequence_tick(data.estimated_state, current_time, local_sequence_start_time);
         data.which_rcs_state_data = DataPacket_rcs_roll_sequence_data_tag;
         data.rcs_state_data.rcs_roll_sequence_data = roll_data;
         out = roll_out;
         break;
     }
     case RCSState_RCS_STATE_FLIGHT: {
-        auto [flight_out, flight_data] = flight_tick(data.analog_sensors, data.flight_state_output.roll_position);
+        auto [flight_out, flight_data] = flight_tick(data.estimated_state, data.flight_state_output.roll_position);
         data.which_rcs_state_data = DataPacket_rcs_flight_data_tag;
         data.rcs_state_data.rcs_flight_data = flight_data;
         out = flight_out;
@@ -162,9 +162,16 @@ std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(Esti
     RCSFlightData data{};
 
     int64_t dt = k_uptime_get() - previous_timestamp;
-    
+
+    Eigen::Quaterniond q_wb(
+        state.R_WB.qw,
+        state.R_WB.qx,
+        state.R_WB.qy,
+        state.R_WB.qz
+    );
+    q_wb.normalize();
     // yaw, pitch, roll
-    Eigen::Vector3f euler = q.toRotationMatrix().eulerAngles(2, 1, 0);
+    Eigen::Vector3d euler = q_wb.toRotationMatrix().eulerAngles(2, 1, 0);
     double roll_position = euler[2];
     // TODO: i need angular rates in the state estimate
     float roll_velocity = 0.0;
