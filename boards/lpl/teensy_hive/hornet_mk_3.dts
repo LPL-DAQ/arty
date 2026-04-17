@@ -38,7 +38,7 @@ TODO:
     zephyr,user {
         // ADC channels used by AnalogSensors.
         analog-sensor-max-adc-channels = <16>;
-        io-channels = <&adc2 3>,
+        io-channels = 
                       <&adc1 5>,
                       <&adc1 6>,
                       <&adc1 8>,
@@ -51,7 +51,7 @@ TODO:
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
-        
+
         /* PWM channels — accessed via PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), <name>) */
         pwms = <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_l     Pin 2  AD_B0_09  FlexPWM2.3 A */
                <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_r     Pin 3  EMC_05    FlexPWM4.2 B */
