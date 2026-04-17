@@ -3,6 +3,7 @@
 
 #include <zephyr/kernel.h>
 
+
 class MutexGuard {
 private:
     k_mutex* mutex;

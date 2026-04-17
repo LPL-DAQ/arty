@@ -2,12 +2,21 @@
 Hornet Mk. 3 board.
  */
 
+
 /dts-v1/;
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
 #define ANALOG_SENSORS_ADC_OVERSAMPLING 5
+
+/*
+TODO:
+- LoRa radio
+- Remove ADC1
+- PWM for servos, propellers, etc
+*/
 
 /*
 TODO:
@@ -49,6 +58,20 @@ TODO:
         analog-sensor-adcs = <&adc1 &adc2>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+
+
+        /* PWM channels — accessed via PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), <name>) */
+        pwms = <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_l     Pin 2  AD_B0_09  FlexPWM2.3 A */
+               <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_r     Pin 3  EMC_05    FlexPWM4.2 B */
+               <&flexpwm2_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,   /* motor_beta1 Pin 9  B0_11     FlexPWM2.2 B */
+               <&flexpwm4_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_beta2 Pin 22 AD_B1_08  FlexPWM4.0 A */
+               <&flexpwm4_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_beta3 Pin 23 AD_B1_09  FlexPWM4.1 A */
+               <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_beta4 Pin 28 EMC_32    FlexPWM3.1 B */
+               <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* motor_cr    Pin 29 EMC_31    FlexPWM3.1 A */
+
+        pwm-names = "servo_l", "servo_r",
+                    "motor_beta1", "motor_beta2", "motor_beta3", "motor_beta4",
+                    "motor_cr";
     };
 
     chosen {

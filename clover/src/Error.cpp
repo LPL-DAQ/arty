@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -112,6 +113,7 @@ MaxLengthString<MAX_ERR_MESSAGE_SIZE> Error::build_message()
     }
 
     k_sched_unlock();
+    k_mutex_unlock(&context_guard);
 
     return message;
 }

@@ -1,19 +1,20 @@
-target_sources(app PRIVATE main.cpp
+target_sources(app PRIVATE
+    main.cpp
     server.cpp
-    lidar.cpp
     Controller.cpp
     Error.cpp
-    Trace.cpp
     LookupTable.cpp
-    StateIdle.cpp
-    # TODO: FIXUP
-    # StateCalibrateValve.cpp
-    StateValveSeq.cpp
-    StateThrustSeq.cpp
-    StateAbort.cpp
-    AnalogSensors.cpp
-    MutexGuard.cpp)
+    MutexGuard.cpp
+    Trace.cpp
+    PwmActuator.cpp
+)
+find_package(Eigen3 REQUIRED)
+target_link_libraries(app PRIVATE Eigen3::Eigen)
 
+add_subdirectory(sensors)
+add_subdirectory(flight)
+# add_subdirectory(hornet)
+# add_subdirectory(ranger)
 
 if(CONFIG_HORNET)
     message(NOTICE "Building with Hornet sources")

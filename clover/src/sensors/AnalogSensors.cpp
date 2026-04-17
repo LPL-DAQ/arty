@@ -1,9 +1,9 @@
 #include "AnalogSensors.h"
-#include "MutexGuard.h"
+#include "../MutexGuard.h"
 #include "clover.pb.h"
-#include "config.h"
-#include "lut/tc_k_type_v_to_deg_c_lut.h"
-#include "lut/tc_t_type_v_to_deg_c_lut.h"
+#include "../config.h"
+#include "../lut/tc_k_type_v_to_deg_c_lut.h"
+#include "../lut/tc_t_type_v_to_deg_c_lut.h"
 #include <array>
 #include <optional>
 #include <tuple>
@@ -453,7 +453,7 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
 
         // Check PT config
         if (has_pt_config) {
-            if (!(config.has_pt_range_psig && config.has_pt_range_psig)) {
+            if (!(config.has_pt_range_psig && config.has_pt_bias_psig)) {
                 return std::unexpected(Error::from_cause("all pt config fields must be filled"));
             }
             if (config.pt_range_psig == 0.0f) {

@@ -1,45 +1,22 @@
 #ifndef APP_CONTROLLER_H
 #define APP_CONTROLLER_H
 
-#include "AnalogSensors.h"
+#include "sensors/AnalogSensors.h"
 #include "Error.h"
 #include "Trace.h"
 #include "clover.pb.h"
 #include <expected>
 #include <zephyr/kernel.h>
 
-typedef SystemState SystemState;
-
-struct ControllerOutput {
-    bool set_fuel = false;
-    float fuel_pos = 0.0f;
-    bool fuel_on = true;
-    bool set_lox = false;
-    float lox_pos = 0.0f;
-    bool lox_on = true;
-    float reset_fuel_pos = 0.0f;
-    bool reset_fuel = false;
-    float reset_lox_pos = 0.0f;
-    bool reset_lox = false;
-    SystemState next_state = SystemState_STATE_IDLE;
-};
-
 class Controller {
 public:
     // Define nominal safe positions
-    static constexpr float DEFAULT_FUEL_POS = 81.0f;
-    static constexpr float DEFAULT_LOX_POS = 74.0f;
+
     // Shared tracking variables
     static inline uint32_t abort_entry_time = 0;
     static inline uint32_t sequence_start_time = 0;
-    static inline bool fuel_powered = true;
-    static inline bool lox_powered = true;
 
     static inline SystemState current_state = SystemState_STATE_IDLE;
-    static SystemState state()
-    {
-        return current_state;
-    }
 
     static std::expected<void, Error> init();
     static void controller_step_control_loop(k_work* work);  // The 1ms dispatcher called by the timer
@@ -47,22 +24,29 @@ public:
 
     static void step_control_loop(k_work*);
     // Request handlers
-    static std::expected<void, Error> handle_load_valve_sequence(const LoadValveSequenceRequest& req);
-    static std::expected<void, Error> handle_start_valve_sequence(const StartValveSequenceRequest& req);
-    static std::expected<void, Error> handle_load_thrust_sequence(const LoadThrustSequenceRequest& req);
-    static std::expected<void, Error> handle_start_thrust_sequence(const StartThrustSequenceRequest& req);
     static std::expected<void, Error> handle_abort(const AbortRequest& req);
-    static std::expected<void, Error> handle_unprime(const UnprimeRequest& req);
-    static std::expected<void, Error> handle_calibrate_valve(const CalibrateValveRequest& req);
-
     static std::expected<void, Error> handle_halt(const HaltRequest& req);
-
-    static std::expected<void, Error> handle_reset_valve_position(const ResetValvePositionRequest& req);
-    static std::expected<void, Error> handle_power_on_valve(const PowerOnValveRequest& req);
-    static std::expected<void, Error> handle_power_off_valve(const PowerOffValveRequest& req);
-
-    static std::expected<void, Error> change_state(SystemState new_state);
+    static std::expected<void, Error> handle_prime(const PrimeRequest& req);
+    static std::expected<void, Error> handle_calibrate_throttle(const ThrottleCalibrateValveRequest& req);
+    static std::expected<void, Error> handle_load_throttle_valve_sequence(const ThrottleLoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_throttle_thrust_sequence(const ThrottleLoadThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_load_rcs_valve_sequence(const RCSLoadValveSequenceRequest& req);
+    static std::expected<void, Error> handle_load_rcs_roll_sequence(const RCSLoadRollSequenceRequest& req);
+    static std::expected<void, Error> handle_load_tvc_sequence(const TVCLoadSequenceRequest& req);
+    static std::expected<void, Error> handle_start_throttle_valve_sequence(const ThrottleStartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_throttle_thrust_sequence(const ThrottleStartThrustSequenceRequest& req);
+    static std::expected<void, Error> handle_start_rcs_valve_sequence(const RCSStartValveSequenceRequest& req);
+    static std::expected<void, Error> handle_start_rcs_roll_sequence(const RCSStartRollSequenceRequest& req);
+    static std::expected<void, Error> handle_start_tvc_sequence(const TVCStartSequenceRequest& req);
+    static std::expected<void, Error> handle_load_flight_sequence(const FlightLoadSequenceRequest& req);
+    static std::expected<void, Error> handle_start_flight_sequence(const FlightStartSequenceRequest& req);
     static const char* get_state_name(SystemState state);
+
+    static bool should_tick_throttle();
+    static bool should_tick_tvc();
+    static bool should_tick_rcs();
+    static bool should_tick_flight();
+    static std::expected<void, Error> attempt_abort_subsystems();
     Controller() = delete;  // Explicitly prevent instantiation
 
 private:

@@ -1,8 +1,10 @@
 #ifndef ARTY_THROTTLEVALVE_H
 #define ARTY_THROTTLEVALVE_H
 
-#include "Error.h"
-#include "MutexGuard.h"
+// ***This should only be referenced by ThrottleRangerActuator***
+
+#include "../Error.h"
+#include "../MutexGuard.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -381,6 +383,7 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
         LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
     }
 }
+
 
 template <
     ValveKind kind,

@@ -17,32 +17,65 @@ message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
     IdentifyClientRequest identify_client = 6;
-    IsNotAbortedRequest is_not_aborted_request = 20;
+    IsNotAbortedRequest is_not_aborted_request = 26;
 
     // Sensors
-    ConfigureAnalogSensorsRequest configure_analog_sensors = 21;
+    ConfigureAnalogSensorsRequest configure_analog_sensors = 25;
 
     // Actuators
-    ResetValvePositionRequest reset_valve_position = 2;
-    PowerOffValveRequest power_off_valve = 18;
-    PowerOnValveRequest power_on_valve = 19;
+    ThrottleResetValvePositionRequest throttle_reset_valve_position = 2;
+    ThrottlePowerOffRequest throttle_power_off = 24;
+    ThrottlePowerOnRequest throttle_power_on = 23;
 
     // Transitions (VALVE_SEQ, THRUST_SEQ) -> ABORT
     AbortRequest abort = 10;
     // Transitions (CALIBRATE_VALVE, VALVE_SEQ, THRUST_SEQ, ABORT) -> IDLE
-    HaltRequest halt = 11;
+    ThrottleHaltRequest throttle_halt = 11;
     // Transitions (VALVE_PRIMED, THRUST_PRIMED) -> IDLE
-    UnprimeRequest unprime = 12;
+    ThrottleUnprimeRequest throttle_unprime = 12;
     // Transitions IDLE -> CALIBRATE_VALVE
-    CalibrateValveRequest calibrate_valve = 9;
+    ThrottleCalibrateValveRequest throttle_calibrate_valve = 9;
     // Transitions IDLE -> VALVE_PRIMED
-    LoadValveSequenceRequest load_valve_sequence = 13;
+    ThrottleLoadValveSequenceRequest throttle_load_valve_sequence = 13;
     // Transitions VALVE_PRIMED -> VALVE_SEQ
-    StartValveSequenceRequest start_valve_sequence = 15;
+    ThrottleStartValveSequenceRequest throttle_start_valve_sequence = 15;
     // Transitions IDLE -> THRUST_PRIMED
-    LoadThrustSequenceRequest load_thrust_sequence = 14;
+    ThrottleLoadThrustSequenceRequest throttle_load_thrust_sequence = 14;
     // Transiitons THRUST_PRIMED -> THRUST_SEQ
-    StartThrustSequenceRequest start_thrust_sequence = 16;
+    ThrottleStartThrustSequenceRequest throttle_start_thrust_sequence = 16;
+
+    // Transitions (CALIBRATE_VALVE, VALVE_SEQ, ROLL_SEQ, ABORT) -> IDLE
+    RCSHaltRequest rcs_halt = 17;
+    // Transitions (VALVE_PRIMED, ROLL_PRIMED) -> IDLE
+    RCSUnprimeRequest rcs_unprime = 18;
+    // Transitions IDLE -> VALVE_PRIMED
+    RCSLoadValveSequenceRequest rcs_load_valve_sequence = 19;
+    // Transitions VALVE_PRIMED -> VALVE_SEQ
+    RCSStartValveSequenceRequest rcs_start_valve_sequence = 20;
+    // Transitions IDLE -> ROLL_PRIMED
+    RCSLoadRollSequenceRequest rcs_load_roll_sequence = 21;
+    // Transiitons ROLL_PRIMED -> ROLL_SEQ
+    RCSStartRollSequenceRequest rcs_start_roll_sequence = 22;
+
+    // Transitions (CALIBRATE_VALVE, SEQ, ABORT) -> IDLE
+    TVCHaltRequest tvc_halt = 27;
+    // Transitions (VALVE_PRIMED, PITCH_PRIMED) -> IDLE
+    TVCUnprimeRequest tvc_unprime = 28;
+    // Transitions IDLE -> VALVE_PRIMED
+    TVCLoadSequenceRequest tvc_load_sequence = 29;
+    // Transitions VALVE_PRIMED -> VALVE_SEQ
+    TVCStartSequenceRequest tvc_start_sequence = 30;
+
+    // Transitions IDLE -> TAKEOFF
+    FlightLoadSequenceRequest flight_load_sequence = 31;
+    // Transitions TAKEOFF -> FLIGHT_SEQ
+    FlightStartSequenceRequest flight_start_sequence = 32;
+    // Transitions (FLIGHT_SEQ, LANDING, TAKEOFF) -> IDLE
+    FlightHaltRequest flight_halt = 33;
+    // System-level halt that may target one module or all modules.
+    HaltRequest halt = 34;
+    // System-level prime request for broader system priming.
+    PrimeRequest prime = 35;
   }
 }
 
@@ -137,7 +170,7 @@ enum AnalogSensor {
 }
 
 // Reset the valve's position.
-message ResetValvePositionRequest {
+message ThrottleResetValvePositionRequest {
   required Valve valve = 1;
   required float new_pos_deg = 2;
 }
@@ -148,46 +181,133 @@ enum Valve {
   LOX = 2;
 }
 
+// Abort an active control sequence into a safe state.
+message AbortRequest {}
+
+
+// THROTTLE Requests
+
 // Turn on stepper motor.
-message PowerOnValveRequest {
+message ThrottlePowerOnRequest {
   required Valve valve = 1;
 }
 
 // Turn off stepper motor.
-message PowerOffValveRequest {
+message ThrottlePowerOffRequest {
   required Valve valve = 1;
 }
 
-// Abort an active control sequence into a safe state.
-message AbortRequest {}
-
 // Halt all actuators.
-message HaltRequest {}
+message ThrottleHaltRequest {}
 
 // Unprime a request.
-message UnprimeRequest {}
+message ThrottleUnprimeRequest {}
 
 // Enter valve calibration mode.
-message CalibrateValveRequest {
+message ThrottleCalibrateValveRequest {
   required Valve valve = 1;
 }
 
 // Load a valve motor sequence. At least one trace must be set.
-message LoadValveSequenceRequest {
+message ThrottleLoadValveSequenceRequest {
   optional ControlTrace fuel_trace_deg = 1;
   optional ControlTrace lox_trace_deg = 2;
 }
 
 // Start a loaded valve motor sequence.
-message StartValveSequenceRequest {}
+message ThrottleStartValveSequenceRequest {}
 
 // Load a thrust sequence.
-message LoadThrustSequenceRequest {
+message ThrottleLoadThrustSequenceRequest {
   required ControlTrace thrust_trace_lbf = 1;
 }
 
 // Start a loaded thrust sequence.
-message StartThrustSequenceRequest {}
+message ThrottleStartThrustSequenceRequest {}
+
+
+
+// RCS Requests
+
+
+// Halt all actuators.
+message RCSHaltRequest {}
+
+// Unprime a request.
+message RCSUnprimeRequest {}
+
+// Load a valve motor sequence. At least one trace must be set.
+message RCSLoadValveSequenceRequest {
+  optional ControlTrace trace_lbf = 1;
+}
+
+// Start a loaded valve motor sequence.
+message RCSStartValveSequenceRequest {}
+
+// Load a Roll sequence.
+message RCSLoadRollSequenceRequest {
+  required ControlTrace trace_deg = 1;
+}
+
+// Start a loaded Roll sequence.
+message RCSStartRollSequenceRequest {}
+
+
+// TVC Requests
+
+
+// Halt all actuators.
+message TVCHaltRequest {}
+
+// Unprime a request.
+message TVCUnprimeRequest {}
+
+// Load a sequence. Traces for X and Y angles must be set.
+message TVCLoadSequenceRequest {
+  required ControlTrace pitch_angle_trace_deg = 1;
+  required ControlTrace yaw_angle_trace_deg = 2;
+}
+
+// Start a loaded sequence.
+message TVCStartSequenceRequest {}
+
+
+// Flight Requests
+message FlightHaltRequest {}
+
+message FlightLoadSequenceRequest {
+  optional ControlTrace x_position_trace = 1;
+  optional ControlTrace y_position_trace = 2;
+  optional ControlTrace z_position_trace = 3;
+  optional ControlTrace roll_angle_trace = 4;
+}
+
+message FlightStartSequenceRequest {}
+
+message HaltRequest {
+  optional HaltTarget target = 1;
+}
+
+message PrimeRequest {
+  required PrimeTarget target = 1;
+}
+
+enum HaltTarget {
+  HALT_TARGET_UNKNOWN = 0;
+  HALT_TARGET_ALL = 1;
+  HALT_TARGET_THROTTLE = 2;
+  HALT_TARGET_TVC = 3;
+  HALT_TARGET_RCS = 4;
+  HALT_TARGET_FLIGHT = 5;
+}
+
+enum PrimeTarget {
+  PRIME_TARGET_UNKNOWN = 0;
+  PRIME_TARGET_THROTTLE = 1;
+  PRIME_TARGET_TVC = 2;
+  PRIME_TARGET_RCS = 3;
+  PRIME_TARGET_STATIC_FIRE = 4;
+}
 
 // Control sequences
 message ControlTrace {
@@ -224,14 +344,64 @@ message SineSegment {
 enum SystemState {
   STATE_UNKNOWN = 0;
   STATE_IDLE = 1;
-  STATE_CALIBRATE_VALVE = 2;
-  STATE_VALVE_PRIMED = 3;
-  STATE_VALVE_SEQ = 4;
-  STATE_THRUST_PRIMED = 5;
-  STATE_THRUST_SEQ = 6;
-  STATE_ABORT = 7;
+  STATE_FLIGHT = 2;
+  STATE_FLIGHT_PRIMED = 12;
+  STATE_THROTTLE = 3;
+  STATE_THROTTLE_PRIMED = 16;
+  STATE_TVC = 4;
+  STATE_TVC_PRIMED = 13;
+  STATE_RCS = 5;
+  STATE_RCS_PRIMED = 14;
+  STATE_STATIC_FIRE = 6;
+  STATE_STATIC_FIRE_PRIMED = 15;
+  STATE_ABORT = 8;
+  // takeoff, landing. To implement later
+  STATE_FLIGHT_STARTUP = 9;
+  STATE_FLIGHT_END = 10;
+  STATE_CALIBRATE_THROTTLE_VALVE = 11;
+
+
+}
+enum ThrottleState {
+  THROTTLE_STATE_UNKNOWN = 0;
+  THROTTLE_STATE_IDLE = 1;
+  THROTTLE_STATE_CALIBRATE_VALVE = 2;
+  THROTTLE_STATE_VALVE_PRIMED = 3;
+  THROTTLE_STATE_VALVE_SEQ = 4;
+  THROTTLE_STATE_THRUST_PRIMED = 5;
+  THROTTLE_STATE_THRUST_SEQ = 6;
+  THROTTLE_STATE_ABORT = 7;
+  THROTTLE_STATE_FLIGHT = 9;
 }
 
+enum TVCState {
+  TVC_STATE_UNKNOWN = 0;
+  TVC_STATE_IDLE = 1;
+  TVC_STATE_TRACE_PRIMED = 3;
+  TVC_STATE_TRACE = 4;
+  TVC_STATE_ABORT = 5;
+  TVC_STATE_FLIGHT = 7;
+
+}
+enum RCSState {
+  RCS_STATE_UNKNOWN = 0;
+  RCS_STATE_IDLE = 1;
+  RCS_STATE_VALVE_PRIMED = 2;
+  RCS_STATE_VALVE_SEQ = 3;
+  RCS_STATE_ROLL_PRIMED = 4;
+  RCS_STATE_ROLL_SEQ = 5;
+  RCS_STATE_ABORT = 6;
+  RCS_STATE_FLIGHT = 7;
+
+}
+enum FlightState {
+  FLIGHT_STATE_UNKNOWN = 0;
+  FLIGHT_STATE_IDLE = 1;
+  FLIGHT_STATE_ABORT = 2;
+  FLIGHT_STATE_FLIGHT_SEQ = 4;
+  FLIGHT_STATE_TAKEOFF = 5;
+  FLIGHT_STATE_LANDING = 6;
+}
 // next tag: 21
 message DataPacket {
   // Time since chip start in nanoseconds.
@@ -241,6 +411,9 @@ message DataPacket {
 
   // Current controller state
   required SystemState state = 6;
+  required ThrottleState throttle_state = 21;
+  required TVCState tvc_state = 22;
+  required RCSState rcs_state = 23;
 
   // Time taken by various controller components.
   required ControllerTiming controller_timing = 20;
@@ -259,26 +432,106 @@ message DataPacket {
 
   // Sensors
   required AnalogSensorReadings analog_sensors = 19;
+  required GNCSensorReadings gnc_sensors = 55;
+
+  // Flight
+  required FlightState flight_state = 42;
+  required FlightStateOutput flight_state_output = 43;
+
+  required EstimatedState estimated_state = 54;
 
   // Actuators
-  required ValveStatus fuel_valve = 3;
-  required ValveStatus lox_valve = 4;
+  oneof  throttle_state_output{
+    ThrottleRangerStateOutput throttle_ranger_state_output = 40;
+    ThrottleHornetStateOutput throttle_hornet_state_output = 51;
 
-  oneof state_data {
+  }
+
+  oneof rcs_state_output {
+   RCSRangerStateOutput rcs_ranger_state_output = 35;
+   RCSHornetStateOutput rcs_hornet_state_output = 36;
+  }
+
+ oneof tvc_state_output {
+   TVCRangerStateOutput tvc_ranger_state_output = 32;
+   TVCHornetStateOutput tvc_hornet_state_output = 41;
+  }
+
+
+  oneof throttle_actuator_data {
+    ThrottleRangerData throttle_ranger_data = 33;
+    ThrottleHornetData throttle_hornet_data = 34;
+  }
+
+  oneof rcs_actuator_data {
+    RCSRangerData rcs_ranger_data = 37;
+    RCSHornetData rcs_hornet_data = 38;
+  }
+
+  oneof tvc_actuator_data {
+    TVCRangerData tvc_ranger_data = 39;
+    TVCHornetData tvc_hornet_data = 53;
+  }
+
+  oneof throttle_state_data {
     // IDLE, VALVE_PRIMED, THRUST_PRIMED
-    IdleData idle_data = 13;
+    ThrottleIdleData throttle_idle_data = 13;
 
     // ABORT
-    AbortData abort_data = 14;
+    ThrottleAbortData throttle_abort_data = 14;
 
     // VALVE_CALIBRATION
-    ValveCalibrationData valve_calibration_data = 9;
+    ThrottleValveCalibrationData throttle_valve_calibration_data = 9;
 
     // VALVE_SEQ
-    ValveSequenceData valve_sequence_data = 10;
+    ThrottleValveSequenceData throttle_valve_sequence_data = 10;
 
     // THRUST_SEQ
-    ThrustSequenceData thrust_sequence_data = 11;
+    ThrottleRangerThrustSequenceData throttle_ranger_thrust_sequence_data = 11;
+    ThrottleHornetThrustSequenceData throttle_hornet_thrust_sequence_data = 52;
+
+    // FLIGHT
+    ThrottleFlightData throttle_flight_data = 12;
+  }
+
+  oneof rcs_state_data {
+    // IDLE, VALVE_PRIMED, THRUST_PRIMED
+    RCSIdleData rcs_idle_data = 24;
+
+    // ABORT
+    RCSAbortData rcs_abort_data = 25;
+
+    // FLIGHT
+    RCSFlightData rcs_flight_data = 26;
+
+    // VALVE_SEQ
+    RCSValveSequenceData rcs_valve_sequence_data = 27;
+
+    // THRUST_SEQ
+    RCSRollSequenceData rcs_roll_sequence_data = 28;
+  }
+
+  oneof tvc_state_data {
+    // IDLE, TRACE_PRIMED
+    TVCIdleData tvc_idle_data = 29;
+
+    // ABORT
+    TVCAbortData tvc_abort_data = 30;
+
+    // TRACE
+    TVCSequenceData tvc_sequence_data = 31;
+
+    // FLIGHT
+    TVCFlightData tvc_flight_data = 50;
+  }
+
+  oneof flight_state_data {
+    FlightIdleData flight_idle_data = 44;
+    FlightAbortData flight_abort_data = 45;
+    FlightTakeoffData flight_takeoff_data = 46;
+    FlightSequenceData flight_sequence_data = 47;
+    FlightLandingData flight_landing_data = 48;
+    FlightOffData flight_off_data = 49;
   }
 }
 
@@ -336,11 +589,157 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
-message IdleData {}
+// TODO: Should this be in analog sensors?
+message GNCSensorReadings {
+  required Quaternion vn_q = 1;
+  // Angular rate?
+  // other vn data?
+  required Vector3D javad_position = 2;
+  required Vector3D javad_velocity = 3;
+  // other javad data?
+  required float lidar_1_distance = 4;
+  required float lidar_2_distance = 5;
+  // other lidar data?
+}
 
-message AbortData {}
+message FlightIdleData {}
+message FlightAbortData {}
+message FlightTakeoffData {}
+message FlightSequenceData {}
+message FlightLandingData {}
+message FlightOffData {}
 
-message ValveCalibrationData {
+message ThrottleRangerStateOutput {
+
+    required ThrottleState next_state = 1;
+    required bool fuel_on = 2;
+    required bool lox_on = 3;
+    optional float fuel_pos = 4;
+    optional float lox_pos = 5;
+    optional float reset_fuel_pos = 6;
+    optional float reset_lox_pos = 7;
+
+}
+message ThrottleHornetStateOutput {
+
+    required ThrottleState next_state = 1;
+    required bool power_on = 3;
+    required float throttle_percent = 2;
+}
+
+message RCSRangerStateOutput {
+  required RCSState next_state = 1;
+  required bool CW = 2;
+  required bool CCW = 3;
+}
+message RCSHornetStateOutput {
+  required RCSState next_state = 1;
+  required bool CW = 2;
+  required bool CCW = 3;
+}
+
+message TVCRangerStateOutput {
+  required TVCState next_state = 1;
+  required float target_pitch = 2;
+  required float target_yaw = 3;
+
+}
+message TVCHornetStateOutput {
+  required TVCState next_state = 1;
+  required float target_pitch = 2;
+  required float target_yaw = 3;
+
+}
+
+
+// this is what is sent to other controllers, calculated in FlightController
+message FlightControllerOutput{
+
+}
+
+
+message Vector3D {
+  required float x = 1;
+  required float y = 2;
+  required float z = 3;
+}
+
+message Quaternion {
+  required float qw = 10;
+  required float qx = 1;
+  required float qy = 2;
+  required float qz = 3;
+}
+
+// Estimated vehicle state for telemetry and flight path monitoring.
+message EstimatedState {
+  required Quaternion R_WB = 1; // world to body
+  required Vector3D position = 2;
+  required Vector3D velocity = 3;
+
+}
+
+message DesiredState {
+  required Vector3D position = 1;
+  required float world_tilt_x = 2;
+  required float world_tilt_y = 3;
+  required float roll_position = 4;
+  required float vz_m_s = 5;
+
+}
+
+// this is what is sent to FlightController
+message FlightStateOutput {
+  required FlightState next_state = 1;
+  required float z_acceleration = 2;
+  required float pitch_angular_acceleration = 3;
+  required float yaw_angular_acceleration = 4;
+  required float roll_position = 5;
+
+}
+
+message ThrottleRangerData {
+
+  required ValveStatus fuel_valve = 13;
+  required ValveStatus lox_valve = 14;
+
+
+}
+
+message ThrottleHornetData{
+  required float throttle_percent = 1;
+}
+
+message TVCRangerData {
+  required float pitch_angle = 1;
+  required float yaw_angle = 2;
+
+}
+
+message TVCHornetData {
+  required float pitch_angle = 1;
+  required float yaw_angle = 2;
+}
+
+message RCSRangerData {
+  required bool cw_open = 1;
+  required bool ccw_open = 2;
+
+}
+
+message RCSHornetData {
+  required bool cw_power_on = 1;
+  required bool cww_power_on = 2;
+
+}
+
+message ThrottleAbortData {}
+
+message ThrottleIdleData {}
+
+
+// Only exists for Ranger anyways
+message ThrottleValveCalibrationData {
   required bool fuel_found_hardstop = 3;
   required float fuel_hardstop_pos = 4;
   required bool lox_found_hardstop = 7;
@@ -353,24 +752,54 @@ message ValveCalibrationData {
   required float lox_err = 12;
 }
 
-message ValveSequenceData {}
+message ThrottleValveSequenceData {}
 
-// TODO
-message ThrustSequenceData {
+message ThrottleRangerThrustSequenceData {
+
+  required float target_thrust = 5;
+  required float thrust_error = 6;
+
   required float predicted_thrust = 1;
   required float predicted_of = 2;
   required float mdot_fuel = 3;
   required float mdot_lox = 4;
-  required float target_thrust = 5;
-
-  required float thrust_error = 6;
 
   required float change_alpha_cmd = 7;
   required float clamped_change_alpha_cmd = 8;
 
   required float alpha = 9;
   required float thrust_from_alpha = 10;
+}
 
-  required float fuel_valve_cmd = 11;
-  required float lox_valve_cmd = 12;
+message ThrottleHornetThrustSequenceData{
+    required float target_thrust = 1;
+
+}
+
+message RCSAbortData {}
+
+message RCSIdleData {}
+
+message RCSValveSequenceData {}
+
+message RCSRollSequenceData {
+}
+
+message TVCAbortData {}
+
+message TVCIdleData {}
+
+message TVCSequenceData {
+  required float pitch_angle_deg = 1;
+  required float yaw_angle_deg = 2;
+}
+
+message ThrottleFlightData {
+}
+
+message RCSFlightData {
+}
+
+message TVCFlightData {
+
 }

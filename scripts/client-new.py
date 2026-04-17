@@ -760,7 +760,7 @@ def _build_status_renderable():
     sd.add_column('Field', style='bold white', no_wrap=True)
     sd.add_column('Value', style='white', no_wrap=True, justify='right')
 
-    which = pkt.WhichOneof('state_data')
+    which = pkt.WhichOneof('throttle_state_data')
     if which == 'valve_calibration_data':
         c = pkt.valve_calibration_data
 

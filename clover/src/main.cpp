@@ -7,19 +7,11 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
-#include "AnalogSensors.h"
+#include "sensors/AnalogSensors.h"
 #include "Controller.h"
-#include "lidar.h"
+#include "flight/FlightController.h"
+#include "sensors/lidar.h"
 #include "server.h"
-
-#ifdef CONFIG_HORNET
-
-#elif CONFIG_RANGER
-#include "ThrottleValve.h"
-
-#else
-#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
-#endif
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -49,22 +41,6 @@ int main(void)
     //     return 0;
     // }
 
-#ifdef CONFIG_RANGER
-
-    LOG_INF("Initializing fuel throttle valve");
-    if (auto result = FuelValve::init(); !result) {
-        LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    LOG_INF("Initializing lox throttle valve");
-    if (auto result = LoxValve::init(); !result) {
-        LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-#endif
-
     // LOG_INF("Initializing LiDAR");
     // int err = lidar_init();
     // if (err) {
@@ -78,11 +54,23 @@ int main(void)
         return 0;
     }
 
+
+    // initializes actuators
     LOG_INF("Initializing Controller");
     if (auto result = Controller::init(); !result) {
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
         return 0;
     }
+
+
+    LOG_INF("Initializing FlightController");
+    // Initialize flight controller helper state.
+    auto flight_ret = FlightController::init();
+    if (!flight_ret.has_value()) {
+        LOG_ERR("Failed to initialize flight controller: %s", flight_ret.error().build_message().c_str());
+        return 1;
+    }
+
 
     // LOG_INF("initializing SNTP");
     // err = sntp_init();
