@@ -29,6 +29,7 @@ namespace RCSImpl = RCSRangerModule;
 #include "hornet/RCSHornetActuator.h"
 #include "hornet/ThrottleHornetModule.h"
 #include "hornet/ThrottleHornetActuator.h"
+#include "PwmActuator.h"
 namespace ThrottleImpl = ThrottleHornetModule;
 namespace TVCImpl = TVCHornetModule;
 namespace RCSImpl = RCSHornetModule;
@@ -143,14 +144,49 @@ std::expected<void, Error> Controller::init()
     LOG_INF("Initializing fuel throttle valve");
     if (auto result = FuelValve::init(); !result) {
         LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
-        return 0;
+        return std::unexpected(result.error());
     }
 
     LOG_INF("Initializing lox throttle valve");
     if (auto result = LoxValve::init(); !result) {
         LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
-        return 0;
+        return std::unexpected(result.error());
     }
+#elif CONFIG_HORNET
+    LOG_INF("Initializing PWM Actuators");
+    if (auto result = MotorBeta1::init(); !result) {
+        LOG_ERR("Failed to initialize motor beta 1: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    if (auto result = MotorBeta2::init(); !result) {
+        LOG_ERR("Failed to initialize motor beta 2: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    if (auto result = MotorBeta3::init(); !result) {
+        LOG_ERR("Failed to initialize motor beta 3: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    if (auto result = MotorBeta4::init(); !result) {
+        LOG_ERR("Failed to initialize motor beta 4: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    if (auto result = ServoL::init(); !result) {
+        LOG_ERR("Failed to initialize motor servo x: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    if (auto result = ServoR::init(); !result) {
+        LOG_ERR("Failed to initialize motor servo y: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    if (auto result = MotorCR::init(); !result) {
+        LOG_ERR("Failed to initialize motor CR 1: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
+    // if (auto result = MotorBeta1::init(); !result) {
+    //     LOG_ERR("Failed to initialize motor beta 1: %s", result.error().build_message().c_str());
+    //     return std::unexpected(result.error());
+    // }
+
 #endif
 
     LOG_INF("Pausing for initial sensor readings to complete");
@@ -188,7 +224,8 @@ void Controller::step_control_loop(k_work*)
         std::tie(data.analog_sensors, data.controller_timing.analog_sensors_sense_time_ns) = *analog_sensors_readings;
     }
     else {
-        LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
+        // TODO: uncomment this
+        // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
     daq_client_status daq_status = get_daq_client_status();
