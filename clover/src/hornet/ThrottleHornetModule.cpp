@@ -14,6 +14,17 @@ LOG_MODULE_REGISTER(ThrottleHornetModule, LOG_LEVEL_INF);
 
 K_MUTEX_DEFINE(throttle_hornet_module_lock);
 
+namespace {
+    uint32_t abort_entry_time = 0;
+    uint32_t sequence_start_time = 0;
+    float thrust_sequence_total_time_ms = 0.0f;
+
+    Trace throttle_thrust_trace;
+    Trace fuel_trace;
+    Trace lox_trace;
+
+    ThrottleState current_state = ThrottleState_THROTTLE_STATE_IDLE;
+}
 
 std::expected<void, Error> ThrottleHornetModule::change_state(ThrottleState new_state)
 {
@@ -39,7 +50,6 @@ std::expected<void, Error> ThrottleHornetModule::change_state(ThrottleState new_
 void ThrottleHornetModule::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();
-    uint64_t start_cycle = k_cycle_get_64();
     ThrottleHornetStateOutput out{};
 
     ThrottleState local_state;
@@ -134,7 +144,7 @@ std::pair<ThrottleHornetStateOutput, ThrottleFlightData> ThrottleHornetModule::f
 
     // linear best fit based on one test on old motor at full battery.
     // TODO: get new and more data for the current motor
-    float best_fit_output = (target_thrust + 32.5271) / 121.53;
+    float best_fit_output = (target_thrust + 32.5271f) / 121.53f;
     // fit is only valid between 0.63 and 1 -- should follow a PWM sequence below that
     out.throttle_percent = std::clamp(best_fit_output, 0.63f, 1.0f);
 

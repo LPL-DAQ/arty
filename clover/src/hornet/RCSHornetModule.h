@@ -12,10 +12,6 @@ typedef RCSState RCSState;
 
 namespace RCSHornetModule {
 
-    static inline RCSState current_state = RCSState_RCS_STATE_IDLE;
-    static inline uint32_t abort_entry_time = 0;
-    static inline uint32_t sequence_start_time = 0;
-
     RCSState state();
 
     void step_control_loop(DataPacket& data);
@@ -34,7 +30,6 @@ namespace RCSHornetModule {
     std::pair<RCSHornetStateOutput, RCSFlightData> flight_tick(EstimatedState& state, float desired_roll_position);
     std::pair<RCSHornetStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
 
-    static inline uint32_t udp_sequence_number = 0;
 
 } // namespace RCSHornetModule
 

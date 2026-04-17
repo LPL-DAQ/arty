@@ -42,7 +42,6 @@ std::expected<void, Error> ThrottleRangerModule::change_state(ThrottleState new_
 void ThrottleRangerModule::step_control_loop(DataPacket& data)
 {
     int64_t current_time = k_uptime_get();
-    uint64_t start_cycle = k_cycle_get_64();
     ThrottleRangerStateOutput out{};
 
     ThrottleState local_state;

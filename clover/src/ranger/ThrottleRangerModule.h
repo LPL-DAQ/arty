@@ -58,8 +58,6 @@ static Trace throttle_thrust_trace;
 static Trace fuel_trace;
 static Trace lox_trace;
 
-static inline uint32_t udp_sequence_number = 0;
-
 // cal
 enum class CalPhase {
     SEEK_HARDSTOP,

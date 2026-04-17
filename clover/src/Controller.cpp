@@ -54,12 +54,6 @@ static SystemState get_current_system_state()
     return Controller::current_state;
 }
 
-static void set_abort_entry_time(uint32_t timestamp)
-{
-    MutexGuard guard{&controller_state_lock};
-    Controller::abort_entry_time = timestamp;
-}
-
 static std::expected<void, Error> change_state(SystemState new_state)
 {
     if (Controller::current_state == new_state) {
@@ -215,7 +209,6 @@ static int step_control_loop_debounce_warn_count = 0;
 
 void Controller::step_control_loop(k_work*)
 {
-    int64_t current_time = k_uptime_get();
     uint64_t start_cycle = k_cycle_get_64();
     DataPacket data = DataPacket_init_default;
 

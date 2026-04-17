@@ -12,11 +12,6 @@
 typedef TVCState TVCState;
 
 namespace TVCRangerModule {
-
-    static inline TVCState current_state = TVCState_TVC_STATE_IDLE;
-    static inline uint32_t abort_entry_time = 0;
-    static inline uint32_t sequence_start_time = 0;
-
     TVCState state();
 
     void step_control_loop(DataPacket& data);
@@ -32,8 +27,6 @@ namespace TVCRangerModule {
     std::pair<TVCRangerStateOutput, TVCSequenceData> sequence_tick(int64_t current_time, int64_t start_time);
     std::pair<TVCRangerStateOutput, TVCFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
     std::pair<TVCRangerStateOutput, TVCAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
-
-    static inline uint32_t udp_sequence_number = 0;
 
 } // namespace TVCRangerModule
 

@@ -16,6 +16,10 @@ LOG_MODULE_REGISTER(RCSHornetModule, LOG_LEVEL_INF);
 K_MUTEX_DEFINE(rcs_hornet_module_lock);
 
 namespace {
+    RCSState current_state = RCSState_RCS_STATE_IDLE;
+    uint32_t abort_entry_time = 0;
+    uint32_t sequence_start_time = 0;
+
     Trace valve_trace;
     bool valve_has_trace = false;
     float valve_total_time = 0.0f;

@@ -11,11 +11,6 @@
 typedef RCSState RCSState;
 
 namespace RCSRangerModule {
-
-    static inline RCSState current_state = RCSState_RCS_STATE_IDLE;
-    static inline uint32_t abort_entry_time = 0;
-    static inline uint32_t sequence_start_time = 0;
-
     RCSState state();
 
     void step_control_loop(DataPacket& data);
@@ -33,8 +28,6 @@ namespace RCSRangerModule {
     std::pair<RCSRangerStateOutput, RCSRollSequenceData> roll_sequence_tick(const AnalogSensorReadings& analog_sensors, int64_t current_time, int64_t start_time);
     std::pair<RCSRangerStateOutput, RCSFlightData> flight_tick(const AnalogSensorReadings& analog_sensors, FlightStateOutput& flight_output);
     std::pair<RCSRangerStateOutput, RCSAbortData> abort_tick(uint32_t current_time, uint32_t entry_time);
-
-    static inline uint32_t udp_sequence_number = 0;
 
 } // namespace RCSRangerModule
 

@@ -11,7 +11,6 @@ namespace  {
     static inline bool has_last_time = false;
 }
 
-
 void StateEstimator::init()
 {
     reset();
@@ -31,7 +30,6 @@ void StateEstimator::step_control_loop(DataPacket& data)
         // edit z for lidar
     estimate.velocity = sensors.javad_velocity;
     estimate.R_WB = sensors.vn_q;
-
     data.estimated_state = estimate;
     // TODO: some checking about when the last update from sensors were and whatnot
     last_time_ms = k_uptime_get();

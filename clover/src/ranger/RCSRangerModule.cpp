@@ -22,6 +22,10 @@ namespace {
     Trace roll_trace;
     bool roll_has_trace = false;
     float roll_total_time = 0.0f;
+
+    RCSState current_state = RCSState_RCS_STATE_IDLE;
+    uint32_t abort_entry_time = 0;
+    uint32_t sequence_start_time = 0;
 }
 
 

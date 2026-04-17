@@ -303,7 +303,6 @@ void FlightController::step_control_loop(DataPacket& data)
     data.flight_state_output = local_output;
     {
         MutexGuard guard{&flight_controller_lock};
-        current_output = local_output;
         data.flight_state = current_state;
     }
 

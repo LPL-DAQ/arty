@@ -19,6 +19,9 @@ namespace {
     Trace yaw_trace;
     bool sequence_has_trace = false;
     float sequence_total_time = 0.0f;
+    TVCState current_state = TVCState_TVC_STATE_IDLE;
+    uint32_t abort_entry_time = 0;
+    uint32_t sequence_start_time = 0;
 }
 
 

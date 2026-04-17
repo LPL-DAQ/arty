@@ -33,7 +33,6 @@ namespace FlightController {
     std::pair<FlightStateOutput, FlightLandingData> landing_tick(int64_t current_time, int64_t start_time);
     std::pair<FlightStateOutput, FlightAbortData> abort_tick(int64_t current_time, int64_t entry_time);
 
-    static inline FlightStateOutput current_output = FlightStateOutput_init_default;
 }
 
 #endif  // APP_FLIGHT_CONTROLLER_H
