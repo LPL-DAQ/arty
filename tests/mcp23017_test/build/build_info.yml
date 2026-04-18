@@ -1,0 +1,52 @@
+cmake:
+  application:
+    configuration-dir: '/home/lpl/arty/tests/mcp23017_test'
+    source-dir: '/home/lpl/arty/tests/mcp23017_test'
+  board:
+    name: 'ranger_1'
+    path:
+     - '/workspaces/arty/boards/lpl/teensy_hive'
+    qualifiers: 'mimxrt1062'
+    revision: ''
+  devicetree:
+    bindings-dirs:
+     - '/home/lpl/zephyr/dts/bindings'
+    files:
+     - '/workspaces/arty/boards/lpl/teensy_hive/ranger_1.dts'
+     - '/home/lpl/arty/tests/mcp23017_test/boards/ranger_1.overlay'
+    include-dirs:
+     - '/home/lpl/modules/hal/nxp/dts'
+     - '/home/lpl/modules/hal/stm32/dts'
+     - '/home/lpl/zephyr/include'
+     - '/home/lpl/zephyr/include/zephyr'
+     - '/home/lpl/zephyr/dts/common'
+     - '/home/lpl/zephyr/dts/vendor'
+     - '/home/lpl/zephyr/dts/rx'
+     - '/home/lpl/zephyr/dts/x86'
+     - '/home/lpl/zephyr/dts/xtensa'
+     - '/home/lpl/zephyr/dts/sparc'
+     - '/home/lpl/zephyr/dts/riscv'
+     - '/home/lpl/zephyr/dts/posix'
+     - '/home/lpl/zephyr/dts/arm64'
+     - '/home/lpl/zephyr/dts/arm'
+     - '/home/lpl/zephyr/dts/arc'
+     - '/home/lpl/zephyr/dts'
+    user-files:
+     - '/home/lpl/arty/tests/mcp23017_test/boards/ranger_1.overlay'
+  kconfig:
+    files:
+     - '/workspaces/arty/boards/lpl/teensy_hive/ranger_1_defconfig'
+     - '/home/lpl/arty/tests/mcp23017_test/prj.conf'
+    user-files:
+     - '/home/lpl/arty/tests/mcp23017_test/prj.conf'
+  toolchain:
+    name: 'zephyr'
+    path: '/home/lpl/zephyr-sdk-0.17.2'
+  zephyr:
+    version: '4.2.0'
+    zephyr-base: '/home/lpl/zephyr'
+version: '0.1.0'
+west:
+  command: '/home/lpl/.venv/bin/west build -b ranger_1/mimxrt1062 tests/mcp23017_test -d tests/mcp23017_test/build --pristine'
+  topdir: '/home/lpl'
+  version: '1.5.0'

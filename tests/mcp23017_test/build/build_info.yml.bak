@@ -1,0 +1,5 @@
+west:
+  command: /home/lpl/.venv/bin/west build -b ranger_1/mimxrt1062 tests/mcp23017_test
+    -d tests/mcp23017_test/build --pristine
+  topdir: /home/lpl
+  version: 1.5.0

@@ -1,0 +1,2 @@
+# Load board Kconfig descriptions.
+osource "/workspaces/arty/boards/lpl/teensy_hive/Kconfig.ranger_1"

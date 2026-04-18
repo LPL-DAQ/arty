@@ -64,14 +64,14 @@ TODO:
                       <&adc1 12>,
                       <&adc1 15>;
         analog-sensor-adcs = <&adc1>;
-        // analog-sensor-channels = <&adc1 5>,
+        /* analog-sensor-channels = <&adc1 5>,
                           <&adc1 6>,
                           <&adc1 8>,
                           <&adc1 9>,
                           <&adc1 10>,
                           <&adc1 11>,
                           <&adc1 12>,
-                          <&adc1 15>;
+                          <&adc1 15>; */
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
     };
@@ -249,6 +249,7 @@ TODO:
         label = "CDC_ACM_0";
     };
 };
+
 
 &enet_mac {
     /delete-property/ nxp,unique-mac;
