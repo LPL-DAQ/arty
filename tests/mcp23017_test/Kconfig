@@ -1,0 +1,21 @@
+# Mirror the RANGER/HORNET choice from clover/Kconfig so that
+# ranger_1_defconfig's "CONFIG_RANGER=y" resolves cleanly when building
+# this standalone test app (which doesn't include clover's Kconfig).
+# These symbols have no effect in this test - they're just declared so
+# the defconfig assignment is valid.
+
+mainmenu "MCP23017 Test"
+
+choice IMPLEMENTATION
+    prompt "Ranger or Hornet"
+    default RANGER
+
+config RANGER
+    bool "Ranger implementation"
+
+config HORNET
+    bool "Hornet implementation"
+
+endchoice
+
+source "Kconfig.zephyr"

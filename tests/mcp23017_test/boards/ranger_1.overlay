@@ -1,0 +1,8 @@
+/*
+ * Test overlay: enable LPI2C1 for raw I2C access to MCP23017.
+ */
+&lpi2c1 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpi2c1>;
+    pinctrl-names = "default";
+};

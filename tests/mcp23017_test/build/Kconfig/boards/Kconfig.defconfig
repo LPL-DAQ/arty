@@ -1,0 +1,2 @@
+# Load Zephyr board defconfig descriptions.
+osource "/workspaces/arty/boards/lpl/teensy_hive/Kconfig.defconfig"
