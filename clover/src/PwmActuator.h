@@ -1,4 +1,34 @@
-template
+#ifndef ARTY_PWM_ACTUATOR_ZEPHYR_H
+#define ARTY_PWM_ACTUATOR_ZEPHYR_H
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <expected>
+#include <zephyr/drivers/pwm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include "Error.h"
+
+enum class PwmKind {
+    SERVO_X,
+    SERVO_Y,
+    BETA_TOP,
+    BETA_BOTTOM,
+    BETA_CW,
+    BETA_CCW,
+    MOTOR_TOP,
+    MOTOR_BOTTOM
+};
+
+// -----------------------------------------------------------------------------
+// PwmActuator
+// -----------------------------------------------------------------------------
+// Stateless PWM base with last-commanded pulse tracking.
+// init() verifies hardware and writes the low/min pulse.
+// tick() clamps and writes a pulse. Requires init() to have succeeded first.
+// -----------------------------------------------------------------------------
+template<
     PwmKind Kind,
     const pwm_dt_spec PwmDt,
     int MinPulseUs = 1000,
@@ -53,7 +83,7 @@ public:
 
         auto result = write_pulse_us(static_cast<uint32_t>(k_min_pulse_us));
         if (!result) {
-            LOG_ERR("%s Failed to set initial pulse width: err %d", kind_to_prefix(Kind), result.error().code());
+            LOG_ERR("%s Failed to set initial pulse width: err %d", kind_to_prefix(Kind), result);
             return result;
         }
 
@@ -66,7 +96,7 @@ public:
 
         auto result = write_pulse_us(clamp_pulse_us(pulse_us));
         if (!result) {
-            LOG_ERR("%s Failed to write pulse: err %d", kind_to_prefix(Kind), result.error().code());
+            LOG_ERR("%s Failed to write pulse: err %d", kind_to_prefix(Kind), result);
         }
         return result;
     }
@@ -75,3 +105,45 @@ public:
         return last_pulse_us;
     }
 };
+
+typedef PwmActuator<
+    PwmKind::SERVO_X,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_x)>
+    ServoX;
+
+typedef PwmActuator<
+    PwmKind::SERVO_Y,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_y)>
+    ServoY;
+
+typedef PwmActuator<
+    PwmKind::BETA_TOP,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_top)>
+    BetaTop;
+
+typedef PwmActuator<
+    PwmKind::BETA_BOTTOM,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_bottom)>
+    BetaBottom;
+
+typedef PwmActuator<
+    PwmKind::BETA_CW,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_cw)>
+    BetaCW;
+
+typedef PwmActuator<
+    PwmKind::BETA_CCW,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_ccw)>
+    BetaCCW;
+
+typedef PwmActuator<
+    PwmKind::MOTOR_TOP,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top)>
+    MotorTop;
+
+typedef PwmActuator<
+    PwmKind::MOTOR_BOTTOM,
+    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom)>
+    MotorBottom;
+
+#endif
