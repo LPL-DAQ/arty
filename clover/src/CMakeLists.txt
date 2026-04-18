@@ -12,7 +12,8 @@ target_sources(app PRIVATE main.cpp
     StateThrustSeq.cpp
     StateAbort.cpp
     AnalogSensors.cpp
-    MutexGuard.cpp)
+    MutexGuard.cpp
+    PwmActuator.cpp)
 
 
 if(CONFIG_HORNET)
