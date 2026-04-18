@@ -54,12 +54,12 @@ TODO:
         pwms =
             <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_top    Pin 3   EMC_05    FlexPWM4.2 B */
             <&flexpwm2_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_bottom Pin 4   EMC_06    FlexPWM2.0 A */
-            <&flexpwm1_pwm2 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_x      Pin 24  AD_B0_12  FlexPWM1.2 X */
-            <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_y      Pin 25  AD_B0_13  FlexPWM1.2 X */
+            <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_x      Pin 24  AD_B0_12  FlexPWM1.2 X */
+            <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_y      Pin 25  AD_B0_13  FlexPWM1.2 X */
             <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_top     Pin 28  EMC_32    FlexPWM3.1 B */
             <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_bottom  Pin 29  EMC_31    FlexPWM3.1 A */
-            <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 36  EMC_38    FlexPWM1.3 B */
-            <&flexpwm1_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* beta_ccw     Pin 37  EMC_39    FlexPWM1.3 A */
+            <&flexpwm2_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 36  EMC_38    FlexPWM1.3 B */
+            <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* beta_ccw     Pin 37  EMC_39    FlexPWM1.3 A */
 
 
         pwm-names = "motor_top", "motor_bottom",
@@ -140,8 +140,17 @@ TODO:
        AD_B0_13 -> FlexPWM1_PWMX3 (servo_y) */
     pinmux_flexpwm1_pwm2: pinmux_flexpwm1_pwm2 {
         group0 {
-            pinmux = <&iomuxc_gpio_ad_b0_12_flexpwm1_pwmx2>,
-                     <&iomuxc_gpio_ad_b0_13_flexpwm1_pwmx3>;
+            pinmux = <&iomuxc_gpio_ad_b0_12_flexpwm1_pwmx2>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+        pinmux_flexpwm1_pwm3: pinmux_flexpwm1_pwm3 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b0_13_flexpwm1_pwmx3>;
             bias-disable;
             drive-strength = "r0-6";
             slew-rate = "slow";
@@ -164,10 +173,10 @@ TODO:
 
     /* EMC_38 -> FlexPWM1_PWMA3 (beta_cw)
        EMC_39 -> FlexPWM1_PWMB3 (beta_ccw) */
-    pinmux_flexpwm1_pwm3: pinmux_flexpwm1_pwm3 {
+    pinmux_flexpwm2_pwm3: pinmux_flexpwm2_pwm3 {
         group0 {
-            pinmux = <&iomuxc_gpio_emc_38_flexpwm1_pwma3>,
-                     <&iomuxc_gpio_emc_39_flexpwm1_pwmb3>;
+            pinmux = <&iomuxc_gpio_b1_02_flexpwm2_pwma3>,
+                     <&iomuxc_gpio_b1_03_flexpwm2_pwmb3>;
             bias-disable;
             drive-strength = "r0-6";
             slew-rate = "slow";
@@ -318,15 +327,21 @@ TODO:
     status = "okay";
 };
 
+&flexpwm1_pwm3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm1_pwm3>;
+    status = "okay";
+};
+
 &flexpwm3_pwm1 {
     pinctrl-names = "default";
     pinctrl-0 = <&pinmux_flexpwm3_pwm1>;
     status = "okay";
 };
 
-&flexpwm1_pwm3 {
+&flexpwm2_pwm3 {
     pinctrl-names = "default";
-    pinctrl-0 = <&pinmux_flexpwm1_pwm3>;
+    pinctrl-0 = <&pinmux_flexpwm2_pwm3>;
     status = "okay";
 };
 
