@@ -19,6 +19,7 @@ void StateEstimator::init()
 void StateEstimator::reset()
 {
     estimate = EstimatedState_init_default;
+    estimate.R_WB.qw = 1.0f; // to get identity q
     last_time_ms = 0;
     has_last_time = false;
 }

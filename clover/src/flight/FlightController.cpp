@@ -77,7 +77,7 @@ std::expected<void, Error> FlightController::init()
     pidYTilt.setDerivativeLowPass(10.0); // 10 Hz
 
     pidZ.setIntegralZone(0.05); // only use intelgral within 5 cm of target
-    pidZ.setOutputLimits(-0.075, 0.075); // Max thrust variance from weight
+    pidZ.setOutputLimits(-0.2, 0.1); // Max thrust variance from weight, as percentage
 
     return {};
 }
@@ -447,3 +447,13 @@ const char* FlightController::get_state_name(FlightState state)
         return "Landing";
     return "Unknown State";
 }
+
+#if CONFIG_TEST
+void FlightController::set_desired_state_for_testing(const DesiredState& state) {
+    des_state = state;
+}
+
+void FlightController::set_loop_count_for_testing(uint32_t count) {
+    loopCount = count;
+}
+#endif

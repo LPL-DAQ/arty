@@ -33,6 +33,11 @@ namespace FlightController {
     std::pair<FlightStateOutput, FlightLandingData> landing_tick(int64_t current_time, int64_t start_time);
     std::pair<FlightStateOutput, FlightAbortData> abort_tick(int64_t current_time, int64_t entry_time);
 
+#if CONFIG_TEST
+    void set_desired_state_for_testing(const DesiredState& state);
+    void set_loop_count_for_testing(uint32_t count);
+#endif
+
 }
 
 #endif  // APP_FLIGHT_CONTROLLER_H
