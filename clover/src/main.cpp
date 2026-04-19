@@ -5,40 +5,52 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define PSRAM_BASE     0x70000000u
-#define PSRAM_SIZE     (16u * 1024u * 1024u)
+#define PSRAM_BASE   0x70000000u
+#define HALF_SIZE    (8u * 1024u * 1024u)
+#define HALF_WORDS   (HALF_SIZE / sizeof(uint32_t))
+#define TOTAL_SIZE   (2u * HALF_SIZE)
 
-#define SEG_WORDS      16u
-#define SEG_BYTES      (SEG_WORDS * sizeof(uint32_t))
-#define STEP_BYTES     4096u   /* */
-
-static int test_segment(uint32_t *addr, uint32_t seed)
+static inline uint32_t pattern_a(uint32_t i)
 {
-    uint32_t expected[SEG_WORDS];
+    return 0xA5A50000u ^ i;
+}
 
-    /* write */
-    for (size_t i = 0; i < SEG_WORDS; i++) {
-        expected[i] = seed ^ (uint32_t)i;
-        addr[i] = expected[i];
+static inline uint32_t pattern_b(uint32_t i)
+{
+    return 0x5A5A0000u ^ i;
+}
+
+static int write_region(volatile uint32_t *base,
+                        uint32_t words,
+                        uint32_t (*pattern_fn)(uint32_t))
+{
+    for (uint32_t i = 0; i < words; i++) {
+        base[i] = pattern_fn(i);
     }
 
     __DSB();
     __ISB();
-
-    /* ensure write to PSRAM */
-    sys_cache_data_flush_range((void *)addr, SEG_BYTES);
-    sys_cache_data_invd_range((void *)addr, SEG_BYTES);
-
+    sys_cache_data_flush_range((void *)base, words * sizeof(uint32_t));
+    sys_cache_data_invd_range((void *)base, words * sizeof(uint32_t));
     __DSB();
     __ISB();
 
-    /* read back */
-    for (size_t i = 0; i < SEG_WORDS; i++) {
-        uint32_t readback = addr[i];
-        if (readback != expected[i]) {
-            printk("FAIL @ 0x%08x idx %u: wrote 0x%08x read 0x%08x\n",
-                   (uint32_t)addr, (unsigned)i,
-                   expected[i], readback);
+    return 0;
+}
+
+static int verify_region(volatile uint32_t *base,
+                         uint32_t words,
+                         uint32_t (*pattern_fn)(uint32_t),
+                         const char *label)
+{
+    for (uint32_t i = 0; i < words; i++) {
+        uint32_t expected = pattern_fn(i);
+        uint32_t readback = base[i];
+
+        if (readback != expected) {
+            printk("FAIL in %s at word %u (addr 0x%08x): wrote 0x%08x read 0x%08x\n",
+                   label, i, (uint32_t)((uintptr_t)base + (i * 4u)),
+                   expected, readback);
             return -1;
         }
     }
@@ -48,31 +60,61 @@ static int test_segment(uint32_t *addr, uint32_t seed)
 
 int main(void)
 {
+    volatile uint32_t *psram = (volatile uint32_t *)PSRAM_BASE;
+    volatile uint32_t *first_half = psram;
+    volatile uint32_t *second_half = psram + HALF_WORDS;
+
     usb_enable(NULL);
 
-    printk("PSRAM segment test start\n");
+    printk("PSRAM 16MB boundary test start\n");
+    printk("Testing %u bytes total (%u bytes per half)\n", TOTAL_SIZE, HALF_SIZE);
 
-    uint32_t tested = 0;
+    sys_cache_data_flush_range((void *)psram, TOTAL_SIZE);
+    sys_cache_data_invd_range((void *)psram, TOTAL_SIZE);
+    __DSB();
+    __ISB();
 
-    for (uint32_t offset = 0;
-         offset + SEG_BYTES <= PSRAM_SIZE;
-         offset += STEP_BYTES) {
-
-        uint32_t *addr = (uint32_t *)(PSRAM_BASE + offset);
-        uint32_t seed = 0xA5A50000u ^ offset;
-
-        if (test_segment(addr, seed) != 0) {
-            printk("PSRAM TEST FAILED at offset 0x%08x\n", offset);
-            while (1) {
-                k_sleep(K_SECONDS(1));
-            }
+    printk("Writing first 8MB...\n");
+    if (write_region(first_half, HALF_WORDS, pattern_a) != 0) {
+        printk("WRITE first half FAILED\n");
+        while (1) {
+            k_sleep(K_SECONDS(1));
         }
-
-        tested++;
     }
 
-    printk("PSRAM segment test PASS\n");
-    printk("Tested segments: %u (step %u bytes)\n", tested, STEP_BYTES);
+    printk("Verifying first 8MB...\n");
+    if (verify_region(first_half, HALF_WORDS, pattern_a, "first half") != 0) {
+        printk("VERIFY first half FAILED\n");
+        while (1) {
+            k_sleep(K_SECONDS(1));
+        }
+    }
+
+    printk("Writing second 8MB...\n");
+    if (write_region(second_half, HALF_WORDS, pattern_b) != 0) {
+        printk("WRITE second half FAILED\n");
+        while (1) {
+            k_sleep(K_SECONDS(1));
+        }
+    }
+
+    printk("Verifying second 8MB...\n");
+    if (verify_region(second_half, HALF_WORDS, pattern_b, "second half") != 0) {
+        printk("VERIFY second half FAILED\n");
+        while (1) {
+            k_sleep(K_SECONDS(1));
+        }
+    }
+
+    printk("Re-verifying first 8MB after second-half write...\n");
+    if (verify_region(first_half, HALF_WORDS, pattern_a, "first half after second write") != 0) {
+        printk("ALIASING DETECTED: second 8MB overwrote first 8MB\n");
+        while (1) {
+            k_sleep(K_SECONDS(1));
+        }
+    }
+
+    printk("PSRAM 16MB boundary test PASS\n");
 
     while (1) {
         k_sleep(K_SECONDS(1));

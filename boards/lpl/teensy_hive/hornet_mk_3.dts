@@ -36,10 +36,17 @@ TODO:
         zephyr,console = &cdc_acm_uart0;
     };
 
-    psram: memory@70000000 {
+    psram0: memory@70000000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x70000000 0x1000000>;   // 16MB
-        zephyr,memory-region = "PSRAM";
+        reg = <0x70000000 0x800000>;   /* 8MB */
+        zephyr,memory-region = "PSRAM0";
+        zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
+    };
+
+    psram1: memory@70800000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x70800000 0x800000>;   /* 8MB */
+        zephyr,memory-region = "PSRAM1";
         zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
     };
 };
@@ -105,6 +112,7 @@ TODO:
     pinmux_flexspi2: pinmux_flexspi2 {
         group0 {
             pinmux = <
+                &iomuxc_gpio_emc_22_flexspi2_a_ss1_b
                 &iomuxc_gpio_emc_24_flexspi2_a_ss0_b
                 &iomuxc_gpio_emc_25_flexspi2_a_sclk
                 &iomuxc_gpio_emc_26_flexspi2_a_data0
@@ -132,10 +140,18 @@ TODO:
     reg-names = "reg_base", "ahb";
     ahb-boundary = "1024";
 
-    aps6404l: aps6404l@0 {
+    apsram0: aps6404l@0 {
         compatible = "nxp,imx-flexspi-aps6404l";
         reg = <0>;
-        size = <134217728>;
+        size = <67108864>;
+        spi-max-frequency = <30000000>;
+        status = "okay";
+    };
+
+    apsram1: aps6404l@1 {
+        compatible = "nxp,imx-flexspi-aps6404l";
+        reg = <1>;
+        size = <67108864>;
         spi-max-frequency = <30000000>;
         status = "okay";
     };
