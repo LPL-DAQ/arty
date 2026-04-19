@@ -115,6 +115,7 @@ TODO:
             drive-strength = "r0-6";
             slew-rate = "fast";
             nxp,speed = "100-mhz";
+            input-enable;
         };
     };
 };
@@ -124,6 +125,9 @@ TODO:
     pinctrl-0 = <&pinmux_flexspi2>;
     pinctrl-names = "default";
 
+    ahb-cacheable;
+    ahb-prefetch;
+
     reg = <0x402a4000 0x4000>, <0x70000000 0x01000000>;
     reg-names = "reg_base", "ahb";
     ahb-boundary = "1024";
@@ -131,8 +135,8 @@ TODO:
     aps6404l: aps6404l@0 {
         compatible = "nxp,imx-flexspi-aps6404l";
         reg = <0>;
-        size = <134217728>;   /* 128 Mbit = 16 MB */
-        spi-max-frequency = <50000000>;
+        size = <134217728>;
+        spi-max-frequency = <30000000>;
         status = "okay";
     };
 };
