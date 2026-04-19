@@ -8,8 +8,8 @@ target_sources(app PRIVATE
     Trace.cpp
     PwmActuator.cpp
 )
-find_package(Eigen3 REQUIRED)
-target_link_libraries(app PRIVATE Eigen3::Eigen)
+# find_package(Eigen3 REQUIRED)
+# target_link_libraries(app PRIVATE Eigen3::Eigen)
 
 add_subdirectory(sensors)
 add_subdirectory(flight)

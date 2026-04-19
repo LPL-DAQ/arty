@@ -5,7 +5,7 @@
 #include "../server.h"
 #include "../config.h"
 #include "../PID.h"
-#include <Eigen/Geometry>
+#include "../math_util.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -167,16 +167,16 @@ std::pair<RCSHornetStateOutput, RCSFlightData> RCSHornetModule::flight_tick(Esti
 
     int64_t dt = k_uptime_get() - previous_timestamp;
 
-    Eigen::Quaterniond q_wb(
+    Quaternion q_wb = util::createQuaternion(
         state.R_WB.qw,
         state.R_WB.qx,
         state.R_WB.qy,
         state.R_WB.qz
     );
-    q_wb.normalize();
+    q_wb = util::normalizeQuaternion(q_wb);
     // yaw, pitch, roll
-    Eigen::Vector3d euler = q_wb.toRotationMatrix().eulerAngles(2, 1, 0);
-    double roll_position = euler[2];
+    Vector3D euler = util::quaternionToEulerAngles(q_wb);
+    double roll_position = euler.z;
     // TODO: i need angular rates in the state estimate
     float roll_velocity = 0.0;
 

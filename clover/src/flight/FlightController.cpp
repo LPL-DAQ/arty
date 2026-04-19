@@ -4,9 +4,8 @@
 #include "ControllerConfig.h"
 #include "config.h"
 #include "../PID.h"
+#include "../math_util.h"
 #include <array>
-#include <Eigen/Core> // how do we get this?
-#include <Eigen/Geometry>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -85,15 +84,15 @@ static std::array<float, 2> lateralPID(EstimatedState state)
 {
     std::array<float, 2> out{};
 
-    Eigen::Quaterniond q_wb(
+    Quaternion q_wb = util::createQuaternion(
         state.R_WB.qw,
         state.R_WB.qx,
         state.R_WB.qy,
         state.R_WB.qz
     );
-    q_wb.normalize();
+    q_wb = util::normalizeQuaternion(q_wb);
 
-    Eigen::Quaterniond q_bw = q_wb.conjugate();
+    Quaternion q_bw = util::conjugateQuaternion(q_wb);
 
     // Outer loop: desired literal tilt angles
     if (loopCount % 3 == 0)
@@ -109,27 +108,28 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     }
 
     // Actual vertical axis in world
-    Eigen::Vector3d z_act_w = q_bw * Eigen::Vector3d::UnitZ();
+    Vector3D z_act_w = util::multiplyQuaternionVector(q_bw, util::unitZ());
 
     // Debug values: literal actual tilt angles
     // TODO: have these logged in some way
-    float tilt_x_act = std::atan2(z_act_w.x(), z_act_w.z());
-    float tilt_y_act = std::atan2(z_act_w.y(), z_act_w.z());
+    float tilt_x_act = std::atan2(z_act_w.x, z_act_w.z);
+    float tilt_y_act = std::atan2(z_act_w.y, z_act_w.z);
 
     // Desired thrust axis in world from desired literal tilt angles
-    Eigen::Vector3d z_des_w(
+    Vector3D z_des_w = util::createVector3D(
         std::tan(des_state.world_tilt_x),
         std::tan(des_state.world_tilt_y),
         1.0
     );
-    z_des_w.normalize();
+    // Normalize the vector
+    z_des_w = util::normalizeVector3D(z_des_w);
 
     // Desired thrust axis expressed in body frame
-    Eigen::Vector3d z_des_b = q_wb * z_des_w;
+    Vector3D z_des_b = util::multiplyQuaternionVector(q_wb, z_des_w);
 
     // Body-frame reduced attitude error
     // Unit Z because we are in body frame
-    Eigen::Vector3d axis_error_b = Eigen::Vector3d::UnitZ().cross(z_des_b);
+    Vector3D axis_error_b = util::crossProduct(util::unitZ(), z_des_b);
 
     // Inner loop on body-axis tilt error
     // TODO: Check if this needs a negative sign.
@@ -137,8 +137,8 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     // TODO: find angular rates to feed to derivative
 
     // Feed body-axis error
-    out[0] = pidXTilt.calculate(0.0f, static_cast<float>(axis_error_b.x()), dt);
-    out[1] = pidYTilt.calculate(0.0f, static_cast<float>(axis_error_b.y()), dt);
+    out[0] = pidXTilt.calculate(0.0f, axis_error_b.x, dt);
+    out[1] = pidYTilt.calculate(0.0f, axis_error_b.y, dt);
 
     return out;
 }
