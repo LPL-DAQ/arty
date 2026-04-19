@@ -8,7 +8,6 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "sensors/AnalogSensors.h"
-#include "ranger/ThrottleValve.h"
 #include "sensors/lidar.h"
 #include "Controller.h"
 #include "FlightController.h"
@@ -17,7 +16,7 @@
 #ifdef CONFIG_HORNET
 
 #elif CONFIG_RANGER
-#include "ThrottleValve.h"
+#include "ranger/ThrottleValve.h"
 
 #else
 #error Either CONFIG_HORNET or CONFIG_RANGER must be set.
@@ -84,15 +83,6 @@ int main(void)
     if (auto result = Controller::init(); !result) {
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
         return 0;
-    }
-
-
-    LOG_INF("Initializing FlightController");
-    // Initialize flight controller helper state.
-    auto flight_ret = FlightController::init();
-    if (!flight_ret.has_value()) {
-        LOG_ERR("Failed to initialize flight controller: %s", flight_ret.error().build_message().c_str());
-        return 1;
     }
 
 

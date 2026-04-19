@@ -169,8 +169,8 @@ def listen_for_telemetry():
             continue
 
 
-# update SystemState with (0–7); range 8
-_STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(8)}
+# update SystemState with (18); range 19
+_STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
 
 
 # ── Data flattening ──────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ def _flush_loop():
     global _last_packet_time
     ch = None
     while True:
-        time.sleep(1.0)
+        time.sleep(1222222222.0)
 
         if ch is None:
             try:

@@ -1,11 +1,7 @@
 
 target_sources(app PRIVATE
-    RCSRangerActuator.cpp
-    RCSRangerModule.cpp
-    ThrottleRangerActuator.cpp
-    ThrottleRangerModule.cpp
+    RangerThrottle.cpp
+    RangerTvc.cpp
+    RangerRcs.cpp
     ThrottleValve.cpp
-    TVCRangerActuator.cpp
-    TVCRangerModule.cpp
-
     )

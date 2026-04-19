@@ -1,10 +1,7 @@
-#ifndef ARTY_THROTTLEVALVE_H
-#define ARTY_THROTTLEVALVE_H
+#pragma once
 
-// ***This should only be referenced by ThrottleRangerActuator***
-
-#include "../Error.h"
-#include "../MutexGuard.h"
+#include "Error.h"
+#include "MutexGuard.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -78,7 +75,7 @@ public:
     ThrottleValve() = delete;
 
     static std::expected<void, Error> init();
-    static std::expected<void, Error> tick(bool on, bool set_pos, float target_deg);
+    static std::expected<void, Error> tick(const ThrottleValveCommand& command);
 
     static void move(float target_deg);
     static void stop();
@@ -305,8 +302,12 @@ template <
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
 std::expected<void, Error>
-ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(bool on, bool set_pos, float target_deg)
+ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(const ThrottleValveCommand& command)
 {
+    const auto& on = command.enable;
+    const auto& set_pos = command.set_pos;
+    const auto& target_deg = command.target_deg;
+
     previous_encoder_position = current_encoder_position;
     current_encoder_position = get_pos_encoder();
 
@@ -383,7 +384,6 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
         LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
     }
 }
-
 
 template <
     ValveKind kind,
@@ -573,5 +573,3 @@ typedef ThrottleValve<
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_encoder_b_gpios),
     DEVICE_DT_GET(DT_ALIAS(lox_valve_stepper_pulse_counter))>
     LoxValve;
-
-#endif  // ARTY_THROTTLEVALVE_H
