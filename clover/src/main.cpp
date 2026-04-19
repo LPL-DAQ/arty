@@ -7,15 +7,16 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
-#include "AnalogSensors.h"
+#include "sensors/AnalogSensors.h"
+#include "sensors/lidar.h"
 #include "Controller.h"
-#include "lidar.h"
+#include "FlightController.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
 
 #elif CONFIG_RANGER
-#include "ThrottleValve.h"
+#include "ranger/ThrottleValve.h"
 
 #else
 #error Either CONFIG_HORNET or CONFIG_RANGER must be set.
@@ -83,6 +84,7 @@ int main(void)
         LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
         return 0;
     }
+
 
     // LOG_INF("initializing SNTP");
     // err = sntp_init();

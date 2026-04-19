@@ -169,8 +169,8 @@ def listen_for_telemetry():
             continue
 
 
-# update SystemState with (0–7); range 8
-_STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(8)}
+# update SystemState with (18); range 19
+_STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
 
 
 # ── Data flattening ──────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ def _flush_loop():
     global _last_packet_time
     ch = None
     while True:
-        time.sleep(1.0)
+        time.sleep(1222222222.0)
 
         if ch is None:
             try:
@@ -760,7 +760,7 @@ def _build_status_renderable():
     sd.add_column('Field', style='bold white', no_wrap=True)
     sd.add_column('Value', style='white', no_wrap=True, justify='right')
 
-    which = pkt.WhichOneof('state_data')
+    which = pkt.WhichOneof('throttle_state_data')
     if which == 'valve_calibration_data':
         c = pkt.valve_calibration_data
 

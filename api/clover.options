@@ -1,6 +1,6 @@
-ConfigureAnalogSensorsRequest.configs max_count:30
+ConfigureAnalogSensorsRequest.configs max_count:32
 
-ControlTrace.segments max_count:50
+ControlTrace.segments max_count:30
 
 Response.err max_size:500
 

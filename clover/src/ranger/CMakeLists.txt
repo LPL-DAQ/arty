@@ -1,1 +1,7 @@
-target_sources(app PRIVATE )
+
+target_sources(app PRIVATE
+    RangerThrottle.cpp
+    RangerTvc.cpp
+    RangerRcs.cpp
+    ThrottleValve.cpp
+    )

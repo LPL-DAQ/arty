@@ -18,9 +18,9 @@
 #include "server.h"
 
 #ifdef CONFIG_HORNET
-
+#include "hornet/PwmActuator.h"
 #elif CONFIG_RANGER
-#include "ThrottleValve.h"
+#include "ranger/ThrottleValve.h"
 
 #else
 #error Either CONFIG_HORNET or CONFIG_RANGER must be set.
@@ -103,10 +103,12 @@ bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
 
     if (bytes_read != static_cast<int>(count)) {
         LOG_ERR(
-            "zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass ZSOCK_MSG_WAITALL - got: %d, requested: %d",
+            "zsock_recv only partially filled its buffer from sock %d, this should be impossible as we pass ZSOCK_MSG_WAITALL - got: %d, requested: %d - errno "
+            "%d",
             sock,
             bytes_read,
-            count);
+            count,
+            errno);
         return false;
     }
 
@@ -210,63 +212,108 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
-        // Provided by ThrottleValve
-        case Request_reset_valve_position_tag: {
-            LOG_INF("Reset valve position");
-            // ADDED: Defer to the static controller to conform to std::expected pattern
-            cmd_result = Controller::handle_reset_valve_position(request.payload.reset_valve_position);
-            break;
-        }
-        case Request_calibrate_valve_tag: {
-            LOG_INF("Calibrate valve");
-            cmd_result = Controller::handle_calibrate_valve(request.payload.calibrate_valve);
-            break;
-        }
-        case Request_load_valve_sequence_tag: {
-            LOG_INF("Load valve sequence");
-            cmd_result = Controller::handle_load_valve_sequence(request.payload.load_valve_sequence);
-            break;
-        }
-        case Request_start_valve_sequence_tag: {
-            LOG_INF("Start valve sequence");
-            cmd_result = Controller::handle_start_valve_sequence(request.payload.start_valve_sequence);
-            break;
-        }
-        case Request_load_thrust_sequence_tag: {
-            LOG_INF("Load thrust sequence");
-            cmd_result = Controller::handle_load_thrust_sequence(request.payload.load_thrust_sequence);
-            break;
-        }
-        case Request_start_thrust_sequence_tag: {
-            LOG_INF("Start thrust sequence");
-            cmd_result = Controller::handle_start_thrust_sequence(request.payload.start_thrust_sequence);
-            break;
-        }
         case Request_abort_tag: {
-            LOG_INF("Abort");
+            LOG_INF("abort command");
             cmd_result = Controller::handle_abort(request.payload.abort);
             break;
         }
-        case Request_unprime_tag: {
-            LOG_INF("Unprime");
-            cmd_result = Controller::handle_unprime(request.payload.unprime);
-            break;
-        }
+
         case Request_halt_tag: {
-            LOG_INF("Halt");
+            LOG_INF("halt command");
             cmd_result = Controller::handle_halt(request.payload.halt);
             break;
         }
-        case Request_power_on_valve_tag: {
-            LOG_INF("Power on valve");
-            cmd_result = Controller::handle_power_on_valve(request.payload.power_on_valve);
+
+        case Request_unprime_tag: {
+            LOG_INF("unprime command");
+            cmd_result = Controller::handle_unprime(request.payload.unprime);
             break;
         }
-        case Request_power_off_valve_tag: {
-            LOG_INF("Power off valve");
-            cmd_result = Controller::handle_power_off_valve(request.payload.power_off_valve);
+
+        case Request_calibrate_throttle_valve_tag: {
+            LOG_INF("calibrate_throttle_valve command");
+            cmd_result = Controller::handle_calibrate_throttle_valve(request.payload.calibrate_throttle_valve);
             break;
         }
+
+        case Request_load_throttle_valve_sequence_tag: {
+            LOG_INF("load_throttle_valve_sequence command");
+            cmd_result = Controller::handle_load_throttle_valve_sequence(request.payload.load_throttle_valve_sequence);
+            break;
+        }
+
+        case Request_start_throttle_valve_sequence_tag: {
+            LOG_INF("start_throttle_valve_sequence command");
+            cmd_result = Controller::handle_start_throttle_valve_sequence(request.payload.start_throttle_valve_sequence);
+            break;
+        }
+
+        case Request_load_throttle_sequence_tag: {
+            LOG_INF("load_throttle_sequence command");
+            cmd_result = Controller::handle_load_throttle_sequence(request.payload.load_throttle_sequence);
+            break;
+        }
+
+        case Request_start_throttle_sequence_tag: {
+            LOG_INF("start_throttle_sequence command");
+            cmd_result = Controller::handle_start_throttle_sequence(request.payload.start_throttle_sequence);
+            break;
+        }
+
+        case Request_calibrate_tvc_tag: {
+            LOG_INF("calibrate_tvc command");
+            cmd_result = Controller::handle_calibrate_tvc(request.payload.calibrate_tvc);
+            break;
+        }
+
+        case Request_load_tvc_sequence_tag: {
+            LOG_INF("load_tvc_sequence command");
+            cmd_result = Controller::handle_load_tvc_sequence(request.payload.load_tvc_sequence);
+            break;
+        }
+
+        case Request_start_tvc_sequence_tag: {
+            LOG_INF("start_tvc_sequence command");
+            cmd_result = Controller::handle_start_tvc_sequence(request.payload.start_tvc_sequence);
+            break;
+        }
+
+        case Request_load_rcs_valve_sequence_tag: {
+            LOG_INF("load_rcs_valve_sequence command");
+            cmd_result = Controller::handle_load_rcs_valve_sequence(request.payload.load_rcs_valve_sequence);
+            break;
+        }
+
+        case Request_start_rcs_valve_sequence_tag: {
+            LOG_INF("start_rcs_valve_sequence command");
+            cmd_result = Controller::handle_start_rcs_valve_sequence(request.payload.start_rcs_valve_sequence);
+            break;
+        }
+
+        case Request_load_rcs_sequence_tag: {
+            LOG_INF("load_rcs_sequence command");
+            cmd_result = Controller::handle_load_rcs_sequence(request.payload.load_rcs_sequence);
+            break;
+        }
+
+        case Request_start_rcs_sequence_tag: {
+            LOG_INF("start_rcs_sequence command");
+            cmd_result = Controller::handle_start_rcs_sequence(request.payload.start_rcs_sequence);
+            break;
+        }
+
+        case Request_load_flight_sequence_tag: {
+            LOG_INF("load_flight_sequence command");
+            cmd_result = Controller::handle_load_flight_sequence(request.payload.load_flight_sequence);
+            break;
+        }
+
+        case Request_start_flight_sequence_tag: {
+            LOG_INF("start_flight_sequence command");
+            cmd_result = Controller::handle_start_flight_sequence(request.payload.start_flight_sequence);
+            break;
+        }
+
         default: {
             LOG_ERR(
                 "Request has invalid tag, this should be impossible as pb_decode should have produced a valid Request - got tag: %u", request.which_payload);
@@ -276,16 +323,17 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         Response response = Response_init_default;
 
-        // ADDED: If the Controller rejected the command, we format the Variadic Error
-        // into the Protobuf response and send it back to the Ground Station immediately.
+        // Populate error message in response if required.
         if (!cmd_result.has_value()) {
             response.has_err = true;
             MaxLengthString<MAX_ERR_MESSAGE_SIZE> err_msg = cmd_result.error().build_message();
 
-            // LEAD FIX: Safely copy the string using copy_buf
             err_msg.copy_buf(response.err, sizeof(response.err));
 
-            LOG_ERR("Command rejected, returning error to client: %s", response.err);
+            LOG_ERR("Command failed with error: %s", response.err);
+        }
+        else {
+            LOG_INF("Command OK");
         }
 
         // Send message over TCP with varint length prefix.
@@ -294,7 +342,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
     }
-
     zsock_close(client_socket);
 }
 
@@ -446,7 +493,7 @@ void serve_command_connections()
     }
 }
 
-K_THREAD_DEFINE(command_server, 4096, serve_command_connections, nullptr, nullptr, nullptr, 2, 0, 0);
+K_THREAD_DEFINE(command_server, 8192, serve_command_connections, nullptr, nullptr, nullptr, 2, 0, 0);
 
 /// Broadcasts UDP data packets using a multicast IP.
 void serve_data_connections()
@@ -474,41 +521,35 @@ void serve_data_connections()
 
     // Serve new connections indefinitely
     while (true) {
-        DataPacket data_packet;
+        DataPacket data_packet = Controller::get_next_data_packet();
 
-        // ADDED: Instead of a hardcoded k_sleep loop pumping dummy data, this thread now blocks natively on the
-        // thread-safe Zephyr message queue (telemetry_msgq) defined in Controller.cpp. The 1ms motor control loop
-        // will drop packets into this queue asynchronously. This decouples the real-time control from networking!
-        if (k_msgq_get(&telemetry_msgq, &data_packet, K_FOREVER) == 0) {
+        // Encode data packet exactly ONCE per tick, regardless of how many UDP clients are subscribed
+        uint8_t buf[DataPacket_size];
+        pb_ostream_t data_packet_ostream = pb_ostream_from_buffer(buf, DataPacket_size);
+        bool ok = pb_encode(&data_packet_ostream, DataPacket_fields, &data_packet);
+        if (!ok) {
+            LOG_ERR("Failed to encode data packet: %s", data_packet_ostream.errmsg);
+            continue;
+        }
 
-            // Encode data packet exactly ONCE per tick, regardless of how many UDP clients are subscribed
-            uint8_t buf[DataPacket_size];
-            pb_ostream_t data_packet_ostream = pb_ostream_from_buffer(buf, DataPacket_size);
-            bool ok = pb_encode(&data_packet_ostream, DataPacket_fields, &data_packet);
-            if (!ok) {
-                LOG_ERR("Failed to encode data packet: %s", data_packet_ostream.errmsg);
+        // Lock the client info guard and broadcast the already-encoded buffer to all subscribed IPs
+        MutexGuard data_client_info_guard{&data_client_info_lock};
+        for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
+            if (data_client_slot_indexes[i] == -1) {
                 continue;
             }
 
-            // Lock the client info guard and broadcast the already-encoded buffer to all subscribed IPs
-            MutexGuard data_client_info_guard{&data_client_info_lock};
-            for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-                if (data_client_slot_indexes[i] == -1) {
-                    continue;
-                }
+            const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
 
-                const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
-
-                // ADDED: static_cast to size_t to safely compare signed zsock_sendto return with unsigned bytes_written
-                if (static_cast<size_t>(bytes_sent) != data_packet_ostream.bytes_written) {
-                    LOG_ERR("sendto failed: bytes_sent=%d errno=%d", bytes_sent, errno);
-                }
+            // ADDED: static_cast to size_t to safely compare signed zsock_sendto return with unsigned bytes_written
+            if (static_cast<size_t>(bytes_sent) != data_packet_ostream.bytes_written) {
+                LOG_ERR("sendto failed: bytes_sent=%d errno=%d", bytes_sent, errno);
             }
         }
     }
 }
 
-K_THREAD_DEFINE(data_server, 1024 * 4, serve_data_connections, nullptr, nullptr, nullptr, 2, 0, 0);
+K_THREAD_DEFINE(data_server, 8192, serve_data_connections, nullptr, nullptr, nullptr, 2, 0, 0);
 
 /// Called at the end of startup, allowing the command and data server threads to initialize their respective sockets
 /// and serve connections.

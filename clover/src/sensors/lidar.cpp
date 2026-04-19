@@ -1,5 +1,5 @@
 #include "lidar.h"
-#include "MutexGuard.h"
+#include "../MutexGuard.h"
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
