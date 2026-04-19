@@ -9,17 +9,18 @@
 LOG_MODULE_REGISTER(TVCHornetActuator, LOG_LEVEL_INF);
 
 std::expected<void, Error> TVCHornetActuator::tick(TVCHornetStateOutput& output, DataPacket& data){
-    const float pitch_angle = std::clamp(output.target_pitch, ServoL::get_angle_min(), ServoL::get_angle_max());
-    const float yaw_angle = std::clamp(output.target_yaw, ServoR::get_angle_min(), ServoR::get_angle_max());
+    // Clamp angles to servo range: -90 to +90 degrees
+    const float pitch_angle = std::clamp(output.target_pitch, -90.0f, 90.0f);
+    const float yaw_angle = std::clamp(output.target_yaw, -90.0f, 90.0f);
 
-    auto err = ServoL::set_target_angle(pitch_angle);
-    if (!err) return err;
-    err = ServoR::set_target_angle(yaw_angle);
-    if (!err) return err;
+    // Convert angle to pulse width
+    // Mapping: -90° -> 1000µs, 0° -> 1500µs, +90° -> 2000µs
+    const uint32_t pitch_pulse_us = static_cast<uint32_t>(1500.0f + (pitch_angle * 5.55556f));
+    const uint32_t yaw_pulse_us = static_cast<uint32_t>(1500.0f + (yaw_angle * 5.555556f));
 
-    err = ServoL::tick();
+    auto err = ServoX::tick(pitch_pulse_us);
     if (!err) return err;
-    err = ServoR::tick();
+    err = ServoY::tick(yaw_pulse_us);
     if (!err) return err;
 
     data.which_tvc_actuator_data = DataPacket_tvc_hornet_data_tag;

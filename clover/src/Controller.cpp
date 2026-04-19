@@ -148,38 +148,38 @@ std::expected<void, Error> Controller::init()
     }
 #elif CONFIG_HORNET
     LOG_INF("Initializing PWM Actuators");
-    if (auto result = MotorBeta1::init(); !result) {
+    if (auto result = BetaTop::init(); !result) {
         LOG_ERR("Failed to initialize motor beta 1: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    if (auto result = MotorBeta2::init(); !result) {
+    if (auto result = BetaBottom::init(); !result) {
         LOG_ERR("Failed to initialize motor beta 2: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    if (auto result = MotorBeta3::init(); !result) {
+    if (auto result = BetaCW::init(); !result) {
         LOG_ERR("Failed to initialize motor beta 3: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    if (auto result = MotorBeta4::init(); !result) {
+    if (auto result = BetaCCW::init(); !result) {
         LOG_ERR("Failed to initialize motor beta 4: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    if (auto result = ServoL::init(); !result) {
+    if (auto result = ServoX::init(); !result) {
         LOG_ERR("Failed to initialize motor servo x: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    if (auto result = ServoR::init(); !result) {
+    if (auto result = ServoY::init(); !result) {
         LOG_ERR("Failed to initialize motor servo y: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    if (auto result = MotorCR::init(); !result) {
+    if (auto result = MotorTop::init(); !result) {
         LOG_ERR("Failed to initialize motor CR 1: %s", result.error().build_message().c_str());
         return std::unexpected(result.error());
     }
-    // if (auto result = MotorBeta1::init(); !result) {
-    //     LOG_ERR("Failed to initialize motor beta 1: %s", result.error().build_message().c_str());
-    //     return std::unexpected(result.error());
-    // }
+    if (auto result = MotorBottom::init(); !result) {
+        LOG_ERR("Failed to initialize motor CR 1: %s", result.error().build_message().c_str());
+        return std::unexpected(result.error());
+    }
 
 #endif
 

@@ -2,6 +2,7 @@
 #include "../PwmActuator.h"
 #include "../ControllerConfig.h"
 #include "../LookupTable.h"
+#include "../PwmActuator.h"
 #include <algorithm>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -13,24 +14,18 @@ std::expected<void, Error> RCSHornetActuator::tick(RCSHornetStateOutput& output,
     const float cw_throttle  = output.CW  ? throttle_value : 0.0f;
     const float ccw_throttle = output.CCW ? throttle_value : 0.0f;
 
+    // Convert throttle to pulse width: 0.0 -> 1000µs, 1.0 -> 2000µs
+    const uint32_t cw_pulse_us = static_cast<uint32_t>(1000.0f + (cw_throttle * 1000.0f));
+    const uint32_t ccw_pulse_us = static_cast<uint32_t>(1000.0f + (ccw_throttle * 1000.0f));
 
     // TODO: Check which actually corresponds to what
-    auto err = MotorBeta1::set_target_throttle(cw_throttle);
+    auto err = BetaTop::tick(cw_pulse_us);
     if (!err) return err;
-    err = MotorBeta2::set_target_throttle(ccw_throttle);
+    err = BetaBottom::tick(ccw_pulse_us);
     if (!err) return err;
-    err = MotorBeta3::set_target_throttle(cw_throttle);
+    err = BetaCW::tick(cw_pulse_us);
     if (!err) return err;
-    err = MotorBeta4::set_target_throttle(ccw_throttle);
-    if (!err) return err;
-
-    err = MotorBeta1::tick();
-    if (!err) return err;
-    err = MotorBeta2::tick();
-    if (!err) return err;
-    err = MotorBeta3::tick();
-    if (!err) return err;
-    err = MotorBeta4::tick();
+    err = BetaCCW::tick(ccw_pulse_us);
     if (!err) return err;
 
     data.cw_power_on = output.CW;
