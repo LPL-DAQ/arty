@@ -2,7 +2,7 @@
 #define APP_MATH_H
 #include <cstdint>
 #include <cmath>
-#define M_PI 3.14159265358979323846f
+
 #include "clover.pb.h"
 
 namespace util
@@ -67,8 +67,8 @@ namespace util
 
       // Pitch (y-axis rotation)
       const float sinp = 2.0f * (qw * qy - qz * qx);
-
-      const float pitch = std::abs(sinp) >= 1.0f ? std::copysign(M_PI / 2.0f, sinp) : std::asin(sinp);
+      const float pi = 3.14159265358979323846f;
+      const float pitch = std::abs(sinp) >= 1.0f ? std::copysignf(pi / 2.0f, sinp) : std::asin(sinp);
 
       // Yaw (z-axis rotation)
       const float siny_cosp = 2.0f * (qw * qz + qx * qy);

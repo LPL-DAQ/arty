@@ -10,6 +10,8 @@
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 #include <cmath>
+#include "clover.pb.h"
+
 
 LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
 
@@ -112,8 +114,8 @@ static std::array<float, 2> lateralPID(EstimatedState state)
 
     // Debug values: literal actual tilt angles
     // TODO: have these logged in some way
-    float tilt_x_act = std::atan2(z_act_w.x, z_act_w.z);
-    float tilt_y_act = std::atan2(z_act_w.y, z_act_w.z);
+    [[maybe_unused]] float tilt_x_act = std::atan2(z_act_w.x, z_act_w.z);
+    [[maybe_unused]] float tilt_y_act = std::atan2(z_act_w.y, z_act_w.z);
 
     // Desired thrust axis in world from desired literal tilt angles
     Vector3D z_des_w = util::createVector3D(
