@@ -48,15 +48,20 @@ namespace RCSImpl = RCSHornetModule;
 
 LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
 
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
+K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 100, 1);
 
 // Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
 k_work_q controller_step_work_q;
 
 K_MUTEX_DEFINE(controller_state_lock);
-
 static SystemState get_current_system_state()
+
+/// Count of how many packets had to be dropped, used for logging. Owned by controller tick workqueue thread.
+static int recent_packets_attempted = 0;
+static int recent_packets_dropped = 0;
+
+std::expected<void, Error> Controller::change_state(SystemState new_state)
 {
     MutexGuard guard{&controller_state_lock};
     return Controller::current_state;
@@ -168,8 +173,6 @@ std::expected<void, Error> Controller::init()
     return {};
 }
 
-static int step_control_loop_debounce_warn_count = 0;
-
 void Controller::step_control_loop(k_work*)
 {
     int64_t current_time = k_uptime_get();
@@ -214,18 +217,20 @@ void Controller::step_control_loop(k_work*)
     data.controller_timing.controller_tick_time_ns = (k_cycle_get_64() - start_cycle) * (1e9f / SystemCoreClock);
     data.sequence_number = 0; // TODO: how is this supposed to be set?
 
+    // Log metrics on packet transmission success rates.
+    recent_packets_attempted++;
     if (k_msgq_put(&telemetry_msgq, &data, K_NO_WAIT) != 0) {
-        if (step_control_loop_debounce_warn_count < 5) {
-            LOG_WRN("Telemetry queue full, packet dropped");
-        }
-        else if (step_control_loop_debounce_warn_count == 5) {
-            LOG_WRN("Telemetry queue full, packet dropped (silencing further warnings)");
-        }
-        step_control_loop_debounce_warn_count++;
+        recent_packets_dropped++;
     }
-    else {
-        // Reset warning count
-        step_control_loop_debounce_warn_count = 0;
+    if (recent_packets_attempted == 10000 && recent_packets_dropped > 0) {
+        float percent_packets_dropped = static_cast<float>(recent_packets_dropped) / recent_packets_attempted * 100.0f;
+        LOG_WRN(
+            "Packets were dropped in the past 10 sec: %f%% (%d dropped, %d attempted)",
+            static_cast<double>(percent_packets_dropped),
+            recent_packets_dropped,
+            recent_packets_attempted);
+        recent_packets_attempted = 0;
+        recent_packets_dropped = 0;
     }
 
 }
