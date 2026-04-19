@@ -5,12 +5,12 @@
 #include "config.h"
 #include "../PID.h"
 #include "../math_util.h"
+#include "../Trace.h"
 #include <array>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 #include <cmath>
-#include "clover.pb.h"
 
 
 LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
