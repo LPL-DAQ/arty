@@ -1,10 +1,10 @@
-#include "../../../clover/src/flight/FlightController.h"
+#include "../../../../clover/src/flight/FlightController.h"
 #include <zephyr/ztest.h>
 
 
 
 
-ZTEST(FlightController_tests, flight_tick_given_default_state)
+ZTEST(FlightController_tests, test_flight_tick_given_default_state)
 {
     // Create a 2-second trace with all zeros (no movement)
     FlightLoadSequenceRequest req = FlightLoadSequenceRequest_init_default;
@@ -14,32 +14,39 @@ ZTEST(FlightController_tests, flight_tick_given_default_state)
     req.x_position_trace.total_time_ms = 2000;
     req.x_position_trace.segments[0].start_ms = 0;
     req.x_position_trace.segments[0].length_ms = 2000;
-    req.x_position_trace.segments[0].linear.start_val = 0.0f;
-    req.x_position_trace.segments[0].linear.end_val = 0.0f;
+    req.x_position_trace.segments[0].which_type = Segment_linear_tag;
+    req.x_position_trace.segments[0].type.linear.start_val = 0.0f;
+    req.x_position_trace.segments[0].type.linear.end_val = 0.0f;
 
     // Y trace
     req.y_position_trace.total_time_ms = 2000;
     req.y_position_trace.segments[0].start_ms = 0;
     req.y_position_trace.segments[0].length_ms = 2000;
-    req.y_position_trace.segments[0].linear.start_val = 0.0f;
-    req.y_position_trace.segments[0].linear.end_val = 0.0f;
+    req.y_position_trace.segments[0].which_type = Segment_linear_tag;
+    req.y_position_trace.segments[0].type.linear.start_val = 0.0f;
+    req.y_position_trace.segments[0].type.linear.end_val = 0.0f;
 
     // Z trace
     req.z_position_trace.total_time_ms = 2000;
     req.z_position_trace.segments[0].start_ms = 0;
     req.z_position_trace.segments[0].length_ms = 2000;
-    req.z_position_trace.segments[0].linear.start_val = 0.0f;
-    req.z_position_trace.segments[0].linear.end_val = 0.0f;
+    req.z_position_trace.segments[0].which_type = Segment_linear_tag;
+    req.z_position_trace.segments[0].type.linear.start_val = 0.0f;
+    req.z_position_trace.segments[0].type.linear.end_val = 0.0f;
 
     // Roll trace
     req.roll_angle_trace.total_time_ms = 2000;
     req.roll_angle_trace.segments[0].start_ms = 0;
     req.roll_angle_trace.segments[0].length_ms = 2000;
-    req.roll_angle_trace.segments[0].linear.start_val = 0.0f;
-    req.roll_angle_trace.segments[0].linear.end_val = 0.0f;
+    req.roll_angle_trace.segments[0].which_type = Segment_linear_tag;
+    req.roll_angle_trace.segments[0].type.linear.start_val = 0.0f;
+    req.roll_angle_trace.segments[0].type.linear.end_val = 0.0f;
 
     // Load traces
-    FlightController::load_traces_for_testing(req);
+    auto load_result = FlightController::load_sequence(req);
+    if (!load_result) {
+        zassert_true(false, "Failed to load traces");
+    }
 
     // Reset loop count so outer loop runs
     FlightController::set_loop_count_for_testing(0);
@@ -65,13 +72,13 @@ ZTEST(FlightController_tests, flight_tick_given_default_state)
     zassert_equal(out.next_state, FlightState_FLIGHT_STATE_FLIGHT_SEQ);
 }
 
-ZTEST(FlightController_tests, abort_tick_transitions_to_idle_after_500ms)
+ZTEST(FlightController_tests, test_abort_tick_transitions_to_idle_after_500ms)
 {
     auto [out, data] = FlightController::abort_tick(501, 0);
     zassert_equal(out.next_state, FlightState_FLIGHT_STATE_IDLE);
 }
 
-ZTEST(FlightController_tests, abort_tick_stays_in_abort_before_500ms)
+ZTEST(FlightController_tests, test_abort_tick_stays_in_abort_before_500ms)
 {
     auto [out, data] = FlightController::abort_tick(499, 0);
     zassert_equal(out.next_state, FlightState_FLIGHT_STATE_ABORT);

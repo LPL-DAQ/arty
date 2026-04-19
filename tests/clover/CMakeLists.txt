@@ -14,4 +14,5 @@ zephyr_include_directories(${CMAKE_CURRENT_BINARY_DIR})
 zephyr_nanopb_sources(app ../../api/clover.proto)
 
 target_include_directories(app PRIVATE ../../darwin/src)
+target_include_directories(app PRIVATE ../../clover/src)
 add_subdirectory(src)

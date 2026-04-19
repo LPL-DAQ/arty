@@ -10,8 +10,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
-#include <Eigen/Core>
-#include <Eigen/Geometry>
 #include <cmath>
 
 LOG_MODULE_REGISTER(FlightController, LOG_LEVEL_INF);
