@@ -10,5 +10,5 @@ void reset();
 std::expected<std::tuple<float, float, float, FlightControllerMetrics>, Error>
 tick(float x_command_m, float y_command_m, float z_command_m);
 
-std::expected<void, Error> handle_configure_gains(/* TODO */);
+std::expected<void, Error> handle_configure_gains(const ConfigureFlightControllerGainsRequest& req);
 }  // namespace FlightController

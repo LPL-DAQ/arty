@@ -10,8 +10,26 @@
 class PID
 {
 public:
-    PID(double kp, double ki, double kd)
-        : kp_(kp), ki_(ki), kd_(kd) {}
+    PID(double kp, double ki, double kd,
+        double min_out = -1e6, double max_out = 1e6,
+        double min_integral = -1e6, double max_integral = 1e6,
+        double integral_zone = std::numeric_limits<double>::infinity(),
+        double deriv_lowpass_hz = 0.0)
+        : kp_(kp), ki_(ki), kd_(kd)
+    {
+        if (min_out != -1e6 || max_out != 1e6) {
+            setOutputLimits(min_out, max_out);
+        }
+        if (min_integral != -1e6 || max_integral != 1e6) {
+            setIntegralLimits(min_integral, max_integral);
+        }
+        if (integral_zone != std::numeric_limits<double>::infinity()) {
+            setIntegralZone(integral_zone);
+        }
+        if (deriv_lowpass_hz > 0.0) {
+            setDerivativeLowPass(deriv_lowpass_hz);
+        }
+    }
 
 
 

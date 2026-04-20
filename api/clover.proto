@@ -12,7 +12,7 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 34
+// next tag: 37
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
@@ -35,6 +35,9 @@ message Request {
 
     // Transitions from any PRIME state -> IDLE
     UnprimeRequest unprime = 35;
+
+    // Configure flight controller
+    ConfigureFlightControllerGainsRequest configure_flight_controller_gains = 36;
 
     // Transitions IDLE -> CALIBRATE_THROTTLE_VALVE
     CalibrateThrottleValveRequest calibrate_throttle_valve = 33;
@@ -265,6 +268,73 @@ message LoadFlightSequenceRequest {
 }
 
 message StartFlightSequenceRequest {}
+
+// Configure flight controller gains and limits
+message ConfigureFlightControllerGainsRequest {
+  // PID gains
+  optional float pidXTilt_kp = 1;
+  optional float pidXTilt_ki = 2;
+  optional float pidXTilt_kd = 3;
+  optional float pidYTilt_kp = 4;
+  optional float pidYTilt_ki = 5;
+  optional float pidYTilt_kd = 6;
+  optional float pidX_kp = 7;
+  optional float pidX_ki = 8;
+  optional float pidX_kd = 9;
+  optional float pidY_kp = 10;
+  optional float pidY_ki = 11;
+  optional float pidY_kd = 12;
+  optional float pidZ_kp = 13;
+  optional float pidZ_ki = 14;
+  optional float pidZ_kd = 15;
+  optional float pidZVelocity_kp = 16;
+  optional float pidZVelocity_ki = 17;
+  optional float pidZVelocity_kd = 18;
+
+  // Output limits
+  optional float pidXTilt_min_out = 19;
+  optional float pidXTilt_max_out = 20;
+  optional float pidYTilt_min_out = 21;
+  optional float pidYTilt_max_out = 22;
+  optional float pidX_min_out = 23;
+  optional float pidX_max_out = 24;
+  optional float pidY_min_out = 25;
+  optional float pidY_max_out = 26;
+  optional float pidZ_min_out = 27;
+  optional float pidZ_max_out = 28;
+  optional float pidZVelocity_min_out = 29;
+  optional float pidZVelocity_max_out = 30;
+
+  // Integral limits
+  optional float pidXTilt_min_integral = 31;
+  optional float pidXTilt_max_integral = 32;
+  optional float pidYTilt_min_integral = 33;
+  optional float pidYTilt_max_integral = 34;
+  optional float pidX_min_integral = 35;
+  optional float pidX_max_integral = 36;
+  optional float pidY_min_integral = 37;
+  optional float pidY_max_integral = 38;
+  optional float pidZ_min_integral = 39;
+  optional float pidZ_max_integral = 40;
+  optional float pidZVelocity_min_integral = 41;
+  optional float pidZVelocity_max_integral = 42;
+
+  // Integral zones
+  optional float pidXTilt_integral_zone = 43;
+  optional float pidYTilt_integral_zone = 44;
+  optional float pidX_integral_zone = 45;
+  optional float pidY_integral_zone = 46;
+  optional float pidZ_integral_zone = 47;
+  optional float pidZVelocity_integral_zone = 48;
+
+  // Derivative low-pass filter
+  optional float pidXTilt_deriv_lp_hz = 49;
+  optional float pidYTilt_deriv_lp_hz = 50;
+  optional float pidX_deriv_lp_hz = 51;
+  optional float pidY_deriv_lp_hz = 52;
+  optional float pidZ_deriv_lp_hz = 53;
+  optional float pidZVelocity_deriv_lp_hz = 54;
+}
 
 // Control sequences
 message ControlTrace {
