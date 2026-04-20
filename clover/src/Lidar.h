@@ -40,6 +40,7 @@ private:
 
     // Initialized in init()
     static inline k_mutex reading_mutex;
+    static inline k_sem data_ready_sem;
     static inline uint8_t lidar_ring_buf_data[RING_BUF_SIZE];
     static inline ring_buf uart_ringbuf;
 
@@ -51,6 +52,7 @@ private:
 
 public:
     static std::expected<void, Error> init();
+    static void start_sense();
     static std::optional<std::pair<LidarReading, float>> read();
 
     // Main sense loop thread, do not call directly.
@@ -61,29 +63,26 @@ public:
 template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> void Lidar<kind, uart_dt_init, ready_sem_ptr>::uart_handler(const device*, void*)
 {
     LOG_MODULE_DECLARE(Lidar);
-
     int err = uart_irq_update(uart_dev);
-    if (err) {
+    if (err<0) {
         LOG_ERR("%s Failed to start processing UART interrupts: %s", kind_to_prefix(kind), Error::from_code(err).build_message().c_str());
         return;
     }
 
     // Populate ringbuf from UART fifo.
-    while (true) {
-        int is_ready = uart_irq_rx_ready(uart_dev);
-        if (is_ready < 0) {
-            LOG_ERR("%s Failed to start processing UART interrupts: %s", kind_to_prefix(kind), Error::from_code(is_ready).build_message().c_str());
-            return;
-        }
-
+    while (uart_irq_rx_ready(uart_dev) > 0) {
         uint8_t received_byte;
         int bytes_read = uart_fifo_read(uart_dev, &received_byte, 1);
         if (bytes_read < 0) {
             LOG_ERR("%s Failed to read from UART fifo: %s", kind_to_prefix(kind), Error::from_code(bytes_read).build_message().c_str());
             return;
         }
+        if (bytes_read == 0) {
+            break;
+        }
         ring_buf_put(&uart_ringbuf, &received_byte, 1);
     }
+    k_sem_give(&data_ready_sem);
 }
 
 /// Continuously populates sensor reading from LiDAR over UART. Runs in dedicated thread.
@@ -94,11 +93,13 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* read_sem_ptr> void 
     // Await initialization
     k_sem_take(ready_sem, K_FOREVER);
     LOG_INF("%s Sense loop initiated", kind_to_prefix(kind));
-
+    LOG_INF("%s Running on thread %p", kind_to_prefix(kind), k_current_get());
     uint8_t msg[MAX_MSG_SIZE];
     int i = 0;
 
     while (1) {
+        k_sem_take(&data_ready_sem, K_FOREVER);
+
         uint8_t byte;
         while (ring_buf_get(&uart_ringbuf, &byte, 1) > 0) {
             if (i == 0 && byte != 0x59)
@@ -161,6 +162,7 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std:
     LOG_INF("%s Initializing lidar", kind_to_prefix(kind));
 
     k_mutex_init(&reading_mutex);
+    k_sem_init(&data_ready_sem, 0, 1);
     ring_buf_init(&uart_ringbuf, RING_BUF_SIZE, lidar_ring_buf_data);
 
     LOG_INF("%s Checking uart readiness", kind_to_prefix(kind));
@@ -170,17 +172,22 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std:
 
     LOG_INF("%s Setting UART IRQ", kind_to_prefix(kind));
     int err = uart_irq_callback_user_data_set(uart_dev, uart_handler, nullptr);
-    if (err) {
+    if (err<0) {
+        LOG_INF("%s error", kind_to_prefix(kind));
         return std::unexpected(Error::from_code(err).context("%s Failed to attach UART interrupt handler", kind_to_prefix(kind)));
     }
 
     LOG_INF("%s Enabling UART RX interrupt", kind_to_prefix(kind));
     uart_irq_rx_enable(uart_dev);
-
     LOG_INF("%s Lidar initialized", kind_to_prefix(kind));
-    k_sem_give(ready_sem);
 
     return {};
+}
+
+template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
+void Lidar<kind, uart_dt_init, ready_sem_ptr>::start_sense()
+{
+    k_sem_give(ready_sem);
 }
 
 /// Returns a lidar reading and the time it took to acquire, if there's a reading.

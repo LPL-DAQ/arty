@@ -40,6 +40,7 @@ private:
 
     // Initialized in init()
     static inline k_mutex reading_mutex;
+    static inline k_sem data_ready_sem;
     static inline uint8_t vn_ring_buf_data[RING_BUF_SIZE];
     static inline ring_buf uart_ringbuf;
 
@@ -78,7 +79,7 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_handler(const device*, v
     LOG_MODULE_DECLARE(VectornavIMU);
 
     int err = uart_irq_update(uart_dev);
-    if (err) {
+    if (err < 0) {
         LOG_ERR("%s Failed to update UART IRQ state: %s", kind_to_prefix(kind), Error::from_code(err).build_message().c_str());
         return;
     }
@@ -105,6 +106,7 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_handler(const device*, v
 
         ring_buf_put(&uart_ringbuf, &byte, 1);
     }
+    k_sem_give(&data_ready_sem);
 }
 
 /// Send bytes over UART using poll mode. Only used during initialization for configuration commands.
@@ -230,6 +232,8 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
     int i = 0;
 
     while (1) {
+        k_sem_take(&data_ready_sem, K_FOREVER);
+
         uint8_t byte;
         while (ring_buf_get(&uart_ringbuf, &byte, 1) > 0) {
             if (byte == '\r') {
@@ -372,6 +376,7 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
     LOG_INF("%s Initializing", kind_to_prefix(kind));
 
     k_mutex_init(&reading_mutex);
+    k_sem_init(&data_ready_sem, 0, 1);
     ring_buf_init(&uart_ringbuf, RING_BUF_SIZE, vn_ring_buf_data);
 
     LOG_INF("%s Checking UART readiness", kind_to_prefix(kind));

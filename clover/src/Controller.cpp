@@ -1,5 +1,6 @@
 #include "Controller.h"
 #include "AnalogSensors.h"
+#include "Lidar.h"
 #include "ControllerConfig.h"
 #include "StateAbort.h"
 #include "StateCalibrateValve.h"
@@ -118,6 +119,7 @@ std::expected<void, Error> Controller::init()
     LOG_INF("Triggering initial sensor readings");
     k_sched_lock();
     AnalogSensors::start_sense();
+    Lidar1::start_sense();
     // Other sensors here...
     k_sched_unlock();
 
@@ -153,6 +155,17 @@ void Controller::step_control_loop(k_work*)
     else {
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
+
+auto lidar1 = Lidar1::read();
+if (lidar1) {
+    LidarReading reading;
+    float sense_time_ns = 0.0f;
+    std::tie(reading, sense_time_ns) = *lidar1;
+    // If you want to store these in data, uncomment and adjust as needed:
+    // std::tie(data.lidar, data.lidar_sense_time_ns) = *lidar1;
+    LOG_INF("LiDAR distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+} else {
+}
 
     daq_client_status daq_status = get_daq_client_status();
 
