@@ -1,7 +1,7 @@
 #include "FlightController.h"
-#include "MutexGuard.h"
-#include "PID.h"
-#include "math_util.h"
+#include "../MutexGuard.h"
+#include "../PID.h"
+#include "../math_util.h"
 #include <zephyr/kernel.h>
 #include <limits>
 #include <cmath>
