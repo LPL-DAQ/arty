@@ -8,6 +8,7 @@ target_sources(app PRIVATE
     Trace.cpp
     FlightController.cpp
     util.cpp
+    psram_test.c
 )
 
 add_subdirectory(sensors)

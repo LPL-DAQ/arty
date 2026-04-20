@@ -6,6 +6,7 @@ Hornet Mk. 3 board.
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
 #include <zephyr/dt-bindings/pwm/pwm.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-arm.h>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
 #define ANALOG_SENSORS_ADC_OVERSAMPLING 5
@@ -69,6 +70,20 @@ TODO:
 
     chosen {
         zephyr,console = &cdc_acm_uart0;
+    };
+
+    psram0: memory@70000000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x70000000 0x800000>;   /* 8MB */
+        zephyr,memory-region = "PSRAM0";
+        zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
+    };
+
+    psram1: memory@70800000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x70800000 0x800000>;   /* 8MB */
+        zephyr,memory-region = "PSRAM1";
+        zephyr,memory-attr = <DT_MEM_ARM_MPU_RAM_NOCACHE>;
     };
 };
 
@@ -367,4 +382,53 @@ TODO:
 &enet_mac {
     /delete-property/ nxp,unique-mac;
     local-mac-address = [ 67 67 67 67 67 67  ];
+};
+
+&pinctrl {
+    pinmux_flexspi2: pinmux_flexspi2 {
+        group0 {
+            pinmux = <
+                &iomuxc_gpio_emc_22_flexspi2_a_ss1_b
+                &iomuxc_gpio_emc_24_flexspi2_a_ss0_b
+                &iomuxc_gpio_emc_25_flexspi2_a_sclk
+                &iomuxc_gpio_emc_26_flexspi2_a_data0
+                &iomuxc_gpio_emc_27_flexspi2_a_data1
+                &iomuxc_gpio_emc_28_flexspi2_a_data2
+                &iomuxc_gpio_emc_29_flexspi2_a_data3
+            >;
+            drive-strength = "r0-6";
+            slew-rate = "fast";
+            nxp,speed = "100-mhz";
+            input-enable;
+        };
+    };
+};
+
+&flexspi2 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_flexspi2>;
+    pinctrl-names = "default";
+
+    ahb-cacheable;
+    ahb-prefetch;
+
+    reg = <0x402a4000 0x4000>, <0x70000000 0x01000000>;
+    reg-names = "reg_base", "ahb";
+    ahb-boundary = "1024";
+
+    apsram0: aps6404l@0 {
+        compatible = "nxp,imx-flexspi-aps6404l";
+        reg = <0>;
+        size = <67108864>;
+        spi-max-frequency = <30000000>;
+        status = "okay";
+    };
+
+    apsram1: aps6404l@1 {
+        compatible = "nxp,imx-flexspi-aps6404l";
+        reg = <1>;
+        size = <67108864>;
+        spi-max-frequency = <30000000>;
+        status = "okay";
+    };
 };

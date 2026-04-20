@@ -12,6 +12,7 @@
 #include "Controller.h"
 #include "FlightController.h"
 #include "server.h"
+#include "psram_test.h"
 
 #ifdef CONFIG_HORNET
 
@@ -85,13 +86,17 @@ int main(void)
         return 0;
     }
 
-
     // LOG_INF("initializing SNTP");
     // err = sntp_init();
     // if (err) {
     //     LOG_ERR("Failed to initialize SNTP");
     //     return 0;
     // }
+
+    int ret = psram_boundary_test_run();
+    if (ret != 0) {
+        printk("PSRAM test failed: %d\n", ret);
+    }
 
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
