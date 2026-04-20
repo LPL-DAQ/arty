@@ -1,5 +1,4 @@
-#ifndef APP_CONTROLLER_H
-#define APP_CONTROLLER_H
+#pragma once
 
 #include "Error.h"
 #include "Trace.h"
@@ -51,5 +50,3 @@ std::expected<void, Error> handle_start_static_fire_sequence(const StartStaticFi
 std::expected<void, Error> handle_load_flight_sequence(const LoadFlightSequenceRequest& req);
 std::expected<void, Error> handle_start_flight_sequence(const StartFlightSequenceRequest& req);
 };  // namespace Controller
-
-#endif  // APP_CONTROLLER_H

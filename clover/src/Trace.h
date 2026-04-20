@@ -1,5 +1,4 @@
-#ifndef APP_TRACE_H
-#define APP_TRACE_H
+#pragma once
 
 #include "Error.h"
 #include "clover.pb.h"
@@ -19,5 +18,3 @@ public:
     std::expected<float, Error> sample(float time);
     float get_total_time_ms();
 };
-
-#endif  // APP_TRACE_H
