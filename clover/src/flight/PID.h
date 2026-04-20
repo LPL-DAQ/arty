@@ -1,7 +1,8 @@
 #pragma once
+#include <algorithm>
 #include <limits>
 #include <cmath>
-#include "util/Math.h"
+#include "math_util.h"
 #ifdef abs
 #undef abs // allow std::abs despite Arduino macro
 #endif
@@ -12,14 +13,19 @@ public:
     PID(double kp, double ki, double kd)
         : kp_(kp), ki_(ki), kd_(kd) {}
 
+
+
+
     // Calculate control output given a setpoint and a measurement.
-    // dt is computed internally from steady_clock; on the first call,
-    // derivative and integral are not applied to avoid a large transient.
-    double calculate(double setpoint, double measurement, double dt)
+    // dt is computed internally from steady_clock;
+    // on the first call, derivative and integral are not applied to avoid a large transient.
+
+    double calculate(double setpoint, double measurement, double measurement_d, double dt)
     {
 
+
         if (std::isnan(prev_meas_))
-        {   
+        {
 
             prev_meas_ = measurement;
             // First call: just proportional action.
@@ -39,16 +45,15 @@ public:
         double deriv_raw = 0.0;
         if (!std::isnan(prev_meas_))
         {
-            const double dmeas = measurement - prev_meas_;
-            deriv_raw = -dmeas / std::max(dt, 1e-9); // negative sign: d(error)/dt = -d(meas)/dt
+            deriv_raw = -measurement_d / std::max(dt, 1e-9); // negative sign: d(error)/dt = -d(meas)/dt
         }
         prev_meas_ = measurement;
 
-        // Optional 1stâ€‘order lowâ€‘pass on derivative: y += a*(x - y)
+        // Optional 1st-order low-pass on derivative: y += a*(x - y)
         double deriv_term = deriv_raw;
         if (use_deriv_lp_)
         {
-            const double rc = 1.0 / (2.0 * M_PI * std::max(deriv_cutoff_hz_, 1e-6));
+            const double rc = 1.0 / (2.0 * pi * std::max(deriv_cutoff_hz_, 1e-6));
             const double a = dt / (rc + dt);
             deriv_state_ += a * (deriv_raw - deriv_state_);
             deriv_term = deriv_state_;
@@ -67,6 +72,20 @@ public:
         double output = kp_ * error + integral_output + kd_ * deriv_term;
 
         return clampOutput(output);
+    }
+
+    // uses previous measurement to calculate derivative
+    double calculate(double setpoint, double measurement, double dt)
+    {
+        // Derivative on measurement to reduce derivative kick
+        double dmeas = 0.0;
+        if (!std::isnan(prev_meas_))
+        {
+            dmeas = measurement - prev_meas_;
+        }
+
+        return calculate(setpoint, measurement, dmeas, dt);
+
     }
 
     // Reset internal state (integral, derivative filter). Optionally set a new integral value.
@@ -152,6 +171,8 @@ private:
     double kd_{};
 
     // State
+    const double pi = std::acos(-1.0);
+
     double integral_ = 0.0;
     double prev_meas_ = std::numeric_limits<double>::quiet_NaN();
 
@@ -159,6 +180,7 @@ private:
     bool use_deriv_lp_ = false;
     double deriv_cutoff_hz_ = 0.0;
     double deriv_state_ = 0.0;
+
 
     // Limits
     bool use_output_limits_ = false;
