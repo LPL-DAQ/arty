@@ -1,5 +1,6 @@
 target_sources(app PRIVATE
     main.cpp
+    psram_test.c
 )
 
 # if(CONFIG_HORNET)
