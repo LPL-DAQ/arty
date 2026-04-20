@@ -17,14 +17,14 @@ namespace {
     // TODO: Tune, including adding integral terms (is requried)
     // reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
     // integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
-    PID pidXTilt(0.385, 0.0, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
-    PID pidYTilt(0.385, 0.0, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
-    PID pidX(0, 0, 0);              // needs tuning
-    PID pidY(0, 0, 0);              // needs tuning
+    PID pidXTilt(0.385, 0.01, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
+    PID pidYTilt(0.385, 0.01, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
+    PID pidX(0.2, 0.01, 0.05);              // needs tuning, these are complete guesses
+    PID pidY(0.2, 0.01, 0.05);              // needs tuning, these are complete guesses
     // only use integral within 5 cm of target.
     PID pidZ(0.075, 0.01, 0, -1e6, 1e6, -1e6, 1e6, 0.05);
     // TODO: add max and min out
-    PID pidZVelocity(0, 0, 0);      // needs tuning
+    PID pidZVelocity(0.1, 0, 0);      // needs tuning
 
     static uint32_t loopCount = 0;
 
@@ -169,6 +169,7 @@ static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics)
 
     metrics.desired_vertical_velocity_m_s = des_state.vz_m_s;
 
+    //TODO: make this an acceleration delta
     // innerloop on velocity
     float desired_acceleration = pidZVelocity.calculate(des_state.vz_m_s, state.velocity.z, dt);
     metrics.commanded_vertical_acceleration_m_s2 = desired_acceleration;
@@ -207,7 +208,7 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
     float z_acceleration = verticalPID(state, metrics);
-    float throttle_thrust_command_N = z_acceleration * get_mass_kg();
+    float throttle_thrust_command_N = z_acceleration * get_mass_kg() + 9.80665f * get_mass_kg();
 
     auto angular_accelerations = lateralPID(state, metrics);
     float pitch_acceleration_command = angular_accelerations[0];
@@ -350,3 +351,13 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
 
     return {};
 }
+
+#if CONFIG_TEST
+void FlightController::set_desired_state_for_testing(const FlightControllerDesiredState& state) {
+    des_state = state;
+}
+
+void FlightController::set_loop_count_for_testing(uint32_t count) {
+    loopCount = count;
+}
+#endif
