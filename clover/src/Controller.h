@@ -43,6 +43,10 @@ std::expected<void, Error> handle_start_rcs_valve_sequence(const StartRcsValveSe
 std::expected<void, Error> handle_load_rcs_sequence(const LoadRcsSequenceRequest& req);
 std::expected<void, Error> handle_start_rcs_sequence(const StartRcsSequenceRequest& req);
 
+// Static flight (TVC + Throttle)
+std::expected<void, Error> handle_load_static_fire_sequence(const LoadStaticFireSequenceRequest& req);
+std::expected<void, Error> handle_start_static_fire_sequence(const StartStaticFireSequenceRequest& req);
+
 // Flight
 std::expected<void, Error> handle_load_flight_sequence(const LoadFlightSequenceRequest& req);
 std::expected<void, Error> handle_start_flight_sequence(const StartFlightSequenceRequest& req);
