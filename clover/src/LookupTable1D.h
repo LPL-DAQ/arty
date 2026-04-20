@@ -1,5 +1,4 @@
-#ifndef APP_LOOKUP_TABLE_1D_H
-#define APP_LOOKUP_TABLE_1D_H
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -34,5 +33,3 @@ template <int x_len, float x_min, float x_max, float x_gap, std::array<float, x_
     // Tween along input axis
     return bp_x_low + (bp_x_high - bp_x_low) * x_tween;
 }
-
-#endif  // APP_LOOKUP_TABLE_1D_H

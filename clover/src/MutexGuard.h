@@ -1,5 +1,4 @@
-#ifndef APP_MUTEXGUARD_H
-#define APP_MUTEXGUARD_H
+#pragma once
 
 #include <zephyr/kernel.h>
 
@@ -13,5 +12,3 @@ public:
     MutexGuard(k_mutex* mut);
     ~MutexGuard();
 };
-
-#endif  // APP_MUTEXGUARD_H
