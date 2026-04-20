@@ -1,5 +1,6 @@
 #include "HornetRcs.h"
 #include "MutexGuard.h"
+#include "PID.h"
 #include <zephyr/kernel.h>
 
 K_MUTEX_DEFINE(hornet_rcs_lock);
@@ -19,9 +20,9 @@ static int control(EstimatedState state, float desired_roll_position){
     int64_t dt = k_uptime_get() - previous_timestamp;
 
     Quaternion q_wb = state.R_WB;
-    q_wb = util::normalizeQuaternion(q_wb);
+    q_wb = math_util::normalizeQuaternion(q_wb);
     // yaw, pitch, roll
-    Vector3D euler = util::quaternionToEulerAngles(q_wb);
+    Vector3D euler = math_util::quaternionToEulerAngles(q_wb);
     double roll_position = euler.z;
     // TODO: itd be nice to have angular rates in the state estimate
     float roll_velocity = 0.0;

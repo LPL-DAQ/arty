@@ -6,9 +6,11 @@
 #include "util.h"
 #include "flight/FlightController.h"
 #include "flight/StateEstimator.h"
+
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+
 
 #if CONFIG_RANGER
 #include "ranger/RangerRcs.h"
@@ -17,6 +19,7 @@
 #include "ranger/ThrottleValve.h"
 
 #elif CONFIG_HORNET
+#include "hornet/PwmActuator.h"
 #include "hornet/HornetRcs.h"
 #include "hornet/HornetThrottle.h"
 #include "hornet/HornetTvc.h"
@@ -333,7 +336,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.has_pitch_servo_command, data.has_pitch_servo_command, data.ranger_rcs_metrics) = *rcs_response;
 
 #elif CONFIG_HORNET
-        auto rcs_response = HornetRcs::tick(data.rcs_roll_command_deg);
+        auto rcs_response = HornetRcs::tick(data.estimated_state, data.rcs_roll_command_deg);
         if (!rcs_response.has_value()) {
             return std::unexpected(rcs_response.error().context("error in HornetRcs"));
         }
@@ -397,9 +400,13 @@ static void step_control_loop(k_work*)
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
-    auto estimated_state = StateEstimator::estimate();
-    // TODO: check if this returned an error
-    data.estimated_state = estimated_state;
+    // TODO: dont provide whole data, this is temp caause we dont have the sensors
+    auto estimated_state = StateEstimator::estimate(data);
+    if (estimated_state) {
+        data.estimated_state = *estimated_state;
+    } else {
+        // TODO: handle estimate failure; leaving defaults for now
+    }
 
     daq_client_status daq_status = get_daq_client_status();
 
@@ -513,27 +520,20 @@ static void step_control_loop(k_work*)
     LoxValve::tick(data.lox_valve_command);
     // RCS valves, TVC actuators
 #elif CONFIG_HORNET
+    // TODO: do something if these return an error
     // TVC
     auto err = ServoX::tick(data.pitch_servo_command);
-    if (!err) return err;
     err = ServoY::tick(data.yaw_servo_command);
-    if (!err) return err;
 
     // RCS
     // TODO: Check which actually corresponds to what
-    auto err = BetaTop::tick(data.rcs_propeller_cw_command);
-    if (!err) return err;
-    err = BetaCW::tick(rcs_propeller_cw_command);
-    if (!err) return err;
-    err = BetaBottom::tick(rcs_propeller_ccw_command);
-    if (!err) return err;
-    err = BetaCCW::tick(rcs_propeller_ccw_command);
-    if (!err) return err;
+    err = BetaTop::tick(data.rcs_propeller_cw_command);
+    err = BetaCW::tick(data.rcs_propeller_cw_command);
+    err = BetaBottom::tick(data.rcs_propeller_ccw_command);
+    err = BetaCCW::tick(data.rcs_propeller_ccw_command);
 
-    auto err = MotorTop::tick(data.main_propeller_command);
-    if (!err) return err;
+    err = MotorTop::tick(data.main_propeller_command);
     err = MotorBottom::tick(data.main_propeller_command);
-    if (!err) return err;
 
 
 #endif

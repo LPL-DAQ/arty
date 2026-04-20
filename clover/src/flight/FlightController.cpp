@@ -1,9 +1,12 @@
 #include "FlightController.h"
 #include "MutexGuard.h"
-#include "../PID.h"
-#include "../math_util.h"
+#include "PID.h"
+#include "math_util.h"
 #include <zephyr/kernel.h>
 #include <limits>
+#include <cmath>
+#include <array>
+
 
 K_MUTEX_DEFINE(flight_controller_lock);
 
@@ -71,8 +74,8 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitc
     float pitch_sin_angle = (pitch_accel * pitch_MOI) / (thrust * pitch_moment_arm);
 
     // Clamp sin values to valid domain [-1, 1]
-    yaw_sin_angle = math_util::clamp(yaw_sin_angle, -1.0f, 1.0f);
-    pitch_sin_angle = math_util::clamp(pitch_sin_angle, -1.0f, 1.0f);
+    yaw_sin_angle = std::clamp(yaw_sin_angle, -1.0f, 1.0f);
+    pitch_sin_angle = std::clamp(pitch_sin_angle, -1.0f, 1.0f);
 
     // Calculate gimbal angles in radians using arcsin
     float yaw_angle_rad = std::asin(yaw_sin_angle);
@@ -83,8 +86,8 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitc
     float pitch_angle_deg = pitch_angle_rad * RAD2DEG_F;
 
     // Clamp to maximum gimbal angle
-    yaw_angle_deg = math_util::clamp(yaw_angle_deg, -maxGimble, maxGimble);
-    pitch_angle_deg = math_util::clamp(pitch_angle_deg, -maxGimble, maxGimble);
+    yaw_angle_deg = std::clamp(yaw_angle_deg, -maxGimble, maxGimble);
+    pitch_angle_deg = std::clamp(pitch_angle_deg, -maxGimble, maxGimble);
 
     return {{pitch_angle_deg, yaw_angle_deg}};
 }
@@ -140,7 +143,7 @@ static std::array<float, 2> lateralPID(EstimatedState state)
 
     // Body-frame reduced attitude error
     // Unit Z because we are in body frame
-    Vector3D axis_error_b = math_util::crossProduct(util::unitZ(), z_des_b);
+    Vector3D axis_error_b = math_util::crossProduct(math_util::unitZ(), z_des_b);
 
     // Inner loop on body-axis tilt error
     // TODO: Check if this needs a negative sign.
@@ -193,13 +196,20 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
 
     des_state.position.x = x_command_m;
     des_state.position.y = y_command_m;
-    des_state_position.z = z_command_m;
+    des_state.position.z = z_command_m;
 
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
     float throttle_thrust_command_N = verticalPID(state);
-    float (pitch_acceleration_command, yaw_acceleration_command) = lateralPID(state)
-    float (tvc_pitch_command_deg,tvc_yaw_command_deg) = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command);
+    auto accelerations = lateralPID(state);
+    float pitch_acceleration_command = accelerations[0];
+    float yaw_acceleration_command = accelerations[1];
+    auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_N);
+    if (!tvc_angles) {
+        return std::unexpected(Error::from_cause("failed to compute TVC angles"));
+    }
+    float tvc_pitch_command_deg = std::get<0>(*tvc_angles);
+    float tvc_yaw_command_deg = std::get<1>(*tvc_angles);
 
     return {{throttle_thrust_command_N, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
 }
@@ -211,120 +221,120 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
 
     // Update PID gains if provided
     pidXTilt.setGains(
-        req.has_pidXTilt_kp() ? req.pidXTilt_kp() : pidXTilt.getP(),
-        req.has_pidXTilt_ki() ? req.pidXTilt_ki() : pidXTilt.getI(),
-        req.has_pidXTilt_kd() ? req.pidXTilt_kd() : pidXTilt.getD()
+        req.has_pidXTilt_kp ? req.pidXTilt_kp : pidXTilt.getP(),
+        req.has_pidXTilt_ki ? req.pidXTilt_ki : pidXTilt.getI(),
+        req.has_pidXTilt_kd ? req.pidXTilt_kd : pidXTilt.getD()
     );
 
     pidYTilt.setGains(
-        req.has_pidYTilt_kp() ? req.pidYTilt_kp() : pidYTilt.getP(),
-        req.has_pidYTilt_ki() ? req.pidYTilt_ki() : pidYTilt.getI(),
-        req.has_pidYTilt_kd() ? req.pidYTilt_kd() : pidYTilt.getD()
+        req.has_pidYTilt_kp ? req.pidYTilt_kp : pidYTilt.getP(),
+        req.has_pidYTilt_ki ? req.pidYTilt_ki : pidYTilt.getI(),
+        req.has_pidYTilt_kd ? req.pidYTilt_kd : pidYTilt.getD()
     );
 
     pidX.setGains(
-        req.has_pidX_kp() ? req.pidX_kp() : pidX.getP(),
-        req.has_pidX_ki() ? req.pidX_ki() : pidX.getI(),
-        req.has_pidX_kd() ? req.pidX_kd() : pidX.getD()
+        req.has_pidX_kp ? req.pidX_kp : pidX.getP(),
+        req.has_pidX_ki ? req.pidX_ki : pidX.getI(),
+        req.has_pidX_kd ? req.pidX_kd : pidX.getD()
     );
 
     pidY.setGains(
-        req.has_pidY_kp() ? req.pidY_kp() : pidY.getP(),
-        req.has_pidY_ki() ? req.pidY_ki() : pidY.getI(),
-        req.has_pidY_kd() ? req.pidY_kd() : pidY.getD()
+        req.has_pidY_kp ? req.pidY_kp : pidY.getP(),
+        req.has_pidY_ki ? req.pidY_ki : pidY.getI(),
+        req.has_pidY_kd ? req.pidY_kd : pidY.getD()
     );
 
     pidZ.setGains(
-        req.has_pidZ_kp() ? req.pidZ_kp() : pidZ.getP(),
-        req.has_pidZ_ki() ? req.pidZ_ki() : pidZ.getI(),
-        req.has_pidZ_kd() ? req.pidZ_kd() : pidZ.getD()
+        req.has_pidZ_kp ? req.pidZ_kp : pidZ.getP(),
+        req.has_pidZ_ki ? req.pidZ_ki : pidZ.getI(),
+        req.has_pidZ_kd ? req.pidZ_kd : pidZ.getD()
     );
 
     pidZVelocity.setGains(
-        req.has_pidZVelocity_kp() ? req.pidZVelocity_kp() : pidZVelocity.getP(),
-        req.has_pidZVelocity_ki() ? req.pidZVelocity_ki() : pidZVelocity.getI(),
-        req.has_pidZVelocity_kd() ? req.pidZVelocity_kd() : pidZVelocity.getD()
+        req.has_pidZVelocity_kp ? req.pidZVelocity_kp : pidZVelocity.getP(),
+        req.has_pidZVelocity_ki ? req.pidZVelocity_ki : pidZVelocity.getI(),
+        req.has_pidZVelocity_kd ? req.pidZVelocity_kd : pidZVelocity.getD()
     );
 
 
 
-    if ((req.has_pidXTilt_min_out() && req.has_pidXTilt_max_out())) {
-        pidXTilt.setOutputLimits(req.pidXTilt_min_out(), req.pidXTilt_max_out());
+    if ((req.has_pidXTilt_min_out && req.has_pidXTilt_max_out)) {
+        pidXTilt.setOutputLimits(req.pidXTilt_min_out, req.pidXTilt_max_out);
     }
-    if ((req.has_pidYTilt_min_out() && req.has_pidYTilt_max_out())) {
-        pidYTilt.setOutputLimits(req.pidYTilt_min_out(), req.pidYTilt_max_out());
+    if ((req.has_pidYTilt_min_out && req.has_pidYTilt_max_out)) {
+        pidYTilt.setOutputLimits(req.pidYTilt_min_out, req.pidYTilt_max_out);
     }
-    if ((req.has_pidX_min_out() && req.has_pidX_max_out())) {
-        pidX.setOutputLimits(req.pidX_min_out(), req.pidX_max_out());
+    if ((req.has_pidX_min_out && req.has_pidX_max_out)) {
+        pidX.setOutputLimits(req.pidX_min_out, req.pidX_max_out);
     }
-    if ((req.has_pidY_min_out() && req.has_pidY_max_out())) {
-        pidY.setOutputLimits(req.pidY_min_out(), req.pidY_max_out());
+    if ((req.has_pidY_min_out && req.has_pidY_max_out)) {
+        pidY.setOutputLimits(req.pidY_min_out, req.pidY_max_out);
     }
-    if ((req.has_pidZ_min_out() && req.has_pidZ_max_out())) {
-        pidZ.setOutputLimits(req.pidZ_min_out(), req.pidZ_max_out());
+    if ((req.has_pidZ_min_out && req.has_pidZ_max_out)) {
+        pidZ.setOutputLimits(req.pidZ_min_out, req.pidZ_max_out);
     }
-    if ((req.has_pidZVelocity_min_out() && req.has_pidZVelocity_max_out())) {
-        pidZVelocity.setOutputLimits(req.pidZVelocity_min_out(), req.pidZVelocity_max_out());
+    if ((req.has_pidZVelocity_min_out && req.has_pidZVelocity_max_out)) {
+        pidZVelocity.setOutputLimits(req.pidZVelocity_min_out, req.pidZVelocity_max_out);
     }
 
     // Update integral limits if provided
-    if ((req.has_pidXTilt_min_integral() && req.has_pidXTilt_max_integral())) {
-        pidXTilt.setIntegralLimits(req.pidXTilt_min_integral(), req.pidXTilt_max_integral());
+    if ((req.has_pidXTilt_min_integral && req.has_pidXTilt_max_integral)) {
+        pidXTilt.setIntegralLimits(req.pidXTilt_min_integral, req.pidXTilt_max_integral);
     }
-    if ((req.has_pidYTilt_min_integral() && req.has_pidYTilt_max_integral())) {
-        pidYTilt.setIntegralLimits(req.pidYTilt_min_integral(), req.pidYTilt_max_integral());
+    if ((req.has_pidYTilt_min_integral && req.has_pidYTilt_max_integral)) {
+        pidYTilt.setIntegralLimits(req.pidYTilt_min_integral, req.pidYTilt_max_integral);
     }
-    if ((req.has_pidX_min_integral() && req.has_pidX_max_integral())) {
-        pidX.setIntegralLimits(req.pidX_min_integral(), req.pidX_max_integral());
+    if ((req.has_pidX_min_integral && req.has_pidX_max_integral)) {
+        pidX.setIntegralLimits(req.pidX_min_integral, req.pidX_max_integral);
     }
-    if ((req.has_pidY_min_integral() && req.has_pidY_max_integral())) {
-        pidY.setIntegralLimits(req.pidY_min_integral(), req.pidY_max_integral());
+    if ((req.has_pidY_min_integral && req.has_pidY_max_integral)) {
+        pidY.setIntegralLimits(req.pidY_min_integral, req.pidY_max_integral);
     }
-    if ((req.has_pidZ_min_integral() && req.has_pidZ_max_integral())) {
-        pidZ.setIntegralLimits(req.pidZ_min_integral(), req.pidZ_max_integral());
+    if ((req.has_pidZ_min_integral && req.has_pidZ_max_integral)) {
+        pidZ.setIntegralLimits(req.pidZ_min_integral, req.pidZ_max_integral);
     }
-    if ((req.has_pidZVelocity_min_integral() && req.has_pidZVelocity_max_integral())) {
-        pidZVelocity.setIntegralLimits(req.pidZVelocity_min_integral(), req.pidZVelocity_max_integral());
+    if ((req.has_pidZVelocity_min_integral && req.has_pidZVelocity_max_integral)) {
+        pidZVelocity.setIntegralLimits(req.pidZVelocity_min_integral, req.pidZVelocity_max_integral);
     }
 
     // Update integral zones if provided
-    if (req.has_pidXTilt_integral_zone()) {
-        pidXTilt.setIntegralZone(req.pidXTilt_integral_zone());
+    if (req.has_pidXTilt_integral_zone) {
+        pidXTilt.setIntegralZone(req.pidXTilt_integral_zone);
     }
-    if (req.has_pidYTilt_integral_zone()) {
-        pidYTilt.setIntegralZone(req.pidYTilt_integral_zone());
+    if (req.has_pidYTilt_integral_zone) {
+        pidYTilt.setIntegralZone(req.pidYTilt_integral_zone);
     }
-    if (req.has_pidX_integral_zone()) {
-        pidX.setIntegralZone(req.pidX_integral_zone());
+    if (req.has_pidX_integral_zone) {
+        pidX.setIntegralZone(req.pidX_integral_zone);
     }
-    if (req.has_pidY_integral_zone()) {
-        pidY.setIntegralZone(req.pidY_integral_zone());
+    if (req.has_pidY_integral_zone) {
+        pidY.setIntegralZone(req.pidY_integral_zone);
     }
-    if (req.has_pidZ_integral_zone()) {
-        pidZ.setIntegralZone(req.pidZ_integral_zone());
+    if (req.has_pidZ_integral_zone) {
+        pidZ.setIntegralZone(req.pidZ_integral_zone);
     }
-    if (req.has_pidZVelocity_integral_zone()) {
-        pidZVelocity.setIntegralZone(req.pidZVelocity_integral_zone());
+    if (req.has_pidZVelocity_integral_zone) {
+        pidZVelocity.setIntegralZone(req.pidZVelocity_integral_zone);
     }
 
     // Update derivative low-pass filter if provided
-    if (req.has_pidXTilt_deriv_lp_hz()) {
-        pidXTilt.setDerivativeLowPass(req.pidXTilt_deriv_lp_hz());
+    if (req.has_pidXTilt_deriv_lp_hz) {
+        pidXTilt.setDerivativeLowPass(req.pidXTilt_deriv_lp_hz);
     }
-    if (req.has_pidYTilt_deriv_lp_hz()) {
-        pidYTilt.setDerivativeLowPass(req.pidYTilt_deriv_lp_hz());
+    if (req.has_pidYTilt_deriv_lp_hz) {
+        pidYTilt.setDerivativeLowPass(req.pidYTilt_deriv_lp_hz);
     }
-    if (req.has_pidX_deriv_lp_hz()) {
-        pidX.setDerivativeLowPass(req.pidX_deriv_lp_hz());
+    if (req.has_pidX_deriv_lp_hz) {
+        pidX.setDerivativeLowPass(req.pidX_deriv_lp_hz);
     }
-    if (req.has_pidY_deriv_lp_hz()) {
-        pidY.setDerivativeLowPass(req.pidY_deriv_lp_hz());
+    if (req.has_pidY_deriv_lp_hz) {
+        pidY.setDerivativeLowPass(req.pidY_deriv_lp_hz);
     }
-    if (req.has_pidZ_deriv_lp_hz()) {
-        pidZ.setDerivativeLowPass(req.pidZ_deriv_lp_hz());
+    if (req.has_pidZ_deriv_lp_hz) {
+        pidZ.setDerivativeLowPass(req.pidZ_deriv_lp_hz);
     }
-    if (req.has_pidZVelocity_deriv_lp_hz()) {
-        pidZVelocity.setDerivativeLowPass(req.pidZVelocity_deriv_lp_hz());
+    if (req.has_pidZVelocity_deriv_lp_hz) {
+        pidZVelocity.setDerivativeLowPass(req.pidZVelocity_deriv_lp_hz);
     }
 
     return {};

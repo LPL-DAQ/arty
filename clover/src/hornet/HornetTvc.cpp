@@ -1,6 +1,7 @@
 #include "HornetTvc.h"
 #include "MutexGuard.h"
 #include <zephyr/kernel.h>
+#include <cmath>
 
 K_MUTEX_DEFINE(hornet_tvc_lock);
 

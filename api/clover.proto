@@ -390,7 +390,7 @@ enum SystemState {
   STATE_FLIGHT_PRIMED = 18;
 }
 
-// next tag: 86
+// next tag: 87
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -419,7 +419,7 @@ message DataPacket {
   required AnalogSensorReadings analog_sensors = 19;
 
   // state estimate
-  required EstimatedState estimated_state = 85;
+  required EstimatedState estimated_state = 86;
 
   // State-specific inputs
 
@@ -468,11 +468,11 @@ message DataPacket {
   optional TvcActuatorCommand yaw_actuator_command = 63;
 
   // Actuator commands -- hornet
-  optional int main_propeller_command = 64; // 1000-2000ms
-  optional int pitch_servo_command = 67;  // 1000-2000ms
-  optional int yaw_servo_command = 68;  // 1000-2000ms
-  optional int rcs_propeller_cw_command = 65; // 1000-2000ms
-  optional int rcs_propeller_ccw_command = 66; //  1000-2000ms
+  optional int32 main_propeller_command = 64; // 1000-2000ms
+  optional int32 pitch_servo_command = 67;  // 1000-2000ms
+  optional int32 yaw_servo_command = 68;  // 1000-2000ms
+  optional int32 rcs_propeller_cw_command = 65; // 1000-2000ms
+  optional int32 rcs_propeller_ccw_command = 66; //  1000-2000ms
 }
 
 // Stats on controller and sensor execution times.

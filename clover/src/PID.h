@@ -80,7 +80,7 @@ public:
         double integral_output = integral_ * ki_;
         if (use_integral_limits_)
         {
-            integral_output = util::clamp(integral_output, min_integral_, max_integral_);
+            integral_output = std::clamp(integral_output, min_integral_, max_integral_);
         }
         // prevent division by 0
         if (ki_ > 0.000001)

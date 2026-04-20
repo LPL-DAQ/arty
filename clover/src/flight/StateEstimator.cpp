@@ -7,7 +7,7 @@ LOG_MODULE_REGISTER(StateEstimator, LOG_LEVEL_INF);
 
 namespace  {
 
-    static inline EstimatedState estimate = EstimatedState_init_default;
+    static inline EstimatedState current_estimate = EstimatedState_init_default;
     static inline uint64_t last_time_ms = 0;
     static inline bool has_last_time = false;
 }
@@ -19,13 +19,13 @@ void StateEstimator::init()
 
 void StateEstimator::reset()
 {
-    estimate = EstimatedState_init_default;
-    estimate.R_WB.qw = 1.0f; // to get identity q
+    current_estimate = EstimatedState_init_default;
+    current_estimate.R_WB.qw = 1.0f; // to get identity q
     last_time_ms = 0;
     has_last_time = false;
 }
 
-std::optional<std::pair<EstimatedState, Error>> StateEstimator::estimate(DataPacket& data)
+std::optional<EstimatedState> StateEstimator::estimate(DataPacket& data)
 {
     // TODO: Fill in when the real sensors exist
 
@@ -38,7 +38,7 @@ std::optional<std::pair<EstimatedState, Error>> StateEstimator::estimate(DataPac
     // // TODO: some checking about when the last update from sensors were and whatnot
     // last_time_ms = k_uptime_get();
     // has_last_time = true;
-    return estimate;
+    return current_estimate;
 
 }
 
