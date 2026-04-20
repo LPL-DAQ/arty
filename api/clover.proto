@@ -217,7 +217,7 @@ message StartThrottleValveSequenceRequest {}
 
 // Load a thrust sequence.
 message LoadThrottleSequenceRequest {
-  required ControlTrace thrust_trace_lbf = 1;
+  required ControlTrace thrust_trace_N = 1;
 }
 
 // Start a loaded thrust sequence.
@@ -430,7 +430,7 @@ message DataPacket {
   optional float trace_time_msec = 3;
 
   // Valid in THROTTLE and FLIGHT state.
-  optional float throttle_thrust_command_lbf = 83;
+  optional float throttle_thrust_command_N = 83;
 
   // Valid in TVC and FLIGHT state.
   optional float tvc_pitch_command_deg = 84;
@@ -468,11 +468,11 @@ message DataPacket {
   optional TvcActuatorCommand yaw_actuator_command = 63;
 
   // Actuator commands -- hornet
-  optional float main_propeller_command = 64;
-  optional float pitch_servo_command = 67;
-  optional float yaw_servo_command = 68;
-  optional bool rcs_propeller_cw_command = 65;
-  optional bool rcs_propeller_ccw_command = 66;
+  optional int main_propeller_command = 64; // 1000-2000ms
+  optional int pitch_servo_command = 67;  // 1000-2000ms
+  optional int yaw_servo_command = 68;  // 1000-2000ms
+  optional int rcs_propeller_cw_command = 65; // 1000-2000ms
+  optional int rcs_propeller_ccw_command = 66; //  1000-2000ms
 }
 
 // Stats on controller and sensor execution times.

@@ -7,5 +7,5 @@
 
 namespace HornetThrottle {
 void reset();
-std::expected<std::tuple<float, HornetThrottleMetrics>, Error> tick(float thrust_command_lbf);
+std::expected<std::tuple<float, HornetThrottleMetrics>, Error> tick(float thrust_command_);
 }  // namespace HornetThrottle

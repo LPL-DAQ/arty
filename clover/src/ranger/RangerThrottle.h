@@ -7,5 +7,5 @@
 
 namespace RangerThrottle {
 void reset();
-std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> tick(float thrust_command_lbf);
+std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> tick(float thrust_command_N);
 }  // namespace RangerThrottle

@@ -182,7 +182,7 @@ void FlightController::reset()
 // TODO: roll control, but also handled in a header visable method so that it supports roll traces outside of flight state
 
 /// Called every tick in FLIGHT state. Returns a tuple of:
-/// - throttle_thrust_command_lbf
+/// - throttle_thrust_command_N
 /// - tvc_pitch_command_deg
 /// - tvc_yaw_command_deg
 /// - FlightControllerMetrics
@@ -197,11 +197,11 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
 
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
-    float throttle_thrust_command_lbf = verticalPID(state);
+    float throttle_thrust_command_N = verticalPID(state);
     float (pitch_acceleration_command, yaw_acceleration_command) = lateralPID(state)
     float (tvc_pitch_command_deg,tvc_yaw_command_deg) = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command);
 
-    return {{throttle_thrust_command_lbf, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
+    return {{throttle_thrust_command_N, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
 }
 
 /// Configure controller gains.

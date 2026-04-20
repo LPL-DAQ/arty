@@ -77,18 +77,15 @@ void HornetRcs::reset()
 std::expected<std::tuple<bool, bool, HornetRcsMetrics>, Error> HornetRcs::tick(EstimatedState state, float roll_command_deg)
 {
     MutexGuard hornet_rcs_guard{&hornet_rcs_lock};
-    int control_var = control(state, roll_command_deg);
-    if (control_var == -1){
-
-        bool rcs_propeller_cw_command = true;
-        bool rcs_propeller_ccw_command = false;
-    } else if (control_var == 1){
-        bool rcs_propeller_cw_command = false;
-        bool rcs_propeller_ccw_command = true;
-    } else {
-        bool rcs_propeller_cw_command = true;
-        bool rcs_propeller_ccw_command = false;
-    }
     HornetRcsMetrics metrics = HornetRcsMetrics_init_default;
-    return {{rcs_propeller_cw_command, rcs_propeller_ccw_command, metrics}};
+    int control_var = control(state, roll_command_deg);
+
+    const float throttle_value = 1.0f;
+    const float cw_throttle  = control_var == -1  ? throttle_value : 0.0f;
+    const float ccw_throttle = control_var == 1 ? throttle_value : 0.0f;
+    // Convert throttle to pulse width: 0.0 -> 1000µs, 1.0 -> 2000µs
+    const uint32_t cw_pulse_us = static_cast<uint32_t>(1000.0f + (cw_throttle * 1000.0f));
+    const uint32_t ccw_pulse_us = static_cast<uint32_t>(1000.0f + (ccw_throttle * 1000.0f));
+
+    return {{cw_pulse_us, ccw_pulse_us, metrics}};
 }

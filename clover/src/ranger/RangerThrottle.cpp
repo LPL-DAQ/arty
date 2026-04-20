@@ -12,7 +12,7 @@ void RangerThrottle::reset()
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.
-std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(float thrust_command_lbf)
+std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(float thrust_command_N)
 {
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
 

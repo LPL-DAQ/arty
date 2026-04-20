@@ -63,7 +63,7 @@ static float trace_total_time_msec = 0;
 static uint64_t abort_start_cycle = 0;
 
 // Valid in THROTTLE_PRIMED and THROTTLE
-static Trace throttle_thrust_trace_lbf;
+static Trace throttle_thrust_trace_N;
 
 // Valid in TVC_PRIMED and TVC
 static Trace tvc_pitch_trace_deg;
@@ -200,12 +200,12 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!flight_response.has_value()) {
             return std::unexpected(flight_response.error().context("error in FlightController"));
         }
-        data.has_throttle_thrust_command_lbf = true;
+        data.has_throttle_thrust_command_N = true;
         data.has_tvc_pitch_command_deg = true;
         data.has_tvc_yaw_command_deg = true;
         data.has_flight_controller_metrics = true;
         std::tie(
-            data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.flight_controller_metrics) =
+            data.throttle_thrust_command_N, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.flight_controller_metrics) =
             *flight_response;
 
         break;
@@ -213,12 +213,12 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     case SystemState_STATE_THROTTLE: {
         // Sample thrust trace
-        auto thrust_sample = throttle_thrust_trace_lbf.sample(data.trace_time_msec);
+        auto thrust_sample = throttle_thrust_trace_N.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
             return std::unexpected(thrust_sample.error().context("failed to sample throttle thrust trace"));
         }
-        data.has_throttle_thrust_command_lbf = true;
-        data.throttle_thrust_command_lbf = *thrust_sample;
+        data.has_throttle_thrust_command_N = true;
+        data.throttle_thrust_command_N = *thrust_sample;
 
         break;
     }
@@ -261,11 +261,11 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Execute subordinate controllers
     if (current_state == SystemState_STATE_THROTTLE || current_state == SystemState_STATE_FLIGHT) {
-        if (!data.has_throttle_thrust_command_lbf) {
+        if (!data.has_throttle_thrust_command_N) {
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
 #ifdef CONFIG_RANGER
-        auto throttle_response = RangerThrottle::tick(data.throttle_thrust_command_lbf);
+        auto throttle_response = RangerThrottle::tick(data.throttle_thrust_command_N);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
         }
@@ -275,7 +275,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.fuel_valve_command, data.lox_valve_command, data.ranger_throttle_metrics) = *throttle_response;
 
 #elif CONFIG_HORNET
-        auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_lbf);
+        auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_N);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in HornetThrottle"));
         }
@@ -513,7 +513,29 @@ static void step_control_loop(k_work*)
     LoxValve::tick(data.lox_valve_command);
     // RCS valves, TVC actuators
 #elif CONFIG_HORNET
-    // TODO, PWM stuff. @noah :) ;-;
+    // TVC
+    auto err = ServoX::tick(data.pitch_servo_command);
+    if (!err) return err;
+    err = ServoY::tick(data.yaw_servo_command);
+    if (!err) return err;
+
+    // RCS
+    // TODO: Check which actually corresponds to what
+    auto err = BetaTop::tick(data.rcs_propeller_cw_command);
+    if (!err) return err;
+    err = BetaCW::tick(rcs_propeller_cw_command);
+    if (!err) return err;
+    err = BetaBottom::tick(rcs_propeller_ccw_command);
+    if (!err) return err;
+    err = BetaCCW::tick(rcs_propeller_ccw_command);
+    if (!err) return err;
+
+    auto err = MotorTop::tick(data.main_propeller_command);
+    if (!err) return err;
+    err = MotorBottom::tick(data.main_propeller_command);
+    if (!err) return err;
+
+
 #endif
 
     // Update last-executed actuator commands
@@ -730,11 +752,11 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
     }
 
     // Try loading thrust trace
-    auto ret = throttle_thrust_trace_lbf.load(req.thrust_trace_lbf);
+    auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load thrust trace"));
     }
-    trace_total_time_msec = throttle_thrust_trace_lbf.get_total_time_ms();
+    trace_total_time_msec = throttle_thrust_trace_N.get_total_time_ms();
 
     current_state = SystemState_STATE_THROTTLE_PRIMED;
     LOG_INF("Primed throttle thrust sequence");
