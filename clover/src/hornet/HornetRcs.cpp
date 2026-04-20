@@ -64,7 +64,13 @@ static int control(EstimatedState state, float desired_roll_position){
 void HornetRcs::reset()
 {
     MutexGuard hornet_rcs_guard{&hornet_rcs_lock};
-    // TODO
+    roll_pid.reset();
+    previous_timestamp = 0;
+    p_timer = 0;
+    p_valve = 0;
+    min_pulse = 0.10;
+    deadzone = 0.15;
+    hysteresis = 0.05;
 }
 
 /// Generate a comomand for the cs and ccs RCS propellers.
