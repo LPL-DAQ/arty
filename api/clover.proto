@@ -12,7 +12,7 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 34
+// next tag: 38
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
@@ -26,6 +26,9 @@ message Request {
     ThrottleResetValvePositionRequest throttle_reset_valve_position = 2;
     ThrottlePowerOffRequest throttle_power_off = 24;
     ThrottlePowerOnRequest throttle_power_on = 23;
+
+    ConfigureValvesRequest configure_valves_request = 36;
+    ActuateValveRequest actuate_valve_request = 37;
 
     // Transitions any state -> ABORT
     AbortRequest abort = 10;
@@ -169,14 +172,60 @@ enum AnalogSensor {
   BATTERY_VOLTAGE = 21;
 }
 
-// Reset the valve's position.
-message ThrottleResetValvePositionRequest {
-  required Valve valve = 1;
-  required float new_pos_deg = 2;
+// Configure GPIOs as valves.
+message ConfigureValvesRequest {
+  repeated ValveConfig configs = 1;
+}
+
+// Config for a single valve.
+message ValveConfig {
+  // GPIO channel number corresponding to valve.
+  required uint32 channel = 1;
+  // Human-readable valve assignment.
+  required Valve assignment = 2;
+  // If true, valve is "closed" when GPIO is "on", and vice verca.
+  optional bool normally_closed = 3;
 }
 
 enum Valve {
   UNKNOWN_VALVE = 0;
+
+  // Vehicle
+  SV001 = 1;
+  SV002 = 2;
+  SV003 = 3;
+  SV004 = 4;
+  PBV002 = 5;
+  SV005 = 6;
+  // TODO -- add others when P&ID is more done.
+
+  // GSE
+  SVG001 = 100;
+  SVG002 = 101;
+  SVG003 = 102;
+}
+
+// Actuate a single valve.
+message ActuateValveRequest {
+  required Valve valve = 1;
+  required ValveState state = 2;
+}
+
+// We distinguish power on/off from open/closed as the valve may have a certain normal state.
+enum ValveState {
+  UNKNOWN_VALVE_STATE = 0;
+  OPEN = 1;
+  CLOSED = 2;
+}
+
+// Reset the valve's position.
+message ThrottleResetValvePositionRequest {
+  required ThrottleValveType valve = 1;
+  required float new_pos_deg = 2;
+}
+
+enum ThrottleValveType {
+  UNKNOWN_THROTTLE_VALVE_TYPE = 0;
   FUEL = 1;
   LOX = 2;
 }
@@ -195,17 +244,17 @@ message UnprimeRequest {}
 
 // Turn on stepper motor.
 message ThrottlePowerOnRequest {
-  required Valve valve = 1;
+  required ThrottleValveType valve = 1;
 }
 
 // Turn off stepper motor.
 message ThrottlePowerOffRequest {
-  required Valve valve = 1;
+  required ThrottleValveType valve = 1;
 }
 
 // Enter valve calibration mode.
 message CalibrateThrottleValveRequest {
-  required Valve valve = 1;
+  required ThrottleValveType valve = 1;
 }
 
 // Load a valve motor sequence. At least one trace must be set.
@@ -404,6 +453,9 @@ message DataPacket {
   optional RangerRcsMetrics ranger_rcs_metrics = 82;
   optional HornetRcsMetrics hornet_rcs_metrics = 81;
 
+  // Actuator commands -- shared.
+  required ValveStates valve_states = 86;
+
   // Actuator commands -- ranger
   optional ThrottleValveCommand fuel_valve_command = 60;
   optional ThrottleValveCommand lox_valve_command = 61;
@@ -482,6 +534,18 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
+// Current valve states.
+message ValveStates {
+  optional ValveState sv001 = 1;
+  optional ValveState sv002 = 2;
+  optional ValveState sv003 = 3;
+  optional ValveState sv004 = 4;
+  optional ValveState pbv002 = 5;
+  optional ValveState sv005 = 6;
+  optional ValveState svg001 = 100;
+  optional ValveState svg002 = 101;
+  optional ValveState svg003 = 102;
+}
 
 // this is what is sent to other controllers, calculated in FlightController
 message FlightControllerOutput{
@@ -511,44 +575,3 @@ message RangerRcsMetrics {}
 
 message HornetRcsMetrics {}
 
-// Only exists for Ranger anyways
-message ThrottleValveCalibrationData {
-  required bool fuel_found_hardstop = 3;
-  required float fuel_hardstop_pos = 4;
-  required bool lox_found_hardstop = 7;
-  required float lox_hardstop_pos = 8;
-
-  required int32 cal_phase = 9;
-  required int32 rep_count = 10;
-
-  required float fuel_err = 11;
-  required float lox_err = 12;
-}
-
-message ThrottleValveSequenceData {}
-
-message ThrottleRangerThrustSequenceData {
-
-  required float target_thrust = 5;
-  required float thrust_error = 6;
-
-  required float predicted_thrust = 1;
-  required float predicted_of = 2;
-  required float mdot_fuel = 3;
-  required float mdot_lox = 4;
-
-  required float change_alpha_cmd = 7;
-  required float clamped_change_alpha_cmd = 8;
-
-  required float alpha = 9;
-  required float thrust_from_alpha = 10;
-}
-
-message ThrottleHornetThrustSequenceData{
-    required float target_thrust = 1;
-
-}
-
-message TvcFlightData {
-
-}

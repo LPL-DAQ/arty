@@ -66,6 +66,9 @@ TODO:
         analog-sensor-adcs = <&adc1>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+
+        // GPIOs connected to valves. Valve channel numbers are indexed by their position in this list.
+        valve-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>, <&gpio2 17 GPIO_ACTIVE_HIGH>, <&gpio2 16 GPIO_ACTIVE_HIGH>;
     };
 
     chosen {
