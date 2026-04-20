@@ -302,6 +302,18 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
+        case Request_load_static_fire_sequence_tag: {
+            LOG_INF("load_static_fire_sequence command");
+            cmd_result = Controller::handle_load_static_fire_sequence(request.payload.load_static_fire_sequence);
+            break;
+        }
+
+        case Request_start_static_fire_sequence_tag: {
+            LOG_INF("start_static_fire_sequence command");
+            cmd_result = Controller::handle_start_static_fire_sequence(request.payload.start_static_fire_sequence);
+            break;
+        }
+
         case Request_load_flight_sequence_tag: {
             LOG_INF("load_flight_sequence command");
             cmd_result = Controller::handle_load_flight_sequence(request.payload.load_flight_sequence);

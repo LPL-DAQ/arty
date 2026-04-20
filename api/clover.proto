@@ -70,6 +70,11 @@ message Request {
     // Transiitons ROLL_PRIMED -> ROLL
     StartRcsSequenceRequest start_rcs_sequence = 22;
 
+    // Transitions IDLE -> STATIC_FIRE_PRIMED
+    LoadStaticFireSequenceRequest load_static_fire_sequence = 36;
+    // Transiitons STATIC_FIRE_PRIMED -> STATIC_FIRE
+    StartStaticFireSequenceRequest start_static_fire_sequence = 37;
+
     // Transitions IDLE -> FLIGHT_PRIMED
     LoadFlightSequenceRequest load_flight_sequence = 31;
     // Transitions FLIGHT_PRIMED -> FLIGHT
@@ -243,6 +248,16 @@ message LoadRcsSequenceRequest {
 
 // Start a loaded Roll sequence.
 message StartRcsSequenceRequest {}
+
+// Load a static fire sequence (throttle + TVC)
+message LoadStaticFireSequenceRequest {
+  required ControlTrace thrust_trace_lbf = 1;
+  required ControlTrace pitch_trace_deg = 2;
+  required ControlTrace yaw_trace_deg = 3;
+}
+
+// Start a static fire sequence (throttle + TVC)
+message StartStaticFireSequenceRequest {}
 
 
 // TVC Requests
