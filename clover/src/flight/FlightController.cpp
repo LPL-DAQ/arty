@@ -7,26 +7,21 @@
 K_MUTEX_DEFINE(flight_controller_lock);
 
 namespace {
-
-    // Mounting offset between IMU sensor frame and rocket body frame (deg)
-    constexpr float IMU_TO_BODY_YAW_DEG = 0.0f;
-    constexpr float IMU_TO_BODY_PITCH_DEG = 0.0f;
-    constexpr float IMU_TO_BODY_ROLL_DEG = 0.0f;
-
     const float maxGimble = 12.0;   // degrees, this is an estimate
     const float maxTiltDeg = 8.0;  // What we dont want the rocket to purposefully tilt more than
 
     // TODO: Tune, including adding integral terms (is requried)
-
     // reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
     // integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
     PID pidXTilt(0.385, 0.0, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
     PID pidYTilt(0.385, 0.0, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
     PID pidX(0, 0, 0);              // needs tuning
     PID pidY(0, 0, 0);              // needs tuning
-    // only use integral within 5 cm of target. TODO: add max and min out
+    // only use integral within 5 cm of target.
     PID pidZ(0.075, 0.01, 0, -1e6, 1e6, -1e6, 1e6, 0.05);
+    // TODO: add max and min out
     PID pidZVelocity(0, 0, 0);      // needs tuning
+
     static uint32_t loopCount = 0;
 
     float dt = 0.001; // TODO: make this an actual DT measurement ( or at least research if i should)
@@ -34,9 +29,7 @@ namespace {
     constexpr float DEG2RAD_F = 0.0174532925f;
     constexpr float RAD2DEG_F = 57.2957795f;
 
-
     DesiredState des_state = DesiredState_init_default;
-
 
 #if CONFIG_HORNET
     constexpr float yaw_MOI = -67.67f;
@@ -49,12 +42,10 @@ namespace {
     constexpr float pitch_MOI = -67.67f;
     constexpr float yaw_moment_arm = -67.67f;
     constexpr float pitch_moment_arm = -67.67f;
-
 #endif
-
 }
 
-// TODO: mass expression for ranger?
+// TODO: get the real mass estimates
 static float get_mass_kg(){
 #if CONFIG_HORNET
     return 6.8f; // 15 lbs
