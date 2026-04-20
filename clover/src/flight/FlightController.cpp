@@ -94,7 +94,7 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitc
 
 
 // returns {pitch acceleration, yaw acceleration}
-static std::array<float, 2> lateralPID(EstimatedState state)
+static std::array<float, 2> lateralPID(EstimatedState state, FlightControllerMetrics& metrics)
 {
     std::array<float, 2> output_accelerations{};
 
@@ -123,11 +123,8 @@ static std::array<float, 2> lateralPID(EstimatedState state)
 
     // Actual vertical axis in world
     Vector3D z_act_w = math_util::multiplyQuaternionVector(q_bw, math_util::unitZ());
-
-    // Debug values: literal actual tilt angles
-    // TODO: have these logged in some way
-    [[maybe_unused]] float tilt_x_act = std::atan2(z_act_w.x, z_act_w.z);
-    [[maybe_unused]] float tilt_y_act = std::atan2(z_act_w.y, z_act_w.z);
+    metrics.actual_world_tilt_x_rad = std::atan2(z_act_w.x, z_act_w.z);
+    metrics.actual_world_tilt_y_rad = std::atan2(z_act_w.y, z_act_w.z);
 
     // Desired thrust axis in world from desired literal tilt angles
     Vector3D z_des_w = math_util::createVector3D(
@@ -154,18 +151,27 @@ static std::array<float, 2> lateralPID(EstimatedState state)
     output_accelerations[0] = pidXTilt.calculate(0.0f, axis_error_b.x, dt);
     output_accelerations[1] = pidYTilt.calculate(0.0f, axis_error_b.y, dt);
 
+    metrics.desired_world_tilt_x_rad = des_state.world_tilt_x;
+    metrics.desired_world_tilt_y_rad = des_state.world_tilt_y;
+    metrics.commanded_pitch_acceleration_rad_s2 = output_accelerations[0];
+    metrics.commanded_yaw_acceleration_rad_s2 = output_accelerations[1];
+
     return output_accelerations;
 }
 
-static float verticalPID(EstimatedState state){
+static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics){
 
     // outerloop on position
     if (loopCount % 3 == 0)
     {
         des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, dt);
     }
+
+    metrics.desired_vertical_velocity_m_s = des_state.vz_m_s;
+
     // innerloop on velocity
     float desired_acceleration = pidZVelocity.calculate(des_state.vz_m_s, state.velocity.z, dt);
+    metrics.commanded_vertical_acceleration_m_s2 = desired_acceleration;
     return desired_acceleration;
 }
 
@@ -200,18 +206,21 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
 
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
-    float z_acceleration = verticalPID(state);
+    float z_acceleration = verticalPID(state, metrics);
     float throttle_thrust_command_N = z_acceleration * get_mass_kg();
 
-    auto angular_accelerations = lateralPID(state);
+    auto angular_accelerations = lateralPID(state, metrics);
     float pitch_acceleration_command = angular_accelerations[0];
     float yaw_acceleration_command = angular_accelerations[1];
+
     auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_N);
     if (!tvc_angles) {
         return std::unexpected(Error::from_cause("failed to compute TVC angles"));
     }
     float tvc_pitch_command_deg = std::get<0>(*tvc_angles);
     float tvc_yaw_command_deg = std::get<1>(*tvc_angles);
+    metrics.tvc_pitch_command_deg = tvc_pitch_command_deg;
+    metrics.tvc_yaw_command_deg = tvc_yaw_command_deg;
 
     return {{throttle_thrust_command_N, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
 }

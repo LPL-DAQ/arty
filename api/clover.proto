@@ -581,7 +581,18 @@ message FlightControllerDesiredState {
   required float vz_m_s = 5;
 }
 
-message FlightControllerMetrics {}
+message FlightControllerMetrics {
+  required float desired_world_tilt_x_rad = 1;
+  required float desired_world_tilt_y_rad = 2;
+  required float actual_world_tilt_x_rad = 3;
+  required float actual_world_tilt_y_rad = 4;
+  required float desired_vertical_velocity_m_s = 5;
+  required float commanded_vertical_acceleration_m_s2 = 6;
+  required float commanded_pitch_acceleration_rad_s2 = 7;
+  required float commanded_yaw_acceleration_rad_s2 = 8;
+  required float tvc_pitch_command_deg = 9;
+  required float tvc_yaw_command_deg = 10;
+}
 
 message RangerThrottleMetrics {}
 
