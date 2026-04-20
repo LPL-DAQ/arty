@@ -157,9 +157,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         return {};
     }
 
-    // Generate commands to subordinate subsystems
-    switch (current_state) {
-    case SystemState_STATE_FLIGHT: {
+    // Sample flight trace and run flight controller
+    if (current_state == SystemState_STATE_FLIGHT) {
         // Sample flight traces
         auto x_sample = flight_x_trace_m.sample(data.trace_time_msec);
         if (!x_sample.has_value()) {
@@ -202,11 +201,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(
             data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.rcs_roll_command_deg, data.flight_controller_metrics) =
             *flight_response;
-
-        break;
     }
 
-    case SystemState_STATE_THROTTLE: {
+    // Sample throttle trace
+    if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
         // Sample thrust trace
         auto thrust_sample = throttle_thrust_trace_lbf.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
@@ -214,11 +212,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         }
         data.has_throttle_thrust_command_lbf = true;
         data.throttle_thrust_command_lbf = *thrust_sample;
-
-        break;
     }
 
-    case SystemState_STATE_TVC: {
+    // Sample TVC trace
+    if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_TVC) {
         // Sample TVC trace
         auto pitch_sample = tvc_pitch_trace_deg.sample(data.trace_time_msec);
         if (!pitch_sample.has_value()) {
@@ -233,11 +230,9 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         }
         data.has_tvc_yaw_command_deg = true;
         data.tvc_yaw_command_deg = *yaw_sample;
-
-        break;
     }
 
-    case SystemState_STATE_RCS: {
+    if (current_state == SystemState_STATE_RCS) {
         // Sample TVC trace
         auto roll_sample = tvc_pitch_trace_deg.sample(data.trace_time_msec);
         if (!roll_sample.has_value()) {
@@ -245,17 +240,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         }
         data.has_rcs_roll_command_deg = true;
         data.rcs_roll_command_deg = *roll_sample;
-
-        break;
-    }
-
-    default: {
-        return std::unexpected(Error::from_cause("invalid state for active control tick: %d", current_state));
-    }
     }
 
     // Execute subordinate controllers
-    if (current_state == SystemState_STATE_THROTTLE || current_state == SystemState_STATE_FLIGHT) {
+    if (current_state == SystemState_STATE_THROTTLE || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
         if (!data.has_throttle_thrust_command_lbf) {
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
@@ -280,7 +268,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 #endif
     }
 
-    if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT) {
+    if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
         if (!data.has_tvc_pitch_command_deg) {
             return std::unexpected(Error::from_cause("missing tvc pitch command"));
         }
@@ -844,8 +832,8 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const Load
     }
     trace_total_time_msec = rcs_cw_valve_trace.get_total_time_ms();
 
-    current_state = SystemState_STATE_THROTTLE_PRIMED;
-    LOG_INF("Primed throttle thrust sequence");
+    current_state = SystemState_STATE_RCS_VALVE_PRIMED;
+    LOG_INF("Primed RCS valve sequence");
 
     return {};
 }
@@ -900,6 +888,65 @@ std::expected<void, Error> Controller::handle_start_rcs_sequence(const StartRcsS
     current_state = SystemState_STATE_RCS;
 
     LOG_INF("Starting RCS roll sequence");
+
+    return {};
+}
+
+/// Client-triggered transition from IDLE to STATIC_FIRE_PRIMED
+std::expected<void, Error> Controller::handle_load_static_fire_sequence(const LoadStaticFireSequenceRequest& req)
+{
+    MutexGuard guard{&controller_state_lock};
+
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("flight load sequence rejected unless system is idle"));
+    }
+
+    // Try loading throttle trace
+    if (auto ret = throttle_thrust_trace_lbf.load(req.thrust_trace_lbf); !ret.has_value()) {
+        return std::unexpected(ret.error().context("failed to load static fire thrust trace"));
+    }
+
+    // Try loading tvc pitch trace
+    if (auto ret = tvc_pitch_trace_deg.load(req.pitch_trace_deg); !ret.has_value()) {
+        return std::unexpected(ret.error().context("failed to load static fire pitch trace"));
+    }
+
+    // Try loading tvc yaw trace
+    if (auto ret = tvc_yaw_trace_deg.load(req.yaw_trace_deg); !ret.has_value()) {
+        return std::unexpected(ret.error().context("failed to load static fire yaw trace"));
+    }
+
+    // All traces must be the same length
+    if (!(throttle_thrust_trace_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
+          tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
+        return std::unexpected(
+            Error::from_cause(
+                "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
+                static_cast<double>(throttle_thrust_trace_lbf.get_total_time_ms()),
+                static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
+                static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
+    }
+    trace_total_time_msec = flight_x_trace_m.get_total_time_ms();
+
+    current_state = SystemState_STATE_STATIC_FIRE_PRIMED;
+    LOG_INF("Primed static fire sequence");
+
+    return {};
+}
+
+/// Client-triggered transition from STATIC_FIRE_PRIMED to STATIC_FIRE
+std::expected<void, Error> Controller::handle_start_static_fire_sequence(const StartStaticFireSequenceRequest& req)
+{
+    MutexGuard guard{&controller_state_lock};
+
+    if (current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
+        return std::unexpected(Error::from_cause("State must be STATIC_FIRE_PRIMED to enter static fire"));
+    }
+
+    trace_start_cycle = k_cycle_get_64();
+    current_state = SystemState_STATE_STATIC_FIRE;
+
+    LOG_INF("Starting static fire sequence");
 
     return {};
 }
