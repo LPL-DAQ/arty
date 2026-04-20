@@ -370,7 +370,6 @@ message DataPacket {
   optional float flight_x_command_m = 73;
   optional float flight_y_command_m = 74;
   optional float flight_z_command_m = 75;
-  optional float flight_roll_command_deg = 76;
 
   // State-specific outputs
 

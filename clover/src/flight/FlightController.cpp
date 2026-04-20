@@ -14,10 +14,9 @@ void FlightController::reset()
 /// - throttle_thrust_command_lbf
 /// - tvc_pitch_command_deg
 /// - tvc_yaw_command_deg
-/// - rcs_roll_command_deg
 /// - FlightControllerMetrics
-std::expected<std::tuple<float, float, float, float, FlightControllerMetrics>, Error>
-FlightController::tick(float x_command_m, float y_command_m, float z_command_m, float roll_command_deg)
+std::expected<std::tuple<float, float, float, FlightControllerMetrics>, Error>
+FlightController::tick(float x_command_m, float y_command_m, float z_command_m)
 {
     MutexGuard flight_controller_guard(&flight_controller_lock);
 

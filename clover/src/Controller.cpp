@@ -188,21 +188,20 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!roll_sample.has_value()) {
             return std::unexpected(roll_sample.error().context("failed to sample flight roll trace"));
         }
-        data.has_flight_roll_command_deg = true;
-        data.flight_roll_command_deg = *roll_sample;
+        data.has_rcs_roll_command_deg = true;
+        data.rcs_roll_command_deg = *roll_sample;
 
         // Execute flight controller to generate flight commands
-        auto flight_response = FlightController::tick(data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m, data.flight_roll_command_deg);
+        auto flight_response = FlightController::tick(data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m);
         if (!flight_response.has_value()) {
             return std::unexpected(flight_response.error().context("error in FlightController"));
         }
         data.has_throttle_thrust_command_lbf = true;
         data.has_tvc_pitch_command_deg = true;
         data.has_tvc_yaw_command_deg = true;
-        data.has_rcs_roll_command_deg = true;
         data.has_flight_controller_metrics = true;
         std::tie(
-            data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.rcs_roll_command_deg, data.flight_controller_metrics) =
+            data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.flight_controller_metrics) =
             *flight_response;
 
         break;
