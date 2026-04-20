@@ -21,6 +21,7 @@
 #include "hornet/PwmActuator.h"
 #elif CONFIG_RANGER
 #include "ranger/ThrottleValve.h"
+#include "ranger/Valves.h"
 
 #else
 #error Either CONFIG_HORNET or CONFIG_RANGER must be set.
@@ -209,6 +210,27 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_configure_analog_sensors_tag: {
             LOG_INF("Configure analog sensors");
             cmd_result = AnalogSensors::handle_configure_analog_sensors(request.payload.configure_analog_sensors);
+            break;
+        }
+
+        // Provided by Valves
+        case Request_configure_valves_request_tag: {
+            LOG_INF("configure_valves_request");
+#ifdef CONFIG_RANGER
+            cmd_result = Valves::handle_configure_valves_request(request.payload.configure_valves_request);
+#else
+            cmd_result = std::unexpected(Error::from_cause("configure_valves_request is unsupported; CONFIG_RANGER must be set"));
+#endif
+            break;
+        }
+
+        case Request_actuate_valve_request_tag: {
+            LOG_INF("actuate_valve_request");
+#ifdef CONFIG_RANGER
+            cmd_result = Valves::handle_actuate_valve_request(request.payload.actuate_valve_request);
+#else
+            cmd_result = std::unexpected(Error::from_cause("actuate_valve_request is unsupported; CONFIG_RANGER must be set"));
+#endif
             break;
         }
 

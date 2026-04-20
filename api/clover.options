@@ -1,4 +1,5 @@
 ConfigureAnalogSensorsRequest.configs max_count:32
+ConfigureValvesRequest.configs max_count:32
 
 ControlTrace.segments max_count:30
 
