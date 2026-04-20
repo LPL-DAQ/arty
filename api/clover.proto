@@ -536,19 +536,31 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
-
-// this is what is sent to other controllers, calculated in FlightController
-message FlightControllerOutput{
-
+message Vector3D {
+  required float x = 1;
+  required float y = 2;
+  required float z = 3;
 }
 
-// this is what is sent to FlightController
-message FlightStateOutput {
-  required float z_acceleration = 2;
-  required float x_angular_acceleration = 3;
-  required float y_angular_acceleration = 4;
-  required float roll_position = 5;
+message Quaternion {
+  required float qw = 10;
+  required float qx = 1;
+  required float qy = 2;
+  required float qz = 3;
+}
 
+// Estimated vehicle state for telemetry and flight path monitoring.
+message EstimatedState {
+  required Quaternion R_WB = 1; // world to body
+  required Vector3D position = 2;
+  required Vector3D velocity = 3;
+}
+
+message FlightControllerDesiredState {
+  required Vector3D position = 1;
+  required float world_tilt_x = 2;
+  required float world_tilt_y = 3;
+  required float vz_m_s = 5;
 }
 
 message FlightControllerMetrics {}

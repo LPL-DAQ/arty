@@ -5,7 +5,7 @@
 
 #include "clover.pb.h"
 
-namespace util
+namespace math_util
 {
   template <typename T>
   inline T clamp(T v, T lo, T hi)

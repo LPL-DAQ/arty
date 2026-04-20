@@ -1,6 +1,7 @@
 #include "FlightController.h"
 #include "MutexGuard.h"
-#include "PID.h"
+#include "../PID.h"
+#include "../math_util.h"
 #include <zephyr/kernel.h>
 #include <limits>
 
@@ -29,7 +30,7 @@ namespace {
     constexpr float DEG2RAD_F = 0.0174532925f;
     constexpr float RAD2DEG_F = 57.2957795f;
 
-    DesiredState des_state = DesiredState_init_default;
+    FlightControllerDesiredState des_state = FlightControllerDesiredState_init_default;
 
 #if CONFIG_HORNET
     constexpr float yaw_MOI = -67.67f;
@@ -57,7 +58,7 @@ static float get_mass_kg(){
 
 // TODO: unit test
 // converts angular accelerations to tvc commanded angles based on vehicle
-static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float yaw_accel, float pitch_accel, float thrust){
+static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitch_accel, float yaw_accel, float thrust){
     // Physics: Angular acceleration = (Thrust * moment_arm * sin(angle)) / MOI
     // Therefore: sin(angle) = (angular_accel * MOI) / (Thrust * moment_arm)
     // angle_rad = arcsin((angular_accel * MOI) / (Thrust * moment_arm))
@@ -70,8 +71,8 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float yaw_
     float pitch_sin_angle = (pitch_accel * pitch_MOI) / (thrust * pitch_moment_arm);
 
     // Clamp sin values to valid domain [-1, 1]
-    yaw_sin_angle = util::clamp(yaw_sin_angle, -1.0f, 1.0f);
-    pitch_sin_angle = util::clamp(pitch_sin_angle, -1.0f, 1.0f);
+    yaw_sin_angle = math_util::clamp(yaw_sin_angle, -1.0f, 1.0f);
+    pitch_sin_angle = math_util::clamp(pitch_sin_angle, -1.0f, 1.0f);
 
     // Calculate gimbal angles in radians using arcsin
     float yaw_angle_rad = std::asin(yaw_sin_angle);
@@ -82,12 +83,88 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float yaw_
     float pitch_angle_deg = pitch_angle_rad * RAD2DEG_F;
 
     // Clamp to maximum gimbal angle
-    yaw_angle_deg = util::clamp(yaw_angle_deg, -maxGimble, maxGimble);
-    pitch_angle_deg = util::clamp(pitch_angle_deg, -maxGimble, maxGimble);
+    yaw_angle_deg = math_util::clamp(yaw_angle_deg, -maxGimble, maxGimble);
+    pitch_angle_deg = math_util::clamp(pitch_angle_deg, -maxGimble, maxGimble);
 
     return {{pitch_angle_deg, yaw_angle_deg}};
 }
 
+
+// returns {pitch acceleration, yaw acceleration}
+static std::array<float, 2> lateralPID(EstimatedState state)
+{
+    std::array<float, 2> output_accelerations{};
+
+    Quaternion q_wb = math_util::createQuaternion(
+        state.R_WB.qw,
+        state.R_WB.qx,
+        state.R_WB.qy,
+        state.R_WB.qz
+    );
+    q_wb = math_util::normalizeQuaternion(q_wb);
+
+    Quaternion q_bw = math_util::conjugateQuaternion(q_wb);
+
+    // Outer loop: desired literal tilt angles
+    if (loopCount % 3 == 0)
+    {
+        float outer_dt = 3.0f * dt;
+
+        des_state.world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, state.velocity.x, outer_dt);
+        des_state.world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, state.velocity.y, outer_dt);
+
+        // Clamp if needed
+        des_state.world_tilt_x = std::clamp(des_state.world_tilt_x, -maxTiltDeg, maxTiltDeg);
+        des_state.world_tilt_y = std::clamp(des_state.world_tilt_y, -maxTiltDeg, maxTiltDeg);
+    }
+
+    // Actual vertical axis in world
+    Vector3D z_act_w = math_util::multiplyQuaternionVector(q_bw, math_util::unitZ());
+
+    // Debug values: literal actual tilt angles
+    // TODO: have these logged in some way
+    [[maybe_unused]] float tilt_x_act = std::atan2(z_act_w.x, z_act_w.z);
+    [[maybe_unused]] float tilt_y_act = std::atan2(z_act_w.y, z_act_w.z);
+
+    // Desired thrust axis in world from desired literal tilt angles
+    Vector3D z_des_w = math_util::createVector3D(
+        std::tan(des_state.world_tilt_x),
+        std::tan(des_state.world_tilt_y),
+        1.0
+    );
+    // Normalize the vector
+    z_des_w = math_util::normalizeVector3D(z_des_w);
+
+    // Desired thrust axis expressed in body frame
+    Vector3D z_des_b = math_util::multiplyQuaternionVector(q_wb, z_des_w);
+
+    // Body-frame reduced attitude error
+    // Unit Z because we are in body frame
+    Vector3D axis_error_b = math_util::crossProduct(util::unitZ(), z_des_b);
+
+    // Inner loop on body-axis tilt error
+    // TODO: Check if this needs a negative sign.
+    // TODO: do i need to unscale because of the TVC thrust scaling? i think it should be 3% of 3% error, so its chill, but should double check
+    // TODO: find angular rates to feed to derivative
+
+    // Feed body-axis error
+    output_accelerations[0] = pidXTilt.calculate(0.0f, axis_error_b.x, dt);
+    output_accelerations[1] = pidYTilt.calculate(0.0f, axis_error_b.y, dt);
+
+    return output_accelerations;
+}
+
+static float verticalPID(EstimatedState state){
+
+    // outerloop on position
+    if (loopCount % 3 == 0)
+    {
+        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, dt);
+    }
+    // innerloop on velocity
+    float desired_acceleration = pidZVelocity.calculate(des_state.vz_m_s, state.velocity.z, dt);
+    return desired_acceleration;
+}
 
 /// Called before entrance into FLIGHT state to reset internal logic.
 void FlightController::reset()
@@ -99,8 +176,10 @@ void FlightController::reset()
     pidY.reset();
     pidZ.reset();
     pidZVelocity.reset();
-    des_state = DesiredState_init_default;
+    des_state = FlightControllerDesiredState_init_default;
 }
+
+// TODO: roll control, but also handled in a header visable method so that it supports roll traces outside of flight state
 
 /// Called every tick in FLIGHT state. Returns a tuple of:
 /// - throttle_thrust_command_lbf
@@ -108,14 +187,19 @@ void FlightController::reset()
 /// - tvc_yaw_command_deg
 /// - FlightControllerMetrics
 std::expected<std::tuple<float, float, float, FlightControllerMetrics>, Error>
-FlightController::tick(float x_command_m, float y_command_m, float z_command_m)
+FlightController::tick(EstimatedState state, float x_command_m, float y_command_m, float z_command_m)
 {
     MutexGuard flight_controller_guard(&flight_controller_lock);
 
-    float throttle_thrust_command_lbf = -67.67f;
-    float (tvc_pitch_command_deg,tvc_yaw_command_deg) = find_tvc_angles(-67.67f,-67.67f);
+    des_state.position.x = x_command_m;
+    des_state.position.y = y_command_m;
+    des_state_position.z = z_command_m;
+
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
+    float throttle_thrust_command_lbf = verticalPID(state);
+    float (pitch_acceleration_command, yaw_acceleration_command) = lateralPID(state)
+    float (tvc_pitch_command_deg,tvc_yaw_command_deg) = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command);
 
     return {{throttle_thrust_command_lbf, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
 }
