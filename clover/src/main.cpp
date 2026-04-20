@@ -10,7 +10,6 @@
 #include "sensors/AnalogSensors.h"
 #include "sensors/lidar.h"
 #include "Controller.h"
-#include "FlightController.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET

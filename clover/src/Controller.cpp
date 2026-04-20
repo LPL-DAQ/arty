@@ -1,10 +1,10 @@
 #include "Controller.h"
-#include "FlightController.h"
 #include "MutexGuard.h"
 #include "config.h"
 #include "sensors/AnalogSensors.h"
 #include "server.h"
 #include "util.h"
+#include "flight/FlightController.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -158,6 +158,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     }
 
     // Generate commands to subordinate subsystems
+    // TODO: Static Fire?
+
     switch (current_state) {
     case SystemState_STATE_FLIGHT: {
         // Sample flight traces
@@ -342,6 +344,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     return {};
 }
 
+
+// TODO: from noah: i feel like something should be here, no?
 static void tick_abort(DataPacket& data)
 {
 }
@@ -440,8 +444,8 @@ static void step_control_loop(k_work*)
     // Commands all actuators back to nominal states.
     case SystemState_STATE_ABORT: {
         // TODO
-        data.abort_time_msec = nsec_since_cycle(abort_start_cycle) / 1e6f;
         data.has_abort_time_msec = true;
+        data.abort_time_msec = nsec_since_cycle(abort_start_cycle) / 1e6f;
         tick_abort(data);
 
         if (data.abort_time_msec > Controller::ABORT_TIME_MSEC) {
@@ -501,7 +505,7 @@ static void step_control_loop(k_work*)
     LoxValve::tick(data.lox_valve_command);
     // RCS valves, TVC actuators
 #elif CONFIG_HORNET
-    // TODO, PWM stuff. @noah :)
+    // TODO, PWM stuff. @noah :) ;-;
 #endif
 
     // Update last-executed actuator commands
