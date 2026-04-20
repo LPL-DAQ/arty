@@ -1,72 +1,28 @@
-#include <zephyr/usb/usb_device.h>
-#include <zephyr/sys/printk.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/printk.h>
 
-/* Reference the ADC channel defined in devicetree (zephyr,user) */
-#define ADC_SPEC_NODE DT_PATH(zephyr_user)
-
-/* Get ADC specification from devicetree */
-static const struct adc_dt_spec ads_adc =
-    ADC_DT_SPEC_GET_BY_NAME(ADC_SPEC_NODE, ain0);
-
-/* Debug variables (observe via debugger) */
-volatile int g_init_ret = 0;
-volatile int g_ret = 0;
-volatile int g_match = 0;
-
-/* Buffer to store raw ADC sample */
-int16_t g_raw[1] = {0};
-
-/* Keep ADC sequence out of the stack */
-static struct adc_sequence g_seq = {
-    .buffer = g_raw,
-    .buffer_size = sizeof(g_raw),
-};
+#define MCP23017_NODE DT_NODELABEL(mcp23017)
 
 int main(void)
 {
-    usb_enable(nullptr);
+    const struct device *mcp = DEVICE_DT_GET(MCP23017_NODE);
 
-    /* Check if ADC device is ready */
-    if (!adc_is_ready_dt(&ads_adc)) {
-        g_init_ret = -1;
-        while (1) {
-            k_msleep(1000);
-        }
+    if (!device_is_ready(mcp)) {
+        printk("MCP23017 not ready\n");
+        return 0;
     }
 
-    /* Configure ADC channel based on devicetree settings */
-    int ret = adc_channel_setup_dt(&ads_adc);
-    if (ret < 0) {
-        g_init_ret = ret;
-        while (1) {
-            k_msleep(1000);
-        }
+    int ret = gpio_pin_configure(mcp, 0, GPIO_OUTPUT_INACTIVE);
+    if (ret != 0) {
+        printk("gpio_pin_configure failed: %d\n", ret);
+        return 0;
     }
-
-    /* Initialize sequence from devicetree */
-    adc_sequence_init_dt(&ads_adc, &g_seq);
 
     while (1) {
-        /* Clear previous sample */
-        g_raw[0] = 0;
-
-        /* Perform ADC read (driver handles SPI internally) */
-        g_ret = adc_read_dt(&ads_adc, &g_seq);
-
-        /* Check if read was successful */
-        if (g_ret == 0) {
-            g_match = 1;  /* Read success */
-        } else {
-            g_match = 0;  /* Read failed */
-        }
-
-        k_msleep(1000);
+        gpio_pin_toggle(mcp, 0);
+        printk("toggled MCP23017 pin 0\n");
+        k_sleep(K_SECONDS(1));
     }
-
-    return 0;
 }
-
-
