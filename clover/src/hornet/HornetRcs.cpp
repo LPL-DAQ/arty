@@ -25,7 +25,7 @@ static int control(EstimatedState state, float desired_roll_position){
     Vector3D euler = math_util::quaternionToEulerAngles(q_wb);
     double roll_position = euler.z;
     // TODO: itd be nice to have angular rates in the state estimate
-    float roll_velocity = 0.0;
+    // float roll_velocity = 0.0;
 
     float control_effort = roll_pid.calculate(desired_roll_position, roll_position, dt);
 

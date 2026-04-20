@@ -37,7 +37,7 @@ message Request {
     UnprimeRequest unprime = 35;
 
     // Configure flight controller
-    ConfigureFlightControllerGainsRequest configure_flight_controller_gains = 36;
+    ConfigureFlightControllerGainsRequest configure_flight_controller_gains = 3;
 
     // Transitions IDLE -> CALIBRATE_THROTTLE_VALVE
     CalibrateThrottleValveRequest calibrate_throttle_valve = 33;

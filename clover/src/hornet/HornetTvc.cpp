@@ -19,8 +19,8 @@ std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick
     float r_gimble = 1.0f;
     float r_servo = 1.0f;
 
-    float servo_pitch_angle = std::asin(r_gimble / r_servo) * sin(pitch_command_deg);
-    float servo_yaw_angle = std::asin(r_gimble / r_servo) * sin(yaw_command_deg);
+    float servo_pitch_angle = asinf(r_gimble / r_servo) * sinf(pitch_command_deg * 3.141592653589793f / 180.0f);
+    float servo_yaw_angle = asinf(r_gimble / r_servo) * sinf(yaw_command_deg * 3.141592653589793f / 180.0f);
 
 
     servo_pitch_angle = std::clamp(servo_pitch_angle, -90.0f, 90.0f);

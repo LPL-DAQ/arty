@@ -66,8 +66,8 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitc
     // Therefore: sin(angle) = (angular_accel * MOI) / (Thrust * moment_arm)
     // angle_rad = arcsin((angular_accel * MOI) / (Thrust * moment_arm))
 
-    // Use nominal thrust based on vehicle mass and a typical thrust-to-weight ratio (~3:1)
-    float mass_kg = get_mass_kg();
+    // may be needed if we have an updating MOI
+    // float mass_kg = get_mass_kg();
 
     // Calculate sin of gimbal angles
     float yaw_sin_angle = (yaw_accel * yaw_MOI) / (thrust * yaw_moment_arm);
@@ -200,10 +200,12 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
 
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
-    float throttle_thrust_command_N = verticalPID(state);
-    auto accelerations = lateralPID(state);
-    float pitch_acceleration_command = accelerations[0];
-    float yaw_acceleration_command = accelerations[1];
+    float z_acceleration = verticalPID(state);
+    float throttle_thrust_command_N = z_acceleration * get_mass_kg();
+
+    auto angular_accelerations = lateralPID(state);
+    float pitch_acceleration_command = angular_accelerations[0];
+    float yaw_acceleration_command = angular_accelerations[1];
     auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_N);
     if (!tvc_angles) {
         return std::unexpected(Error::from_cause("failed to compute TVC angles"));
