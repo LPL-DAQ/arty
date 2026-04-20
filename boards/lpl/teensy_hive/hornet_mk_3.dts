@@ -23,11 +23,13 @@ TODO:
         zephyr,console = &cdc_acm_uart0;
     };
 
-    zephyr,user {
-        io-channels = <&ads7950 0>;
-        io-channel-names = "ain0";
+    aliases {
+        mcp0 = &mcp0;
     };
 
+    mcp0: mcp0 {
+        gpios = <&mcp23017 0 GPIO_ACTIVE_HIGH>;
+    };
 };
 
 // VN-300 IMU
@@ -65,28 +67,14 @@ TODO:
     local-mac-address = [ 67 67 67 67 67 67  ];
 };
 
-&lpspi4 {
+&lpi2c3 {
     status = "okay";
-    cs-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
 
-    ads7950: adc@0 {
-        compatible = "ti,ads7950";
-        reg = <0>;
-        spi-max-frequency = <20000000>;
-        #io-channel-cells = <1>;
-        ti,range = <1>;
+    mcp23017: gpio@20 {
+        compatible = "microchip,mcp23017";
+        reg = <0x20>;
+        gpio-controller;
+        #gpio-cells = <2>;
         status = "okay";
-
-        #address-cells = <1>;
-        #size-cells = <0>;
-
-        channel@0 {
-            reg = <0>;
-            zephyr,gain = "ADC_GAIN_1";
-            zephyr,reference = "ADC_REF_VDD_1";
-            zephyr,vref-mv = <3300>;
-            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
-            zephyr,resolution = <12>;
-        };
     };
 };
