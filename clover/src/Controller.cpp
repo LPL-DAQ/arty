@@ -5,6 +5,7 @@
 #include "server.h"
 #include "util.h"
 #include "flight/FlightController.h"
+#include "flight/StateEstimator.h"
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
@@ -116,6 +117,9 @@ static void control_loop_schedule(k_timer* timer)
 
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
+
+//TODO roll control. the module should not accept a position as that is active control
+
 /// Transform actuator commands into actuator commands, modifying the data pcket in-place.
 /// If an abort is necessary, an Error is returned. This is called for all active control
 /// states. trace_time_msec must be pre-populated.
@@ -192,7 +196,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         data.rcs_roll_command_deg = *roll_sample;
 
         // Execute flight controller to generate flight commands
-        auto flight_response = FlightController::tick(data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m);
+        auto flight_response = FlightController::tick(data.estimated_state, data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m);
         if (!flight_response.has_value()) {
             return std::unexpected(flight_response.error().context("error in FlightController"));
         }
@@ -356,6 +360,7 @@ std::expected<void, Error> Controller::init()
     LOG_INF("Triggering initial sensor readings");
     k_sched_lock();
     AnalogSensors::start_sense();
+    StateEstimator::init();
     // Other sensors here...
     k_sched_unlock();
 
@@ -391,6 +396,10 @@ static void step_control_loop(k_work*)
     else {
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
+
+    auto estimated_state = StateEstimator::estimate();
+    // TODO: check if this returned an error
+    data.estimated_state = estimated_state;
 
     daq_client_status daq_status = get_daq_client_status();
 

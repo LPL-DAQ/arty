@@ -8,7 +8,7 @@ namespace StateEstimator {
 
     void init();
     void reset();
-    void step_control_loop(DataPacket& data);
+    std::optional<std::pair<EstimatedState, float>> estimate(DataPacket& data);
 
 
 }

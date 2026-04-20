@@ -390,7 +390,7 @@ enum SystemState {
   STATE_FLIGHT_PRIMED = 18;
 }
 
-// next tag: 21
+// next tag: 86
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -417,6 +417,9 @@ message DataPacket {
 
   // Sensors
   required AnalogSensorReadings analog_sensors = 19;
+
+  // state estimate
+  required EstimatedState estimated_state = 85;
 
   // State-specific inputs
 

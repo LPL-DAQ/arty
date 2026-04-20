@@ -1,4 +1,5 @@
 #include "StateEstimator.h"
+#include "Error.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -24,17 +25,20 @@ void StateEstimator::reset()
     has_last_time = false;
 }
 
-void StateEstimator::step_control_loop(DataPacket& data)
+std::optional<std::pair<EstimatedState, Error>> StateEstimator::estimate(DataPacket& data)
 {
-    GNCSensorReadings& sensors = data.gnc_sensors;
-    estimate.position = sensors.javad_position;
-        // edit z for lidar
-    estimate.velocity = sensors.javad_velocity;
-    estimate.R_WB = sensors.vn_q;
-    data.estimated_state = estimate;
-    // TODO: some checking about when the last update from sensors were and whatnot
-    last_time_ms = k_uptime_get();
-    has_last_time = true;
+    // TODO: Fill in when the real sensors exist
+
+    // GNCSensorReadings& sensors = data.gnc_sensors;
+    // estimate.position = sensors.javad_position;
+    //     // edit z for lidar
+    // estimate.velocity = sensors.javad_velocity;
+    // estimate.R_WB = sensors.vn_q;
+    // data.estimated_state = estimate;
+    // // TODO: some checking about when the last update from sensors were and whatnot
+    // last_time_ms = k_uptime_get();
+    // has_last_time = true;
+    return estimate;
 
 }
 
