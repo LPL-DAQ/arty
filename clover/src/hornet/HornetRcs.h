@@ -7,5 +7,5 @@
 
 namespace HornetRcs {
 void reset();
-std::expected<std::tuple<bool, bool, HornetRcsMetrics>, Error> tick(float roll_command_deg);
+std::expected<std::tuple<bool, bool, HornetRcsMetrics>, Error> tick(EstimatedState state, float roll_command_deg);
 }  // namespace HornetRcs
