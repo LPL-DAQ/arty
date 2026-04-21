@@ -120,9 +120,6 @@ static void control_loop_schedule(k_timer* timer)
 
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
-
-//TODO roll control. the module should not accept a position as that is active control
-
 /// Transform actuator commands into actuator commands, modifying the data pcket in-place.
 /// If an abort is necessary, an Error is returned. This is called for all active control
 /// states. trace_time_msec must be pre-populated.

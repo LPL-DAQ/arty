@@ -14,7 +14,6 @@ Hornet Mk. 3 board.
 TODO:
 - LoRa radio
 - Remove ADC1
-- PWM for servos, propellers, etc
 */
 
 / {

@@ -184,8 +184,6 @@ void FlightController::reset()
     des_state = FlightControllerDesiredState_init_default;
 }
 
-// TODO: roll control, but also handled in a header visable method so that it supports roll traces outside of flight state
-
 /// Called every tick in FLIGHT state. Returns a tuple of:
 /// - throttle_thrust_command_lbf
 /// - tvc_pitch_command_deg

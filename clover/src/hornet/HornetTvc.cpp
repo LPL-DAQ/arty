@@ -9,7 +9,6 @@ K_MUTEX_DEFINE(hornet_tvc_lock);
 void HornetTvc::reset()
 {
     MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
-    // TODO
 }
 
 /// Generate a comomand for the pitch and yaw servos.
