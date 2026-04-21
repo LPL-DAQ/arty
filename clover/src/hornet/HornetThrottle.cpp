@@ -12,12 +12,18 @@ void HornetThrottle::reset()
 }
 
 /// Generate a comomand for the main propeller.
-std::expected<std::tuple<float, HornetThrottleMetrics>, Error> HornetThrottle::tick(float thrust_command_lbf)
+std::expected<std::tuple<float, HornetThrottleMetrics>, Error> HornetThrottle::tick(float z_accel_m_s2)
 {
     MutexGuard hornet_throttle_guard{&hornet_throttle_lock};
     HornetThrottleMetrics metrics = HornetThrottleMetrics_init_default;
-    float best_fit_output;
 
+    // Convert vertical acceleration to thrust in Newtons, then to lbf
+    constexpr float mass_kg = 6.8f; // 15 lbs – TODO: get real mass estimate
+    const float thrust_N = z_accel_m_s2 * mass_kg;
+    const float thrust_command_lbf = thrust_N * N_TO_LBF;
+    metrics.thrust_N = thrust_N;
+
+    float best_fit_output;
     float throttle_percent;
     if (thrust_command_lbf < HORNET_THROTTLE_LOW_THRUST_THRESHOLD_LBF){ // below 10 lbf (only ever during landing and takeoff sequences)s)
         best_fit_output = (thrust_command_lbf / HORNET_THROTTLE_LOW_SLOPE);

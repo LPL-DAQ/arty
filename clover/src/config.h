@@ -6,6 +6,8 @@ constexpr int ANALOG_SENSORS_THREAD_PRIORITY = -5;
 // Unit conversion
 constexpr float DEG2RAD_F = 0.0174532925f;
 constexpr float RAD2DEG_F = 57.2957795f;
+constexpr float N_TO_LBF  = 0.224809f;
+constexpr float GRAVITY_M_S2 = 9.80665f;
 
 // PWM pulse width range (microseconds): 0% throttle = 1000 µs, 100% throttle = 2000 µs
 constexpr uint32_t MIN_PWM_PULSE_US = 1000;

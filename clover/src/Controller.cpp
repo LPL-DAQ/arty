@@ -66,7 +66,7 @@ static float trace_total_time_msec = 0;
 static uint64_t abort_start_cycle = 0;
 
 // Valid in THROTTLE_PRIMED and THROTTLE
-static Trace throttle_thrust_trace_N;
+static Trace throttle_thrust_trace_lbf;
 
 // Valid in TVC_PRIMED and TVC
 static Trace tvc_pitch_trace_deg;
@@ -192,24 +192,24 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         data.has_rcs_roll_command_deg = true;
         data.rcs_roll_command_deg = *roll_sample;
 
-        // Execute flight controller to generate flight commands
+        // Execute flight controller to generate raw acceleration commands
         auto flight_response = FlightController::tick(data.estimated_state, data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m);
         if (!flight_response.has_value()) {
             return std::unexpected(flight_response.error().context("error in FlightController"));
         }
-        data.has_throttle_thrust_command_lbf = true;
-        data.has_tvc_pitch_command_deg = true;
-        data.has_tvc_yaw_command_deg = true;
+        data.has_flight_pitch_accel_rad_s2 = true;
+        data.has_flight_yaw_accel_rad_s2 = true;
+        data.has_flight_z_accel_m_s2 = true;
         data.has_flight_controller_metrics = true;
         std::tie(
-            data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.flight_controller_metrics) =
+            data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.flight_z_accel_m_s2, data.flight_controller_metrics) =
             *flight_response;
     }
 
     // Sample throttle trace
     if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
         // Sample thrust trace
-        auto thrust_sample = throttle_thrust_trace_N.sample(data.trace_time_msec);
+        auto thrust_sample = throttle_thrust_trace_lbf.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
             return std::unexpected(thrust_sample.error().context("failed to sample throttle thrust trace"));
         }
@@ -247,10 +247,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Execute subordinate controllers
     if (current_state == SystemState_STATE_THROTTLE || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
+#ifdef CONFIG_RANGER
         if (!data.has_throttle_thrust_command_lbf) {
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
-#ifdef CONFIG_RANGER
         auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_lbf);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
@@ -261,7 +261,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.fuel_valve_command, data.lox_valve_command, data.ranger_throttle_metrics) = *throttle_response;
 
 #elif CONFIG_HORNET
-        auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_lbf);
+        if (!data.has_flight_z_accel_m_s2) {
+            return std::unexpected(Error::from_cause("missing flight z acceleration command"));
+        }
+        auto throttle_response = HornetThrottle::tick(data.flight_z_accel_m_s2);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in HornetThrottle"));
         }
@@ -272,14 +275,13 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     }
 
     if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
+#ifdef CONFIG_RANGER
         if (!data.has_tvc_pitch_command_deg) {
             return std::unexpected(Error::from_cause("missing tvc pitch command"));
         }
         if (!data.has_tvc_yaw_command_deg) {
-            return std::unexpected(Error::from_cause("missing tvc pitch command"));
+            return std::unexpected(Error::from_cause("missing tvc yaw command"));
         }
-
-#ifdef CONFIG_RANGER
         auto tvc_response = RangerTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
         if (!tvc_response.has_value()) {
             return std::unexpected(tvc_response.error().context("error in RangerTvc"));
@@ -290,7 +292,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.pitch_actuator_command, data.yaw_actuator_command, data.ranger_tvc_metrics) = *tvc_response;
 
 #elif CONFIG_HORNET
-        auto tvc_response = HornetTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
+        if (!data.has_flight_pitch_accel_rad_s2 || !data.has_flight_yaw_accel_rad_s2 || !data.has_hornet_throttle_metrics) {
+            return std::unexpected(Error::from_cause("missing flight acceleration commands for TVC"));
+        }
+        auto tvc_response = HornetTvc::tick(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.hornet_throttle_metrics.thrust_N);
         if (!tvc_response.has_value()) {
             return std::unexpected(tvc_response.error().context("error in HornetTvc"));
         }
@@ -735,11 +740,11 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
     }
 
     // Try loading thrust trace
-    auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N);
+    auto ret = throttle_thrust_trace_lbf.load(req.thrust_trace_lbf);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load thrust trace"));
     }
-    trace_total_time_msec = throttle_thrust_trace_N.get_total_time_ms();
+    trace_total_time_msec = throttle_thrust_trace_lbf.get_total_time_ms();
 
     current_state = SystemState_STATE_THROTTLE_PRIMED;
     LOG_INF("Primed throttle thrust sequence");
@@ -933,7 +938,7 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // Try loading throttle trace
-    if (auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N); !ret.has_value()) {
+    if (auto ret = throttle_thrust_trace_lbf.load(req.thrust_trace_lbf); !ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load static fire thrust trace"));
     }
 
@@ -948,12 +953,12 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // All traces must be the same length
-    if (!(throttle_thrust_trace_N.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
+    if (!(throttle_thrust_trace_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
           tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
         return std::unexpected(
             Error::from_cause(
                 "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
-                static_cast<double>(throttle_thrust_trace_N.get_total_time_ms()),
+                static_cast<double>(throttle_thrust_trace_lbf.get_total_time_ms()),
                 static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
                 static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }

@@ -30,62 +30,6 @@ static float dt = 0.01; // TODO: make this an actual DT measurement ( or at leas
 
 static FlightControllerDesiredState des_state = FlightControllerDesiredState_init_default;
 
-#if CONFIG_HORNET
-static constexpr float yaw_MOI = -67.67f;
-static constexpr float pitch_MOI = -67.67f;
-static constexpr float yaw_moment_arm = -67.67f;
-static constexpr float pitch_moment_arm = -67.67f;
-
-#else  // if CONFIG_RANGER
-static constexpr float yaw_MOI = -67.67f;
-static constexpr float pitch_MOI = -67.67f;
-static constexpr float yaw_moment_arm = -67.67f;
-static constexpr float pitch_moment_arm = -67.67f;
-#endif
-
-// TODO: get the real mass estimates
-static float get_mass_kg(){
-#if CONFIG_HORNET
-    return 6.8f; // 15 lbs
-
-#else  // if CONFIG_RANGER
-    return 272.0f; // 600 lbs
-#endif
-}
-
-// TODO: unit test
-// converts angular accelerations to tvc commanded angles based on vehicle
-static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitch_accel, float yaw_accel, float thrust){
-    // Physics: Angular acceleration = (Thrust * moment_arm * sin(angle)) / MOI
-    // Therefore: sin(angle) = (angular_accel * MOI) / (Thrust * moment_arm)
-    // angle_rad = arcsin((angular_accel * MOI) / (Thrust * moment_arm))
-
-    // may be needed if we have an updating MOI
-    // float mass_kg = get_mass_kg();
-
-    // Calculate sin of gimbal angles
-    float yaw_sin_angle = (yaw_accel * yaw_MOI) / (thrust * yaw_moment_arm);
-    float pitch_sin_angle = (pitch_accel * pitch_MOI) / (thrust * pitch_moment_arm);
-
-    // Clamp sin values to valid domain [-1, 1]
-    yaw_sin_angle = std::clamp(yaw_sin_angle, -1.0f, 1.0f);
-    pitch_sin_angle = std::clamp(pitch_sin_angle, -1.0f, 1.0f);
-
-    // Calculate gimbal angles in radians using arcsin
-    float yaw_angle_rad = std::asin(yaw_sin_angle);
-    float pitch_angle_rad = std::asin(pitch_sin_angle);
-
-    // Convert from radians to degrees
-    float yaw_angle_deg = yaw_angle_rad * RAD2DEG_F;
-    float pitch_angle_deg = pitch_angle_rad * RAD2DEG_F;
-
-    // Clamp to maximum gimbal angle
-    yaw_angle_deg = std::clamp(yaw_angle_deg, -maxGimble, maxGimble);
-    pitch_angle_deg = std::clamp(pitch_angle_deg, -maxGimble, maxGimble);
-
-    return {{pitch_angle_deg, yaw_angle_deg}};
-}
-
 
 // returns {pitch acceleration, yaw acceleration}
 static std::pair<float, float> lateralPID(EstimatedState state, FlightControllerMetrics& metrics)
@@ -185,9 +129,9 @@ void FlightController::reset()
 }
 
 /// Called every tick in FLIGHT state. Returns a tuple of:
-/// - throttle_thrust_command_lbf
-/// - tvc_pitch_command_deg
-/// - tvc_yaw_command_deg
+/// - pitch_angular_accel_rad_s2
+/// - yaw_angular_accel_rad_s2
+/// - z_accel_m_s2
 /// - FlightControllerMetrics
 std::expected<std::tuple<float, float, float, FlightControllerMetrics>, Error>
 FlightController::tick(EstimatedState state, float x_command_m, float y_command_m, float z_command_m)
@@ -200,25 +144,13 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
 
     FlightControllerMetrics metrics = FlightControllerMetrics_init_default;
 
-    float z_acceleration = verticalPID(state, metrics);
-    float throttle_thrust_command_N = z_acceleration * get_mass_kg() + 9.80665f * get_mass_kg();
-    // TODO: make magic number a config constant
-    float throttle_thrust_command_lbf = throttle_thrust_command_N * 0.224809f; // convert to lbf
+    float z_accel_m_s2 = verticalPID(state, metrics) + GRAVITY_M_S2;
     auto angular_accelerations = lateralPID(state, metrics);
-    float pitch_acceleration_command = angular_accelerations.first;
-    float yaw_acceleration_command = angular_accelerations.second;
-
-    auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_lbf);
-    if (!tvc_angles) {
-        return std::unexpected(Error::from_cause("failed to compute TVC angles"));
-    }
-    float tvc_pitch_command_deg = std::get<0>(*tvc_angles);
-    float tvc_yaw_command_deg = std::get<1>(*tvc_angles);
-    metrics.tvc_pitch_command_deg = tvc_pitch_command_deg;
-    metrics.tvc_yaw_command_deg = tvc_yaw_command_deg;
+    float pitch_accel_rad_s2 = angular_accelerations.first;
+    float yaw_accel_rad_s2 = angular_accelerations.second;
 
     loopCount++;
-    return {{throttle_thrust_command_lbf, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
+    return {{pitch_accel_rad_s2, yaw_accel_rad_s2, z_accel_m_s2, metrics}};
 }
 
 /// Configure controller gains.
