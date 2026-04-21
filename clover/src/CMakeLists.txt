@@ -1,5 +1,13 @@
 target_sources(app PRIVATE
     main.cpp
+    AnalogSensors.cpp
+    Error.cpp
+    clover.pb.c
+)
+
+target_include_directories(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    /home/lpl/modules/lib/nanopb
 )
 
 # if(CONFIG_HORNET)

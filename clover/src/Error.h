@@ -6,7 +6,7 @@
 #include <string_view>
 
 struct device;
-constexpr int MAX_ERR_MESSAGE_SIZE = sizeof(static_cast<Response*>(nullptr)->err) - 1;
+constexpr int MAX_ERR_MESSAGE_SIZE = 512;
 constexpr int MAX_FORMATTED_CONTEXT_LENGTH = 75 + 64; // Exposed for formatting
 
 class Error {
