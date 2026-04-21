@@ -1,0 +1,2 @@
+ERROR: source directory -DSNIPPET=cdc-acm-console does not exist
+FATAL ERROR: refusing to proceed without --force due to above error
