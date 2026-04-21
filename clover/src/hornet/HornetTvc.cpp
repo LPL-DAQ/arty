@@ -22,7 +22,6 @@ std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick
     float servo_pitch_angle = asinf(r_gimble / r_servo) * sinf(pitch_command_deg * 3.141592653589793f / 180.0f);
     float servo_yaw_angle = asinf(r_gimble / r_servo) * sinf(yaw_command_deg * 3.141592653589793f / 180.0f);
 
-
     servo_pitch_angle = std::clamp(servo_pitch_angle, -90.0f, 90.0f);
     servo_yaw_angle = std::clamp(servo_yaw_angle, -90.0f, 90.0f);
     // Convert angle to pulse width

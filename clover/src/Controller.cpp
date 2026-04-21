@@ -254,7 +254,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
 #ifdef CONFIG_RANGER
-        auto throttle_response = RangerThrottle::tick(data.throttle_thrust_command_N);
+        auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_N);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
         }
