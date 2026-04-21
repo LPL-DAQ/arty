@@ -8,7 +8,6 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "Controller.h"
-#include "FlightController.h"
 #include "sensors/AnalogSensors.h"
 #include "Lidar.h"
 #include "VectornavIMU.h"

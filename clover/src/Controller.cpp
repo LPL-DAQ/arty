@@ -1,5 +1,4 @@
 #include "Controller.h"
-#include "FlightController.h"
 #include "MutexGuard.h"
 #include "AnalogSensors.h"
 #include "Lidar.h"
@@ -25,9 +24,13 @@
 #include "sensors/AnalogSensors.h"
 #include "server.h"
 #include "util.h"
+#include "flight/FlightController.h"
+#include "flight/StateEstimator.h"
+
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+
 
 #if CONFIG_RANGER
 #include "ranger/RangerRcs.h"
@@ -36,6 +39,7 @@
 #include "ranger/ThrottleValve.h"
 
 #elif CONFIG_HORNET
+#include "hornet/PwmActuator.h"
 #include "hornet/HornetRcs.h"
 #include "hornet/HornetThrottle.h"
 #include "hornet/HornetTvc.h"
@@ -82,7 +86,7 @@ static float trace_total_time_msec = 0;
 static uint64_t abort_start_cycle = 0;
 
 // Valid in THROTTLE_PRIMED and THROTTLE
-static Trace throttle_thrust_trace_lbf;
+static Trace throttle_thrust_trace_N;
 
 // Valid in TVC_PRIMED and TVC
 static Trace tvc_pitch_trace_deg;
@@ -135,6 +139,9 @@ static void control_loop_schedule(k_timer* timer)
 }
 
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
+
+
+//TODO roll control. the module should not accept a position as that is active control
 
 /// Transform actuator commands into actuator commands, modifying the data pcket in-place.
 /// If an abort is necessary, an Error is returned. This is called for all active control
@@ -205,28 +212,27 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!roll_sample.has_value()) {
             return std::unexpected(roll_sample.error().context("failed to sample flight roll trace"));
         }
-        data.has_flight_roll_command_deg = true;
-        data.flight_roll_command_deg = *roll_sample;
+        data.has_rcs_roll_command_deg = true;
+        data.rcs_roll_command_deg = *roll_sample;
 
-        // Execute flight controller to generate flight commands
-        auto flight_response = FlightController::tick(data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m, data.flight_roll_command_deg);
+        // Execute flight controller to generate raw acceleration commands
+        auto flight_response = FlightController::tick(data.estimated_state, data.flight_x_command_m, data.flight_y_command_m, data.flight_z_command_m);
         if (!flight_response.has_value()) {
             return std::unexpected(flight_response.error().context("error in FlightController"));
         }
-        data.has_throttle_thrust_command_lbf = true;
-        data.has_tvc_pitch_command_deg = true;
-        data.has_tvc_yaw_command_deg = true;
-        data.has_rcs_roll_command_deg = true;
+        data.has_flight_pitch_accel_rad_s2 = true;
+        data.has_flight_yaw_accel_rad_s2 = true;
+        data.has_flight_z_accel_m_s2 = true;
         data.has_flight_controller_metrics = true;
         std::tie(
-            data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.rcs_roll_command_deg, data.flight_controller_metrics) =
+            data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.flight_z_accel_m_s2, data.flight_controller_metrics) =
             *flight_response;
     }
 
     // Sample throttle trace
     if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
         // Sample thrust trace
-        auto thrust_sample = throttle_thrust_trace_lbf.sample(data.trace_time_msec);
+        auto thrust_sample = throttle_thrust_trace_N.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
             return std::unexpected(thrust_sample.error().context("failed to sample throttle thrust trace"));
         }
@@ -264,11 +270,11 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Execute subordinate controllers
     if (current_state == SystemState_STATE_THROTTLE || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
+#ifdef CONFIG_RANGER
         if (!data.has_throttle_thrust_command_lbf) {
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
-#ifdef CONFIG_RANGER
-        auto throttle_response = RangerThrottle::tick(data.throttle_thrust_command_lbf);
+        auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_lbf);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
         }
@@ -278,7 +284,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.fuel_valve_command, data.lox_valve_command, data.ranger_throttle_metrics) = *throttle_response;
 
 #elif CONFIG_HORNET
-        auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_lbf);
+        if (!data.has_flight_z_accel_m_s2) {
+            return std::unexpected(Error::from_cause("missing flight z acceleration command"));
+        }
+        auto throttle_response = HornetThrottle::tick(data.flight_z_accel_m_s2);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in HornetThrottle"));
         }
@@ -289,14 +298,13 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     }
 
     if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
+#ifdef CONFIG_RANGER
         if (!data.has_tvc_pitch_command_deg) {
             return std::unexpected(Error::from_cause("missing tvc pitch command"));
         }
         if (!data.has_tvc_yaw_command_deg) {
-            return std::unexpected(Error::from_cause("missing tvc pitch command"));
+            return std::unexpected(Error::from_cause("missing tvc yaw command"));
         }
-
-#ifdef CONFIG_RANGER
         auto tvc_response = RangerTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
         if (!tvc_response.has_value()) {
             return std::unexpected(tvc_response.error().context("error in RangerTvc"));
@@ -307,7 +315,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.pitch_actuator_command, data.yaw_actuator_command, data.ranger_tvc_metrics) = *tvc_response;
 
 #elif CONFIG_HORNET
-        auto tvc_response = HornetTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
+        if (!data.has_flight_pitch_accel_rad_s2 || !data.has_flight_yaw_accel_rad_s2 || !data.has_hornet_throttle_metrics) {
+            return std::unexpected(Error::from_cause("missing flight acceleration commands for TVC"));
+        }
+        auto tvc_response = HornetTvc::tick(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.hornet_throttle_metrics.thrust_N);
         if (!tvc_response.has_value()) {
             return std::unexpected(tvc_response.error().context("error in HornetTvc"));
         }
@@ -336,7 +347,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.has_pitch_servo_command, data.has_pitch_servo_command, data.ranger_rcs_metrics) = *rcs_response;
 
 #elif CONFIG_HORNET
-        auto rcs_response = HornetRcs::tick(data.rcs_roll_command_deg);
+        auto rcs_response = HornetRcs::tick(data.estimated_state, data.rcs_roll_command_deg);
         if (!rcs_response.has_value()) {
             return std::unexpected(rcs_response.error().context("error in HornetRcs"));
         }
@@ -350,6 +361,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     return {};
 }
 
+
+// TODO: from noah: i feel like something should be here, no?
 static void tick_abort(DataPacket& data)
 {
 }
@@ -364,6 +377,7 @@ std::expected<void, Error> Controller::init()
     Lidar1::start_sense();
     Lidar2::start_sense();
     Vectornav1::start_sense();
+    StateEstimator::init();
     // Other sensors here...
     k_sched_unlock();
 
@@ -437,6 +451,14 @@ static void step_control_loop(k_work*)
     else
         LOG_INF("VectornavIMU no reading");
 
+    // TODO: dont provide whole data, this is temp caause we dont have the sensors
+    auto estimated_state = StateEstimator::estimate(data);
+    if (estimated_state) {
+        data.estimated_state = *estimated_state;
+    } else {
+        // TODO: handle estimate failure; leaving defaults for now
+    }
+
     daq_client_status daq_status = get_daq_client_status();
 
     // Populate default actuator commands -- essentially telling everybody to hold their current state.
@@ -488,8 +510,8 @@ static void step_control_loop(k_work*)
     // Commands all actuators back to nominal states.
     case SystemState_STATE_ABORT: {
         // TODO
-        data.abort_time_msec = nsec_since_cycle(abort_start_cycle) / 1e6f;
         data.has_abort_time_msec = true;
+        data.abort_time_msec = nsec_since_cycle(abort_start_cycle) / 1e6f;
         tick_abort(data);
 
         if (data.abort_time_msec > Controller::ABORT_TIME_MSEC) {
@@ -549,7 +571,22 @@ static void step_control_loop(k_work*)
     LoxValve::tick(data.lox_valve_command);
     // RCS valves, TVC actuators
 #elif CONFIG_HORNET
-    // TODO, PWM stuff. @noah :)
+    // TODO: do something if these return an error
+    // TVC
+    auto err = ServoX::tick(data.pitch_servo_command);
+    err = ServoY::tick(data.yaw_servo_command);
+
+    // RCS
+    // TODO: Check which actually corresponds to what
+    err = BetaTop::tick(data.rcs_propeller_cw_command);
+    err = BetaCW::tick(data.rcs_propeller_cw_command);
+    err = BetaBottom::tick(data.rcs_propeller_ccw_command);
+    err = BetaCCW::tick(data.rcs_propeller_ccw_command);
+
+    err = MotorTop::tick(data.main_propeller_command);
+    err = MotorBottom::tick(data.main_propeller_command);
+
+
 #endif
 
     // Update last-executed actuator commands
@@ -766,11 +803,11 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
     }
 
     // Try loading thrust trace
-    auto ret = throttle_thrust_trace_lbf.load(req.thrust_trace_lbf);
+    auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load thrust trace"));
     }
-    trace_total_time_msec = throttle_thrust_trace_lbf.get_total_time_ms();
+    trace_total_time_msec = throttle_thrust_trace_N.get_total_time_ms();
 
     current_state = SystemState_STATE_THROTTLE_PRIMED;
     LOG_INF("Primed throttle thrust sequence");
@@ -894,6 +931,8 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const Load
 
     current_state = SystemState_STATE_RCS_VALVE_PRIMED;
     LOG_INF("Primed RCS valve sequence");
+    current_state = SystemState_STATE_RCS_VALVE_PRIMED;
+    LOG_INF("Primed RCS valve sequence");
 
     return {};
 }
@@ -962,7 +1001,7 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // Try loading throttle trace
-    if (auto ret = throttle_thrust_trace_lbf.load(req.thrust_trace_lbf); !ret.has_value()) {
+    if (auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N); !ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load static fire thrust trace"));
     }
 
@@ -977,12 +1016,12 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // All traces must be the same length
-    if (!(throttle_thrust_trace_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
+    if (!(throttle_thrust_trace_N.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
           tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
         return std::unexpected(
             Error::from_cause(
                 "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
-                static_cast<double>(throttle_thrust_trace_lbf.get_total_time_ms()),
+                static_cast<double>(throttle_thrust_trace_N.get_total_time_ms()),
                 static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
                 static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }

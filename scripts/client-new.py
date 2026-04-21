@@ -1361,7 +1361,6 @@ def cmd_load_thrust_sequence():
         req.load_thrust_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_THRUST_SEQUENCE')
         return
-
     console.print(f'  [{t["muted"]}]Thrust trace values are in lbf.[/{t["muted"]}]')
 
     thrust_trace = _build_control_trace()
