@@ -9,13 +9,6 @@ Hornet Mk. 3 board.
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 
-/*
-TODO:
-- LoRa radio
-- Remove ADC1
-- PWM for servos, propellers, etc
-*/
-
 / {
     model = "Hornet Mk. 3";
 
@@ -25,17 +18,16 @@ TODO:
 
     zephyr,user {
         io-channels =
-            <&ads7953 0>,
-            <&ads7953 1>,
-            <&ads7953 2>,
-            <&ads7953 3>;
+            <&ads7953_1 0>,
+            <&ads7953_1 1>,
+            <&ads7953_2 0>,
+            <&ads7953_2 1>;
         io-channel-names =
-            "ain0",
-            "ain1",
-            "ain2",
-            "ain3";
+            "bank1_ain0",
+            "bank1_ain1",
+            "bank2_ain0",
+            "bank2_ain1";
     };
-
 };
 
 // VN-300 IMU
@@ -58,7 +50,7 @@ TODO:
 // JAVAD TR-2S GNSS
 &lpuart3 {
     status = "okay";
-    current-speed = <115200>; // Is this right?
+    current-speed = <115200>;
 };
 
 &zephyr_udc0 {
@@ -70,16 +62,18 @@ TODO:
 
 &enet_mac {
     /delete-property/ nxp,unique-mac;
-    local-mac-address = [ 67 67 67 67 67 67  ];
+    local-mac-address = [ 67 67 67 67 67 67 ];
 };
 
 &lpspi4 {
     status = "okay";
     pinctrl-names = "default";
     pinctrl-0 = <&pinmux_lpspi4>;
-    cs-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
 
-    ads7953: adc@0 {
+    cs-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>,   /* U7 / Bank 1 */
+               <&gpio1 5 GPIO_ACTIVE_LOW>;   /* U8 / Bank 2 */
+
+    ads7953_1: adc@0 {
         compatible = "ti,ads7953";
         reg = <0>;
         spi-max-frequency = <5000000>;
@@ -105,17 +99,29 @@ TODO:
             zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
             zephyr,resolution = <12>;
         };
+    };
 
-        channel@2 {
-            reg = <2>;
+    ads7953_2: adc@1 {
+        compatible = "ti,ads7953";
+        reg = <1>;
+        spi-max-frequency = <5000000>;
+        #io-channel-cells = <1>;
+        ti,range = <1>;
+        status = "okay";
+
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        channel@0 {
+            reg = <0>;
             zephyr,gain = "ADC_GAIN_1";
             zephyr,reference = "ADC_REF_VDD_1";
             zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
             zephyr,resolution = <12>;
         };
 
-        channel@3 {
-            reg = <3>;
+        channel@1 {
+            reg = <1>;
             zephyr,gain = "ADC_GAIN_1";
             zephyr,reference = "ADC_REF_VDD_1";
             zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;

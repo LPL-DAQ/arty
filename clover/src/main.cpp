@@ -8,10 +8,10 @@
 #define USER_NODE DT_PATH(zephyr_user)
 
 static const struct adc_dt_spec adc_specs[] = {
-    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, ain0),
-    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, ain1),
-    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, ain2),
-    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, ain3),
+    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, bank1_ain0),
+    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, bank1_ain1),
+    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, bank2_ain0),
+    ADC_DT_SPEC_GET_BY_NAME(USER_NODE, bank2_ain1),
 };
 
 static int setup_all_channels(void)
