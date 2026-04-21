@@ -75,6 +75,11 @@ message Request {
     // Transiitons STATIC_FIRE_PRIMED -> STATIC_FIRE
     StartStaticFireSequenceRequest start_static_fire_sequence = 37;
 
+    // Transitions IDLE -> STATIC_FIRE_PRIMED
+    LoadStaticFireSequenceRequest load_static_fire_sequence = 36;
+    // Transiitons STATIC_FIRE_PRIMED -> STATIC_FIRE
+    StartStaticFireSequenceRequest start_static_fire_sequence = 37;
+
     // Transitions IDLE -> FLIGHT_PRIMED
     LoadFlightSequenceRequest load_flight_sequence = 31;
     // Transitions FLIGHT_PRIMED -> FLIGHT
