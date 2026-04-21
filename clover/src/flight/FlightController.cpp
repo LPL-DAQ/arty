@@ -4,7 +4,6 @@
 #include "../math_util.h"
 #include "../config.h"
 #include <zephyr/kernel.h>
-#include <limits>
 #include <cmath>
 
 

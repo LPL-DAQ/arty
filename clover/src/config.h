@@ -1,3 +1,5 @@
+#include <limits>
+
 constexpr int CONTROLLER_STEP_WORK_Q_PRIORITY = -10;
 constexpr int ANALOG_SENSORS_THREAD_PRIORITY = -5;
 
