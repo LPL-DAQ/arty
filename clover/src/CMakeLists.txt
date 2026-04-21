@@ -1,15 +1,22 @@
-target_sources(app PRIVATE main.cpp
+target_sources(app PRIVATE
+    main.cpp
     server.cpp
-    ThrottleValve.cpp
-    lidar.cpp
     Controller.cpp
     Error.cpp
+    MutexGuard.cpp
     Trace.cpp
-    LookupTable.cpp
-    StateIdle.cpp
-    StateCalibrateValve.cpp
-    StateValveSeq.cpp
-    StateThrustSeq.cpp
-    StateAbort.cpp
-    AnalogSensors.cpp
-    MutexGuard.cpp)
+    FlightController.cpp
+    util.cpp
+)
+
+add_subdirectory(sensors)
+
+if(CONFIG_HORNET)
+    message(NOTICE "Building with Hornet sources")
+    add_subdirectory(hornet)
+elseif(CONFIG_RANGER)
+    message(NOTICE "Building with Ranger sources")
+    add_subdirectory(ranger)
+else()
+    message(FATAL_ERROR "Either CONFIG_HORNET or CONFIG_RANGER must be specified.")
+endif()

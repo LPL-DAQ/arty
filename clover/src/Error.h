@@ -1,5 +1,4 @@
-#ifndef APP_ERROR_H
-#define APP_ERROR_H
+#pragma once
 
 #include "MaxLengthString.h"
 #include "clover.pb.h"
@@ -39,5 +38,3 @@ public:
 
     MaxLengthString<MAX_ERR_MESSAGE_SIZE> build_message();
 };
-
-#endif // APP_ERROR_H

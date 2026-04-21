@@ -3,3 +3,7 @@ boards:
     vendor: lpl
     socs:
       - name: mimxrt1062
+  - name: ranger_1
+    vendor: lpl
+    socs:
+      - name: mimxrt1062
