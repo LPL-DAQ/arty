@@ -5,6 +5,16 @@ target_sources(app PRIVATE
     Error.cpp
     MutexGuard.cpp
     Trace.cpp
+    LookupTable.cpp
+    StateIdle.cpp
+    # TODO: FIXUP
+    # StateCalibrateValve.cpp
+    StateValveSeq.cpp
+    StateThrustSeq.cpp
+    StateAbort.cpp
+    AnalogSensors.cpp
+    MutexGuard.cpp
+    VectornavIMU.cpp)
     FlightController.cpp
     util.cpp
 )

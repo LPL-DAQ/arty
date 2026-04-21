@@ -1,0 +1,47 @@
+/dts-v1/;
+#include <../boards/pjrc/teensy4/teensy41.dts>
+
+/ {
+    model = "VN300 Teensy Board";
+
+    chosen {
+        zephyr,console = &cdc_acm_uart0;
+    };
+};
+
+/* VN-300 UART: Teensy pin 14 = RX (← VN-300 TX)
+                Teensy pin 15 = TX (→ VN-300 RX) */
+&lpuart2 {
+    status = "okay";
+    current-speed = <115200>;
+    pinctrl-0 = <&pinmux_lpuart2>;
+    pinctrl-1 = <&pinmux_lpuart2_sleep>;
+    pinctrl-names = "default", "sleep";
+};
+
+&pinctrl {
+    pinmux_lpuart2: pinmux_lpuart2 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_02_lpuart2_tx>,
+                     <&iomuxc_gpio_ad_b1_03_lpuart2_rx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+    pinmux_lpuart2_sleep: pinmux_lpuart2_sleep {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_02_lpuart2_tx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+};
+
+&zephyr_udc0 {
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+        label = "CDC_ACM_0";
+    };
+};
