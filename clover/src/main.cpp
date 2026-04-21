@@ -14,6 +14,13 @@ static const struct adc_dt_spec adc_specs[] = {
     ADC_DT_SPEC_GET_BY_NAME(USER_NODE, bank2_ain1),
 };
 
+static const char *const adc_names[] = {
+    "bank1_ain0",
+    "bank1_ain1",
+    "bank2_ain0",
+    "bank2_ain1",
+};
+
 static int setup_all_channels(void)
 {
     for (int i = 0; i < ARRAY_SIZE(adc_specs); i++) {
@@ -28,7 +35,10 @@ static int setup_all_channels(void)
             return ret;
         }
 
-        printk("adc spec %d ready, channel_id=%d\n", i, adc_specs[i].channel_id);
+        printk("ADC %s ready, dev=%s, channel_id=%d\n",
+               adc_names[i],
+               adc_specs[i].dev->name,
+               adc_specs[i].channel_id);
     }
 
     return 0;
@@ -39,7 +49,6 @@ static int read_one_channel(const struct adc_dt_spec *spec, int16_t *sample)
     struct adc_sequence seq = {0};
 
     adc_sequence_init_dt(spec, &seq);
-
     seq.buffer = sample;
     seq.buffer_size = sizeof(*sample);
     seq.calibrate = false;
@@ -68,8 +77,12 @@ int main(void)
             int16_t raw = 0;
             ret = read_one_channel(&adc_specs[i], &raw);
 
-            printk("ain%d ch_id=%d ret=%d raw=%d\n",
-                   i, adc_specs[i].channel_id, ret, raw);
+            printk("%s dev=%s ch_id=%d ret=%d raw=%d\n",
+                   adc_names[i],
+                   adc_specs[i].dev->name,
+                   adc_specs[i].channel_id,
+                   ret,
+                   raw);
         }
 
         printk("----\n");
