@@ -8,12 +8,7 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "Controller.h"
-<<<<<<< HEAD
-=======
-#include "FlightController.h"
 #include "sensors/AnalogSensors.h"
-#include "sensors/lidar.h"
->>>>>>> main
 #include "server.h"
 
 #ifdef CONFIG_HORNET
