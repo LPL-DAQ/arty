@@ -7,6 +7,7 @@
 
 namespace FlightController {
 void reset();
+/// Returns (pitch_angular_accel_rad_s2, yaw_angular_accel_rad_s2, z_accel_m_s2, FlightControllerMetrics)
 std::expected<std::tuple<float, float, float, FlightControllerMetrics>, Error>
 tick(EstimatedState state, float x_command_m, float y_command_m, float z_command_m);
 

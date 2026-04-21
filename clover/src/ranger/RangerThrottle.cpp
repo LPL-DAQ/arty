@@ -1716,7 +1716,6 @@ void RangerThrottle::reset()
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     low_ptc_start_time_ms = 0;
     alpha = -1.0f;
-    // TODO
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.

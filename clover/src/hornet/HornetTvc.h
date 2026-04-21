@@ -7,5 +7,7 @@
 
 namespace HornetTvc {
 void reset();
-std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> tick(float pitch_command_deg, float yaw_command_deg);
+/// Takes pitch and yaw angular acceleration commands (rad/s²) and thrust (N),
+/// converts to servo angles internally using vehicle MOI and moment arm.
+std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> tick(float pitch_accel_rad_s2, float yaw_accel_rad_s2, float thrustlbf);
 }  // namespace HornetTvc
