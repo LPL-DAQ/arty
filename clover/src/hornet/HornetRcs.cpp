@@ -1,6 +1,6 @@
 #include "HornetRcs.h"
-#include "MutexGuard.h"
-#include "PID.h"
+#include "../MutexGuard.h"
+#include "../PID.h"
 #include <zephyr/kernel.h>
 
 K_MUTEX_DEFINE(hornet_rcs_lock);
@@ -29,13 +29,14 @@ static int control(EstimatedState state, float desired_roll_position){
 
     float control_effort = roll_pid.calculate(desired_roll_position, roll_position, dt);
 
+    // if p_timer is active, don't change until it counts down
     if (p_timer > 0){
         p_timer -= dt;
         if (p_timer < 0){
             p_timer = 0;
         }
     }
-
+    // if closed
     else if (p_valve == 0){
         if (control_effort > deadzone){
             p_valve = 1;
@@ -46,18 +47,18 @@ static int control(EstimatedState state, float desired_roll_position){
             p_timer = min_pulse;
         }
     }
+    // if open
     else if (p_valve == 1) {
         if (control_effort < (deadzone - hysteresis)){
             p_valve = 0;
         }
     }
-
+    // if open
     else if (p_valve == -1) {
         if (control_effort > -(deadzone - hysteresis)){
             p_valve = 0;
         }
     }
-
     return p_valve;
 }
 
@@ -75,7 +76,7 @@ void HornetRcs::reset()
 }
 
 /// Generate a comomand for the cs and ccs RCS propellers.
-std::expected<std::tuple<bool, bool, HornetRcsMetrics>, Error> HornetRcs::tick(EstimatedState state, float roll_command_deg)
+std::expected<std::tuple<float, float, HornetRcsMetrics>, Error> HornetRcs::tick(EstimatedState state, float roll_command_deg)
 {
     MutexGuard hornet_rcs_guard{&hornet_rcs_lock};
     HornetRcsMetrics metrics = HornetRcsMetrics_init_default;

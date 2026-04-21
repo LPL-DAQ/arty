@@ -1,5 +1,5 @@
 #include "HornetThrottle.h"
-#include "MutexGuard.h"
+#include "../MutexGuard.h"
 #include <zephyr/kernel.h>
 
 K_MUTEX_DEFINE(hornet_throttle_lock);

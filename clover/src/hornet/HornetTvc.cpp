@@ -1,5 +1,5 @@
 #include "HornetTvc.h"
-#include "MutexGuard.h"
+#include "../MutexGuard.h"
 #include <zephyr/kernel.h>
 #include <cmath>
 
