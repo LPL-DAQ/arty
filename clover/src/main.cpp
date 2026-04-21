@@ -10,7 +10,8 @@
 #include "Controller.h"
 #include "FlightController.h"
 #include "sensors/AnalogSensors.h"
-#include "sensors/lidar.h"
+#include "Lidar.h"
+#include "VectornavIMU.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
@@ -42,6 +43,7 @@ int main(void)
         uint32_t dtr = 0;
         uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
         if (dtr) {
+                LOG_INF("Starting server");
             break;
         }
     }
@@ -73,16 +75,34 @@ int main(void)
 
 #endif
 
-    // LOG_INF("Initializing LiDAR");
-    // int err = lidar_init();
-    // if (err) {
-    //     LOG_ERR("Failed to initialize LiDAR");
-    //     return 0;
-    // }
-
+    // Sensors
     LOG_INF("Initializing analog sensors");
     if (auto result = AnalogSensors::init(); !result) {
         LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing Lidar 1");
+    LOG_INF("main %p", k_current_get());
+        k_sleep(K_MSEC(500));
+    if (auto result = Lidar1::init(); !result) {
+        LOG_ERR("Failed to initialize Lidar 1: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing Lidar 2");
+    LOG_INF("main %p", k_current_get());
+        k_sleep(K_MSEC(500));
+    if (auto result = Lidar2::init(); !result) {
+        LOG_ERR("Failed to initialize Lidar 2: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing IMIU");
+    LOG_INF("main %p", k_current_get());
+        k_sleep(K_MSEC(500));
+    if (auto result = Vectornav1::init(); !result) {
+        LOG_ERR("Failed to initialize IMU: %s", result.error().build_message().c_str());
         return 0;
     }
 

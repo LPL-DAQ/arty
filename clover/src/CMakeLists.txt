@@ -3,11 +3,22 @@ target_sources(app PRIVATE
     server.cpp
     Controller.cpp
     Error.cpp
+    Trace.cpp
+    LookupTable.cpp
+    StateIdle.cpp
+    # TODO: FIXUP
+    # StateCalibrateValve.cpp
+    StateValveSeq.cpp
+    StateThrustSeq.cpp
+    StateAbort.cpp
+    AnalogSensors.cpp
+    Lidar.cpp
+    VectornavIMU.cpp
+    PwmActuator.cpp
     MutexGuard.cpp
     Trace.cpp
     FlightController.cpp
-    util.cpp
-)
+    util.cpp)
 
 add_subdirectory(sensors)
 
