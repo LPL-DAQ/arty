@@ -1,6 +1,7 @@
 #include "Controller.h"
 #include "AnalogSensors.h"
 #include "Lidar.h"
+#include "VectornavIMU.h"
 #include "ControllerConfig.h"
 #include "StateAbort.h"
 #include "StateCalibrateValve.h"
@@ -120,6 +121,8 @@ std::expected<void, Error> Controller::init()
     k_sched_lock();
     AnalogSensors::start_sense();
     Lidar1::start_sense();
+    Lidar2::start_sense();
+    Vectornav1::start_sense();
     // Other sensors here...
     k_sched_unlock();
 
@@ -156,16 +159,42 @@ void Controller::step_control_loop(k_work*)
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
-auto lidar1 = Lidar1::read();
-if (lidar1) {
-    LidarReading reading;
-    float sense_time_ns = 0.0f;
-    std::tie(reading, sense_time_ns) = *lidar1;
-    // If you want to store these in data, uncomment and adjust as needed:
-    // std::tie(data.lidar, data.lidar_sense_time_ns) = *lidar1;
-    LOG_INF("LiDAR distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
-} else {
-}
+    // LiDAR read
+    auto lidar1 = Lidar1::read();
+    if (lidar1) {
+        LidarReading reading;
+        float sense_time_ns = 0.0f;
+        std::tie(reading, sense_time_ns) = *lidar1;
+        data.lidar_1 = reading;
+        LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+    }
+
+    auto lidar2 = Lidar2::read();
+    if (lidar2) {
+        LidarReading reading;
+        float sense_time_ns = 0.0f;
+        std::tie(reading, sense_time_ns) = *lidar2;
+        data.lidar_2 = reading;
+        LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+    }
+
+
+    // VectornavIMU read
+    auto vectornav1 = Vectornav1::read();
+    if (vectornav1) {
+        std::tie(data.imu, data.controller_timing.imu_sense_time_ns) = *vectornav1;
+        data.has_imu = true;
+        LOG_INF("VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
+            (double)data.imu.quat_w, (double)data.imu.quat_x,
+            (double)data.imu.quat_y, (double)data.imu.quat_z,
+            (double)data.controller_timing.imu_sense_time_ns);
+        LOG_INF("VectornavIMU: accel: [%f %f %f] gyro: [%f %f %f] mag: [%f %f %f]",
+            (double)data.imu.accel_x, (double)data.imu.accel_y, (double)data.imu.accel_z,
+            (double)data.imu.gyro_x, (double)data.imu.gyro_y, (double)data.imu.gyro_z,
+            (double)data.imu.mag_x, (double)data.imu.mag_y, (double)data.imu.mag_z);
+    }
+    else
+        LOG_INF("VectornavIMU no reading");
 
     daq_client_status daq_status = get_daq_client_status();
 

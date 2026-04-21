@@ -56,12 +56,8 @@ private:
     // Dispatch a single null-terminated NMEA-style line to the appropriate parser
     static std::expected<void, Error> decode_line(char line[MAX_LINE_SIZE]);
 
-    // Per-sentence parsers — return true if the line matched and was successfully parsed
-    static bool parse_ymr(const char* line, float* yaw, float* pitch, float* roll);
-    static bool parse_imu(const char* line, float* ax, float* ay, float* az, float* gx, float* gy, float* gz);
-    static bool parse_gps(const char* line, double* lat, double* lon, float* alt);
-    static bool parse_ins(const char* line, float* yaw, float* pitch, float* roll, double* lat, double* lon, float* alt, float* vn_vel, float* ve_vel, float* vd_vel);
-    static bool parse_mag(const char* line, float* mx, float* my, float* mz);
+    // Parse a $VNQMR sentence into an ImuReading. Returns true on success.
+    static bool parse_vnqmr(const char* line, ImuReading* out);
 
 public:
     static std::expected<void, Error> init();
@@ -125,107 +121,30 @@ template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
 void Vectornav<kind, uart_dt_init, ready_sem_ptr>::configure_outputs()
 {
     LOG_MODULE_DECLARE(VectornavIMU);
+    const char* type_cmd = "$VNWRG,06,08*XX\r\n"; // VNQMR: quat, mag, accel, gyro
+    const char* rate_cmd = "$VNWRG,07,40*XX\r\n"; // 40 Hz
 
-    const char* ymr_cmd = "$VNWRG,75,1,20,01,0000000000000001*XX\r\n";   // YPR at 40 Hz
-    const char* imu_cmd = "$VNWRG,75,2,20,01,0000000000000006*XX\r\n";   // Accel + gyro at 40 Hz
-    const char* gps_cmd = "$VNWRG,76,2,260,01,0000000000000008*XX\r\n"; // GPS position + velocity at 5 Hz
-    const char* ins_cmd = "$VNWRG,77,2,20,01,0000000000000010*XX\r\n";   // Fused INS at 40 Hz
-    const char* mag_cmd = "$VNWRG,75,3,20,01,0000000000000002*XX\r\n";   // Magnetometer at 40 Hz
-
-    uart_send((const uint8_t*)ymr_cmd, strlen(ymr_cmd)); k_msleep(100);
-    uart_send((const uint8_t*)imu_cmd, strlen(imu_cmd)); k_msleep(100);
-    uart_send((const uint8_t*)gps_cmd, strlen(gps_cmd)); k_msleep(100);
-    uart_send((const uint8_t*)ins_cmd, strlen(ins_cmd)); k_msleep(100);
-    uart_send((const uint8_t*)mag_cmd, strlen(mag_cmd)); k_msleep(100);
+    uart_send((const uint8_t*)type_cmd, strlen(type_cmd)); k_msleep(100);
+    uart_send((const uint8_t*)rate_cmd, strlen(rate_cmd)); k_msleep(100);
 
     LOG_INF("%s Outputs configured", kind_to_prefix(kind));
 }
 
-/// Dispatch a single NMEA-style line to the appropriate per-sentence parser and update the shared reading.
-/// sense_time_ns is only updated on YMR packets (the primary 40 Hz attitude output) to give a stable timing signal.
-/// All other sentence types silently update their sub-fields without marking a new has_reading.
-/// Unrecognised lines (e.g. ACK responses) are silently discarded.
-///
-/// NOTE: field names on ImuReading below must match the protobuf definition.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
 std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_line(char line[MAX_LINE_SIZE])
-{ LOG_MODULE_DECLARE(VectornavIMU);
-    {
-        float yaw, pitch, roll;
-        if (parse_ymr(line, &yaw, &pitch, &roll)) {
-            MutexGuard guard{&reading_mutex};
-            uint64_t curr_cycle = k_cycle_get_64();
-            sense_time_ns = static_cast<float>(curr_cycle - last_reading_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
-            last_reading_cycle = curr_cycle;
-            reading.yaw = yaw;
-            reading.pitch = pitch;
-            reading.roll = roll;
-            has_reading = true;
-            return {};
-        }
+{
+    LOG_MODULE_DECLARE(VectornavIMU);
+    LOG_INF("%s rx: %.12s", kind_to_prefix(kind), line);
+    ImuReading new_reading = ImuReading_init_default;
+    if (parse_vnqmr(line, &new_reading)) {
+        MutexGuard guard{&reading_mutex};
+        uint64_t curr_cycle = k_cycle_get_64();
+        sense_time_ns = static_cast<float>(curr_cycle - last_reading_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
+        last_reading_cycle = curr_cycle;
+        reading = new_reading;
+        has_reading = true;
     }
-
-    {
-        float ax, ay, az, gx, gy, gz;
-        if (parse_imu(line, &ax, &ay, &az, &gx, &gy, &gz)) {
-            MutexGuard guard{&reading_mutex};
-            reading.accel_x = ax;
-            reading.accel_y = ay;
-            reading.accel_z = az;
-            reading.gyro_x = gx;
-            reading.gyro_y = gy;
-            reading.gyro_z = gz;
-            return {};
-        }
-    }
-
-    {
-        double lat, lon;
-        float alt;
-        if (parse_gps(line, &lat, &lon, &alt)) {
-            MutexGuard guard{&reading_mutex};
-            reading.gps_lat = lat;
-            reading.gps_lon = lon;
-            reading.gps_alt = alt;
-            return {};
-        }
-    }
-
-    {
-        float yaw, pitch, roll;
-        double lat, lon;
-        float alt, vn_vel, ve_vel, vd_vel;
-        if (parse_ins(line, &yaw, &pitch, &roll, &lat, &lon, &alt, &vn_vel, &ve_vel, &vd_vel)) {
-            MutexGuard guard{&reading_mutex};
-            uint64_t curr_cycle = k_cycle_get_64();
-            sense_time_ns = static_cast<float>(curr_cycle - last_reading_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
-            last_reading_cycle = curr_cycle;
-            reading.yaw = yaw;
-            reading.pitch = pitch;
-            reading.roll = roll;
-            reading.ins_lat = lat;
-            reading.ins_lon = lon;
-            reading.ins_alt = alt;
-            reading.vel_n = vn_vel;
-            reading.vel_e = ve_vel;
-            reading.vel_d = vd_vel;
-            has_reading = true;
-            return {};
-        }
-    }
-
-    {
-        float mx, my, mz;
-        if (parse_mag(line, &mx, &my, &mz)) {
-            MutexGuard guard{&reading_mutex};
-            reading.mag_x = mx;
-            reading.mag_y = my;
-            reading.mag_z = mz;
-            return {};
-        }
-    }
-
-    return {}; 
+    return {};
 }
 
 /// Continuously accumulates sensor readings from the VN-300 over UART. Runs in dedicated thread.
@@ -267,131 +186,27 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
     }
 }
 
+// $VNQMR field order: QuatW,QuatX,QuatY,QuatZ,MagX,MagY,MagZ,AccelX,AccelY,AccelZ,GyroX,GyroY,GyroZ
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_ymr(const char* line, float* yaw, float* pitch, float* roll)
+bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_vnqmr(const char* line, ImuReading* out)
 {
-    if (strncmp(line, "$VNYMR,", 7) != 0)
+    if (strncmp(line, "$VNQMR,", 7) != 0)
         return false;
     char buf[MAX_LINE_SIZE];
     strncpy(buf, line + 7, sizeof(buf));
-    char* token = strtok(buf, ",");
-    if (!token) return false;
-    *yaw = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *pitch = strtof(token, nullptr);
-    token = strtok(nullptr, "*");
-    if (!token) return false;
-    *roll = strtof(token, nullptr);
-    return true;
-}
-
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_imu(const char* line, float* ax, float* ay, float* az, float* gx, float* gy, float* gz)
-{
-    if (strncmp(line, "$VNIMU,", 7) != 0)
-        return false;
-    char buf[MAX_LINE_SIZE];
-    strncpy(buf, line + 7, sizeof(buf));
-    char* token = strtok(buf, ",");
-    if (!token) return false;
-    *ax = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *ay = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *az = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *gx = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *gy = strtof(token, nullptr);
-    token = strtok(nullptr, "*");
-    if (!token) return false;
-    *gz = strtof(token, nullptr);
-    return true;
-}
-
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_gps(const char* line, double* lat, double* lon, float* alt)
-{
-    if (strncmp(line, "$VNGPE,", 7) != 0)
-        return false;
-    char buf[MAX_LINE_SIZE];
-    strncpy(buf, line + 7, sizeof(buf));
-    char* token = strtok(buf, ",");
-    if (!token) return false;
-    *lat = strtod(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *lon = strtod(token, nullptr);
-    token = strtok(nullptr, "*");
-    if (!token) return false;
-    *alt = strtof(token, nullptr);
-    return true;
-}
-
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_ins(const char* line, float* yaw, float* pitch, float* roll, double* lat, double* lon, float* alt, float* vn_vel, float* ve_vel, float* vd_vel)
-{
-    if (strncmp(line, "$VNINS,", 7) != 0)
-        return false;
-    char buf[MAX_LINE_SIZE];
-    strncpy(buf, line + 7, sizeof(buf));
-    char* token = strtok(buf, ",");   // time - skip
-    if (!token) return false;
-    token = strtok(nullptr, ",");     // week - skip
-    if (!token) return false;
-    token = strtok(nullptr, ",");     // status - skip
-    if (!token) return false;
-    token = strtok(nullptr, ",");     // yaw
-    if (!token) return false;
-    *yaw = strtof(token, nullptr);
-    token = strtok(nullptr, ",");     // pitch
-    if (!token) return false;
-    *pitch = strtof(token, nullptr);
-    token = strtok(nullptr, ",");     // roll
-    if (!token) return false;
-    *roll = strtof(token, nullptr);
-    token = strtok(nullptr, ",");     // lat
-    if (!token) return false;
-    *lat = strtod(token, nullptr);
-    token = strtok(nullptr, ",");     // lon
-    if (!token) return false;
-    *lon = strtod(token, nullptr);
-    token = strtok(nullptr, ",");     // alt
-    if (!token) return false;
-    *alt = strtof(token, nullptr);
-    token = strtok(nullptr, ",");     // vN
-    if (!token) return false;
-    *vn_vel = strtof(token, nullptr);
-    token = strtok(nullptr, ",");     // vE
-    if (!token) return false;
-    *ve_vel = strtof(token, nullptr);
-    token = strtok(nullptr, ",");     // vD
-    if (!token) return false;
-    *vd_vel = strtof(token, nullptr);
-    return true;
-}
-
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_mag(const char* line, float* mx, float* my, float* mz)
-{
-    if (strncmp(line, "$VNMAG,", 7) != 0)
-        return false;
-    char buf[MAX_LINE_SIZE];
-    strncpy(buf, line + 7, sizeof(buf));
-    char* token = strtok(buf, ",");
-    if (!token) return false;
-    *mx = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
-    if (!token) return false;
-    *my = strtof(token, nullptr);
-    token = strtok(nullptr, "*");
-    if (!token) return false;
-    *mz = strtof(token, nullptr);
+    char* tok = strtok(buf, ",");  if (!tok) return false; out->quat_w  = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->quat_x  = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->quat_y  = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->quat_z  = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->mag_x   = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->mag_y   = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->mag_z   = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->accel_x = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->accel_y = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->accel_z = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->gyro_x  = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");    if (!tok) return false; out->gyro_y  = strtof(tok, nullptr);
+    tok = strtok(nullptr, "*");    if (!tok) return false; out->gyro_z  = strtof(tok, nullptr);
     return true;
 }
 
@@ -426,6 +241,8 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
         return std::unexpected(Error::from_code(err).context("%s Failed to configure UART", kind_to_prefix(kind)));
     }
 
+    configure_outputs();
+
     LOG_INF("%s Setting UART IRQ", kind_to_prefix(kind));
     err = uart_irq_callback_user_data_set(uart_dev, uart_handler, nullptr);
     if (err) {
@@ -434,7 +251,7 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
 
     LOG_INF("%s Enabling UART RX interrupt", kind_to_prefix(kind));
     uart_irq_rx_enable(uart_dev);
-
+    
     LOG_INF("%s Initialized", kind_to_prefix(kind));
 
     return {};

@@ -1,6 +1,5 @@
 target_sources(app PRIVATE main.cpp
     server.cpp
-    Lidar.cpp
     Controller.cpp
     Error.cpp
     Trace.cpp
@@ -12,6 +11,8 @@ target_sources(app PRIVATE main.cpp
     StateThrustSeq.cpp
     StateAbort.cpp
     AnalogSensors.cpp
+    Lidar.cpp
+    VectornavIMU.cpp
     MutexGuard.cpp)
 
 
