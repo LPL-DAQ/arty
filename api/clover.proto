@@ -27,7 +27,7 @@ message Request {
     ThrottlePowerOffRequest throttle_power_off = 24;
     ThrottlePowerOnRequest throttle_power_on = 23;
 
-    ConfigureValvesRequest configure_valves_request = 38;
+    ConfigureValvesRequest configure_valves_request = 5;
     ActuateValveRequest actuate_valve_request = 39;
 
     // Transitions any state -> ABORT
@@ -74,14 +74,9 @@ message Request {
     StartRcsSequenceRequest start_rcs_sequence = 22;
 
     // Transitions IDLE -> STATIC_FIRE_PRIMED
-    LoadStaticFireSequenceRequest load_static_fire_sequence = 36;
+    LoadStaticFireSequenceRequest load_static_fire_sequence = 4;
     // Transiitons STATIC_FIRE_PRIMED -> STATIC_FIRE
-    StartStaticFireSequenceRequest start_static_fire_sequence = 37;
-
-    // Transitions IDLE -> STATIC_FIRE_PRIMED
-    LoadStaticFireSequenceRequest load_static_fire_sequence = 36;
-    // Transiitons STATIC_FIRE_PRIMED -> STATIC_FIRE
-    StartStaticFireSequenceRequest start_static_fire_sequence = 37;
+    StartStaticFireSequenceRequest start_static_fire_sequence = 38;
 
     // Transitions IDLE -> FLIGHT_PRIMED
     LoadFlightSequenceRequest load_flight_sequence = 31;
@@ -531,7 +526,7 @@ message DataPacket {
   optional HornetRcsMetrics hornet_rcs_metrics = 81;
 
   // Actuator commands -- shared.
-  required ValveStates valve_states = 86;
+  required ValveStates valve_states = 87;
 
   // Actuator commands -- ranger
   optional ThrottleValveCommand fuel_valve_command = 60;
@@ -615,6 +610,7 @@ message Vector3D {
   required float x = 1;
   required float y = 2;
   required float z = 3;
+}
 // Current valve states.
 message ValveStates {
   optional ValveState sv001 = 1;

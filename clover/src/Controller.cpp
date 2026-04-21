@@ -166,8 +166,6 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Sample flight trace and run flight controller
     if (current_state == SystemState_STATE_FLIGHT) {
-    // Sample flight trace and run flight controller
-    if (current_state == SystemState_STATE_FLIGHT) {
         // Sample flight traces
         auto x_sample = flight_x_trace_m.sample(data.trace_time_msec);
         if (!x_sample.has_value()) {
@@ -213,8 +211,6 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Sample throttle trace
     if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
-    // Sample throttle trace
-    if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
         // Sample thrust trace
         auto thrust_sample = throttle_thrust_trace_N.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
@@ -242,7 +238,6 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         data.tvc_yaw_command_deg = *yaw_sample;
     }
 
-    if (current_state == SystemState_STATE_RCS) {
     if (current_state == SystemState_STATE_RCS) {
         // Sample TVC trace
         auto roll_sample = tvc_pitch_trace_deg.sample(data.trace_time_msec);
@@ -279,7 +274,6 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 #endif
     }
 
-    if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
     if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
         if (!data.has_tvc_pitch_command_deg) {
             return std::unexpected(Error::from_cause("missing tvc pitch command"));
