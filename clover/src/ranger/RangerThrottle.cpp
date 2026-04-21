@@ -1824,14 +1824,14 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     float predicted_isp = interp2D(isp_pc_axis_internal, 29, isp_of_axis_internal, 34, isp_data_internal, p_ch, of_safe);
 
     // 8. Predict thrust (convert to lbf-equivalent)
-    float predicted_thrust = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
+    float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
 
     // Clamp requested O/F into safe range as well
     float target_of_safe = std::clamp(target_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
     // 9. Compute PID
     float dt = Controller::SEC_PER_CONTROL_TICK;
-    float thrust_error = thrust_command_lbf - predicted_thrust;
+    float thrust_error = thrust_command_lbf - predicted_thrust_lbf;
     float change_alpha_cmd = THRUST_KP * thrust_error;
     change_alpha_cmd *= dt;
     float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
@@ -1845,24 +1845,24 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     alpha = std::clamp(alpha, MIN_ALPHA, MAX_ALPHA);
 
     // 11. Plug alpha into Mprime contour
-    float thrust_from_alpha = alpha * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
-    float fuel_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, fuel_valve_grid_internal, thrust_from_alpha, target_of_safe);
+    float thrust_from_alpha_lbf = alpha * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
+    float fuel_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, fuel_valve_grid_internal, thrust_from_alpha_lbf, target_of_safe);
 
-    float lox_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, lox_valve_grid_internal, thrust_from_alpha, target_of_safe);
+    float lox_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, lox_valve_grid_internal, thrust_from_alpha_lbf, target_of_safe);
 
     // 12. Clamp valve commands to safe ranges
     fuel_valve_command_deg = std::clamp(fuel_valve_command_deg, MIN_VALVE_POS, MAX_VALVE_POS);
     lox_valve_command_deg = std::clamp(lox_valve_command_deg, MIN_VALVE_POS, MAX_VALVE_POS);
 
     // Populate telemetry datadata.has_predicted_thrust = true;
-    metrics.predicted_thrust = predicted_thrust;
+    metrics.predicted_thrust_lbf = predicted_thrust_lbf;
     metrics.predicted_of = predicted_of;
     metrics.mdot_fuel = mdot_f;
     metrics.mdot_lox = mdot_lox;
     metrics.change_alpha_cmd = change_alpha_cmd;
     metrics.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
     metrics.alpha = alpha;
-    metrics.thrust_from_alpha = thrust_from_alpha;
+    metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
 
 
 

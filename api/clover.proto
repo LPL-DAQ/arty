@@ -664,14 +664,14 @@ message FlightControllerMetrics {
 }
 
 message RangerThrottleMetrics {
-  optional float predicted_thrust = 1;
+  optional float predicted_thrust_lbf = 1;
   optional float predicted_of = 2;
   optional float mdot_fuel = 3;
   optional float mdot_lox = 4;
   optional float change_alpha_cmd = 7;
   optional float clamped_change_alpha_cmd = 8;
   optional float alpha = 9;
-  optional float thrust_from_alpha = 10;
+  optional float thrust_from_alpha_lbf = 10;
 }
 
 message HornetThrottleMetrics {}
