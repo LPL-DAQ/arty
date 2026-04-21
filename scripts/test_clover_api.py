@@ -40,6 +40,7 @@ def send_request(sock: socket.socket, req: clover_api.Request) -> clover_api.Res
     prefix_bytes_seen = 0
     while True:
         varint_byte = sock.recv(1)
+        print(f'varint byte: {varint_byte}')
         if len(varint_byte) != 1:
             raise Exception('Expected 1 byte from socket but got 0')
         varint_byte = int.from_bytes(varint_byte)
@@ -101,8 +102,6 @@ def handle_command_stream():
         req.calibrate_valve.valve = clover_api.LOX
         resp = send_request(sock, req)
         print(f'Got resp: {resp}')
-
-
 
         while True:
             time.sleep(1000)

@@ -5,6 +5,7 @@ Hornet Mk. 3 board.
 /dts-v1/;
 
 #include <../boards/pjrc/teensy4/teensy41.dts>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
 #define ANALOG_SENSORS_ADC_OVERSAMPLING 5
@@ -49,6 +50,21 @@ TODO:
         analog-sensor-adcs = <&adc1 &adc2>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+
+        pwms =
+            <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_top    Pin 3   EMC_05    FlexPWM4.2 B */
+            <&flexpwm2_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_bottom Pin 4   EMC_06    FlexPWM2.0 A */
+            <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_x      Pin 24  AD_B0_12  FlexPWM1.2 X */
+            <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_y      Pin 25  AD_B0_13  FlexPWM1.2 X */
+            <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_top     Pin 28  EMC_32    FlexPWM3.1 B */
+            <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_bottom  Pin 29  EMC_31    FlexPWM3.1 A */
+            <&flexpwm2_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 36  EMC_38    FlexPWM1.3 B */
+            <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* beta_ccw     Pin 37  EMC_39    FlexPWM1.3 A */
+
+
+        pwm-names = "motor_top", "motor_bottom",
+                    "servo_x", "servo_y",
+                    "beta_top", "beta_bottom", "beta_cw", "beta_ccw";
     };
 
     chosen {
@@ -119,6 +135,77 @@ TODO:
             nxp,speed = "100-mhz";
         };
     };
+
+    /* AD_B0_12 -> FlexPWM1_PWMX2 (servo_x)
+       AD_B0_13 -> FlexPWM1_PWMX3 (servo_y) */
+    pinmux_flexpwm1_pwm2: pinmux_flexpwm1_pwm2 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b0_12_flexpwm1_pwmx2>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+        pinmux_flexpwm1_pwm3: pinmux_flexpwm1_pwm3 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b0_13_flexpwm1_pwmx3>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* EMC_32 -> FlexPWM3_PWMB1 (beta_top)
+       EMC_31 -> FlexPWM3_PWMA1 (beta_bottom) */
+    pinmux_flexpwm3_pwm1: pinmux_flexpwm3_pwm1 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_32_flexpwm3_pwmb1>,
+                     <&iomuxc_gpio_emc_31_flexpwm3_pwma1>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* EMC_38 -> FlexPWM1_PWMA3 (beta_cw)
+       EMC_39 -> FlexPWM1_PWMB3 (beta_ccw) */
+    pinmux_flexpwm2_pwm3: pinmux_flexpwm2_pwm3 {
+        group0 {
+            pinmux = <&iomuxc_gpio_b1_02_flexpwm2_pwma3>,
+                     <&iomuxc_gpio_b1_03_flexpwm2_pwmb3>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* EMC_05 -> FlexPWM4_PWMB2 (motor_top) */
+    pinmux_flexpwm4_pwm2: pinmux_flexpwm4_pwm2 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_05_flexpwm4_pwmb2>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    /* EMC_06 -> FlexPWM2_PWMA0 (motor_bottom) */
+    pinmux_flexpwm2_pwm0: pinmux_flexpwm2_pwm0 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_06_flexpwm2_pwma0>;
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
     pinmux_adc2: pinmux_adc2 {
         group0 {
             pinmux = <&iomuxc_gpio_ad_b1_14_gpio1_io30>; // A12, pin 26
@@ -221,13 +308,53 @@ TODO:
     #size-cells = <0>;
 
     channel@3 {
-        reg = <0x5>;
+        reg = <0x3>;
         zephyr,gain = "ADC_GAIN_1";
         zephyr,reference = "ADC_REF_INTERNAL";
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
         zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
         zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
     };
+};
+
+/* ------------------------------------------------------------------ */
+/* FlexPWM submodule enables with pinctrl                             */
+/* ------------------------------------------------------------------ */
+
+&flexpwm1_pwm2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm1_pwm2>;
+    status = "okay";
+};
+
+&flexpwm1_pwm3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm1_pwm3>;
+    status = "okay";
+};
+
+&flexpwm3_pwm1 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm3_pwm1>;
+    status = "okay";
+};
+
+&flexpwm2_pwm3 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm2_pwm3>;
+    status = "okay";
+};
+
+&flexpwm4_pwm2 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm4_pwm2>;
+    status = "okay";
+};
+
+&flexpwm2_pwm0 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_flexpwm2_pwm0>;
+    status = "okay";
 };
 
 &zephyr_udc0 {

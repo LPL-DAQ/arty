@@ -1,5 +1,4 @@
-#ifndef ARTY_THROTTLEVALVE_H
-#define ARTY_THROTTLEVALVE_H
+#pragma once
 
 #include "Error.h"
 #include "MutexGuard.h"
@@ -76,7 +75,7 @@ public:
     ThrottleValve() = delete;
 
     static std::expected<void, Error> init();
-    static std::expected<void, Error> tick(bool on, bool set_pos, float target_deg);
+    static std::expected<void, Error> tick(const ThrottleValveCommand& command);
 
     static void move(float target_deg);
     static void stop();
@@ -122,7 +121,7 @@ template <
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::control_pulse_isr(
     const struct device*, void*)
 {
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
 
     uint64_t now_cycles = k_cycle_get_64();
     pulse_interval_cycles = now_cycles - last_pulse_cycle;
@@ -192,7 +191,7 @@ template <
     const device* control_counter_dt_init>
 uint8_t ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::read_encoder_state()
 {
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
 
     int a = gpio_pin_get_dt(&enc_a_gpio);
     if (a < 0) [[unlikely]] {
@@ -215,7 +214,7 @@ template <
     const device* control_counter_dt_init>
 std::expected<void, Error> ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::init()
 {
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
     LOG_INF("%s Initializing throttle valve...", kind_to_prefix(kind));
 
     if (!device_is_ready(pul_gpio.port)) {
@@ -303,12 +302,16 @@ template <
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
 std::expected<void, Error>
-ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(bool on, bool set_pos, float target_deg)
+ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(const ThrottleValveCommand& command)
 {
+    const auto& on = command.enable;
+    const auto& set_pos = command.set_pos;
+    const auto& target_deg = command.target_deg;
+
     previous_encoder_position = current_encoder_position;
     current_encoder_position = get_pos_encoder();
 
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
     prevState = state;
     if (!on) {
         state = ValveState::OFF;
@@ -344,7 +347,7 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::move(float target_deg)
 {
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
 
     power_on(true);
     constexpr float CONTROL_TIME = 0.001;
@@ -413,7 +416,7 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::reset_pos(float new_pos)
 {
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
 
     MutexGuard motor_guard{&motor_lock};
     // if (state != ValveState::STOPPED) {
@@ -438,7 +441,7 @@ template <
     const device* control_counter_dt_init>
 void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::power_on(bool on)
 {
-    LOG_MODULE_DECLARE(throttle_valve);
+    LOG_MODULE_DECLARE(ThrottleValve);
     MutexGuard motor_guard{&motor_lock};
 
     if (on) {
@@ -570,5 +573,3 @@ typedef ThrottleValve<
     GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), lox_valve_encoder_b_gpios),
     DEVICE_DT_GET(DT_ALIAS(lox_valve_stepper_pulse_counter))>
     LoxValve;
-
-#endif  // ARTY_THROTTLEVALVE_H

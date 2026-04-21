@@ -7,15 +7,17 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
-#include "AnalogSensors.h"
 #include "Controller.h"
-#include "lidar.h"
+#include "FlightController.h"
+#include "sensors/AnalogSensors.h"
+#include "sensors/lidar.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
 
 #elif CONFIG_RANGER
-#include "ThrottleValve.h"
+#include "ranger/ThrottleValve.h"
+#include "ranger/Valves.h"
 
 #else
 #error Either CONFIG_HORNET or CONFIG_RANGER must be set.
@@ -50,6 +52,12 @@ int main(void)
     // }
 
 #ifdef CONFIG_RANGER
+
+    LOG_INF("Initializing general valves");
+    if (auto result = Valves::init(); !result) {
+        LOG_ERR("Failed to initialize general valves: %s", result.error().build_message().c_str());
+        return 0;
+    }
 
     LOG_INF("Initializing fuel throttle valve");
     if (auto result = FuelValve::init(); !result) {

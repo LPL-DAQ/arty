@@ -1,8 +1,9 @@
-target_sources(app PRIVATE main.cpp
+target_sources(app PRIVATE
+    main.cpp
     server.cpp
-    lidar.cpp
     Controller.cpp
     Error.cpp
+    MutexGuard.cpp
     Trace.cpp
     LookupTable.cpp
     StateIdle.cpp
@@ -14,7 +15,11 @@ target_sources(app PRIVATE main.cpp
     AnalogSensors.cpp
     MutexGuard.cpp
     VectornavIMU.cpp)
+    FlightController.cpp
+    util.cpp
+)
 
+add_subdirectory(sensors)
 
 if(CONFIG_HORNET)
     message(NOTICE "Building with Hornet sources")

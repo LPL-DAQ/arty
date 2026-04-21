@@ -1,9 +1,9 @@
 #include "AnalogSensors.h"
-#include "MutexGuard.h"
+#include "../MutexGuard.h"
 #include "clover.pb.h"
-#include "config.h"
-#include "lut/tc_k_type_v_to_deg_c_lut.h"
-#include "lut/tc_t_type_v_to_deg_c_lut.h"
+#include "../config.h"
+#include "../lut/tc_k_type_v_to_deg_c_lut.h"
+#include "../lut/tc_t_type_v_to_deg_c_lut.h"
 #include <array>
 #include <optional>
 #include <tuple>
@@ -146,18 +146,34 @@ static void sense()
             }
         }
 
-        k_poll(read_events.data(), NUM_ADCS, K_FOREVER);
+        int num_complete = 0;
+        while (true) {
+            // Wait for an ADC to finish their read.
+            k_poll(read_events.data(), NUM_ADCS, K_FOREVER);
 
-        // Check read statuses
-        for (int i = 0; i < NUM_ADCS; ++i) {
-            uint32_t signaled;
-            int result;
-            k_poll_signal_check(&read_signals[i], &signaled, &result);
-            if (signaled == 0) {
-                LOG_ERR("ADC %s was not siganled: %d", adc_devices[i]->name, signaled);
+            // Check for which ADCs have finished a read.
+            for (int i = 0; i < NUM_ADCS; ++i) {
+                uint32_t signaled;
+                int result;
+                k_poll_signal_check(&read_signals[i], &signaled, &result);
+                if (signaled == 0) {
+                    continue;
+                }
+
+                // Reset signal to prevent it from re-triggering poll.
+                read_events[i].state = K_POLL_STATE_NOT_READY;
+                k_poll_signal_reset(&read_signals[i]);
+                num_complete++;
+
+                // Inspect result of read call.
+                if (result != 0) {
+                    LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message().c_str());
+                }
             }
-            if (result != 0) {
-                LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message().c_str());
+
+            // Check if everybody has signaled completion.
+            if (num_complete == NUM_ADCS) {
+                break;
             }
         }
 
@@ -377,8 +393,9 @@ std::expected<void, Error> AnalogSensors::init()
     }
 
     // Configure ADC channels.
-    for (const auto& channel : adc_channels) {
-        LOG_INF("Initializing channel %d", channel.channel_id);
+    for (int i = 0; i < NUM_ANALOG_CHANNELS; ++i) {
+        const auto& channel = adc_channels[i];
+        LOG_INF("Initializing channel %d (ADC channel %d) on device %s", i, channel.channel_id, channel.dev->name);
 
         if (int err = adc_channel_setup_dt(&channel)) {
             return std::unexpected(Error::from_code(err).context("failed to set up ADC channel %d", channel.channel_id));
@@ -436,7 +453,7 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
 
         // Check PT config
         if (has_pt_config) {
-            if (!(config.has_pt_range_psig && config.has_pt_range_psig)) {
+            if (!(config.has_pt_range_psig && config.has_pt_bias_psig)) {
                 return std::unexpected(Error::from_cause("all pt config fields must be filled"));
             }
             if (config.pt_range_psig == 0.0f) {
