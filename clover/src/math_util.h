@@ -2,6 +2,8 @@
 #define APP_MATH_H
 #include <cstdint>
 #include <cmath>
+#include <algorithm>
+
 
 #include "clover.pb.h"
 
