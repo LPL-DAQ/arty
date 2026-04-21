@@ -12,15 +12,15 @@ K_MUTEX_DEFINE(flight_controller_lock);
 
 namespace {
     const float maxGimble = 12.0;   // degrees, this is an estimate
-    const float maxTiltDeg = 8.0;  // What we dont want the rocket to purposefully tilt more than
+    const float maxTiltRad = 8.0f * 0.0174532925f;  // 8 degrees in radians – max intentional tilt
 
     // TODO: Tune, including adding integral terms (is requried)
     // reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
     // integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
     PID pidXTilt(0.385, 0.01, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
     PID pidYTilt(0.385, 0.01, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
-    PID pidX(0.2, 0.01, 0.05);              // needs tuning, these are complete guesses
-    PID pidY(0.2, 0.01, 0.05);              // needs tuning, these are complete guesses
+    PID pidX(0.2, 0.1, 0.05);              // needs tuning, these are complete guesses
+    PID pidY(0.2, 0.1, 0.05);              // needs tuning, these are complete guesses
     // only use integral within 5 cm of target.
     PID pidZ(0.075, 0.01, 0, -1e6, 1e6, -1e6, 1e6, 0.05);
     // TODO: add max and min out
@@ -28,7 +28,7 @@ namespace {
 
     static uint32_t loopCount = 0;
 
-    float dt = 0.001; // TODO: make this an actual DT measurement ( or at least research if i should)
+    float dt = 0.01; // TODO: make this an actual DT measurement ( or at least research if i should)
 
     constexpr float DEG2RAD_F = 0.0174532925f;
     constexpr float RAD2DEG_F = 57.2957795f;
@@ -117,8 +117,8 @@ static std::array<float, 2> lateralPID(EstimatedState state, FlightControllerMet
         des_state.world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, state.velocity.y, outer_dt);
 
         // Clamp if needed
-        des_state.world_tilt_x = std::clamp(des_state.world_tilt_x, -maxTiltDeg, maxTiltDeg);
-        des_state.world_tilt_y = std::clamp(des_state.world_tilt_y, -maxTiltDeg, maxTiltDeg);
+        des_state.world_tilt_x = std::clamp(des_state.world_tilt_x, -maxTiltRad, maxTiltRad);
+        des_state.world_tilt_y = std::clamp(des_state.world_tilt_y, -maxTiltRad, maxTiltRad);
     }
 
     // Actual vertical axis in world
@@ -186,6 +186,7 @@ void FlightController::reset()
     pidY.reset();
     pidZ.reset();
     pidZVelocity.reset();
+    loopCount = 0;
     des_state = FlightControllerDesiredState_init_default;
 }
 
@@ -223,6 +224,7 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
     metrics.tvc_pitch_command_deg = tvc_pitch_command_deg;
     metrics.tvc_yaw_command_deg = tvc_yaw_command_deg;
 
+    loopCount++;
     return {{throttle_thrust_command_N, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
 }
 
