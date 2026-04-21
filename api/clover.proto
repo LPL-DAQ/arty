@@ -42,7 +42,7 @@ message Request {
     // Transitions IDLE -> CALIBRATE_THROTTLE_VALVE
     CalibrateThrottleValveRequest calibrate_throttle_valve = 33;
 
-    // Transitions  -> VALVE_PRIMED
+    // Transitions IDLE -> VALVE_PRIMED
     LoadThrottleValveSequenceRequest load_throttle_valve_sequence = 13;
     // Transitions VALVE_PRIMED -> VALVE
     StartThrottleValveSequenceRequest start_throttle_valve_sequence = 15;
