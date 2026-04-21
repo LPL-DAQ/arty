@@ -1,3 +1,4 @@
+# TODO: fix lookup table tests
 # add_subdirectory(LookupTable1D)
 # add_subdirectory(LookupTable2D)
 add_subdirectory(flight)
