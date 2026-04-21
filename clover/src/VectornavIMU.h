@@ -60,12 +60,12 @@ private:
     static bool parse_ymr(const char* line, float* yaw, float* pitch, float* roll);
     static bool parse_imu(const char* line, float* ax, float* ay, float* az, float* gx, float* gy, float* gz);
     static bool parse_gps(const char* line, double* lat, double* lon, float* alt);
-    static bool parse_ins(const char* line, double* lat, double* lon, float* alt, float* vn_vel, float* ve_vel, float* vd_vel);
+    static bool parse_ins(const char* line, float* yaw, float* pitch, float* roll, double* lat, double* lon, float* alt, float* vn_vel, float* ve_vel, float* vd_vel);
     static bool parse_mag(const char* line, float* mx, float* my, float* mz);
 
 public:
     static std::expected<void, Error> init();
-    static std::expected<void, Error> handle_configure_analog_sensors(const ConfigureAnalogSensorsRequest& req);
+    static void start_sense();
     static std::optional<std::pair<ImuReading, float>> read();
 
     // Main sense loop thread, do not call directly.
@@ -91,7 +91,7 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_handler(const device*, v
             return;
         }
         if (!is_ready) {
-            return;
+            break;
         }
 
         uint8_t byte;
@@ -101,13 +101,15 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_handler(const device*, v
             return;
         }
         if (bytes_read == 0) {
-            return;
+            break;
         }
-
-        ring_buf_put(&uart_ringbuf, &byte, 1);
+        if (ring_buf_put(&uart_ringbuf, &byte, 1) == 0) {
+            LOG_WRN("%s Ring buffer full, byte dropped: 0x%02x", kind_to_prefix(kind), byte);
+        }
     }
     k_sem_give(&data_ready_sem);
 }
+
 
 /// Send bytes over UART using poll mode. Only used during initialization for configuration commands.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
@@ -124,11 +126,11 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::configure_outputs()
 {
     LOG_MODULE_DECLARE(VectornavIMU);
 
-    const char* ymr_cmd = "$VNWRG,75,1,8,01,0000000000000001*XX\r\n";   // YPR at 40 Hz
-    const char* imu_cmd = "$VNWRG,75,2,8,01,0000000000000006*XX\r\n";   // Accel + gyro at 40 Hz
-    const char* gps_cmd = "$VNWRG,76,2,200,01,0000000000000008*XX\r\n"; // GPS position + velocity at 5 Hz
-    const char* ins_cmd = "$VNWRG,77,2,8,01,0000000000000010*XX\r\n";   // Fused INS at 40 Hz
-    const char* mag_cmd = "$VNWRG,75,3,8,01,0000000000000002*XX\r\n";   // Magnetometer at 40 Hz
+    const char* ymr_cmd = "$VNWRG,75,1,20,01,0000000000000001*XX\r\n";   // YPR at 40 Hz
+    const char* imu_cmd = "$VNWRG,75,2,20,01,0000000000000006*XX\r\n";   // Accel + gyro at 40 Hz
+    const char* gps_cmd = "$VNWRG,76,2,260,01,0000000000000008*XX\r\n"; // GPS position + velocity at 5 Hz
+    const char* ins_cmd = "$VNWRG,77,2,20,01,0000000000000010*XX\r\n";   // Fused INS at 40 Hz
+    const char* mag_cmd = "$VNWRG,75,3,20,01,0000000000000002*XX\r\n";   // Magnetometer at 40 Hz
 
     uart_send((const uint8_t*)ymr_cmd, strlen(ymr_cmd)); k_msleep(100);
     uart_send((const uint8_t*)imu_cmd, strlen(imu_cmd)); k_msleep(100);
@@ -147,7 +149,7 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::configure_outputs()
 /// NOTE: field names on ImuReading below must match the protobuf definition.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
 std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_line(char line[MAX_LINE_SIZE])
-{
+{ LOG_MODULE_DECLARE(VectornavIMU);
     {
         float yaw, pitch, roll;
         if (parse_ymr(line, &yaw, &pitch, &roll)) {
@@ -190,16 +192,24 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_
     }
 
     {
+        float yaw, pitch, roll;
         double lat, lon;
         float alt, vn_vel, ve_vel, vd_vel;
-        if (parse_ins(line, &lat, &lon, &alt, &vn_vel, &ve_vel, &vd_vel)) {
+        if (parse_ins(line, &yaw, &pitch, &roll, &lat, &lon, &alt, &vn_vel, &ve_vel, &vd_vel)) {
             MutexGuard guard{&reading_mutex};
+            uint64_t curr_cycle = k_cycle_get_64();
+            sense_time_ns = static_cast<float>(curr_cycle - last_reading_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
+            last_reading_cycle = curr_cycle;
+            reading.yaw = yaw;
+            reading.pitch = pitch;
+            reading.roll = roll;
             reading.ins_lat = lat;
             reading.ins_lon = lon;
             reading.ins_alt = alt;
             reading.vel_n = vn_vel;
             reading.vel_e = ve_vel;
             reading.vel_d = vd_vel;
+            has_reading = true;
             return {};
         }
     }
@@ -215,7 +225,7 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_
         }
     }
 
-    return {};  // Unrecognised sentence type (e.g. ACK) — silently discard
+    return {}; 
 }
 
 /// Continuously accumulates sensor readings from the VN-300 over UART. Runs in dedicated thread.
@@ -236,12 +246,15 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
 
         uint8_t byte;
         while (ring_buf_get(&uart_ringbuf, &byte, 1) > 0) {
+            if (i == 0 && byte != '$'){
+                continue;}
             if (byte == '\r') {
                 continue;
             }
             if (byte == '\n') {
                 if (i > 0) {
                     line[i] = '\0';
+                    
                     decode_line(line);
                 }
                 i = 0;
@@ -321,28 +334,43 @@ bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_gps(const char* line, d
 }
 
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_ins(const char* line, double* lat, double* lon, float* alt, float* vn_vel, float* ve_vel, float* vd_vel)
+bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_ins(const char* line, float* yaw, float* pitch, float* roll, double* lat, double* lon, float* alt, float* vn_vel, float* ve_vel, float* vd_vel)
 {
     if (strncmp(line, "$VNINS,", 7) != 0)
         return false;
     char buf[MAX_LINE_SIZE];
     strncpy(buf, line + 7, sizeof(buf));
-    char* token = strtok(buf, ",");
+    char* token = strtok(buf, ",");   // time - skip
+    if (!token) return false;
+    token = strtok(nullptr, ",");     // week - skip
+    if (!token) return false;
+    token = strtok(nullptr, ",");     // status - skip
+    if (!token) return false;
+    token = strtok(nullptr, ",");     // yaw
+    if (!token) return false;
+    *yaw = strtof(token, nullptr);
+    token = strtok(nullptr, ",");     // pitch
+    if (!token) return false;
+    *pitch = strtof(token, nullptr);
+    token = strtok(nullptr, ",");     // roll
+    if (!token) return false;
+    *roll = strtof(token, nullptr);
+    token = strtok(nullptr, ",");     // lat
     if (!token) return false;
     *lat = strtod(token, nullptr);
-    token = strtok(nullptr, ",");
+    token = strtok(nullptr, ",");     // lon
     if (!token) return false;
     *lon = strtod(token, nullptr);
-    token = strtok(nullptr, ",");
+    token = strtok(nullptr, ",");     // alt
     if (!token) return false;
     *alt = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
+    token = strtok(nullptr, ",");     // vN
     if (!token) return false;
     *vn_vel = strtof(token, nullptr);
-    token = strtok(nullptr, ",");
+    token = strtok(nullptr, ",");     // vE
     if (!token) return false;
     *ve_vel = strtof(token, nullptr);
-    token = strtok(nullptr, "*");
+    token = strtok(nullptr, ",");     // vD
     if (!token) return false;
     *vd_vel = strtof(token, nullptr);
     return true;
@@ -407,22 +435,15 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
     LOG_INF("%s Enabling UART RX interrupt", kind_to_prefix(kind));
     uart_irq_rx_enable(uart_dev);
 
-    LOG_INF("%s Configuring sensor outputs", kind_to_prefix(kind));
-    configure_outputs();
-
     LOG_INF("%s Initialized", kind_to_prefix(kind));
-    k_sem_give(ready_sem);
 
     return {};
 }
 
-/// Reconfigure sensor output rates/fields at runtime from a protobuf request.
-/// TODO: map req fields to selective configure_outputs() calls as the proto definition warrants.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::handle_configure_analog_sensors(const ConfigureAnalogSensorsRequest& req)
+void Vectornav<kind, uart_dt_init, ready_sem_ptr>::start_sense()
 {
-    configure_outputs();
-    return {};
+    k_sem_give(ready_sem);
 }
 
 /// Returns the latest accumulated sensor reading and the YMR cycle time in nanoseconds, if available.
