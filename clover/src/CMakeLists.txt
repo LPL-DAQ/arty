@@ -13,6 +13,7 @@ target_sources(app PRIVATE main.cpp
     AnalogSensors.cpp
     Lidar.cpp
     VectornavIMU.cpp
+    PwmActuator.cpp
     MutexGuard.cpp)
 
 
