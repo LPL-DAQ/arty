@@ -6,16 +6,13 @@
 
 K_MUTEX_DEFINE(hornet_rcs_lock);
 
-namespace {
-    PID roll_pid(HORNET_RCS_ROLL_KP, HORNET_RCS_ROLL_KI, HORNET_RCS_ROLL_KD);
-    int64_t previous_timestamp = 0;
-    int64_t p_timer = 0;
-    int8_t p_valve = 0;
-    float min_pulse = 0.10;
-    float deadzone = 0.15;
-    float hysteresis = 0.05;
-
-}
+static PID roll_pid(HORNET_RCS_ROLL_KP, HORNET_RCS_ROLL_KI, HORNET_RCS_ROLL_KD);
+static int64_t previous_timestamp = 0;
+static int64_t p_timer = 0;
+static int8_t p_valve = 0;
+static float min_pulse = 0.10;
+static float deadzone = 0.15;
+static float hysteresis = 0.05;
 
 static int control(EstimatedState state, float desired_roll_position){
     int64_t dt = k_uptime_get() - previous_timestamp;
@@ -83,9 +80,8 @@ std::expected<std::tuple<float, float, HornetRcsMetrics>, Error> HornetRcs::tick
     HornetRcsMetrics metrics = HornetRcsMetrics_init_default;
     int control_var = control(state, roll_command_deg);
 
-    const float throttle_value = 1.0f;
-    const float cw_throttle  = control_var == -1  ? throttle_value : 0.0f;
-    const float ccw_throttle = control_var == 1 ? throttle_value : 0.0f;
+    const float cw_throttle  = control_var == -1  ? HORNET_RCS_THROTTLE_PERCENT : 0.0f;
+    const float ccw_throttle = control_var == 1 ? HORNET_RCS_THROTTLE_PERCENT : 0.0f;
     const uint32_t cw_pulse_us  = static_cast<uint32_t>(MIN_PWM_PULSE_US + (cw_throttle  * (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US)));
     const uint32_t ccw_pulse_us = static_cast<uint32_t>(MIN_PWM_PULSE_US + (ccw_throttle * (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US)));
 

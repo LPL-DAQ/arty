@@ -9,8 +9,15 @@ constexpr float RAD2DEG_F = 57.2957795f;
 constexpr uint32_t MIN_PWM_PULSE_US = 1000;
 constexpr uint32_t MAX_PWM_PULSE_US = 2000;
 
+// RCS Hornet PWM Throttle
+constexpr uint32_t HORNET_RCS_THROTTLE_PERCENT = 1.0f; // 100% throttle corresponds to 2000 µs pulse
+
 // Flight controller outer loop runs every Nth inner-loop tick
 constexpr uint32_t FLIGHT_OUTER_LOOP_DIVISOR = 3;
+
+// Inifinity and negative infinity for floats
+constexpr float FLOAT_INFINITY = std::numeric_limits<float>::infinity();
+constexpr float FLOAT_NEG_INFINITY = -std::numeric_limits<float>::infinity();
 
 // FlightController PID gains
 constexpr float FLIGHT_PID_X_TILT_KP = 0.385f;

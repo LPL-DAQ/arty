@@ -6,46 +6,43 @@
 #include <zephyr/kernel.h>
 #include <limits>
 #include <cmath>
-#include <array>
 
 
 K_MUTEX_DEFINE(flight_controller_lock);
 
-namespace {
-    const float maxGimble = 12.0;   // degrees, this is an estimate
-    const float maxTiltRad = 8.0f * 0.0174532925f;  // 8 degrees in radians – max intentional tilt
+static const float maxGimble = 12.0;   // degrees, this is an estimate
+static const float maxTiltRad = 8.0f * DEG2RAD_F;  // 8 degrees in radians – max intentional tilt
 
-    // TODO: Tune, including adding integral terms (is requried)
-    // reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
-    // integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
-    PID pidXTilt(FLIGHT_PID_X_TILT_KP, FLIGHT_PID_X_TILT_KI, FLIGHT_PID_X_TILT_KD, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
-    PID pidYTilt(FLIGHT_PID_Y_TILT_KP, FLIGHT_PID_Y_TILT_KI, FLIGHT_PID_Y_TILT_KD, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
-    PID pidX(FLIGHT_PID_X_KP, FLIGHT_PID_X_KI, FLIGHT_PID_X_KD);              // needs tuning, these are complete guesses
-    PID pidY(FLIGHT_PID_Y_KP, FLIGHT_PID_Y_KI, FLIGHT_PID_Y_KD);              // needs tuning, these are complete guesses
-    // only use integral within 5 cm of target.
-    PID pidZ(FLIGHT_PID_Z_KP, FLIGHT_PID_Z_KI, FLIGHT_PID_Z_KD, -1e6, 1e6, -1e6, 1e6, 0.05);
-    // TODO: add max and min out
-    PID pidZVelocity(FLIGHT_PID_Z_VEL_KP, FLIGHT_PID_Z_VEL_KI, FLIGHT_PID_Z_VEL_KD);      // needs tuning
+// TODO: Tune, including adding integral terms (is requried)
+// reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
+// integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
+static PID pidXTilt(FLIGHT_PID_X_TILT_KP, FLIGHT_PID_X_TILT_KI, FLIGHT_PID_X_TILT_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, -maxGimble / 3, maxGimble / 3, FLOAT_INFINITY, 10.0);   // about the X axis
+static PID pidYTilt(FLIGHT_PID_Y_TILT_KP, FLIGHT_PID_Y_TILT_KI, FLIGHT_PID_Y_TILT_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, -maxGimble / 3, maxGimble / 3, FLOAT_INFINITY, 10.0);   // about the Y axis
+static PID pidX(FLIGHT_PID_X_KP, FLIGHT_PID_X_KI, FLIGHT_PID_X_KD);              // needs tuning, these are complete guesses
+static PID pidY(FLIGHT_PID_Y_KP, FLIGHT_PID_Y_KI, FLIGHT_PID_Y_KD);              // needs tuning, these are complete guesses
+// only use integral within 5 cm of target.
+static PID pidZ(FLIGHT_PID_Z_KP, FLIGHT_PID_Z_KI, FLIGHT_PID_Z_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, FLOAT_NEG_INFINITY, FLOAT_INFINITY, 0.05);
+// TODO: add max and min out
+static PID pidZVelocity(FLIGHT_PID_Z_VEL_KP, FLIGHT_PID_Z_VEL_KI, FLIGHT_PID_Z_VEL_KD);      // needs tuning
 
-    static uint32_t loopCount = 0;
+static uint32_t loopCount = 0;
 
-    float dt = 0.01; // TODO: make this an actual DT measurement ( or at least research if i should)
+static float dt = 0.01; // TODO: make this an actual DT measurement ( or at least research if i should)
 
-    FlightControllerDesiredState des_state = FlightControllerDesiredState_init_default;
+static FlightControllerDesiredState des_state = FlightControllerDesiredState_init_default;
 
 #if CONFIG_HORNET
-    constexpr float yaw_MOI = -67.67f;
-    constexpr float pitch_MOI = -67.67f;
-    constexpr float yaw_moment_arm = -67.67f;
-    constexpr float pitch_moment_arm = -67.67f;
+static constexpr float yaw_MOI = -67.67f;
+static constexpr float pitch_MOI = -67.67f;
+static constexpr float yaw_moment_arm = -67.67f;
+static constexpr float pitch_moment_arm = -67.67f;
 
 #else  // if CONFIG_RANGER
-    constexpr float yaw_MOI = -67.67f;
-    constexpr float pitch_MOI = -67.67f;
-    constexpr float yaw_moment_arm = -67.67f;
-    constexpr float pitch_moment_arm = -67.67f;
+static constexpr float yaw_MOI = -67.67f;
+static constexpr float pitch_MOI = -67.67f;
+static constexpr float yaw_moment_arm = -67.67f;
+static constexpr float pitch_moment_arm = -67.67f;
 #endif
-}
 
 // TODO: get the real mass estimates
 static float get_mass_kg(){
@@ -92,9 +89,9 @@ static std::expected<std::tuple<float, float>, Error> find_tvc_angles(float pitc
 
 
 // returns {pitch acceleration, yaw acceleration}
-static std::array<float, 2> lateralPID(EstimatedState state, FlightControllerMetrics& metrics)
+static std::pair<float, float> lateralPID(EstimatedState state, FlightControllerMetrics& metrics)
 {
-    std::array<float, 2> output_accelerations{};
+    std::pair<float, float> output_accelerations{};
 
     Quaternion q_wb = math_util::createQuaternion(
         state.R_WB.qw,
@@ -146,13 +143,13 @@ static std::array<float, 2> lateralPID(EstimatedState state, FlightControllerMet
     // TODO: find angular rates to feed to derivative
 
     // Feed body-axis error
-    output_accelerations[0] = pidXTilt.calculate(0.0f, axis_error_b.x, dt);
-    output_accelerations[1] = pidYTilt.calculate(0.0f, axis_error_b.y, dt);
+    output_accelerations.first  = pidXTilt.calculate(0.0f, axis_error_b.x, dt);
+    output_accelerations.second = pidYTilt.calculate(0.0f, axis_error_b.y, dt);
 
     metrics.desired_world_tilt_x_rad = des_state.world_tilt_x;
     metrics.desired_world_tilt_y_rad = des_state.world_tilt_y;
-    metrics.commanded_pitch_acceleration_rad_s2 = output_accelerations[0];
-    metrics.commanded_yaw_acceleration_rad_s2 = output_accelerations[1];
+    metrics.commanded_pitch_acceleration_rad_s2 = output_accelerations.first;
+    metrics.commanded_yaw_acceleration_rad_s2 = output_accelerations.second;
 
     return output_accelerations;
 }
@@ -211,8 +208,8 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
     // TODO: make magic number a config constant
     float throttle_thrust_command_lbf = throttle_thrust_command_N * 0.224809f; // convert to lbf
     auto angular_accelerations = lateralPID(state, metrics);
-    float pitch_acceleration_command = angular_accelerations[0];
-    float yaw_acceleration_command = angular_accelerations[1];
+    float pitch_acceleration_command = angular_accelerations.first;
+    float yaw_acceleration_command = angular_accelerations.second;
 
     auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_lbf);
     if (!tvc_angles) {
