@@ -35,6 +35,7 @@ static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 static inline float alpha = -1.0f;
 static inline uint32_t low_ptc_start_time_ms = 0;
 static inline float target_of = 1.2f;
+// TODO: Tune controller constants
 static constexpr float THRUST_KP = 0.015f;
 static constexpr float MAX_CHANGE_ALPHA = 20.0f;
 static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;

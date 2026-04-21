@@ -34,6 +34,7 @@ std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick
 {
     MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
 
+
     // Compute gimbal angles from desired angular accelerations
     float pitch_sin = (pitch_accel_rad_s2 * HORNET_PITCH_MOI) / (thrust_N * HORNET_PITCH_MOMENT_ARM);
     float yaw_sin   = (yaw_accel_rad_s2   * HORNET_YAW_MOI)   / (thrust_N * HORNET_YAW_MOMENT_ARM);
