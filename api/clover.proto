@@ -633,15 +633,17 @@ message ValveStates {
   optional ValveState svg001 = 100;
   optional ValveState svg002 = 101;
   optional ValveState svg003 = 102;
+}
+
 message LidarReading {
   required float distance_m = 1;
   required float strength = 2;
 }
 
 message ImuReading {
-  required float yaw = 1;
-  required float pitch = 2;
-  required float roll = 3;
+  optional float yaw = 1;
+  optional float pitch = 2;
+  optional float roll = 3;
 
   required float accel_x = 4;
   required float accel_y = 5;
@@ -651,16 +653,16 @@ message ImuReading {
   required float gyro_y = 8;
   required float gyro_z = 9;
 
-  required double gps_lat = 10;
-  required double gps_lon = 11;
-  required float gps_alt = 12;
+  optional double gps_lat = 10;
+  optional double gps_lon = 11;
+  optional float gps_alt = 12;
 
-  required double ins_lat = 13;
-  required double ins_lon = 14;
-  required float ins_alt = 15;
-  required float vel_n = 16;
-  required float vel_e = 17;
-  required float vel_d = 18;
+  optional double ins_lat = 13;
+  optional double ins_lon = 14;
+  optional float ins_alt = 15;
+  optional float vel_n = 16;
+  optional float vel_e = 17;
+  optional float vel_d = 18;
 
   required float mag_x = 19;
   required float mag_y = 20;

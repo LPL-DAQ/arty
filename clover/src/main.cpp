@@ -9,8 +9,8 @@
 
 #include "Controller.h"
 #include "sensors/AnalogSensors.h"
-#include "Lidar.h"
-#include "VectornavIMU.h"
+#include "sensors/Lidar.h"
+#include "sensors/VectornavIMU.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
@@ -82,25 +82,19 @@ int main(void)
     }
 
     LOG_INF("Initializing Lidar 1");
-    LOG_INF("main %p", k_current_get());
-        k_sleep(K_MSEC(500));
     if (auto result = Lidar1::init(); !result) {
         LOG_ERR("Failed to initialize Lidar 1: %s", result.error().build_message().c_str());
         return 0;
     }
 
     LOG_INF("Initializing Lidar 2");
-    LOG_INF("main %p", k_current_get());
-        k_sleep(K_MSEC(500));
     if (auto result = Lidar2::init(); !result) {
         LOG_ERR("Failed to initialize Lidar 2: %s", result.error().build_message().c_str());
         return 0;
     }
 
-    LOG_INF("Initializing IMIU");
-    LOG_INF("main %p", k_current_get());
-        k_sleep(K_MSEC(500));
-    if (auto result = Vectornav1::init(); !result) {
+    LOG_INF("Initializing IMU");
+    if (auto result = VectornavImu::init(); !result) {
         LOG_ERR("Failed to initialize IMU: %s", result.error().build_message().c_str());
         return 0;
     }

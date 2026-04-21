@@ -1,4 +1,4 @@
-#include "Lidar.h"
+#include "sensors/Lidar.h"
 
 LOG_MODULE_REGISTER(Lidar);
 

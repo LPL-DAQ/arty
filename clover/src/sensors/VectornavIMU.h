@@ -11,13 +11,13 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
 
-enum class VectornavKind { VECTORNAV_1 };
+enum class VectornavKind { VECTORNAV };
 
 consteval static const char* kind_to_prefix(VectornavKind kind)
 {
     switch (kind) {
-    case VectornavKind::VECTORNAV_1:
-        return "[Vectornav1]";
+    case VectornavKind::VECTORNAV:
+        return "[Vectornav]";
     default:
         return "[INVALID]";
     }
@@ -279,6 +279,6 @@ std::optional<std::pair<ImuReading, float>> Vectornav<kind, uart_dt_init, ready_
     return {{reading, sense_time_ns}};
 }
 
-extern k_sem vectornav_1_ready_sem;
+extern k_sem vectornav_ready_sem;
 
-typedef Vectornav<VectornavKind::VECTORNAV_1, DEVICE_DT_GET(DT_ALIAS(imu_uart)), &vectornav_1_ready_sem> Vectornav1;
+typedef Vectornav<VectornavKind::VECTORNAV, DEVICE_DT_GET(DT_ALIAS(imu_uart)), &vectornav_ready_sem> VectornavImu;

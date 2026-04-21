@@ -1,4 +1,5 @@
 target_sources(app PRIVATE
-    lidar.cpp
+    Lidar.cpp
+    VectornavIMU.cpp
     AnalogSensors.cpp
     )

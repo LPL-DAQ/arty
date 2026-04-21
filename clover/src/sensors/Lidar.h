@@ -21,7 +21,6 @@ consteval static const char* kind_to_prefix(LidarKind name)
         return "[Lidar2]";
     default:
         return "[INVALID]";
-        // static_assert(name == LidarKind::LIDAR_1 || name == LidarKind::LIDAR_2, "Invalid name");
     }
 }
 

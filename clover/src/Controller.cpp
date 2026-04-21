@@ -1,8 +1,7 @@
 #include "Controller.h"
 #include "MutexGuard.h"
-#include "AnalogSensors.h"
-#include "Lidar.h"
-#include "VectornavIMU.h"
+#include "sensors/Lidar.h"
+#include "sensors/VectornavIMU.h"
 #include "ControllerConfig.h"
 #include "StateAbort.h"
 #include "StateCalibrateValve.h"
@@ -376,7 +375,7 @@ std::expected<void, Error> Controller::init()
     AnalogSensors::start_sense();
     Lidar1::start_sense();
     Lidar2::start_sense();
-    Vectornav1::start_sense();
+    VectornavImu::start_sense();
     StateEstimator::init();
     // Other sensors here...
     k_sched_unlock();
@@ -421,7 +420,7 @@ static void step_control_loop(k_work*)
         float sense_time_ns = 0.0f;
         std::tie(reading, sense_time_ns) = *lidar1;
         data.lidar_1 = reading;
-        LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+        // LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
     }
 
     auto lidar2 = Lidar2::read();
@@ -430,14 +429,14 @@ static void step_control_loop(k_work*)
         float sense_time_ns = 0.0f;
         std::tie(reading, sense_time_ns) = *lidar2;
         data.lidar_2 = reading;
-        LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+        // LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
     }
 
 
     // VectornavIMU read
-    auto vectornav1 = Vectornav1::read();
-    if (vectornav1) {
-        std::tie(data.imu, data.controller_timing.imu_sense_time_ns) = *vectornav1;
+    auto vectornav = VectornavImu::read();
+    if (vectornav) {
+        std::tie(data.imu, data.controller_timing.imu_sense_time_ns) = *vectornav;
         data.has_imu = true;
         LOG_INF("VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
             (double)data.imu.quat_w, (double)data.imu.quat_x,
