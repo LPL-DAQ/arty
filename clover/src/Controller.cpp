@@ -200,12 +200,12 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!flight_response.has_value()) {
             return std::unexpected(flight_response.error().context("error in FlightController"));
         }
-        data.has_throttle_thrust_command_N = true;
+        data.has_throttle_thrust_command_lbf = true;
         data.has_tvc_pitch_command_deg = true;
         data.has_tvc_yaw_command_deg = true;
         data.has_flight_controller_metrics = true;
         std::tie(
-            data.throttle_thrust_command_N, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.flight_controller_metrics) =
+            data.throttle_thrust_command_lbf, data.tvc_pitch_command_deg, data.tvc_yaw_command_deg, data.flight_controller_metrics) =
             *flight_response;
     }
 
@@ -216,8 +216,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!thrust_sample.has_value()) {
             return std::unexpected(thrust_sample.error().context("failed to sample throttle thrust trace"));
         }
-        data.has_throttle_thrust_command_N = true;
-        data.throttle_thrust_command_N = *thrust_sample;
+        data.has_throttle_thrust_command_lbf = true;
+        data.throttle_thrust_command_lbf = *thrust_sample;
     }
 
     // Sample TVC trace
@@ -250,11 +250,11 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Execute subordinate controllers
     if (current_state == SystemState_STATE_THROTTLE || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
-        if (!data.has_throttle_thrust_command_N) {
+        if (!data.has_throttle_thrust_command_lbf) {
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
 #ifdef CONFIG_RANGER
-        auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_N);
+        auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_lbf);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
         }
@@ -264,7 +264,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.fuel_valve_command, data.lox_valve_command, data.ranger_throttle_metrics) = *throttle_response;
 
 #elif CONFIG_HORNET
-        auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_N);
+        auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_lbf);
         if (!throttle_response.has_value()) {
             return std::unexpected(throttle_response.error().context("error in HornetThrottle"));
         }

@@ -1,12 +1,13 @@
 #include "HornetRcs.h"
 #include "../MutexGuard.h"
 #include "../PID.h"
+#include "../config.h"
 #include <zephyr/kernel.h>
 
 K_MUTEX_DEFINE(hornet_rcs_lock);
 
 namespace {
-    PID roll_pid(2, 0, 5);
+    PID roll_pid(HORNET_RCS_ROLL_KP, HORNET_RCS_ROLL_KI, HORNET_RCS_ROLL_KD);
     int64_t previous_timestamp = 0;
     int64_t p_timer = 0;
     int8_t p_valve = 0;
@@ -85,9 +86,8 @@ std::expected<std::tuple<float, float, HornetRcsMetrics>, Error> HornetRcs::tick
     const float throttle_value = 1.0f;
     const float cw_throttle  = control_var == -1  ? throttle_value : 0.0f;
     const float ccw_throttle = control_var == 1 ? throttle_value : 0.0f;
-    // Convert throttle to pulse width: 0.0 -> 1000µs, 1.0 -> 2000µs
-    const uint32_t cw_pulse_us = static_cast<uint32_t>(1000.0f + (cw_throttle * 1000.0f));
-    const uint32_t ccw_pulse_us = static_cast<uint32_t>(1000.0f + (ccw_throttle * 1000.0f));
+    const uint32_t cw_pulse_us  = static_cast<uint32_t>(MIN_PWM_PULSE_US + (cw_throttle  * (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US)));
+    const uint32_t ccw_pulse_us = static_cast<uint32_t>(MIN_PWM_PULSE_US + (ccw_throttle * (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US)));
 
     return {{cw_pulse_us, ccw_pulse_us, metrics}};
 }

@@ -1720,7 +1720,7 @@ void RangerThrottle::reset()
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.
-std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_N)
+std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_lbf)
 {
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
@@ -1831,7 +1831,7 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
 
     // 9. Compute PID
     float dt = Controller::SEC_PER_CONTROL_TICK;
-    float thrust_error = thrust_command_N - predicted_thrust;
+    float thrust_error = thrust_command_lbf - predicted_thrust;
     float change_alpha_cmd = THRUST_KP * thrust_error;
     change_alpha_cmd *= dt;
     float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
@@ -1839,7 +1839,7 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     // 10. Integrate PID to get alpha
     if (alpha == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
-        alpha = (thrust_command_N - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+        alpha = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
     }
     alpha += clamped_change_alpha_cmd;
     alpha = std::clamp(alpha, MIN_ALPHA, MAX_ALPHA);

@@ -2,8 +2,8 @@
 #include <zephyr/ztest.h>
 
 // Throttle mapping:
-//   thrust < 44.044 N : throttle = thrust / 69.911, clamped [0, 0.63]
-//   thrust >= 44.044 N: throttle = (thrust + 32.5271) / 121.53, clamped [0.63, 1.0]
+//   thrust < 10 lbf : throttle = thrust / 15.7166, clamped [0, 0.63]
+//   thrust >= 10 lbf: throttle = (thrust + 7.3123) / 27.321, clamped [0.63, 1.0]
 // Pulse width: 0.0 -> 1000 µs, 1.0 -> 2000 µs
 
 ZTEST(HornetThrottle_tests, test_zero_thrust_gives_minimum_pulse)
@@ -21,34 +21,34 @@ ZTEST(HornetThrottle_tests, test_low_thrust_below_10lbf_uses_lower_branch)
 {
     HornetThrottle::reset();
 
-    // 20 N < 44.044 N => lower branch: throttle = 20/69.911 ~= 0.286
-    // pulse = 1000 + 0.286 * 1000 ~= 1286
-    auto result = HornetThrottle::tick(20.0f);
+    // 5 lbf < 10 lbf => lower branch: throttle = 5/15.7166 ~= 0.318
+    // pulse = 1000 + 0.318 * 1000 ~= 1318
+    auto result = HornetThrottle::tick(5.0f);
 
-    zassert_true(result.has_value(), "tick should succeed for 20 N");
+    zassert_true(result.has_value(), "tick should succeed for 5 lbf");
     auto [pulse_us, metrics] = *result;
-    zassert_within(pulse_us, 1286.0f, 2.0f, "20 N should produce ~1286 µs pulse");
+    zassert_within(pulse_us, 1318.0f, 2.0f, "5 lbf should produce ~1318 µs pulse");
 }
 
 ZTEST(HornetThrottle_tests, test_operating_range_thrust_uses_upper_branch)
 {
     HornetThrottle::reset();
 
-    // 80 N > 44.044 N => upper branch: throttle = (80 + 32.5271) / 121.53 ~= 0.926
-    // pulse = 1000 + 0.926 * 1000 ~= 1926
-    auto result = HornetThrottle::tick(80.0f);
+    // 15 lbf > 10 lbf => upper branch: throttle = (15 + 7.3123) / 27.321 ~= 0.8167
+    // pulse = 1000 + 0.8167 * 1000 ~= 1817
+    auto result = HornetThrottle::tick(15.0f);
 
-    zassert_true(result.has_value(), "tick should succeed for 80 N");
+    zassert_true(result.has_value(), "tick should succeed for 15 lbf");
     auto [pulse_us, metrics] = *result;
-    zassert_within(pulse_us, 1926.0f, 2.0f, "80 N should produce ~1926 µs pulse");
+    zassert_within(pulse_us, 1817.0f, 2.0f, "15 lbf should produce ~1817 µs pulse");
 }
 
 ZTEST(HornetThrottle_tests, test_full_throttle_gives_maximum_pulse)
 {
     HornetThrottle::reset();
 
-    // (N + 32.5271) / 121.53 = 1.0 => N = 89.0 N
-    auto result = HornetThrottle::tick(89.0f);
+    // (lbf + 7.3123) / 27.321 = 1.0 => lbf = 20 lbf
+    auto result = HornetThrottle::tick(20.009f);
 
     zassert_true(result.has_value(), "tick should succeed at full throttle");
     auto [pulse_us, metrics] = *result;

@@ -494,7 +494,7 @@ message DataPacket {
   optional float trace_time_msec = 3;
 
   // Valid in THROTTLE and FLIGHT state.
-  optional float throttle_thrust_command_N = 83;
+  optional float throttle_thrust_command_lbf = 83;
 
   // Valid in TVC and FLIGHT state.
   optional float tvc_pitch_command_deg = 84;

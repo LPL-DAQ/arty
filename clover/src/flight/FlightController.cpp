@@ -2,6 +2,7 @@
 #include "../MutexGuard.h"
 #include "../PID.h"
 #include "../math_util.h"
+#include "../config.h"
 #include <zephyr/kernel.h>
 #include <limits>
 #include <cmath>
@@ -17,21 +18,18 @@ namespace {
     // TODO: Tune, including adding integral terms (is requried)
     // reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
     // integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
-    PID pidXTilt(0.385, 0.01, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
-    PID pidYTilt(0.385, 0.01, 0.44, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
-    PID pidX(0.2, 0.1, 0.05);              // needs tuning, these are complete guesses
-    PID pidY(0.2, 0.1, 0.05);              // needs tuning, these are complete guesses
+    PID pidXTilt(FLIGHT_PID_X_TILT_KP, FLIGHT_PID_X_TILT_KI, FLIGHT_PID_X_TILT_KD, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the X axis
+    PID pidYTilt(FLIGHT_PID_Y_TILT_KP, FLIGHT_PID_Y_TILT_KI, FLIGHT_PID_Y_TILT_KD, -1e6, 1e6, -maxGimble / 3, maxGimble / 3, std::numeric_limits<double>::infinity(), 10.0);   // about the Y axis
+    PID pidX(FLIGHT_PID_X_KP, FLIGHT_PID_X_KI, FLIGHT_PID_X_KD);              // needs tuning, these are complete guesses
+    PID pidY(FLIGHT_PID_Y_KP, FLIGHT_PID_Y_KI, FLIGHT_PID_Y_KD);              // needs tuning, these are complete guesses
     // only use integral within 5 cm of target.
-    PID pidZ(0.075, 0.01, 0, -1e6, 1e6, -1e6, 1e6, 0.05);
+    PID pidZ(FLIGHT_PID_Z_KP, FLIGHT_PID_Z_KI, FLIGHT_PID_Z_KD, -1e6, 1e6, -1e6, 1e6, 0.05);
     // TODO: add max and min out
-    PID pidZVelocity(0.1, 0, 0);      // needs tuning
+    PID pidZVelocity(FLIGHT_PID_Z_VEL_KP, FLIGHT_PID_Z_VEL_KI, FLIGHT_PID_Z_VEL_KD);      // needs tuning
 
     static uint32_t loopCount = 0;
 
     float dt = 0.01; // TODO: make this an actual DT measurement ( or at least research if i should)
-
-    constexpr float DEG2RAD_F = 0.0174532925f;
-    constexpr float RAD2DEG_F = 57.2957795f;
 
     FlightControllerDesiredState des_state = FlightControllerDesiredState_init_default;
 
@@ -109,9 +107,9 @@ static std::array<float, 2> lateralPID(EstimatedState state, FlightControllerMet
     Quaternion q_bw = math_util::conjugateQuaternion(q_wb);
 
     // Outer loop: desired literal tilt angles
-    if (loopCount % 3 == 0)
+    if (loopCount % FLIGHT_OUTER_LOOP_DIVISOR == 0)
     {
-        float outer_dt = 3.0f * dt;
+        float outer_dt = FLIGHT_OUTER_LOOP_DIVISOR * dt;
 
         des_state.world_tilt_x = pidX.calculate(des_state.position.x, state.position.x, state.velocity.x, outer_dt);
         des_state.world_tilt_y = pidY.calculate(des_state.position.y, state.position.y, state.velocity.y, outer_dt);
@@ -162,7 +160,7 @@ static std::array<float, 2> lateralPID(EstimatedState state, FlightControllerMet
 static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics){
 
     // outerloop on position
-    if (loopCount % 3 == 0)
+    if (loopCount % FLIGHT_OUTER_LOOP_DIVISOR == 0)
     {
         des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, dt);
     }
@@ -193,7 +191,7 @@ void FlightController::reset()
 // TODO: roll control, but also handled in a header visable method so that it supports roll traces outside of flight state
 
 /// Called every tick in FLIGHT state. Returns a tuple of:
-/// - throttle_thrust_command_N
+/// - throttle_thrust_command_lbf
 /// - tvc_pitch_command_deg
 /// - tvc_yaw_command_deg
 /// - FlightControllerMetrics
@@ -210,12 +208,13 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
 
     float z_acceleration = verticalPID(state, metrics);
     float throttle_thrust_command_N = z_acceleration * get_mass_kg() + 9.80665f * get_mass_kg();
-
+    // TODO: make magic number a config constant
+    float throttle_thrust_command_lbf = throttle_thrust_command_N * 0.224809f; // convert to lbf
     auto angular_accelerations = lateralPID(state, metrics);
     float pitch_acceleration_command = angular_accelerations[0];
     float yaw_acceleration_command = angular_accelerations[1];
 
-    auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_N);
+    auto tvc_angles = find_tvc_angles(pitch_acceleration_command, yaw_acceleration_command, throttle_thrust_command_lbf);
     if (!tvc_angles) {
         return std::unexpected(Error::from_cause("failed to compute TVC angles"));
     }
@@ -225,7 +224,7 @@ FlightController::tick(EstimatedState state, float x_command_m, float y_command_
     metrics.tvc_yaw_command_deg = tvc_yaw_command_deg;
 
     loopCount++;
-    return {{throttle_thrust_command_N, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
+    return {{throttle_thrust_command_lbf, tvc_pitch_command_deg, tvc_yaw_command_deg, metrics}};
 }
 
 /// Configure controller gains.
