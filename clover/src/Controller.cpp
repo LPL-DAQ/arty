@@ -28,7 +28,7 @@
 #error "No configuration defined. Please define CONFIG_RANGER or CONFIG_HORNET in your build configuration."
 #endif
 
-LOG_MODULE_REGISTER(Controller, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 

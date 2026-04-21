@@ -1,5 +1,4 @@
-#ifndef APP_LOOKUP_TABLE_2D_H
-#define APP_LOOKUP_TABLE_2D_H
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -49,5 +48,3 @@ float LookupTable2D<x_len, x_min, x_max, x_gap, y_len, y_min, y_max, y_gap, bps>
     // Tween along Y axis
     return bp_x_tween_y_low + (bp_x_tween_y_high - bp_x_tween_y_low) * y_tween;
 }
-
-#endif  // APP_LOOKUP_TABLE_2D_H

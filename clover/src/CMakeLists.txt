@@ -3,7 +3,6 @@ target_sources(app PRIVATE
     server.cpp
     Controller.cpp
     Error.cpp
-    LookupTable.cpp
     MutexGuard.cpp
     Trace.cpp
     util.cpp

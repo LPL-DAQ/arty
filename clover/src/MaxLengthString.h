@@ -1,5 +1,4 @@
-#ifndef APP_MAXLENGTHSTRING_H
-#define APP_MAXLENGTHSTRING_H
+#pragma once
 
 #include <array>
 #include <string_view>
@@ -102,5 +101,3 @@ int MaxLengthString<max_len>::copy_buf(char* dest, int max_bytes) const
     std::copy(buf.begin(), buf.begin() + bytes_to_copy, dest);
     return bytes_to_copy;
 }
-
-#endif  // APP_MAXLENGTHSTRING_H
