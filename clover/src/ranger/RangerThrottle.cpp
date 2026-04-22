@@ -1,13 +1,10 @@
 #include "RangerThrottle.h"
 #include "Controller.h"
-#include "LookupTable.h"
 #include "MutexGuard.h"
 #include <cmath>
 #include <zephyr/kernel.h>
 
 K_MUTEX_DEFINE(ranger_throttle_lock);
-
-
 
 static constexpr float DEFAULT_FUEL_POS = 81.0f;
 static constexpr float DEFAULT_LOX_POS = 74.0f;
@@ -45,9 +42,9 @@ static constexpr float MIN_VALVE_POS = 25.0f;
 static constexpr float MAX_VALVE_POS = 90.0f;
 
 // Controller state variables
-static constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
-static constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
-static constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
+static constexpr float MAX_threshold_PT2k = 1900.0f;  // Define a maximum value for sensor validation
+static constexpr float MAX_threshold_PT1k = 950.0f;   // Define a maximum value for sensor validation
+static constexpr float MIN_threshold = 50.0f;         // Define a maximum value for sensor validation
 // Track duration of low chamber pressure for abort logic.
 static inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
@@ -66,18 +63,17 @@ static inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
     return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
-
-    // ISP lookup axes: chamber pressure (pc) vs O/F.
+// ISP lookup axes: chamber pressure (pc) vs O/F.
 static constexpr int ISP_PC_LEN = 29;
 static constexpr int ISP_OF_LEN = 34;
 
 static constexpr float isp_pc_axis_internal[ISP_PC_LEN] = {1.0f,   16.0f,  31.0f,  46.0f,  61.0f,  76.0f,  91.0f,  100.0f, 106.0f, 115.0f,
-                                                    130.0f, 145.0f, 160.0f, 175.0f, 190.0f, 205.0f, 220.0f, 235.0f, 250.0f, 265.0f,
-                                                    280.0f, 295.0f, 310.0f, 325.0f, 340.0f, 355.0f, 370.0f, 385.0f, 400.0f};
+                                                           130.0f, 145.0f, 160.0f, 175.0f, 190.0f, 205.0f, 220.0f, 235.0f, 250.0f, 265.0f,
+                                                           280.0f, 295.0f, 310.0f, 325.0f, 340.0f, 355.0f, 370.0f, 385.0f, 400.0f};
 
-static constexpr float isp_of_axis_internal[ISP_OF_LEN] = {0.1000f, 0.2000f, 0.3000f, 0.4000f, 0.5000f, 0.6000f, 0.7000f, 0.8000f, 0.9000f, 1.0000f, 1.1000f, 1.2000f,
-                                                    1.2500f, 1.3000f, 1.3500f, 1.4000f, 1.4500f, 1.5000f, 1.5500f, 1.6000f, 1.7000f, 1.8000f, 1.9000f, 2.0000f,
-                                                    2.1000f, 2.2000f, 2.3000f, 2.4000f, 2.5000f, 2.6000f, 2.7000f, 2.8000f, 2.9000f, 3.0000f};
+static constexpr float isp_of_axis_internal[ISP_OF_LEN] = {
+    0.1000f, 0.2000f, 0.3000f, 0.4000f, 0.5000f, 0.6000f, 0.7000f, 0.8000f, 0.9000f, 1.0000f, 1.1000f, 1.2000f, 1.2500f, 1.3000f, 1.3500f, 1.4000f, 1.4500f,
+    1.5000f, 1.5500f, 1.6000f, 1.7000f, 1.8000f, 1.9000f, 2.0000f, 2.1000f, 2.2000f, 2.3000f, 2.4000f, 2.5000f, 2.6000f, 2.7000f, 2.8000f, 2.9000f, 3.0000f};
 
 static constexpr float isp_data_internal[] = {
     1210.9f, 1368.0f, 1484.1f, 1564.1f, 1626.5f, 1682.0f, 1737.2f, 1798.2f, 1865.5f, 1933.9f, 2000.1f, 2109.7f, 2189.1f, 2251.5f, 2302.1f, 2346.5f, 2385.0f,
@@ -1709,7 +1705,6 @@ static constexpr float lox_valve_grid_internal[] = {
     84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f, 84.999998f,
     84.999998f, 84.999998f, 84.999998f};
 
-
 /// Reset internal state before an active control trace
 void RangerThrottle::reset()
 {
@@ -1719,7 +1714,8 @@ void RangerThrottle::reset()
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.
-std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_lbf)
+std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error>
+RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_lbf)
 {
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
@@ -1733,7 +1729,8 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
             low_ptc_start_time_ms = current_time;
         }
         else if (current_time - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
-            return std::unexpected(Error::from_cause("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS));
+            return std::unexpected(
+                Error::from_cause("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS));
         }
     }
     else {
@@ -1745,9 +1742,9 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     // TODO: ARRE THESE THE CORRECT PTS? NEEDS TO BE UPDATED FOR RANGER
     float ptc401_val = analog_sensors.ptc1;                                    // Adjusted value
     float pto401_val = analog_sensors.pto1 + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
-    float pt103_val = analog_sensors.pt101;                                      // Adjusted value
+    float pt103_val = analog_sensors.pt101;                                    // Adjusted value
     float ptf401_val = analog_sensors.ptf1 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
-    float pt203_val = analog_sensors.pt201;                                      // Adjusted value
+    float pt203_val = analog_sensors.pt201;                                    // Adjusted value
     float ptc402_val = analog_sensors.ptc2;                                    // Adjusted value
     bool pt203_valid = (analog_sensors.pt201 >= MIN_threshold && analog_sensors.pt201 <= MAX_threshold_PT2k);
     bool ptf401_valid = (analog_sensors.ptf1 >= MIN_threshold && analog_sensors.ptf1 <= MAX_threshold_PT2k);
@@ -1820,7 +1817,7 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
     // 7. Predict Isp using chamber pressure and O/F
-    float predicted_isp = interp2D(isp_pc_axis_internal, 29, isp_of_axis_internal, 34, isp_data_internal, p_ch, of_safe);
+    float predicted_isp = -67.67f;  // TODO REPLACE
 
     // 8. Predict thrust (convert to lbf-equivalent)
     float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
@@ -1845,9 +1842,9 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
 
     // 11. Plug alpha into Mprime contour
     float thrust_from_alpha_lbf = alpha * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
-    float fuel_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, fuel_valve_grid_internal, thrust_from_alpha_lbf, target_of_safe);
+    float fuel_valve_command_deg = -67.67f;  // TODO -- replace with lookuptable2d
 
-    float lox_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, lox_valve_grid_internal, thrust_from_alpha_lbf, target_of_safe);
+    float lox_valve_command_deg = -67.67f;  // TODO -- replace with lookuptable2d
 
     // 12. Clamp valve commands to safe ranges
     fuel_valve_command_deg = std::clamp(fuel_valve_command_deg, MIN_VALVE_POS, MAX_VALVE_POS);
@@ -1862,8 +1859,6 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     metrics.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
     metrics.alpha = alpha;
     metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
-
-
 
     return {
         {ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = fuel_valve_command_deg},

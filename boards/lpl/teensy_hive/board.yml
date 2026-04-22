@@ -1,9 +1,11 @@
 boards:
   - name: hornet_mk_3
+    full_name: Hornet Mk. 3
     vendor: lpl
     socs:
       - name: mimxrt1062
   - name: ranger_1
+    full_name: Ranger 1
     vendor: lpl
     socs:
       - name: mimxrt1062

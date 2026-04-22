@@ -78,6 +78,7 @@ int main(void)
     //     return 0;
     // }
 
+    k_sleep(K_MSEC(500));
     LOG_INF("Initializing analog sensors");
     if (auto result = AnalogSensors::init(); !result) {
         LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());

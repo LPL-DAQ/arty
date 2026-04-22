@@ -1,9 +1,9 @@
 #include "AnalogSensors.h"
 #include "../MutexGuard.h"
-#include "clover.pb.h"
 #include "../config.h"
 #include "../lut/tc_k_type_v_to_deg_c_lut.h"
 #include "../lut/tc_t_type_v_to_deg_c_lut.h"
+#include "clover.pb.h"
 #include <array>
 #include <optional>
 #include <tuple>
@@ -18,6 +18,7 @@ static constexpr int NUM_ADCS = DT_PROP_LEN(DT_PATH(zephyr_user), analog_sensor_
 static constexpr std::array<const device*, NUM_ADCS> adc_devices = {
     DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), analog_sensor_adcs, DEVICE_DT_GET_BY_IDX, (, ))};
 
+static constexpr int CHANNELS_PER_ADC = DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels);
 static constexpr int OVERSAMPLING = DT_PROP(DT_PATH(zephyr_user), analog_sensor_adc_oversampling);
 static constexpr int RESOLUTION = DT_PROP(DT_PATH(zephyr_user), analog_sensor_adc_resolution);
 
@@ -44,11 +45,12 @@ static consteval uint32_t channels_bitmask(const device* adc_dev)
 }
 
 /// Buffer into which raw readings are written. Only accessed by the analog_sensors thread.
-static std::array<std::array<uint16_t, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> raw_readings;
+static std::array<std::array<uint16_t, CHANNELS_PER_ADC>, NUM_ADCS> raw_readings;
 
 /// Maps ADC and ADC channel into overall channel index
-static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> adc_channel_to_input_channel = []() consteval {
-    std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> out;
+static std::array<std::array<int, CHANNELS_PER_ADC>, NUM_ADCS> adc_channel_to_input_channel = []() consteval {
+    std::array<std::array<int, CHANNELS_PER_ADC>, NUM_ADCS> out;
+
     for (int i = 0; i < NUM_ADCS; ++i) {
         const device* adc_dev = adc_devices[i];
         int reading_index = 0;
@@ -59,9 +61,9 @@ static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_ma
                 out[i][reading_index] = j;
                 ++reading_index;
             }
-            else {
-                out[i][reading_index] = -1;
-            }
+        }
+        for (; reading_index < CHANNELS_PER_ADC; ++reading_index) {
+            out[i][reading_index] = -1;
         }
     }
     return out;
@@ -140,42 +142,47 @@ static void sense()
         uint64_t start_read_cycle = k_cycle_get_64();
         for (int i = 0; i < NUM_ADCS; ++i) {
             k_poll_signal_init(&read_signals[i]);
-            int err = adc_read_async(adc_devices[i], &adc_read_seqs[i], &read_signals[i]);
-            if (err) {
-                LOG_ERR("Error initiating async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
+            LOG_INF("initiating read");
+            if (int err = adc_read(adc_devices[i], &adc_read_seqs[i]); err) {
+                LOG_ERR("Failed to read ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
+            k_sleep(K_MSEC(500));
+            LOG_INF("done read");
         }
+        k_sleep(K_MSEC(500));
+        LOG_INF("Done reads");
 
-        int num_complete = 0;
-        while (true) {
-            // Wait for an ADC to finish their read.
-            k_poll(read_events.data(), NUM_ADCS, K_FOREVER);
+        // int num_complete = 0;
+        // while (true) {
+        //     // Wait for an ADC to finish their read.
+        //     k_poll(read_events.data(), NUM_ADCS, K_FOREVER);
 
-            // Check for which ADCs have finished a read.
-            for (int i = 0; i < NUM_ADCS; ++i) {
-                uint32_t signaled;
-                int result;
-                k_poll_signal_check(&read_signals[i], &signaled, &result);
-                if (signaled == 0) {
-                    continue;
-                }
+        //     // Check for which ADCs have finished a read.
+        //     for (int i = 0; i < NUM_ADCS; ++i) {
+        //         uint32_t signaled;
+        //         int result;
+        //         k_poll_signal_check(&read_signals[i], &signaled, &result);
+        //         if (signaled == 0) {
+        //             continue;
+        //         }
 
-                // Reset signal to prevent it from re-triggering poll.
-                read_events[i].state = K_POLL_STATE_NOT_READY;
-                k_poll_signal_reset(&read_signals[i]);
-                num_complete++;
+        //         // Reset signal to prevent it from re-triggering poll.
+        //         LOG_INF("ADC %d done", i);
+        //         read_events[i].state = K_POLL_STATE_NOT_READY;
+        //         k_poll_signal_reset(&read_signals[i]);
+        //         num_complete++;
 
-                // Inspect result of read call.
-                if (result != 0) {
-                    LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message().c_str());
-                }
-            }
+        //         // Inspect result of read call.
+        //         if (result != 0) {
+        //             LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message().c_str());
+        //         }
+        //     }
 
-            // Check if everybody has signaled completion.
-            if (num_complete == NUM_ADCS) {
-                break;
-            }
-        }
+        //     // Check if everybody has signaled completion.
+        //     if (num_complete == NUM_ADCS) {
+        //         break;
+        //     }
+        // }
 
         // Write output reading
         {
@@ -189,7 +196,6 @@ static void sense()
             for (int i = 0; i < NUM_ADCS; ++i) {
                 for (int j = 0; j < static_cast<int>(adc_read_seqs[i].buffer_size); ++j) {
                     int input_channel = adc_channel_to_input_channel[i][j];
-
                     if (input_channel == -1) {
                         // No more reading left for this ADC
                         break;
@@ -203,7 +209,8 @@ static void sense()
                     // This config is pre-validated.
                     const AnalogSensorConfig& config = *maybe_config;
 
-                    float raw_reading = raw_readings[i][j];
+                    float raw_reading = static_cast<float>(raw_readings[i][j]);
+                    LOG_INF("raw read %f", raw_reading);
                     float curr_reading;
                     // Sensor is a PT
                     if (config.has_pt_bias_psig) {
@@ -376,6 +383,8 @@ static void sense()
                     }
                 }
             }
+
+            LOG_INF("bam done");
         }
     }
 }
