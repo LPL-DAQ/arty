@@ -44,8 +44,8 @@ TODO:
                       <&adc1 9>,
                       <&adc1 10>,
                       <&adc1 11>,
-                      <&adc1 12>;
-                      //<&adc1 15>;
+                      <&adc1 12>,
+                      <&adc1 15>;
         analog-sensor-adcs = <&adc1 &adc2>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
