@@ -83,6 +83,11 @@ static Trace flight_y_trace_m;
 static Trace flight_z_trace_m;
 static Trace flight_roll_trace_deg;
 
+// Valid in CALIBRATE_THROTTLE_VALVE, and if CONFIG_RANGER is set.
+#ifdef CONFIG_RANGER
+static ThrottleValveType calibrating_valve = ThrottleValveType_UNKNOWN_THROTTLE_VALVE_TYPE;
+#endif
+
 // Valid in THROTTLE_VALVE_PRIMED and THROTTLE_VALVE, and if CONFIG_RANGER is set.
 static bool has_fuel_valve_trace = false;
 static bool has_lox_valve_trace = false;
@@ -504,9 +509,32 @@ static void step_control_loop(k_work*)
     }
 
     // Calibration of throttle valves.
-    case SystemState_STATE_CALIBRATE_THROTTLE_VALVE:
-        // TODO
+    case SystemState_STATE_CALIBRATE_THROTTLE_VALVE: {
+#ifdef CONFIG_RANGER
+        const float valve_pos = (calibrating_valve == ThrottleValveType_FUEL)
+            ? FuelValve::get_pos_internal()
+            : LoxValve::get_pos_internal();
+        const float valve_pos_enc = (calibrating_valve == ThrottleValveType_FUEL)
+            ? FuelValve::get_pos_encoder()
+            : LoxValve::get_pos_encoder();
+
+        auto cal_result = RangerThrottle::calibration_tick(
+            calibrating_valve, (uint32_t)k_uptime_get(), valve_pos, valve_pos_enc);
+
+        if (!cal_result.has_value()) {
+            LOG_ERR("Throttle valve calibration error: %s", cal_result.error().build_message().c_str());
+            current_state = SystemState_STATE_IDLE;
+            break;
+        }
+
+        if (calibrating_valve == ThrottleValveType_FUEL) {
+            data.fuel_valve_command = *cal_result;
+        } else {
+            data.lox_valve_command = *cal_result;
+        }
+#endif
         break;
+    }
     case SystemState_STATE_CALIBRATE_TVC:
         // TODO
         break;
@@ -690,6 +718,22 @@ std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const Cal
 
 #if CONFIG_HORNET
     return std::unexpected(Error::from_cause("must be ranger config for throttle valve calibration"));
+#endif
+
+    if (req.valve != ThrottleValveType_FUEL && req.valve != ThrottleValveType_LOX) {
+        return std::unexpected(Error::from_cause("unknown valve type for throttle valve calibration"));
+    }
+
+#ifdef CONFIG_RANGER
+    const float valve_pos = (req.valve == ThrottleValveType_FUEL)
+        ? FuelValve::get_pos_internal()
+        : LoxValve::get_pos_internal();
+    const float valve_pos_enc = (req.valve == ThrottleValveType_FUEL)
+        ? FuelValve::get_pos_encoder()
+        : LoxValve::get_pos_encoder();
+
+    RangerThrottle::calibration_reset(req.valve, valve_pos, valve_pos_enc);
+    calibrating_valve = req.valve;
 #endif
 
     current_state = SystemState_STATE_CALIBRATE_THROTTLE_VALVE;

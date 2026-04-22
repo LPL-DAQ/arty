@@ -48,6 +48,178 @@ static constexpr float MAX_VALVE_POS = 90.0f;
 static constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
 static constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
 static constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
+
+enum class CalPhase {
+    SEEK_HARDSTOP,
+    BACK_OFF,
+    END_MOVEMENT,
+    POWER_OFF,
+    REPOWER,
+    COMPLETE,
+    MEASURE,
+    ERROR,
+};
+
+static inline CalPhase cal_phase = CalPhase::SEEK_HARDSTOP;
+
+static inline float cal_fuel_target_position = 0.0f;
+static inline float cal_fuel_hardstop_position = 0.0f;
+static inline bool cal_fuel_found_stop = false;
+static inline float cal_lox_target_position = 0.0f;
+static inline float cal_lox_hardstop_position = 0.0f;
+static inline bool cal_lox_found_stop = false;
+static inline float cal_step_size = 0.002f;
+static inline int cal_rep_counter = 0;
+static inline float cal_pos_error_limit = 0.2f;
+static inline float cal_fuel_starting_error = 0.0f;
+static inline float cal_lox_starting_error = 0.0f;
+static inline uint32_t cal_power_cycle_timestamp = 0;
+
+struct CalibrationValveRefs {
+    float& target_position;
+    float& hardstop_position;
+    bool& found_stop;
+    float& starting_error;
+};
+
+static bool is_supported_valve(ThrottleValveType valve)
+{
+    return valve == ThrottleValveType_FUEL || valve == ThrottleValveType_LOX;
+}
+
+static CalibrationValveRefs get_valve_refs(ThrottleValveType valve)
+{
+    if (valve == ThrottleValveType_FUEL) {
+        return CalibrationValveRefs{cal_fuel_target_position, cal_fuel_hardstop_position, cal_fuel_found_stop, cal_fuel_starting_error};
+    }
+    return CalibrationValveRefs{cal_lox_target_position, cal_lox_hardstop_position, cal_lox_found_stop, cal_lox_starting_error};
+}
+
+static int calibration_get_phase_id()
+{
+    switch (cal_phase) {
+    case CalPhase::SEEK_HARDSTOP:
+        return 0;
+    case CalPhase::BACK_OFF:
+        return 1;
+    case CalPhase::END_MOVEMENT:
+        return 2;
+    case CalPhase::POWER_OFF:
+        return 3;
+    case CalPhase::REPOWER:
+        return 4;
+    case CalPhase::COMPLETE:
+        return 5;
+    case CalPhase::MEASURE:
+        return 6;
+    case CalPhase::ERROR:
+        return 7;
+    default:
+        return -1;
+    }
+}
+
+static void calibration_seek_hardstop(ThrottleValveCommand& command, float valve_pos, float valve_pos_enc, CalibrationValveRefs refs)
+{
+    command.enable = true;
+
+    if (!refs.found_stop && std::abs(valve_pos - (refs.starting_error + valve_pos_enc)) <= cal_pos_error_limit) {
+        refs.target_position += cal_step_size / (cal_rep_counter + 1);
+        command.set_pos = true;
+        command.target_deg = refs.target_position;
+    }
+    else {
+        refs.found_stop = true;
+        refs.hardstop_position = valve_pos_enc;
+        command.set_pos = true;
+        command.target_deg = valve_pos_enc;
+    }
+
+    if (refs.found_stop) {
+        refs.found_stop = false;
+        cal_rep_counter++;
+        cal_phase = CalPhase::END_MOVEMENT;
+    }
+}
+
+static void calibration_end_movement(ThrottleValveCommand& command, uint32_t timestamp)
+{
+    command.enable = false;
+    if (cal_power_cycle_timestamp == 0) {
+        cal_power_cycle_timestamp = timestamp;
+    }
+    else if (timestamp - cal_power_cycle_timestamp >= 1000) {
+        cal_phase = CalPhase::POWER_OFF;
+    }
+}
+
+static void calibration_power_off(ThrottleValveCommand& command, uint32_t timestamp)
+{
+    command.enable = false;
+    if (timestamp - cal_power_cycle_timestamp >= 4000) {
+        cal_phase = CalPhase::REPOWER;
+    }
+}
+
+static void calibration_repower(ThrottleValveCommand& command, uint32_t timestamp)
+{
+    command.enable = true;
+    if (timestamp - cal_power_cycle_timestamp >= 5000) {
+        cal_phase = CalPhase::COMPLETE;
+    }
+}
+
+static void calibration_complete(ThrottleValveCommand& command, uint32_t timestamp, CalibrationValveRefs refs)
+{
+    command.enable = true;
+    command.set_pos = true;
+    command.target_deg = 95.0f;
+
+    refs.found_stop = false;
+    refs.starting_error = 0.0f;
+    refs.target_position = 95.0f;
+
+    if (timestamp - cal_power_cycle_timestamp >= 6500) {
+        cal_phase = CalPhase::SEEK_HARDSTOP;
+    }
+}
+
+static void calibration_error(ThrottleValveCommand& command, uint32_t timestamp)
+{
+    command.enable = false;
+
+    if (cal_power_cycle_timestamp == 0) {
+        cal_power_cycle_timestamp = timestamp;
+    }
+}
+
+static void calibration_measure(ThrottleValveCommand& command, float valve_pos, float valve_pos_enc, CalibrationValveRefs refs)
+{
+    command.enable = true;
+
+    if (valve_pos_enc > 10.0f) {
+        refs.target_position -= cal_step_size * 3;
+        command.set_pos = true;
+        command.target_deg = refs.target_position;
+    }
+    else if (!refs.found_stop && std::abs(valve_pos - (refs.starting_error + valve_pos_enc)) <= cal_pos_error_limit) {
+        refs.target_position -= cal_step_size;
+        command.set_pos = true;
+        command.target_deg = refs.target_position;
+    }
+    else {
+        refs.found_stop = true;
+        refs.hardstop_position = valve_pos_enc;
+        command.set_pos = true;
+        command.target_deg = valve_pos_enc;
+    }
+
+    if (refs.found_stop) {
+        refs.target_position = refs.hardstop_position;
+        cal_phase = CalPhase::SEEK_HARDSTOP;
+    }
+}
+
 // Track duration of low chamber pressure for abort logic.
 static inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
@@ -1715,6 +1887,72 @@ void RangerThrottle::reset()
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     low_ptc_start_time_ms = 0;
     alpha = -1.0f;
+}
+
+// TODO: test the re-done single valve calibration. Also, make it not super slow
+std::expected<ThrottleValveCommand, Error>
+RangerThrottle::calibration_tick(ThrottleValveType valve, uint32_t timestamp, float valve_pos, float valve_pos_enc)
+{
+    MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
+
+    if (!is_supported_valve(valve)) {
+        return std::unexpected(Error::from_cause("unknown valve passed to calibration_tick"));
+    }
+
+    auto refs = get_valve_refs(valve);
+    ThrottleValveCommand command = ThrottleValveCommand_init_default;
+    command.enable = true;
+
+    switch (cal_phase) {
+    case CalPhase::SEEK_HARDSTOP:
+        calibration_seek_hardstop(command, valve_pos, valve_pos_enc, refs);
+        break;
+    case CalPhase::BACK_OFF:
+        break;
+    case CalPhase::END_MOVEMENT:
+        calibration_end_movement(command, timestamp);
+        break;
+    case CalPhase::POWER_OFF:
+        calibration_power_off(command, timestamp);
+        break;
+    case CalPhase::REPOWER:
+        calibration_repower(command, timestamp);
+        break;
+    case CalPhase::COMPLETE:
+        calibration_complete(command, timestamp, refs);
+        break;
+    case CalPhase::MEASURE:
+        calibration_measure(command, valve_pos, valve_pos_enc, refs);
+        break;
+    case CalPhase::ERROR:
+        calibration_error(command, timestamp);
+        break;
+    default:
+        break;
+    }
+
+    return command;
+}
+
+void RangerThrottle::calibration_reset(ThrottleValveType valve, float valve_pos, float valve_pos_enc)
+{
+    MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
+
+    if (!is_supported_valve(valve)) {
+        return;
+    }
+
+    auto refs = get_valve_refs(valve);
+
+    cal_phase = CalPhase::SEEK_HARDSTOP;
+    cal_rep_counter = 0;
+    refs.found_stop = false;
+    refs.hardstop_position = 0.0f;
+    cal_power_cycle_timestamp = 0;
+
+    refs.target_position = valve_pos_enc;
+
+    refs.starting_error = valve_pos - valve_pos_enc;
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.
