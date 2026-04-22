@@ -271,7 +271,7 @@ message StartThrottleValveSequenceRequest {}
 
 // Load a thrust sequence.
 message LoadThrottleSequenceRequest {
-  required ControlTrace thrust_trace_N = 1;
+  required ControlTrace thrust_lbf = 1;
 }
 
 // Start a loaded thrust sequence.
@@ -300,7 +300,7 @@ message StartRcsSequenceRequest {}
 
 // Load a static fire sequence (throttle + TVC)
 message LoadStaticFireSequenceRequest {
-  required ControlTrace thrust_trace_N = 1;
+  required ControlTrace thrust_lbf = 1;
   required ControlTrace pitch_trace_deg = 2;
   required ControlTrace yaw_trace_deg = 3;
 }

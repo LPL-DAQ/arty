@@ -66,7 +66,7 @@ static float trace_total_time_msec = 0;
 static uint64_t abort_start_cycle = 0;
 
 // Valid in THROTTLE_PRIMED and THROTTLE
-static Trace throttle_thrust_trace_N;
+static Trace throttle_thrust_lbf;
 
 // Valid in TVC_PRIMED and TVC
 static Trace tvc_pitch_trace_deg;
@@ -212,7 +212,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     // Sample throttle trace
     if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
         // Sample thrust trace
-        auto thrust_sample = throttle_thrust_trace_N.sample(data.trace_time_msec);
+        auto thrust_sample = throttle_thrust_lbf.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
             return std::unexpected(thrust_sample.error().context("failed to sample throttle thrust trace"));
         }
@@ -738,11 +738,11 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
     }
 
     // Try loading thrust trace
-    auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N);
+    auto ret = throttle_thrust_lbf.load(req.thrust_lbf);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load thrust trace"));
     }
-    trace_total_time_msec = throttle_thrust_trace_N.get_total_time_ms();
+    trace_total_time_msec = throttle_thrust_lbf.get_total_time_ms();
 
     current_state = SystemState_STATE_THROTTLE_PRIMED;
     LOG_INF("Primed throttle thrust sequence");
@@ -936,7 +936,7 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // Try loading throttle trace
-    if (auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N); !ret.has_value()) {
+    if (auto ret = throttle_thrust_lbf.load(req.thrust_lbf); !ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load static fire thrust trace"));
     }
 
@@ -951,12 +951,12 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // All traces must be the same length
-    if (!(throttle_thrust_trace_N.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
+    if (!(throttle_thrust_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
           tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
         return std::unexpected(
             Error::from_cause(
                 "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
-                static_cast<double>(throttle_thrust_trace_N.get_total_time_ms()),
+                static_cast<double>(throttle_thrust_lbf.get_total_time_ms()),
                 static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
                 static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }
