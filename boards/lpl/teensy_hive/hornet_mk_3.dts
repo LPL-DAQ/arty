@@ -22,14 +22,6 @@ TODO:
     chosen {
         zephyr,console = &cdc_acm_uart0;
     };
-
-    aliases {
-        mcp0 = &mcp0;
-    };
-
-    mcp0: mcp0 {
-        gpios = <&mcp23017 0 GPIO_ACTIVE_HIGH>;
-    };
 };
 
 // VN-300 IMU
@@ -67,10 +59,44 @@ TODO:
     local-mac-address = [ 67 67 67 67 67 67  ];
 };
 
-&lpi2c3 {
+&pinctrl {
+    lpi2c1_default: pinmux_lpi2c1 {
+        pinmux = <&iomuxc_gpio_ad_b1_00_lpi2c1_scl>,
+                 <&iomuxc_gpio_ad_b1_01_lpi2c1_sda>;
+        bias-pull-up;
+        drive-open-drain;
+    };
+
+    lpi2c3_default: pinmux_lpi2c3 {
+        pinmux = <&iomuxc_gpio_ad_b1_06_lpi2c3_sda>,
+                 <&iomuxc_gpio_ad_b1_07_lpi2c3_scl>;
+        bias-pull-up;
+        drive-open-drain;
+    };
+};
+
+&lpi2c1 {
+    pinctrl-0 = <&lpi2c1_default>;
+    pinctrl-names = "default";
+    clock-frequency = <100000>;
     status = "okay";
 
-    mcp23017: gpio@20 {
+    mcp23017_u4: gpio@20 {
+        compatible = "microchip,mcp23017";
+        reg = <0x20>;
+        gpio-controller;
+        #gpio-cells = <2>;
+        status = "okay";
+    };
+};
+
+&lpi2c3 {
+    pinctrl-0 = <&lpi2c3_default>;
+    pinctrl-names = "default";
+    clock-frequency = <100000>;
+    status = "okay";
+
+    mcp23017_u6: gpio@20 {
         compatible = "microchip,mcp23017";
         reg = <0x20>;
         gpio-controller;
