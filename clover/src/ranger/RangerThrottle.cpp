@@ -51,8 +51,7 @@ static constexpr float MIN_threshold = 50.0f;// Define a maximum value for senso
 // Track duration of low chamber pressure for abort logic.
 static inline float calculate_fuel_mass_flow(float p_inj_fuel, float p_ch)
 {
-    // TODO: Shoudl max be 0.1 or 0.0
-    float dP = std::max(0.1f, p_inj_fuel - p_ch);
+    float dP = std::max(0.0f, p_inj_fuel - p_ch);
     return 0.06309f * FUEL_CV_INJ * std::sqrt(dP * FUEL_SG);
 }
 
