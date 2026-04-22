@@ -485,7 +485,7 @@ message DataPacket {
   optional LidarReading lidar_2 = 22;
 
   //IMU
-  optional ImuReading imu = 23;  
+  optional ImuReading imu = 23;
 
   // state estimate
   required EstimatedState estimated_state = 86;
@@ -545,7 +545,7 @@ message DataPacket {
   optional TvcActuatorCommand yaw_actuator_command = 63;
 
   // GNSS sensor readings. Present only when sol_type != 0.
-  optional GnssReadings gnss = 87;
+  optional GnssReadings gnss = 91;
 
   // Actuator commands -- hornet
   optional int32 main_propeller_command = 64; // 1000-2000ms
