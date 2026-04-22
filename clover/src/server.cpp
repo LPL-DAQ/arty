@@ -15,6 +15,7 @@
 #include "Controller.h"
 #include "MutexGuard.h"
 #include "clover.pb.h"
+#include "flight/FlightController.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
@@ -345,6 +346,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_start_flight_sequence_tag: {
             LOG_INF("start_flight_sequence command");
             cmd_result = Controller::handle_start_flight_sequence(request.payload.start_flight_sequence);
+            break;
+        }
+
+        case Request_configure_flight_controller_gains_tag: {
+            LOG_INF("configure_flight_controller_gains command");
+            cmd_result = FlightController::handle_configure_gains(request.payload.configure_flight_controller_gains);
             break;
         }
 
