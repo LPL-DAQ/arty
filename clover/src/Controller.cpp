@@ -1,26 +1,9 @@
 #include "Controller.h"
 #include "MutexGuard.h"
-#include "sensors/Lidar.h"
-#include "sensors/VectornavIMU.h"
-#include "ControllerConfig.h"
-#include "StateAbort.h"
-#include "StateCalibrateValve.h"
-#include "StateIdle.h"
-#include "StateThrustSeq.h"
-#include "StateValveSeq.h"
-#include "server.h"
-
-#ifdef CONFIG_HORNET
-
-#elif CONFIG_RANGER
-#include "ThrottleValve.h"
-
-#else
-#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
-#endif
-
 #include "config.h"
 #include "sensors/AnalogSensors.h"
+#include "sensors/Lidar.h"
+#include "sensors/VectornavIMU.h"
 #include "server.h"
 #include "util.h"
 #include "flight/FlightController.h"

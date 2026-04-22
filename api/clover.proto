@@ -674,23 +674,6 @@ message ImuReading {
   required float quat_z = 25;
 }
 
-message IdleData {}
-
-message AbortData {}
-
-message ValveCalibrationData {
-  required bool fuel_found_hardstop = 3;
-  required float fuel_hardstop_pos = 4;
-  required bool lox_found_hardstop = 7;
-  required float lox_hardstop_pos = 8;
-
-  required int32 cal_phase = 9;
-  required int32 rep_count = 10;
-
-  required float fuel_err = 11;
-  required float lox_err = 12;
-}
-
 // this is what is sent to other controllers, calculated in FlightController
 message FlightControllerOutput{
 
