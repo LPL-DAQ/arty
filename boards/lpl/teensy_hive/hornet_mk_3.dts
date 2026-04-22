@@ -21,14 +21,14 @@ TODO:
 
     aliases {
         // VN-300 IMU
-        imu-uart = &lpuart1; // TX: Pin 1, RX: Pin 0
+        imu-uart = &lpuart6; // TX: Pin 1 (AD_B0_02), RX: Pin 0 (AD_B0_03)
 
         // TF02-Pro LiDARs
-        lidar-1-uart = &lpuart2; // TX: Pin 8, RX: Pin 7
-        lidar-2-uart = &lpuart8; // TX: Pin 35, RX: Pin 34
+        lidar-1-uart = &lpuart7; // TX: Pin 29 (EMC_31), RX: Pin 28 (EMC_32)
+        lidar-2-uart = &lpuart8; // TX: Pin 20 (AD_B1_10), RX: Pin 21 (AD_B1_11)
 
         // JAVAD TR-2S GNSS
-        gnss-uart = &lpuart3; // TX: Pin 14, RX: Pin 13
+        gnss-uart = &lpuart3; // TX: Pin 17 (AD_B1_06), RX: Pin 16 (AD_B1_07)
 
         // RFM95W LoRa tranceiver
         lora-tranceiver = &sx1276;
@@ -71,27 +71,40 @@ TODO:
     };
 };
 
-// VN-300 IMU
-&lpuart1 {
+// VN-300 IMU (pins 0/1)
+&lpuart6 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&pinmux_lpuart6>;
+    pinctrl-1 = <&pinmux_lpuart6_sleep>;
+    pinctrl-names = "default", "sleep";
 };
 
-// TF-02 Pro LiDARs
-&lpuart2 {
+// TF-02 Pro LiDAR #1 (pins 28/29)
+&lpuart7 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&pinmux_lpuart7>;
+    pinctrl-1 = <&pinmux_lpuart7_sleep>;
+    pinctrl-names = "default", "sleep";
 };
 
+// TF-02 Pro LiDAR #2 (pins 20/21)
 &lpuart8 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&pinmux_lpuart8>;
+    pinctrl-1 = <&pinmux_lpuart8_sleep>;
+    pinctrl-names = "default", "sleep";
 };
 
-// JAVAD TR-2S GNSS
+// JAVAD TR-2S GNSS (pins 16/17)
 &lpuart3 {
     status = "okay";
-    current-speed = <115200>; // Is this right?
+    current-speed = <115200>;
+    pinctrl-0 = <&pinmux_lpuart3>;
+    pinctrl-1 = <&pinmux_lpuart3_sleep>;
+    pinctrl-names = "default", "sleep";
 };
 
 // TODO: RFM95W RF CHIP, validate this? Duped on hornet/vehicle boards.
@@ -118,16 +131,16 @@ TODO:
 
 // Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
 &pinctrl {
+    // ADC1 — removed AD_B1_03 (pin 15, LPUART2_RX) and AD_B1_10 (pin 20, LPUART8_TX)
+    // to avoid pad conflicts if/when those UARTs are ever enabled.
     pinmux_adc1: pinmux_adc1 {
         group0 {
             pinmux = <&iomuxc_gpio_ad_b1_04_gpio1_io20>,
                      <&iomuxc_gpio_ad_b1_05_gpio1_io21>,
-                     <&iomuxc_gpio_ad_b1_03_gpio1_io19>,
                      <&iomuxc_gpio_ad_b1_07_gpio1_io23>,
                      <&iomuxc_gpio_ad_b1_06_gpio1_io22>,
                      <&iomuxc_gpio_ad_b1_00_gpio1_io16>,
-                     <&iomuxc_gpio_ad_b1_01_gpio1_io17>,
-                     <&iomuxc_gpio_ad_b1_10_gpio1_io26>;
+                     <&iomuxc_gpio_ad_b1_01_gpio1_io17>;
             bias-disable; // These should be pulled down by voltage divider
             drive-strength = "r0-6";
             slew-rate = "slow";
@@ -208,7 +221,87 @@ TODO:
     pinmux_adc2: pinmux_adc2 {
         group0 {
             pinmux = <&iomuxc_gpio_ad_b1_14_gpio1_io30>; // A12, pin 26
-            bias-disable; // These should be pulled down by voltage divider
+            bias-disable;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    // LPUART6: pins 0/1
+    pinmux_lpuart6: pinmux_lpuart6 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b0_02_lpuart6_tx>,
+                     <&iomuxc_gpio_ad_b0_03_lpuart6_rx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    pinmux_lpuart6_sleep: pinmux_lpuart6_sleep {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b0_02_lpuart6_tx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    // LPUART7: pins 28/29
+    pinmux_lpuart7: pinmux_lpuart7 {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_31_lpuart7_tx>,
+                     <&iomuxc_gpio_emc_32_lpuart7_rx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    pinmux_lpuart7_sleep: pinmux_lpuart7_sleep {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_31_lpuart7_tx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    // LPUART8: pins 20/21
+    pinmux_lpuart8: pinmux_lpuart8 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_10_lpuart8_tx>,
+                     <&iomuxc_gpio_ad_b1_11_lpuart8_rx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    pinmux_lpuart8_sleep: pinmux_lpuart8_sleep {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_10_lpuart8_tx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    // LPUART3: pins 16/17
+    pinmux_lpuart3: pinmux_lpuart3 {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_06_lpuart3_tx>,
+                     <&iomuxc_gpio_ad_b1_07_lpuart3_rx>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+            nxp,speed = "100-mhz";
+        };
+    };
+
+    pinmux_lpuart3_sleep: pinmux_lpuart3_sleep {
+        group0 {
+            pinmux = <&iomuxc_gpio_ad_b1_06_lpuart3_tx>;
             drive-strength = "r0-6";
             slew-rate = "slow";
             nxp,speed = "100-mhz";
