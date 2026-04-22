@@ -5,11 +5,13 @@ target_sources(app PRIVATE
     Error.cpp
     MutexGuard.cpp
     Trace.cpp
-    FlightController.cpp
     util.cpp
 )
 
 add_subdirectory(sensors)
+add_subdirectory(flight)
+
+
 
 if(CONFIG_HORNET)
     message(NOTICE "Building with Hornet sources")

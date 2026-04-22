@@ -27,7 +27,7 @@ message Request {
     ThrottlePowerOffRequest throttle_power_off = 24;
     ThrottlePowerOnRequest throttle_power_on = 23;
 
-    ConfigureValvesRequest configure_valves_request = 38;
+    ConfigureValvesRequest configure_valves_request = 5;
     ActuateValveRequest actuate_valve_request = 39;
 
     // Transitions any state -> ABORT
@@ -38,6 +38,9 @@ message Request {
 
     // Transitions from any PRIME state -> IDLE
     UnprimeRequest unprime = 35;
+
+    // Configure flight controller
+    ConfigureFlightControllerGainsRequest configure_flight_controller_gains = 3;
 
     // Transitions IDLE -> CALIBRATE_THROTTLE_VALVE
     CalibrateThrottleValveRequest calibrate_throttle_valve = 33;
@@ -71,9 +74,9 @@ message Request {
     StartRcsSequenceRequest start_rcs_sequence = 22;
 
     // Transitions IDLE -> STATIC_FIRE_PRIMED
-    LoadStaticFireSequenceRequest load_static_fire_sequence = 36;
+    LoadStaticFireSequenceRequest load_static_fire_sequence = 4;
     // Transiitons STATIC_FIRE_PRIMED -> STATIC_FIRE
-    StartStaticFireSequenceRequest start_static_fire_sequence = 37;
+    StartStaticFireSequenceRequest start_static_fire_sequence = 38;
 
     // Transitions IDLE -> FLIGHT_PRIMED
     LoadFlightSequenceRequest load_flight_sequence = 31;
@@ -268,7 +271,7 @@ message StartThrottleValveSequenceRequest {}
 
 // Load a thrust sequence.
 message LoadThrottleSequenceRequest {
-  required ControlTrace thrust_trace_lbf = 1;
+  required ControlTrace thrust_trace_N = 1;
 }
 
 // Start a loaded thrust sequence.
@@ -297,7 +300,7 @@ message StartRcsSequenceRequest {}
 
 // Load a static fire sequence (throttle + TVC)
 message LoadStaticFireSequenceRequest {
-  required ControlTrace thrust_trace_lbf = 1;
+  required ControlTrace thrust_trace_N = 1;
   required ControlTrace pitch_trace_deg = 2;
   required ControlTrace yaw_trace_deg = 3;
 }
@@ -329,6 +332,73 @@ message LoadFlightSequenceRequest {
 }
 
 message StartFlightSequenceRequest {}
+
+// Configure flight controller gains and limits
+message ConfigureFlightControllerGainsRequest {
+  // PID gains
+  optional float pidXTilt_kp = 1;
+  optional float pidXTilt_ki = 2;
+  optional float pidXTilt_kd = 3;
+  optional float pidYTilt_kp = 4;
+  optional float pidYTilt_ki = 5;
+  optional float pidYTilt_kd = 6;
+  optional float pidX_kp = 7;
+  optional float pidX_ki = 8;
+  optional float pidX_kd = 9;
+  optional float pidY_kp = 10;
+  optional float pidY_ki = 11;
+  optional float pidY_kd = 12;
+  optional float pidZ_kp = 13;
+  optional float pidZ_ki = 14;
+  optional float pidZ_kd = 15;
+  optional float pidZVelocity_kp = 16;
+  optional float pidZVelocity_ki = 17;
+  optional float pidZVelocity_kd = 18;
+
+  // Output limits
+  optional float pidXTilt_min_out = 19;
+  optional float pidXTilt_max_out = 20;
+  optional float pidYTilt_min_out = 21;
+  optional float pidYTilt_max_out = 22;
+  optional float pidX_min_out = 23;
+  optional float pidX_max_out = 24;
+  optional float pidY_min_out = 25;
+  optional float pidY_max_out = 26;
+  optional float pidZ_min_out = 27;
+  optional float pidZ_max_out = 28;
+  optional float pidZVelocity_min_out = 29;
+  optional float pidZVelocity_max_out = 30;
+
+  // Integral limits
+  optional float pidXTilt_min_integral = 31;
+  optional float pidXTilt_max_integral = 32;
+  optional float pidYTilt_min_integral = 33;
+  optional float pidYTilt_max_integral = 34;
+  optional float pidX_min_integral = 35;
+  optional float pidX_max_integral = 36;
+  optional float pidY_min_integral = 37;
+  optional float pidY_max_integral = 38;
+  optional float pidZ_min_integral = 39;
+  optional float pidZ_max_integral = 40;
+  optional float pidZVelocity_min_integral = 41;
+  optional float pidZVelocity_max_integral = 42;
+
+  // Integral zones
+  optional float pidXTilt_integral_zone = 43;
+  optional float pidYTilt_integral_zone = 44;
+  optional float pidX_integral_zone = 45;
+  optional float pidY_integral_zone = 46;
+  optional float pidZ_integral_zone = 47;
+  optional float pidZVelocity_integral_zone = 48;
+
+  // Derivative low-pass filter
+  optional float pidXTilt_deriv_lp_hz = 49;
+  optional float pidYTilt_deriv_lp_hz = 50;
+  optional float pidX_deriv_lp_hz = 51;
+  optional float pidY_deriv_lp_hz = 52;
+  optional float pidZ_deriv_lp_hz = 53;
+  optional float pidZVelocity_deriv_lp_hz = 54;
+}
 
 // Control sequences
 message ControlTrace {
@@ -384,7 +454,7 @@ enum SystemState {
   STATE_FLIGHT_PRIMED = 18;
 }
 
-// next tag: 21
+// next tag: 24
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -411,6 +481,14 @@ message DataPacket {
 
   // Sensors
   required AnalogSensorReadings analog_sensors = 19;
+  optional LidarReading lidar_1 = 21;
+  optional LidarReading lidar_2 = 22;
+
+  //IMU
+  optional ImuReading imu = 23;  
+
+  // state estimate
+  required EstimatedState estimated_state = 86;
 
   // State-specific inputs
 
@@ -434,7 +512,11 @@ message DataPacket {
   optional float flight_x_command_m = 73;
   optional float flight_y_command_m = 74;
   optional float flight_z_command_m = 75;
-  optional float flight_roll_command_deg = 76;
+
+  // Raw acceleration outputs from FlightController -- valid in FLIGHT state.
+  optional float flight_pitch_accel_rad_s2 = 88;
+  optional float flight_yaw_accel_rad_s2 = 89;
+  optional float flight_z_accel_m_s2 = 90;
 
   // State-specific outputs
 
@@ -454,7 +536,7 @@ message DataPacket {
   optional HornetRcsMetrics hornet_rcs_metrics = 81;
 
   // Actuator commands -- shared.
-  required ValveStates valve_states = 86;
+  required ValveStates valve_states = 87;
 
   // Actuator commands -- ranger
   optional ThrottleValveCommand fuel_valve_command = 60;
@@ -466,11 +548,11 @@ message DataPacket {
   optional GnssReadings gnss = 87;
 
   // Actuator commands -- hornet
-  optional float main_propeller_command = 64;
-  optional float pitch_servo_command = 67;
-  optional float yaw_servo_command = 68;
-  optional bool rcs_propeller_cw_command = 65;
-  optional bool rcs_propeller_ccw_command = 66;
+  optional int32 main_propeller_command = 64; // 1000-2000ms
+  optional int32 pitch_servo_command = 67;  // 1000-2000ms
+  optional int32 yaw_servo_command = 68;  // 1000-2000ms
+  optional int32 rcs_propeller_cw_command = 65; // 1000-2000ms
+  optional int32 rcs_propeller_ccw_command = 66; //  1000-2000ms
 }
 
 // Stats on controller and sensor execution times.
@@ -478,6 +560,7 @@ message ControllerTiming {
   required float controller_tick_time_ns = 1;
   required float analog_sensors_sense_time_ns = 2;
   required float lidar_sense_time_ns = 3;
+  required float imu_sense_time_ns = 4;
 }
 
 message ValveStatus {
@@ -537,6 +620,11 @@ message AnalogSensorReadings {
   optional float battery_voltage = 21;
 }
 
+message Vector3D {
+  required float x = 1;
+  required float y = 2;
+  required float z = 3;
+}
 // Current valve states.
 message ValveStates {
   optional ValveState sv001 = 1;
@@ -550,25 +638,96 @@ message ValveStates {
   optional ValveState svg003 = 102;
 }
 
+message LidarReading {
+  required float distance_m = 1;
+  required float strength = 2;
+}
+
+message ImuReading {
+  optional float yaw = 1;
+  optional float pitch = 2;
+  optional float roll = 3;
+
+  required float accel_x = 4;
+  required float accel_y = 5;
+  required float accel_z = 6;
+
+  required float gyro_x = 7;
+  required float gyro_y = 8;
+  required float gyro_z = 9;
+
+  optional double gps_lat = 10;
+  optional double gps_lon = 11;
+  optional float gps_alt = 12;
+
+  optional double ins_lat = 13;
+  optional double ins_lon = 14;
+  optional float ins_alt = 15;
+  optional float vel_n = 16;
+  optional float vel_e = 17;
+  optional float vel_d = 18;
+
+  required float mag_x = 19;
+  required float mag_y = 20;
+  required float mag_z = 21;
+
+  required float quat_w = 22;
+  required float quat_x = 23;
+  required float quat_y = 24;
+  required float quat_z = 25;
+}
+
 // this is what is sent to other controllers, calculated in FlightController
 message FlightControllerOutput{
 
 }
 
-// this is what is sent to FlightController
-message FlightStateOutput {
-  required float z_acceleration = 2;
-  required float x_angular_acceleration = 3;
-  required float y_angular_acceleration = 4;
-  required float roll_position = 5;
-
+message Quaternion {
+  required float qw = 10;
+  required float qx = 1;
+  required float qy = 2;
+  required float qz = 3;
 }
 
-message FlightControllerMetrics {}
+// Estimated vehicle state for telemetry and flight path monitoring.
+message EstimatedState {
+  required Quaternion R_WB = 1; // world to body
+  required Vector3D position = 2;
+  required Vector3D velocity = 3;
+}
 
-message RangerThrottleMetrics {}
+message FlightControllerDesiredState {
+  required Vector3D position = 1;
+  required float world_tilt_x = 2;
+  required float world_tilt_y = 3;
+  required float vz_m_s = 5;
+}
 
-message HornetThrottleMetrics {}
+message FlightControllerMetrics {
+  required float desired_world_tilt_x_rad = 1;
+  required float desired_world_tilt_y_rad = 2;
+  required float actual_world_tilt_x_rad = 3;
+  required float actual_world_tilt_y_rad = 4;
+  required float desired_vertical_velocity_m_s = 5;
+  required float commanded_vertical_acceleration_m_s2 = 6;
+  required float commanded_pitch_acceleration_rad_s2 = 7;
+  required float commanded_yaw_acceleration_rad_s2 = 8;
+}
+
+message RangerThrottleMetrics {
+  optional float predicted_thrust_lbf = 1;
+  optional float predicted_of = 2;
+  optional float mdot_fuel = 3;
+  optional float mdot_lox = 4;
+  optional float change_alpha_cmd = 7;
+  optional float clamped_change_alpha_cmd = 8;
+  optional float alpha = 9;
+  optional float thrust_from_alpha_lbf = 10;
+}
+
+message HornetThrottleMetrics {
+  optional float thrust_N = 1;
+}
 
 message RangerTvcMetrics {}
 

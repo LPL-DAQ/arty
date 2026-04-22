@@ -96,7 +96,7 @@ public:
 
         auto result = write_pulse_us(clamp_pulse_us(pulse_us));
         if (!result) {
-            LOG_ERR("%s Failed to write pulse: err %d", kind_to_prefix(Kind), result);
+            LOG_ERR("%s Failed to write pulse", kind_to_prefix(Kind));
         }
         return result;
     }
