@@ -22,7 +22,6 @@ namespace math_util
     return static_cast<uint16_t>(mapFloat(deg, minDeg, maxDeg, minUs, maxUs));
   }
 
-  // TODO: unit test my quaternions
   inline Quaternion createQuaternion(float qw, float qx, float qy, float qz)
   {
       Quaternion out;

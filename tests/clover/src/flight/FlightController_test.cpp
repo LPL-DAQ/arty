@@ -358,7 +358,6 @@ ZTEST(FlightController_tests, test_desired_tilt_clamped_to_max)
     zassert_true(std::abs(metrics.desired_world_tilt_y_rad) <= 0.175f, "Desired tilt Y should be clamped to <= 10 degrees");
 }
 
-// TODO: this and the following test is badly done
 ZTEST(FlightController_tests, test_loop_count_effect_on_outer_loop)
 {
     // Verify outer loop only updates desired tilt when loopCount % 3 == 0.
