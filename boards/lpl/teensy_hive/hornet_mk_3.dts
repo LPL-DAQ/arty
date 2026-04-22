@@ -309,7 +309,9 @@ TODO:
     };
 };
 
+// Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/adc/nxp%2Cmcux-12b1msps-sar.
 &adc1 {
+    // She's broken, he's...
     status = "okay";
     pinctrl-0 = <&pinmux_adc1>;
     pinctrl-names = "default";
