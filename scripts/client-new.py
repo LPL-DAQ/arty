@@ -57,6 +57,11 @@ THEME = {
 
 VALVE_SEQ_DIR = pathlib.Path('sequences/valve')
 THRUST_SEQ_DIR = pathlib.Path('sequences/thrust')
+TVC_SEQ_DIR = pathlib.Path('sequences/tvc')
+RCS_VALVE_SEQ_DIR = pathlib.Path('sequences/rcs_valve')
+RCS_SEQ_DIR = pathlib.Path('sequences/rcs')
+STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
+FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 ZEPHYR_IP = '169.254.99.99'  # real board
@@ -1009,6 +1014,7 @@ def cmd_is_not_aborted():
     send_request(req, 'IS_NOT_ABORTED')
 
 
+# TODO: configure sensor bias is no longer up to date with ranger
 def cmd_configure_sensor_bias():
     """PROTO CHANGE: new request — set analog bias for a PT or TC sensor."""
     t = THEME
@@ -1053,8 +1059,8 @@ def cmd_reset_valve_position():
     pos = FloatPrompt.ask(f'  New position for {valve_name} valve (degrees)')
 
     req = clover_pb2.Request()
-    req.reset_valve_position.valve = valve
-    req.reset_valve_position.new_pos_deg = pos
+    req.throttle_reset_valve_position.valve = valve
+    req.throttle_reset_valve_position.new_pos_deg = pos
     send_request(req, f'RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)')
 
 
@@ -1070,7 +1076,7 @@ def cmd_power_on_valve():
     valve_name = 'FUEL' if choice == '1' else 'LOX'
 
     req = clover_pb2.Request()
-    req.power_on_valve.valve = valve
+    req.throttle_power_on.valve = valve
     send_request(req, f'POWER_ON_VALVE ({valve_name})')
 
 
@@ -1086,7 +1092,7 @@ def cmd_power_off_valve():
     valve_name = 'FUEL' if choice == '1' else 'LOX'
 
     req = clover_pb2.Request()
-    req.power_off_valve.valve = valve
+    req.throttle_power_off.valve = valve
     send_request(req, f'POWER_OFF_VALVE ({valve_name})')
 
 
@@ -1135,10 +1141,10 @@ def cmd_unprime():
     send_request(req, 'UNPRIME')
 
 
-def cmd_calibrate_valve():
-    """enter valve calibration mode (IDLE → CALIBRATE_VALVE)."""
+def cmd_calibrate_throttle_valve():
+    """Enter throttle valve calibration mode (IDLE → CALIBRATE_THROTTLE_VALVE)."""
     t = THEME
-    console.print(f'\n  {t["icon_valve"]} [{t["primary"]}]Calibrate Valve[/{t["primary"]}]')
+    console.print(f'\n  {t["icon_valve"]} [{t["primary"]}]Calibrate Throttle Valve[/{t["primary"]}]')
     console.print('    [1] FUEL')
     console.print('    [2] LOX')
 
@@ -1147,8 +1153,8 @@ def cmd_calibrate_valve():
     valve_name = 'FUEL' if choice == '1' else 'LOX'
 
     req = clover_pb2.Request()
-    req.calibrate_valve.valve = valve
-    send_request(req, f'CALIBRATE_VALVE ({valve_name})')
+    req.calibrate_throttle_valve.valve = valve
+    send_request(req, f'CALIBRATE_THROTTLE_VALVE ({valve_name})')
 
 
 def _list_saved_sequences(subdir: pathlib.Path) -> list[pathlib.Path]:
@@ -1285,20 +1291,17 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
     return trace
 
 
-def cmd_load_valve_sequence():
-    """
-    Load a valve sequence (IDLE → VALVE_PRIMED). At least one trace required.
-    New field names: fuel_trace_deg, lox_trace_deg
-    """
+def cmd_load_throttle_valve_sequence():
+    """Load a throttle valve sequence (IDLE → THROTTLE_VALVE_PRIMED). At least one trace required."""
     t = THEME
-    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Valve Sequence[/{t["primary"]}]')
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Throttle Valve Sequence[/{t["primary"]}]')
 
     saved = _list_saved_sequences(VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadValveSequenceRequest)
+        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadThrottleValveSequenceRequest)
         req = clover_pb2.Request()
-        req.load_valve_sequence.CopyFrom(loaded)
-        send_request(req, 'LOAD_VALVE_SEQUENCE')
+        req.load_throttle_valve_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_THROTTLE_VALVE_SEQUENCE')
         return
 
     console.print(
@@ -1311,13 +1314,13 @@ def cmd_load_valve_sequence():
     if do_fuel:
         console.print(f'\n  {t["icon_fuel"]} [{t["warning"]}]FUEL trace setup:[/{t["warning"]}]')
         fuel_trace = _build_control_trace()
-        req.load_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
+        req.load_throttle_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
 
     do_lox = Confirm.ask('\n  Configure LOX trace (degrees)?', default=True)
     if do_lox:
         console.print(f'\n  {t["icon_lox"]} [{t["info"]}]LOX trace setup:[/{t["info"]}]')
         lox_trace = _build_control_trace()
-        req.load_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
+        req.load_throttle_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
 
     if not do_fuel and not do_lox:
         console.print(
@@ -1326,115 +1329,389 @@ def cmd_load_valve_sequence():
         return
 
     if Confirm.ask('  Save this sequence for later?', default=False):
-        _save_sequence(VALVE_SEQ_DIR, 'v', req.load_valve_sequence)
+        _save_sequence(VALVE_SEQ_DIR, 'v', req.load_throttle_valve_sequence)
 
-    send_request(req, 'LOAD_VALVE_SEQUENCE')
+    send_request(req, 'LOAD_THROTTLE_VALVE_SEQUENCE')
 
 
-def cmd_start_valve_sequence():
-    """Replacement of start_sequence"""
+def cmd_start_throttle_valve_sequence():
+    """Start throttle valve sequence (THROTTLE_VALVE_PRIMED → THROTTLE_VALVE)."""
     t = THEME
     confirmed = Confirm.ask(
-        f'\n  {t["icon_fire"]} [{t["warning"]}]START VALVE SEQUENCE — are you sure?[/{t["warning"]}]',
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START THROTTLE VALVE SEQUENCE — are you sure?[/{t["warning"]}]',
         default=False,
     )
     if not confirmed:
         console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
         return
     req = clover_pb2.Request()
-    req.start_valve_sequence.SetInParent()
-    send_request(req, 'START_VALVE_SEQUENCE')
+    req.start_throttle_valve_sequence.SetInParent()
+    send_request(req, 'START_THROTTLE_VALVE_SEQUENCE')
 
 
-def cmd_load_thrust_sequence():
-    """
-    Load a thrust sequence (IDLE → THRUST_PRIMED).
-    Thrust trace is in lbf
-    """
+def cmd_load_throttle_sequence():
+    """Load a throttle sequence (IDLE → THROTTLE_PRIMED). Thrust trace is in Newtons."""
     t = THEME
-    console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Thrust Sequence[/{t["primary"]}]')
+    console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Throttle Sequence[/{t["primary"]}]')
 
     saved = _list_saved_sequences(THRUST_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrustSequenceRequest)
+        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrottleSequenceRequest)
         req = clover_pb2.Request()
-        req.load_thrust_sequence.CopyFrom(loaded)
-        send_request(req, 'LOAD_THRUST_SEQUENCE')
+        req.load_throttle_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_THROTTLE_SEQUENCE')
         return
-    # TODO: make thrust trace be in newtons
+
     console.print(f'  [{t["muted"]}]Thrust trace values are in lbf.[/{t["muted"]}]')
 
     thrust_trace = _build_control_trace()
 
     req = clover_pb2.Request()
-    req.load_thrust_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
+    req.load_throttle_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
 
     if Confirm.ask('  Save this sequence for later?', default=False):
-        _save_sequence(THRUST_SEQ_DIR, 't', req.load_thrust_sequence)
+        _save_sequence(THRUST_SEQ_DIR, 't', req.load_throttle_sequence)
 
-    send_request(req, 'LOAD_THRUST_SEQUENCE')
+    send_request(req, 'LOAD_THROTTLE_SEQUENCE')
 
 
-def cmd_start_thrust_sequence():
-    """Start thrust sequence."""
+def cmd_start_throttle_sequence():
+    """Start throttle sequence (THROTTLE_PRIMED → THROTTLE)."""
     t = THEME
     confirmed = Confirm.ask(
-        f'\n  {t["icon_fire"]} [{t["warning"]}]START THRUST SEQUENCE — are you sure?[/{t["warning"]}]',
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START THROTTLE SEQUENCE — are you sure?[/{t["warning"]}]',
         default=False,
     )
     if not confirmed:
         console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
         return
     req = clover_pb2.Request()
-    req.start_thrust_sequence.SetInParent()
-    send_request(req, 'START_THRUST_SEQUENCE')
+    req.start_throttle_sequence.SetInParent()
+    send_request(req, 'START_THROTTLE_SEQUENCE')
+
+
+def cmd_configure_flight_controller_gains():
+    """Configure flight controller PID gains and limits."""
+    t = THEME
+    console.print(f'\n  [{t["primary"]}]Configure Flight Controller Gains[/{t["primary"]}]')
+    console.print(f'  [{t["muted"]}]Leave blank to keep current value for any field.[/{t["muted"]}]')
+
+    req = clover_pb2.Request()
+    gains = req.configure_flight_controller_gains
+
+    pid_fields = [
+        ('pidXTilt_kp', 'pidXTilt_ki', 'pidXTilt_kd'),
+        ('pidYTilt_kp', 'pidYTilt_ki', 'pidYTilt_kd'),
+        ('pidX_kp', 'pidX_ki', 'pidX_kd'),
+        ('pidY_kp', 'pidY_ki', 'pidY_kd'),
+        ('pidZ_kp', 'pidZ_ki', 'pidZ_kd'),
+        ('pidZVelocity_kp', 'pidZVelocity_ki', 'pidZVelocity_kd'),
+    ]
+    for kp, ki, kd in pid_fields:
+        prefix = kp[:-3]  # strip '_kp'
+        console.print(f'\n  [{t["muted"]}]{prefix}:[/{t["muted"]}]')
+        for field in (kp, ki, kd):
+            val = Prompt.ask(f'    {field}', default='')
+            if val:
+                setattr(gains, field, float(val))
+
+    if Confirm.ask('\n  Set output limits?', default=False):
+        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
+            mn = Prompt.ask(f'    {prefix}_min_out', default='')
+            mx = Prompt.ask(f'    {prefix}_max_out', default='')
+            if mn:
+                setattr(gains, f'{prefix}_min_out', float(mn))
+            if mx:
+                setattr(gains, f'{prefix}_max_out', float(mx))
+
+    if Confirm.ask('  Set integral limits?', default=False):
+        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
+            mn = Prompt.ask(f'    {prefix}_min_integral', default='')
+            mx = Prompt.ask(f'    {prefix}_max_integral', default='')
+            if mn:
+                setattr(gains, f'{prefix}_min_integral', float(mn))
+            if mx:
+                setattr(gains, f'{prefix}_max_integral', float(mx))
+
+    if Confirm.ask('  Set integral zones?', default=False):
+        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
+            val = Prompt.ask(f'    {prefix}_integral_zone', default='')
+            if val:
+                setattr(gains, f'{prefix}_integral_zone', float(val))
+
+    if Confirm.ask('  Set derivative low-pass filter (Hz)?', default=False):
+        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
+            val = Prompt.ask(f'    {prefix}_deriv_lp_hz', default='')
+            if val:
+                setattr(gains, f'{prefix}_deriv_lp_hz', float(val))
+
+    send_request(req, 'CONFIGURE_FLIGHT_CONTROLLER_GAINS')
+
+# TODO: is this all that's needed?
+def cmd_calibrate_tvc():
+    """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  [{t["warning"]}]CALIBRATE TVC — enter calibration mode?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.calibrate_tvc.SetInParent()
+    send_request(req, 'CALIBRATE_TVC')
+
+# TODO: test if this works
+def cmd_load_tvc_sequence():
+    """Load a TVC sequence (IDLE → TVC_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load TVC Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(TVC_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(TVC_SEQ_DIR, clover_pb2.LoadTvcSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_tvc_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_TVC_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define pitch and yaw traces (degrees).[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]Pitch trace:[/{t["primary"]}]')
+    req.load_tvc_sequence.pitch_trace_deg.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Yaw trace:[/{t["primary"]}]')
+    req.load_tvc_sequence.yaw_trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(TVC_SEQ_DIR, 'tvc', req.load_tvc_sequence)
+
+    send_request(req, 'LOAD_TVC_SEQUENCE')
+
+
+def cmd_start_tvc_sequence():
+    """Start TVC sequence (TVC_PRIMED → TVC)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START TVC SEQUENCE — are you sure?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_tvc_sequence.SetInParent()
+    send_request(req, 'START_TVC_SEQUENCE')
+
+# TODO: test if this works
+def cmd_load_rcs_valve_sequence():
+    """Load an RCS valve sequence (IDLE → RCS_VALVE_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Valve Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(RCS_VALVE_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(RCS_VALVE_SEQ_DIR, clover_pb2.LoadRcsValveSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_rcs_valve_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_RCS_VALVE_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define CW and CCW valve traces (0=off, 1=on).[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]CW valve trace:[/{t["primary"]}]')
+    req.load_rcs_valve_sequence.rcs_cw_valve_trace.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]CCW valve trace:[/{t["primary"]}]')
+    req.load_rcs_valve_sequence.rcs_ccw_valve_trace.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(RCS_VALVE_SEQ_DIR, 'rcsv', req.load_rcs_valve_sequence)
+
+    send_request(req, 'LOAD_RCS_VALVE_SEQUENCE')
+
+
+def cmd_start_rcs_valve_sequence():
+    """Start RCS valve sequence (RCS_VALVE_PRIMED → RCS_VALVE)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START RCS VALVE SEQUENCE — are you sure?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_rcs_valve_sequence.SetInParent()
+    send_request(req, 'START_RCS_VALVE_SEQUENCE')
+
+
+def cmd_load_rcs_sequence():
+    """Load an RCS roll sequence (IDLE → RCS_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(RCS_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(RCS_SEQ_DIR, clover_pb2.LoadRcsSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_rcs_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_RCS_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define roll trace (degrees).[/{t["muted"]}]')
+    req = clover_pb2.Request()
+    req.load_rcs_sequence.trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(RCS_SEQ_DIR, 'rcs', req.load_rcs_sequence)
+
+    send_request(req, 'LOAD_RCS_SEQUENCE')
+
+
+def cmd_start_rcs_sequence():
+    """Start RCS sequence (RCS_PRIMED → RCS)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START RCS SEQUENCE — are you sure?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_rcs_sequence.SetInParent()
+    send_request(req, 'START_RCS_SEQUENCE')
+
+# TODO: test if this works
+def cmd_load_static_fire_sequence():
+    """Load a static fire sequence (IDLE → STATIC_FIRE_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Static Fire Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(STATIC_FIRE_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(STATIC_FIRE_SEQ_DIR, clover_pb2.LoadStaticFireSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_static_fire_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_STATIC_FIRE_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define thrust (N), pitch (deg), and yaw (deg) traces.[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]Thrust trace (N):[/{t["primary"]}]')
+    req.load_static_fire_sequence.thrust_trace_N.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Pitch trace (deg):[/{t["primary"]}]')
+    req.load_static_fire_sequence.pitch_trace_deg.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Yaw trace (deg):[/{t["primary"]}]')
+    req.load_static_fire_sequence.yaw_trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(STATIC_FIRE_SEQ_DIR, 'sf', req.load_static_fire_sequence)
+
+    send_request(req, 'LOAD_STATIC_FIRE_SEQUENCE')
+
+
+def cmd_start_static_fire_sequence():
+    """Start static fire sequence (STATIC_FIRE_PRIMED → STATIC_FIRE)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["danger"]}]START STATIC FIRE SEQUENCE — are you sure?[/{t["danger"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_static_fire_sequence.SetInParent()
+    send_request(req, 'START_STATIC_FIRE_SEQUENCE')
+
+# TODO: test if this works
+def cmd_load_flight_sequence():
+    """Load a flight sequence (IDLE → FLIGHT_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Flight Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(FLIGHT_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(FLIGHT_SEQ_DIR, clover_pb2.LoadFlightSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_flight_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_FLIGHT_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define X (m), Y (m), Z (m), and roll (deg) traces.[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]X position trace (m):[/{t["primary"]}]')
+    req.load_flight_sequence.x_position_trace_m.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Y position trace (m):[/{t["primary"]}]')
+    req.load_flight_sequence.y_position_trace_m.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Z position trace (m):[/{t["primary"]}]')
+    req.load_flight_sequence.z_position_trace_m.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Roll angle trace (deg):[/{t["primary"]}]')
+    req.load_flight_sequence.roll_angle_trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(FLIGHT_SEQ_DIR, 'flt', req.load_flight_sequence)
+
+    send_request(req, 'LOAD_FLIGHT_SEQUENCE')
+
+
+def cmd_start_flight_sequence():
+    """Start flight sequence (FLIGHT_PRIMED → FLIGHT)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["danger"]}]START FLIGHT SEQUENCE — are you sure?[/{t["danger"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_flight_sequence.SetInParent()
+    send_request(req, 'START_FLIGHT_SEQUENCE')
 
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
 
-# changed options based on updated .proto file
 MENU_ITEMS = [
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
-    ('bias', 'bias', 'Configure analog sensor bias', cmd_configure_sensor_bias),
-    ('reset', 'reset', 'Reset valve position', cmd_reset_valve_position),
-    ('pon', 'poweron', 'Power ON valve (enable stepper)', cmd_power_on_valve),
-    ('poff', 'poweroff', 'Power OFF valve (disable stepper)', cmd_power_off_valve),
-    (
-        'cal',
-        'calibrate',
-        'Calibrate valve  (IDLE → CALIBRATE_VALVE)',
-        cmd_calibrate_valve,
-    ),
-    (
-        'lvseq',
-        'loadvalve',
-        'Load valve sequence  (IDLE → VALVE_PRIMED)',
-        cmd_load_valve_sequence,
-    ),
-    (
-        'svseq',
-        'startvalve',
-        'Start valve sequence (VALVE_PRIMED → VALVE_SEQ)',
-        cmd_start_valve_sequence,
-    ),
-    (
-        'ltseq',
-        'loadthrust',
-        'Load thrust sequence (IDLE → THRUST_PRIMED)',
-        cmd_load_thrust_sequence,
-    ),
-    (
-        'stseq',
-        'startthrust',
-        'Start thrust sequence (THRUST_PRIMED → THRUST_SEQ)',
-        cmd_start_thrust_sequence,
-    ),
-    ('unprime', 'unprime', 'Unprime  (VALVE/THRUST_PRIMED → IDLE)', cmd_unprime),
-    ('abort', 'abort', 'ABORT active sequence → safe state', cmd_abort),
-    ('halt', 'halt', 'HALT all actuators', cmd_halt),
-    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_sensor_bias),
+    ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
+    ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
+    ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),
+    ('cfggains', 'cfggains', 'Configure flight controller gains', cmd_configure_flight_controller_gains),
+    ('cal', 'calibrate', 'Calibrate throttle valve  (IDLE → CALIBRATE_THROTTLE_VALVE)', cmd_calibrate_throttle_valve),
+    ('lvseq', 'loadvalve', 'Load throttle valve sequence  (IDLE → THROTTLE_VALVE_PRIMED)', cmd_load_throttle_valve_sequence),
+    ('svseq', 'startvalve', 'Start throttle valve sequence (THROTTLE_VALVE_PRIMED → THROTTLE_VALVE)', cmd_start_throttle_valve_sequence),
+    ('ltseq', 'loadthrust', 'Load throttle sequence  (IDLE → THROTTLE_PRIMED)', cmd_load_throttle_sequence),
+    ('stseq', 'startthrust', 'Start throttle sequence (THROTTLE_PRIMED → THROTTLE)', cmd_start_throttle_sequence),
+    ('caltvc', 'caltvc', 'Calibrate TVC  (IDLE → CALIBRATE_TVC)', cmd_calibrate_tvc),
+    ('ltvcseq', 'loadtvc', 'Load TVC sequence  (IDLE → TVC_PRIMED)', cmd_load_tvc_sequence),
+    ('stvcseq', 'starttvc', 'Start TVC sequence (TVC_PRIMED → TVC)', cmd_start_tvc_sequence),
+    ('lrvseq', 'loadrcsvalve', 'Load RCS valve sequence  (IDLE → RCS_VALVE_PRIMED)', cmd_load_rcs_valve_sequence),
+    ('srvseq', 'startrcsvalve', 'Start RCS valve sequence (RCS_VALVE_PRIMED → RCS_VALVE)', cmd_start_rcs_valve_sequence),
+    ('lrseq', 'loadrcs', 'Load RCS sequence  (IDLE → RCS_PRIMED)', cmd_load_rcs_sequence),
+    ('srseq', 'startrcs', 'Start RCS sequence (RCS_PRIMED → RCS)', cmd_start_rcs_sequence),
+    ('lsfseq', 'loadstaticfire', 'Load static fire sequence  (IDLE → STATIC_FIRE_PRIMED)', cmd_load_static_fire_sequence),
+    ('ssfseq', 'startstaticfire', 'Start static fire sequence (STATIC_FIRE_PRIMED → STATIC_FIRE)', cmd_start_static_fire_sequence),
+    ('lfseq', 'loadflight', 'Load flight sequence  (IDLE → FLIGHT_PRIMED)', cmd_load_flight_sequence),
+    ('sfseq', 'startflight', 'Start flight sequence (FLIGHT_PRIMED → FLIGHT)', cmd_start_flight_sequence),
+    ('unprime', 'unprime', 'Unprime  (any PRIMED → IDLE)', cmd_unprime),
+    ('halt', 'halt', 'HALT active sequence → IDLE', cmd_halt),
+    ('abort', 'abort', 'ABORT → safe state', cmd_abort),
     ('status', 'status', 'Live telemetry dashboard (Enter to exit)', None),
     ('quit', 'quit', 'Exit', None),
 ]
@@ -1460,18 +1737,30 @@ def print_menu():
         'sub': THEME['icon_live'],
         'id': THEME['icon_id'],
         'check': '🔍',
-        'bias': '⚙️ ',
+        'cfgana': '⚙️ ',
         'reset': THEME['icon_valve'],
         'pon': '🟢',
         'poff': '⚫',
+        'cfggains': '📊',
         'cal': '📐',
         'lvseq': THEME['icon_seq'],
         'svseq': THEME['icon_fire'],
         'ltseq': THEME['icon_loop'],
         'stseq': THEME['icon_fire'],
+        'caltvc': '📐',
+        'ltvcseq': THEME['icon_seq'],
+        'stvcseq': THEME['icon_fire'],
+        'lrvseq': THEME['icon_seq'],
+        'srvseq': THEME['icon_fire'],
+        'lrseq': THEME['icon_seq'],
+        'srseq': THEME['icon_fire'],
+        'lsfseq': THEME['icon_seq'],
+        'ssfseq': THEME['icon_fire'],
+        'lfseq': THEME['icon_seq'],
+        'sfseq': THEME['icon_fire'],
         'unprime': '↩️ ',
-        'abort': THEME['icon_stop'],
         'halt': THEME['icon_stop'],
+        'abort': THEME['icon_stop'],
         'status': THEME['icon_live'],
         'quit': THEME['icon_quit'],
     }
