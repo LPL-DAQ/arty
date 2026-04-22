@@ -11,6 +11,8 @@
 #include "sensors/AnalogSensors.h"
 #include "server.h"
 
+#include "sensors/adc_ads7953.h"
+
 #ifdef CONFIG_HORNET
 
 #elif CONFIG_RANGER
@@ -83,6 +85,22 @@ int main(void)
     if (auto result = AnalogSensors::init(); !result) {
         LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
         return 0;
+    }
+
+    //ADC quick test
+    LOG_INF("Running ADC quick test");
+    for (int i = 0; i < 5; i++) {
+        int16_t samples[ADC_ADS7953_CHANNEL_COUNT] = {0};
+
+        int ret = adc_ads7953_read_all(samples);
+        if (ret < 0) {
+            LOG_ERR("ADC read failed: %d", ret);
+        } else {
+            LOG_INF("ADC: b1a0=%d b1a1=%d b2a0=%d b2a1=%d",
+                    samples[0], samples[1], samples[2], samples[3]);
+        }
+
+        k_sleep(K_MSEC(500));
     }
 
     LOG_INF("Initializing Controller");

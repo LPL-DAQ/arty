@@ -47,6 +47,8 @@ TODO:
             <&ads7953_2 0>,
             <&ads7953_2 1>;
 
+        io-channel-names = "bank1_ain0", "bank1_ain1", "bank2_ain0", "bank2_ain1";
+
         analog-sensor-adcs = <&ads7953_1 &ads7953_2>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
