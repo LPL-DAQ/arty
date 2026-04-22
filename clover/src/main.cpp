@@ -11,6 +11,7 @@
 #include "FlightController.h"
 #include "sensors/AnalogSensors.h"
 #include "sensors/lidar.h"
+#include "sensors/gnss.h"
 #include "server.h"
 
 #ifdef CONFIG_HORNET
@@ -80,11 +81,20 @@ int main(void)
     //     return 0;
     // }
 
+    LOG_INF("Initializing GNSS");
+    int err = gnss_init();
+    if (err) {
+        LOG_ERR("Failed to initialize GNSS");
+        return 0;
+    }
+
+    /*
     LOG_INF("Initializing analog sensors");
     if (auto result = AnalogSensors::init(); !result) {
         LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
         return 0;
     }
+    
 
     LOG_INF("Initializing Controller");
     if (auto result = Controller::init(); !result) {
@@ -99,7 +109,9 @@ int main(void)
     //     return 0;
     // }
 
+    
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();
+    */
 }

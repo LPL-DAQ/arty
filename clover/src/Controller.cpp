@@ -3,6 +3,7 @@
 #include "MutexGuard.h"
 #include "config.h"
 #include "sensors/AnalogSensors.h"
+#include "sensors/gnss.h"
 #include "server.h"
 #include "util.h"
 #include <zephyr/kernel.h>
@@ -376,6 +377,24 @@ static void step_control_loop(k_work*)
     else {
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
+
+    GnssReading gnss = gnss_read();
+    data.has_gnss = true;
+    data.gnss.north_m          = gnss.north_m;
+    data.gnss.east_m           = gnss.east_m;
+    data.gnss.up_m             = gnss.up_m;
+    data.gnss.pos_sigma_m      = gnss.pos_sigma_m;
+    data.gnss.vx_ms            = gnss.vx_ms;
+    data.gnss.vy_ms            = gnss.vy_ms;
+    data.gnss.vz_ms            = gnss.vz_ms;
+    data.gnss.vel_sigma_ms     = gnss.vel_sigma_ms;
+    data.gnss.hrms_m           = gnss.hrms_m;
+    data.gnss.vrms_m           = gnss.vrms_m;
+    data.gnss.hvel_rms_ms      = gnss.hvel_rms_ms;
+    data.gnss.vvel_rms_ms      = gnss.vvel_rms_ms;
+    data.gnss.solution_time_ms = gnss.solution_time_ms;
+    data.gnss.receiver_time_ms = gnss.receiver_time_ms;
+    data.gnss.sol_type         = gnss.sol_type;
 
     daq_client_status daq_status = get_daq_client_status();
 

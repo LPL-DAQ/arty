@@ -29,7 +29,7 @@ TODO:
         lidar-2-uart = &lpuart8; // TX: Pin 35, RX: Pin 34
 
         // JAVAD TR-2S GNSS
-        gnss-uart = &lpuart3; // TX: Pin 14, RX: Pin 13
+        gnss-uart = &lpuart4; // TX: Pin 7, RX: Pin 8
 
         // RFM95W LoRa tranceiver
         lora-tranceiver = &sx1276;
@@ -90,9 +90,9 @@ TODO:
 };
 
 // JAVAD TR-2S GNSS
-&lpuart3 {
+&lpuart4 {
     status = "okay";
-    current-speed = <115200>; // Is this right?
+    current-speed = <460800>;
 };
 
 // TODO: RFM95W RF CHIP, validate this? Duped on hornet/vehicle boards.
