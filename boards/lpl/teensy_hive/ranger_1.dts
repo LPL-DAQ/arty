@@ -73,6 +73,7 @@ TODO:
 
     chosen {
         zephyr,console = &cdc_acm_uart0;
+        zephyr,canbus = &flexcan3;
     };
 };
 
@@ -239,13 +240,18 @@ TODO:
 };
 
 &zephyr_udc0 {
+    status = "okay"; /* CRITICAL: Wakes up the physical USB hardware */
     cdc_acm_uart0: cdc_acm_uart0 {
         compatible = "zephyr,cdc-acm-uart";
-        label = "CDC_ACM_0";
     };
 };
 
 &enet_mac {
     /delete-property/ nxp,unique-mac;
     local-mac-address = [ 67 67 67 67 67 67  ];
+};
+&flexcan3 {
+	status = "okay";
+	bitrate = <1000000>;         /* 1 Mbps Arbitration Phase */
+	bitrate-data = <5000000>;    /* 5 Mbps Data Payload Phase */
 };

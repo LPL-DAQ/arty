@@ -28,8 +28,7 @@ int main(void)
     // Serial over USB setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB is not enabled.");
-        while (1) {
-        }
+        while (1) {}
     }
 
     // Try connecting to serial over usb for 3 seconds.
@@ -44,60 +43,13 @@ int main(void)
         }
     }
 
-    // const struct device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-    // if (!device_is_ready(uart)) {
-    //     return 0;
-    // }
+    LOG_INF("USB Connected. Bypassing flight hardware for TVC standalone test.");
 
-#ifdef CONFIG_RANGER
-
-    LOG_INF("Initializing general valves");
-    if (auto result = Valves::init(); !result) {
-        LOG_ERR("Failed to initialize general valves: %s", result.error().build_message().c_str());
-        return 0;
+    // DO NOT initialize Valves, LiDAR, or Analog Sensors right now.
+    // Just keep the main thread alive so the background TVC thread can run!
+    while (1) {
+        k_sleep(K_MSEC(1000));
     }
-
-    LOG_INF("Initializing fuel throttle valve");
-    if (auto result = FuelValve::init(); !result) {
-        LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    LOG_INF("Initializing lox throttle valve");
-    if (auto result = LoxValve::init(); !result) {
-        LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-#endif
-
-    // LOG_INF("Initializing LiDAR");
-    // int err = lidar_init();
-    // if (err) {
-    //     LOG_ERR("Failed to initialize LiDAR");
-    //     return 0;
-    // }
-
-    LOG_INF("Initializing analog sensors");
-    if (auto result = AnalogSensors::init(); !result) {
-        LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    LOG_INF("Initializing Controller");
-    if (auto result = Controller::init(); !result) {
-        LOG_ERR("Failed to initialize Controller: %s", result.error().build_message().c_str());
-        return 0;
-    }
-
-    // LOG_INF("initializing SNTP");
-    // err = sntp_init();
-    // if (err) {
-    //     LOG_ERR("Failed to initialize SNTP");
-    //     return 0;
-    // }
-
-    k_sleep(K_MSEC(500));
-    LOG_INF("Starting server");
-    serve_connections();
+    
+    return 0;
 }

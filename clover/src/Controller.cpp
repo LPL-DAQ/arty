@@ -14,8 +14,8 @@
 
 #if CONFIG_RANGER
 #include "ranger/RangerRcs.h"
-#include "ranger/RangerThrottle.h"
-#include "ranger/RangerTvc.h"
+// #include "ranger/RangerThrottle.h"  // OPTION A: Silenced for standalone test
+// #include "ranger/RangerTvc.h"       // OPTION A: Silenced for standalone test
 #include "ranger/ThrottleValve.h"
 
 #elif CONFIG_HORNET
@@ -253,15 +253,16 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!data.has_throttle_thrust_command_lbf) {
             return std::unexpected(Error::from_cause("missing throttle thrust command"));
         }
+
 #ifdef CONFIG_RANGER
-        auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_lbf);
-        if (!throttle_response.has_value()) {
-            return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
-        }
-        data.has_fuel_valve_command = true;
-        data.has_lox_valve_command = true;
-        data.has_ranger_throttle_metrics = true;
-        std::tie(data.fuel_valve_command, data.lox_valve_command, data.ranger_throttle_metrics) = *throttle_response;
+        // auto throttle_response = RangerThrottle::tick(data.analog_sensors, data.throttle_thrust_command_lbf);
+        // if (!throttle_response.has_value()) {
+        //     return std::unexpected(throttle_response.error().context("error in RangerThrottle"));
+        // }
+        // data.has_fuel_valve_command = true;
+        // data.has_lox_valve_command = true;
+        // data.has_ranger_throttle_metrics = true;
+        // std::tie(data.fuel_valve_command, data.lox_valve_command, data.ranger_throttle_metrics) = *throttle_response;
 
 #elif CONFIG_HORNET
         auto throttle_response = HornetThrottle::tick(data.throttle_thrust_command_lbf);
@@ -281,16 +282,15 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!data.has_tvc_yaw_command_deg) {
             return std::unexpected(Error::from_cause("missing tvc pitch command"));
         }
-
 #ifdef CONFIG_RANGER
-        auto tvc_response = RangerTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
-        if (!tvc_response.has_value()) {
-            return std::unexpected(tvc_response.error().context("error in RangerTvc"));
-        }
-        data.has_pitch_actuator_command = true;
-        data.has_yaw_actuator_command = true;
-        data.has_ranger_tvc_metrics = true;
-        std::tie(data.pitch_actuator_command, data.yaw_actuator_command, data.ranger_tvc_metrics) = *tvc_response;
+        // auto tvc_response = RangerTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
+        // if (!tvc_response.has_value()) {
+        //     return std::unexpected(tvc_response.error().context("error in RangerTvc"));
+        // }
+        // data.has_pitch_actuator_command = true;
+        // data.has_yaw_actuator_command = true;
+        // data.has_ranger_tvc_metrics = true;
+        // std::tie(data.pitch_actuator_command, data.yaw_actuator_command, data.ranger_tvc_metrics) = *tvc_response;
 
 #elif CONFIG_HORNET
         auto tvc_response = HornetTvc::tick(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg);
