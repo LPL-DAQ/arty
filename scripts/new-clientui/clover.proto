@@ -1,0 +1,480 @@
+syntax = "proto2";
+
+//////////////////////////////////////////////////////////////////////
+// IMPORTANT:                                                       //
+// When changing this file, you MUST re-run the following:          //
+// protoc --python_out=scripts api/clover.proto --proto_path=api    //
+//////////////////////////////////////////////////////////////////////
+
+// Command stream.
+message Request {
+  oneof payload {
+    SubscribeDataStreamRequest subscribe_data_stream = 1;
+    IdentifyClientRequest identify_client = 6;
+    IsNotAbortedRequest is_not_aborted_request = 26;
+    ConfigureAnalogSensorsRequest configure_analog_sensors = 25;
+    ThrottleResetValvePositionRequest throttle_reset_valve_position = 2;
+    ThrottlePowerOffRequest throttle_power_off = 24;
+    ThrottlePowerOnRequest throttle_power_on = 23;
+    ConfigureValvesRequest configure_valves_request = 5;
+    ActuateValveRequest actuate_valve_request = 39;
+    AbortRequest abort = 10;
+    HaltRequest halt = 34;
+    UnprimeRequest unprime = 35;
+    ConfigureFlightControllerGainsRequest configure_flight_controller_gains = 3;
+    CalibrateThrottleValveRequest calibrate_throttle_valve = 33;
+    LoadThrottleValveSequenceRequest load_throttle_valve_sequence = 13;
+    StartThrottleValveSequenceRequest start_throttle_valve_sequence = 15;
+    LoadThrottleSequenceRequest load_throttle_sequence = 14;
+    StartThrottleSequenceRequest start_throttle_sequence = 16;
+    CalibrateTvcRequest calibrate_tvc = 9;
+    LoadTvcSequenceRequest load_tvc_sequence = 29;
+    StartTvcSequenceRequest start_tvc_sequence = 30;
+    LoadRcsValveSequenceRequest load_rcs_valve_sequence = 19;
+    StartRcsValveSequenceRequest start_rcs_valve_sequence = 20;
+    LoadRcsSequenceRequest load_rcs_sequence = 21;
+    StartRcsSequenceRequest start_rcs_sequence = 22;
+    LoadStaticFireSequenceRequest load_static_fire_sequence = 4;
+    StartStaticFireSequenceRequest start_static_fire_sequence = 38;
+    LoadFlightSequenceRequest load_flight_sequence = 31;
+    StartFlightSequenceRequest start_flight_sequence = 32;
+  }
+}
+
+message Response {
+  optional string err = 1;
+}
+
+message SubscribeDataStreamRequest {}
+message IsNotAbortedRequest {}
+message IdentifyClientRequest {
+  required ClientType client = 1;
+}
+
+enum ClientType {
+  UNKNOWN_CLIENT = 1;
+  GNC = 2;
+  DAQ = 3;
+}
+
+message ConfigureAnalogSensorsRequest {
+  repeated AnalogSensorConfig configs = 1;
+}
+
+message AnalogSensorConfig {
+  required uint32 channel = 1;
+  required AnalogSensor assignment = 2;
+  optional float pt_range_psig = 3;
+  optional float pt_bias_psig = 4;
+  optional TCType tc_type = 5;
+  optional float raw_range_v = 6;
+  optional float raw_bias_v = 7;
+}
+
+enum TCType {
+  UNKNOWN_TC_TYPE = 0;
+  K_TYPE = 1;
+  T_TYPE = 2;
+}
+
+enum AnalogSensor {
+  UNKNOWN_ANALOG_SENSOR = 0;
+  PT001 = 1;
+  PT002 = 2;
+  PT003 = 3;
+  PT004 = 4;
+  PT005 = 5;
+  PT101 = 6;
+  PT201 = 7;
+  PTF1 = 8;
+  PTF2 = 9;
+  PTO1 = 10;
+  PTC1 = 11;
+  PTC2 = 12;
+  TC001 = 13;
+  TC101 = 14;
+  TC102 = 15;
+  TCF1 = 16;
+  TCO1 = 17;
+  PTG001 = 18;
+  PTG002 = 19;
+  PTG101 = 20;
+  BATTERY_VOLTAGE = 21;
+}
+
+message ConfigureValvesRequest {
+  repeated ValveConfig configs = 1;
+}
+
+message ValveConfig {
+  required uint32 channel = 1;
+  required Valve assignment = 2;
+  optional bool normally_closed = 3;
+}
+
+enum Valve {
+  UNKNOWN_VALVE = 0;
+  SV001 = 1;
+  SV002 = 2;
+  SV003 = 3;
+  SV004 = 4;
+  PBV002 = 5;
+  SV005 = 6;
+  SVG001 = 100;
+  SVG002 = 101;
+  SVG003 = 102;
+}
+
+message ActuateValveRequest {
+  required Valve valve = 1;
+  required ValveState state = 2;
+}
+
+enum ValveState {
+  UNKNOWN_VALVE_STATE = 0;
+  OPEN = 1;
+  CLOSED = 2;
+}
+
+message ThrottleResetValvePositionRequest {
+  required ThrottleValveType valve = 1;
+  required float new_pos_deg = 2;
+}
+
+enum ThrottleValveType {
+  UNKNOWN_THROTTLE_VALVE_TYPE = 0;
+  FUEL = 1;
+  LOX = 2;
+}
+
+message AbortRequest {}
+message HaltRequest {}
+message UnprimeRequest {}
+
+message ThrottlePowerOnRequest {
+  required ThrottleValveType valve = 1;
+}
+
+message ThrottlePowerOffRequest {
+  required ThrottleValveType valve = 1;
+}
+
+message CalibrateThrottleValveRequest {
+  required ThrottleValveType valve = 1;
+}
+
+message LoadThrottleValveSequenceRequest {
+  optional ControlTrace fuel_trace_deg = 1;
+  optional ControlTrace lox_trace_deg = 2;
+}
+
+message StartThrottleValveSequenceRequest {}
+
+message LoadThrottleSequenceRequest {
+  required ControlTrace thrust_trace_N = 1;
+}
+
+message StartThrottleSequenceRequest {}
+
+message LoadRcsValveSequenceRequest {
+  required ControlTrace rcs_cw_valve_trace = 1;
+  required ControlTrace rcs_ccw_valve_trace = 2;
+}
+
+message StartRcsValveSequenceRequest {}
+
+message LoadRcsSequenceRequest {
+  required ControlTrace trace_deg = 1;
+}
+
+message StartRcsSequenceRequest {}
+
+message LoadStaticFireSequenceRequest {
+  required ControlTrace thrust_trace_N = 1;
+  required ControlTrace pitch_trace_deg = 2;
+  required ControlTrace yaw_trace_deg = 3;
+}
+
+message StartStaticFireSequenceRequest {}
+
+message CalibrateTvcRequest {}
+
+message LoadTvcSequenceRequest {
+  required ControlTrace pitch_trace_deg = 1;
+  required ControlTrace yaw_trace_deg = 2;
+}
+
+message StartTvcSequenceRequest {}
+
+message LoadFlightSequenceRequest {
+  required ControlTrace x_position_trace_m = 1;
+  required ControlTrace y_position_trace_m = 2;
+  required ControlTrace z_position_trace_m = 3;
+  required ControlTrace roll_angle_trace_deg = 4;
+}
+
+message StartFlightSequenceRequest {}
+
+message ConfigureFlightControllerGainsRequest {
+  optional float pidXTilt_kp = 1;
+  optional float pidXTilt_ki = 2;
+  optional float pidXTilt_kd = 3;
+  optional float pidYTilt_kp = 4;
+  optional float pidYTilt_ki = 5;
+  optional float pidYTilt_kd = 6;
+  optional float pidX_kp = 7;
+  optional float pidX_ki = 8;
+  optional float pidX_kd = 9;
+  optional float pidY_kp = 10;
+  optional float pidY_ki = 11;
+  optional float pidY_kd = 12;
+  optional float pidZ_kp = 13;
+  optional float pidZ_ki = 14;
+  optional float pidZ_kd = 15;
+  optional float pidZVelocity_kp = 16;
+  optional float pidZVelocity_ki = 17;
+  optional float pidZVelocity_kd = 18;
+  optional float pidXTilt_min_out = 19;
+  optional float pidXTilt_max_out = 20;
+  optional float pidYTilt_min_out = 21;
+  optional float pidYTilt_max_out = 22;
+  optional float pidX_min_out = 23;
+  optional float pidX_max_out = 24;
+  optional float pidY_min_out = 25;
+  optional float pidY_max_out = 26;
+  optional float pidZ_min_out = 27;
+  optional float pidZ_max_out = 28;
+  optional float pidZVelocity_min_out = 29;
+  optional float pidZVelocity_max_out = 30;
+  optional float pidXTilt_min_integral = 31;
+  optional float pidXTilt_max_integral = 32;
+  optional float pidYTilt_min_integral = 33;
+  optional float pidYTilt_max_integral = 34;
+  optional float pidX_min_integral = 35;
+  optional float pidX_max_integral = 36;
+  optional float pidY_min_integral = 37;
+  optional float pidY_max_integral = 38;
+  optional float pidZ_min_integral = 39;
+  optional float pidZ_max_integral = 40;
+  optional float pidZVelocity_min_integral = 41;
+  optional float pidZVelocity_max_integral = 42;
+  optional float pidXTilt_integral_zone = 43;
+  optional float pidYTilt_integral_zone = 44;
+  optional float pidX_integral_zone = 45;
+  optional float pidY_integral_zone = 46;
+  optional float pidZ_integral_zone = 47;
+  optional float pidZVelocity_integral_zone = 48;
+  optional float pidXTilt_deriv_lp_hz = 49;
+  optional float pidYTilt_deriv_lp_hz = 50;
+  optional float pidX_deriv_lp_hz = 51;
+  optional float pidY_deriv_lp_hz = 52;
+  optional float pidZ_deriv_lp_hz = 53;
+  optional float pidZVelocity_deriv_lp_hz = 54;
+}
+
+message ControlTrace {
+  required uint32 total_time_ms = 1;
+  repeated Segment segments = 2;
+}
+
+message Segment {
+  required uint32 start_ms = 1;
+  required uint32 length_ms = 2;
+  oneof type {
+    LinearSegment linear = 3;
+    SineSegment sine = 4;
+  }
+}
+
+message LinearSegment {
+  required float start_val = 1;
+  required float end_val = 2;
+}
+
+message SineSegment {
+  required float offset = 1;
+  required float amplitude = 2;
+  required float period = 3;
+  required float phase_deg = 4;
+}
+
+enum SystemState {
+  STATE_UNKNOWN = 0;
+  STATE_IDLE = 1;
+  STATE_ABORT = 2;
+  STATE_CALIBRATE_THROTTLE_VALVE = 3;
+  STATE_THROTTLE_VALVE = 4;
+  STATE_THROTTLE_VALVE_PRIMED = 5;
+  STATE_THROTTLE = 6;
+  STATE_THROTTLE_PRIMED = 7;
+  STATE_CALIBRATE_TVC = 8;
+  STATE_TVC = 9;
+  STATE_TVC_PRIMED = 10;
+  STATE_RCS_VALVE = 11;
+  STATE_RCS_VALVE_PRIMED = 12;
+  STATE_RCS = 13;
+  STATE_RCS_PRIMED = 14;
+  STATE_STATIC_FIRE = 15;
+  STATE_STATIC_FIRE_PRIMED = 16;
+  STATE_FLIGHT = 17;
+  STATE_FLIGHT_PRIMED = 18;
+}
+
+message DataPacket {
+  required uint64 time_ns = 1;
+  required SystemState state = 6;
+  required ControllerTiming controller_timing = 20;
+  required uint32 data_queue_size = 2;
+  required uint64 sequence_number = 8;
+  required bool gnc_connected = 15;
+  required float gnc_last_pinged_ns = 16;
+  required bool daq_connected = 17;
+  required float daq_last_pinged_ns = 18;
+  required AnalogSensorReadings analog_sensors = 19;
+  required EstimatedState estimated_state = 86;
+  optional float abort_time_msec = 85;
+  optional float trace_time_msec = 3;
+  optional float throttle_thrust_command_lbf = 83;
+  optional float tvc_pitch_command_deg = 84;
+  optional float tvc_yaw_command_deg = 71;
+  optional float rcs_roll_command_deg = 72;
+  optional float flight_x_command_m = 73;
+  optional float flight_y_command_m = 74;
+  optional float flight_z_command_m = 75;
+  optional float flight_pitch_accel_rad_s2 = 88;
+  optional float flight_yaw_accel_rad_s2 = 89;
+  optional float flight_z_accel_m_s2 = 90;
+  optional FlightControllerMetrics flight_controller_metrics = 69;
+  optional RangerThrottleMetrics ranger_throttle_metrics = 78;
+  optional HornetThrottleMetrics hornet_throttle_metrics = 77;
+  optional RangerTvcMetrics ranger_tvc_metrics = 80;
+  optional HornetTvcMetrics hornet_tvc_metrics = 79;
+  optional RangerRcsMetrics ranger_rcs_metrics = 82;
+  optional HornetRcsMetrics hornet_rcs_metrics = 81;
+  required ValveStates valve_states = 87;
+  optional ThrottleValveCommand fuel_valve_command = 60;
+  optional ThrottleValveCommand lox_valve_command = 61;
+  optional TvcActuatorCommand pitch_actuator_command = 62;
+  optional TvcActuatorCommand yaw_actuator_command = 63;
+  optional int32 main_propeller_command = 64;
+  optional int32 pitch_servo_command = 67;
+  optional int32 yaw_servo_command = 68;
+  optional int32 rcs_propeller_cw_command = 65;
+  optional int32 rcs_propeller_ccw_command = 66;
+}
+
+message ControllerTiming {
+  required float controller_tick_time_ns = 1;
+  required float analog_sensors_sense_time_ns = 2;
+  required float lidar_sense_time_ns = 3;
+}
+
+message ValveStatus {
+  required float target_pos_deg = 1;
+  required float driver_setpoint_pos_deg = 2;
+  required float encoder_pos_deg = 3;
+  required bool is_on = 4;
+}
+
+message ThrottleValveCommand {
+  required bool enable = 1;
+  required bool set_pos = 2;
+  required float target_deg = 3;
+}
+
+message TvcActuatorCommand {}
+
+message AnalogSensorReadings {
+  optional float pt001 = 1;
+  optional float pt002 = 2;
+  optional float pt003 = 3;
+  optional float pt004 = 4;
+  optional float pt005 = 5;
+  optional float pt101 = 6;
+  optional float pt201 = 7;
+  optional float ptf1 = 8;
+  optional float ptf2 = 9;
+  optional float pto1 = 10;
+  optional float ptc1 = 11;
+  optional float ptc2 = 12;
+  optional float tc001 = 13;
+  optional float tc101 = 14;
+  optional float tc102 = 15;
+  optional float tcf1 = 16;
+  optional float tco1 = 17;
+  optional float ptg001 = 18;
+  optional float ptg002 = 19;
+  optional float ptg101 = 20;
+  optional float battery_voltage = 21;
+}
+
+message Vector3D {
+  required float x = 1;
+  required float y = 2;
+  required float z = 3;
+}
+
+message ValveStates {
+  optional ValveState sv001 = 1;
+  optional ValveState sv002 = 2;
+  optional ValveState sv003 = 3;
+  optional ValveState sv004 = 4;
+  optional ValveState pbv002 = 5;
+  optional ValveState sv005 = 6;
+  optional ValveState svg001 = 100;
+  optional ValveState svg002 = 101;
+  optional ValveState svg003 = 102;
+}
+
+message FlightControllerOutput {}
+
+message Quaternion {
+  required float qw = 10;
+  required float qx = 1;
+  required float qy = 2;
+  required float qz = 3;
+}
+
+message EstimatedState {
+  required Quaternion R_WB = 1;
+  required Vector3D position = 2;
+  required Vector3D velocity = 3;
+}
+
+message FlightControllerDesiredState {
+  required Vector3D position = 1;
+  required float world_tilt_x = 2;
+  required float world_tilt_y = 3;
+  required float vz_m_s = 5;
+}
+
+message FlightControllerMetrics {
+  required float desired_world_tilt_x_rad = 1;
+  required float desired_world_tilt_y_rad = 2;
+  required float actual_world_tilt_x_rad = 3;
+  required float actual_world_tilt_y_rad = 4;
+  required float desired_vertical_velocity_m_s = 5;
+  required float commanded_vertical_acceleration_m_s2 = 6;
+  required float commanded_pitch_acceleration_rad_s2 = 7;
+  required float commanded_yaw_acceleration_rad_s2 = 8;
+}
+
+message RangerThrottleMetrics {
+  optional float predicted_thrust_lbf = 1;
+  optional float predicted_of = 2;
+  optional float mdot_fuel = 3;
+  optional float mdot_lox = 4;
+  optional float change_alpha_cmd = 7;
+  optional float clamped_change_alpha_cmd = 8;
+  optional float alpha = 9;
+  optional float thrust_from_alpha_lbf = 10;
+}
+
+message HornetThrottleMetrics {
+  optional float thrust_N = 1;
+}
+
+message RangerTvcMetrics {}
+message HornetTvcMetrics {}
+message RangerRcsMetrics {}
+message HornetRcsMetrics {}
