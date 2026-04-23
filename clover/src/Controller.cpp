@@ -35,7 +35,7 @@ LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
 // Controller tick workqueue thread
-K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
+K_THREAD_STACK_DEFINE(controller_step_thread_stack, 2048);
 k_work_q controller_step_work_q;
 
 static inline SystemState current_state = SystemState_STATE_IDLE;
