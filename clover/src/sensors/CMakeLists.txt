@@ -1,5 +1,5 @@
 target_sources(app PRIVATE
-    gnss.cpp
+    Gnss.cpp
     Lidar.cpp
     VectornavIMU.cpp
     AnalogSensors.cpp

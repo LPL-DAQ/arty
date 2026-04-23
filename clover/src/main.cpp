@@ -9,7 +9,7 @@
 
 #include "Controller.h"
 #include "sensors/AnalogSensors.h"
-#include "sensors/gnss.h"
+#include "sensors/Gnss.h"
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
@@ -76,13 +76,12 @@ int main(void)
 #endif
 
     LOG_INF("Initializing GNSS");
-    int err = gnss_init();
-    if (err) {
-        LOG_ERR("Failed to initialize GNSS");
+    if (auto result = Gnss::init(); !result) {
+        LOG_ERR("Failed to initialize GNSS: %s", result.error().build_message().c_str());
         return 0;
     }
+    Gnss::start_sense();
 
-    /*
     // Sensors
     LOG_INF("Initializing analog sensors");
     if (auto result = AnalogSensors::init(); !result) {
@@ -126,5 +125,4 @@ int main(void)
     k_sleep(K_MSEC(500));
     LOG_INF("Starting server");
     serve_connections();
-    */
 }
