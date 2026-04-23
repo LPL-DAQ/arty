@@ -1,3 +1,6 @@
+#ifndef APP_CONFIG_H
+#define APP_CONFIG_H
+
 #include <limits>
 
 constexpr int CONTROLLER_STEP_WORK_Q_PRIORITY = -10;
@@ -67,3 +70,4 @@ constexpr float HORNET_THROTTLE_LOW_SLOPE               = 15.7166f;
 constexpr float HORNET_THROTTLE_HIGH_OFFSET             = 7.3123f;
 constexpr float HORNET_THROTTLE_HIGH_SLOPE              = 27.321f;
 
+#endif  // APP_CONFIG_H
