@@ -792,6 +792,7 @@ def _build_status_renderable():
     )
     header_panel = Panel(hdr, border_style=t['panel_border'], padding=(0, 1), subtitle=abort_str)
 
+    # Pose table
     pose = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
@@ -812,6 +813,7 @@ def _build_status_renderable():
     pose.add_row('Velocity', f'{vel.x:.2f}', f'{vel.y:.2f}', f'{vel.z:.2f}', 'm/s')
     pose.add_row('Y/P/R', f'{euler.x:.1f}', f'{euler.y:.1f}', f'{euler.z:.1f}', 'deg')
 
+    # Command table
     cmd = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
@@ -843,7 +845,7 @@ def _build_status_renderable():
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
 
-    # Ranger-style throttle valve commands (closest equivalent to old valve status display).
+    # Ranger-style throttle valve commands
     if _has(pkt, 'fuel_valve_command'):
         fvc = pkt.fuel_valve_command
         cmd.add_row('Fuel cmd enabled', 'YES' if fvc.enable else 'NO', '')
@@ -867,6 +869,7 @@ def _build_status_renderable():
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
 
+    # Analog Table
     sensors = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
@@ -947,6 +950,7 @@ def _build_status_renderable():
             if _has(vs, field):
                 sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
 
+    # Timing table
     timing = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
@@ -967,6 +971,7 @@ def _build_status_renderable():
     if _has(pkt.controller_timing, 'state_estimator_update_time_ns'):
         timing.add_row('State estimator', f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}', 'us')
 
+    # controller metrics table
     fcm = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
