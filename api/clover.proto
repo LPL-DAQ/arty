@@ -559,6 +559,8 @@ message DataPacket {
 message ControllerTiming {
   required float controller_tick_time_ns = 1;
   required float analog_sensors_sense_time_ns = 2;
+  required float state_estimator_update_time_ns = 3;
+
 }
 
 message ValveStatus {
@@ -655,12 +657,12 @@ message ImuReading {
   required float gyro_y = 8;
   required float gyro_z = 9;
 
-  optional double gps_lat = 10;
-  optional double gps_lon = 11;
+  optional float gps_lat = 10;
+  optional float gps_lon = 11;
   optional float gps_alt = 12;
 
-  optional double ins_lat = 13;
-  optional double ins_lon = 14;
+  optional float ins_lat = 13;
+  optional float ins_lon = 14;
   optional float ins_alt = 15;
   optional float vel_n = 16;
   optional float vel_e = 17;
@@ -693,7 +695,7 @@ message Quaternion {
 // Estimated vehicle state for telemetry and flight path monitoring.
 message EstimatedState {
   required Quaternion R_WB = 1; // world to body
-  required Vector3D euler = 4; // for data logging ease 
+  required Vector3D euler = 4; // for data logging ease
   required Vector3D position = 2;
   required Vector3D velocity = 3;
 }
@@ -742,9 +744,9 @@ message HornetRcsMetrics {}
 // GNSS sensor readings from GREIS protocol messages [mp], [VE], [SG], [ST], [~~].
 message GnssReadings {
   // Position in local plane [m] (from [mp])
-  required double north_m = 1;
-  required double east_m = 2;
-  required double up_m = 3;
+  required float north_m = 1;
+  required float east_m = 2;
+  required float up_m = 3;
   required float pos_sigma_m = 4;
 
   // Cartesian ECEF velocity [m/s] (from [VE])

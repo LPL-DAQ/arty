@@ -14,9 +14,9 @@
 
 struct GnssReading {
     // Position in local plane (from [mp])
-    double north_m;
-    double east_m;
-    double up_m;
+    float north_m;
+    float east_m;
+    float up_m;
     float  pos_sigma_m;     // 3D position RMS [m]
 
     // Cartesian ECEF velocity (from [VE])
@@ -172,9 +172,9 @@ inline void Gnss::decode_mp(const uint8_t* body, int length)
         LOG_WRN("[Gnss] [mp] bad length");
         return;
     }
-    double  n     = read_f8(body + 0);
-    double  e     = read_f8(body + 8);
-    double  u     = read_f8(body + 16);
+    float   n     = static_cast<float>(read_f8(body + 0));
+    float   e     = static_cast<float>(read_f8(body + 8));
+    float   u     = static_cast<float>(read_f8(body + 16));
     float   sigma = read_f4(body + 32);
     uint8_t st    = body[36];
 
