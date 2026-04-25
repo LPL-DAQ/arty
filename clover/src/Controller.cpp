@@ -454,8 +454,12 @@ static void step_control_loop(k_work*)
     // else
     //     LOG_INF("VectornavIMU no reading");
 
-    // TODO: dont provide whole data, this is temp caause we dont have the sensors
-    auto estimated_state = StateEstimator::estimate(data);
+    auto estimated_state = StateEstimator::estimate(
+        data.lidar_1,
+        data.lidar_2,
+        data.imu,
+        data.gnss
+    );
     if (estimated_state) {
         data.estimated_state = *estimated_state;
     } else {
