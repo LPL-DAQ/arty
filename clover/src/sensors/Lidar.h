@@ -52,7 +52,7 @@ private:
 public:
     static std::expected<void, Error> init();
     static void start_sense();
-    static std::optional<std::pair<LidarReading, float>> read();
+    static std::optional<LidarReading> read();
 
     // Main sense loop thread, do not call directly.
     static void sense();
@@ -191,7 +191,7 @@ void Lidar<kind, uart_dt_init, ready_sem_ptr>::start_sense()
 
 /// Returns a lidar reading and the time it took to acquire, if there's a reading.
 template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-std::optional<std::pair<LidarReading, float>> Lidar<kind, uart_dt_init, ready_sem_ptr>::read()
+std::optional<LidarReading> Lidar<kind, uart_dt_init, ready_sem_ptr>::read()
 {
     MutexGuard reading_guard{&reading_mutex};
 
@@ -202,7 +202,8 @@ std::optional<std::pair<LidarReading, float>> Lidar<kind, uart_dt_init, ready_se
     // Consume reading
     has_reading = false;
 
-    return {{reading, sense_time_ns}};
+    reading.sense_time_ns = sense_time_ns;
+    return {reading};
 }
 
 extern k_sem lidar_1_ready_sem;

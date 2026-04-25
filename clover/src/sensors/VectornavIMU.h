@@ -62,7 +62,7 @@ private:
 public:
     static std::expected<void, Error> init();
     static void start_sense();
-    static std::optional<std::pair<ImuReading, float>> read();
+    static std::optional<ImuReading> read();
 
     // Main sense loop thread, do not call directly.
     static void sense();
@@ -173,7 +173,7 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
             if (byte == '\n') {
                 if (i > 0) {
                     line[i] = '\0';
-                    
+
                     decode_line(line);
                 }
                 i = 0;
@@ -251,7 +251,7 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
 
     LOG_INF("%s Enabling UART RX interrupt", kind_to_prefix(kind));
     uart_irq_rx_enable(uart_dev);
-    
+
     LOG_INF("%s Initialized", kind_to_prefix(kind));
 
     return {};
@@ -265,7 +265,7 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::start_sense()
 
 /// Returns the latest accumulated sensor reading and the YMR cycle time in nanoseconds, if available.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-std::optional<std::pair<ImuReading, float>> Vectornav<kind, uart_dt_init, ready_sem_ptr>::read()
+std::optional<ImuReading> Vectornav<kind, uart_dt_init, ready_sem_ptr>::read()
 {
     MutexGuard guard{&reading_mutex};
 
@@ -276,7 +276,8 @@ std::optional<std::pair<ImuReading, float>> Vectornav<kind, uart_dt_init, ready_
     // Consume reading
     has_reading = false;
 
-    return {{reading, sense_time_ns}};
+    reading.sense_time_ns = sense_time_ns;
+    return {reading};
 }
 
 extern k_sem vectornav_ready_sem;

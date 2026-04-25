@@ -2,6 +2,7 @@
 #include "MutexGuard.h"
 #include "config.h"
 #include "sensors/AnalogSensors.h"
+#include "sensors/Gnss.h"
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
@@ -364,6 +365,7 @@ std::expected<void, Error> Controller::init()
     Lidar1::start_sense();
     Lidar2::start_sense();
     VectornavImu::start_sense();
+    Gnss::start_sense();
     StateEstimator::init();
     // Other sensors here...
     k_sched_unlock();
@@ -401,46 +403,68 @@ static void step_control_loop(k_work*)
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
-    // LiDAR read
-    auto lidar1 = Lidar1::read();
-    if (lidar1) {
-        LidarReading reading;
-        float sense_time_ns = 0.0f;
-        std::tie(reading, sense_time_ns) = *lidar1;
-        data.lidar_1 = reading;
-        // LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+    if (auto gnss = Gnss::read()) {
+        data.has_gnss              = true;
+        data.gnss.north_m          = gnss->north_m;
+        data.gnss.east_m           = gnss->east_m;
+        data.gnss.up_m             = gnss->up_m;
+        data.gnss.pos_sigma_m      = gnss->pos_sigma_m;
+        data.gnss.vx_ms            = gnss->vx_ms;
+        data.gnss.vy_ms            = gnss->vy_ms;
+        data.gnss.vz_ms            = gnss->vz_ms;
+        data.gnss.vel_sigma_ms     = gnss->vel_sigma_ms;
+        data.gnss.hrms_m           = gnss->hrms_m;
+        data.gnss.vrms_m           = gnss->vrms_m;
+        data.gnss.hvel_rms_ms      = gnss->hvel_rms_ms;
+        data.gnss.vvel_rms_ms      = gnss->vvel_rms_ms;
+        data.gnss.solution_time_ms = gnss->solution_time_ms;
+        data.gnss.receiver_time_ms = gnss->receiver_time_ms;
+        data.gnss.sol_type         = gnss->sol_type;
+        data.gnss.sense_time_ns    = gnss->sense_time_ns;
+        LOG_INF("[Gnss] sol_type=%u sol_time=%u ms rx_time=%u ms",
+            Gnss::current_reading.sol_type, Gnss::current_reading.solution_time_ms, Gnss::current_reading.receiver_time_ms);
+        LOG_INF("[Gnss] pos  N=%.3f E=%.3f U=%.3f sigma=%.3f m",
+            Gnss::current_reading.north_m, Gnss::current_reading.east_m, Gnss::current_reading.up_m, (double)Gnss::current_reading.pos_sigma_m);
+        LOG_INF("[Gnss] vel  vx=%.3f vy=%.3f vz=%.3f sigma=%.3f m/s",
+            (double)Gnss::current_reading.vx_ms, (double)Gnss::current_reading.vy_ms, (double)Gnss::current_reading.vz_ms, (double)Gnss::current_reading.vel_sigma_ms);
+        LOG_INF("[Gnss] rms  hpos=%.3f vpos=%.3f hvel=%.3f vvel=%.3f",
+            (double)Gnss::current_reading.hrms_m, (double)Gnss::current_reading.vrms_m, (double)Gnss::current_reading.hvel_rms_ms, (double)Gnss::current_reading.vvel_rms_ms);
     }
 
-    auto lidar2 = Lidar2::read();
-    if (lidar2) {
-        LidarReading reading;
-        float sense_time_ns = 0.0f;
-        std::tie(reading, sense_time_ns) = *lidar2;
-        data.lidar_2 = reading;
-        // LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+    // LiDAR read
+    if (auto lidar1 = Lidar1::read()) {
+        data.lidar_1 = *lidar1;
+        LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)data.lidar_1.distance_m, (double)data.lidar_1.strength, (double)data.lidar_1.sense_time_ns);
+    }
+
+    if (auto lidar2 = Lidar2::read()) {
+        data.lidar_2 = *lidar2;
+        LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)data.lidar_2.distance_m, (double)data.lidar_2.strength, (double)data.lidar_2.sense_time_ns);
     }
 
 
     // VectornavIMU read
-    auto vectornav = VectornavImu::read();
-    if (vectornav) {
-        std::tie(data.imu, data.controller_timing.imu_sense_time_ns) = *vectornav;
+    if (auto vectornav = VectornavImu::read()) {
+        data.imu = *vectornav;
         data.has_imu = true;
         LOG_INF("VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
             (double)data.imu.quat_w, (double)data.imu.quat_x,
             (double)data.imu.quat_y, (double)data.imu.quat_z,
-            (double)data.controller_timing.imu_sense_time_ns);
+            (double)data.imu.sense_time_ns);
         LOG_INF("VectornavIMU: accel: [%f %f %f] gyro: [%f %f %f] mag: [%f %f %f]",
             (double)data.imu.accel_x, (double)data.imu.accel_y, (double)data.imu.accel_z,
             (double)data.imu.gyro_x, (double)data.imu.gyro_y, (double)data.imu.gyro_z,
             (double)data.imu.mag_x, (double)data.imu.mag_y, (double)data.imu.mag_z);
     }
-    else {
-        // LOG_INF("VectornavIMU no reading");
-    }
+    // else
+    //     LOG_INF("VectornavIMU no reading");
 
-    // TODO: dont provide whole data, this is temp caause we dont have the sensors
-    auto estimated_state = StateEstimator::estimate(data);
+    auto estimated_state = StateEstimator::estimate(
+        data.lidar_1,
+        data.lidar_2,
+        data.imu,
+        data.gnss
+    );
     if (estimated_state) {
         data.estimated_state = *estimated_state;
     } else {

@@ -544,6 +544,9 @@ message DataPacket {
   optional TvcActuatorCommand pitch_actuator_command = 62;
   optional TvcActuatorCommand yaw_actuator_command = 63;
 
+  // GNSS sensor readings. Present only when sol_type != 0.
+  optional GnssReadings gnss = 91;
+
   // Actuator commands -- hornet
   optional int32 main_propeller_command = 64; // 1000-2000ms
   optional int32 pitch_servo_command = 67;  // 1000-2000ms
@@ -556,8 +559,6 @@ message DataPacket {
 message ControllerTiming {
   required float controller_tick_time_ns = 1;
   required float analog_sensors_sense_time_ns = 2;
-  required float lidar_sense_time_ns = 3;
-  required float imu_sense_time_ns = 4;
 }
 
 message ValveStatus {
@@ -638,6 +639,7 @@ message ValveStates {
 message LidarReading {
   required float distance_m = 1;
   required float strength = 2;
+  required float sense_time_ns = 3;
 }
 
 message ImuReading {
@@ -672,6 +674,8 @@ message ImuReading {
   required float quat_x = 23;
   required float quat_y = 24;
   required float quat_z = 25;
+
+  required float sense_time_ns = 26;
 }
 
 // this is what is sent to other controllers, calculated in FlightController
@@ -734,4 +738,34 @@ message HornetTvcMetrics {}
 message RangerRcsMetrics {}
 
 message HornetRcsMetrics {}
+
+// GNSS sensor readings from GREIS protocol messages [mp], [VE], [SG], [ST], [~~].
+message GnssReadings {
+  // Position in local plane [m] (from [mp])
+  required double north_m = 1;
+  required double east_m = 2;
+  required double up_m = 3;
+  required float pos_sigma_m = 4;
+
+  // Cartesian ECEF velocity [m/s] (from [VE])
+  required float vx_ms = 5;
+  required float vy_ms = 6;
+  required float vz_ms = 7;
+  required float vel_sigma_ms = 8;
+
+  // Position/velocity RMS errors (from [SG])
+  required float hrms_m = 9;
+  required float vrms_m = 10;
+  required float hvel_rms_ms = 11;
+  required float vvel_rms_ms = 12;
+
+  // Timing
+  required uint32 solution_time_ms = 13;
+  required uint32 receiver_time_ms = 14;
+
+  // Solution type: 0=none, 1=standalone, 2=DGPS, 3=float, 4=fixed
+  required uint32 sol_type = 15;
+
+  required float sense_time_ns = 16;
+}
 
