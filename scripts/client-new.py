@@ -178,136 +178,134 @@ def listen_for_telemetry():
 _STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
 
 
+# Shared protobuf descriptor helpers.
+def _has_msg_field(msg, field: str) -> bool:
+    return field in msg.DESCRIPTOR.fields_by_name
+
+
+def _fd_is_required(fd) -> bool:
+    marker = getattr(fd, 'is_required', None)
+    if callable(marker):
+        return marker()
+    if marker is not None:
+        return bool(marker)
+    return fd.label == fd.LABEL_REQUIRED
+
+
+def _has(msg, field: str) -> bool:
+    if not _has_msg_field(msg, field):
+        return False
+    try:
+        return msg.HasField(field)
+    except ValueError:
+        return True
+
+
 # ── Data flattening ──────────────────────────────────────────────────────────
 
-# TODO: fix (proto changes for ranger)
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
-
-    PROTO CHANGES applied here:
-      - pkt.time   → pkt.time_ns  (field renamed; now nanoseconds uint64)
-      - pkt.sensors (old Sensors message) → pkt.analog_sensors (new AnalogSensors)
-      - AnalogSensors fields are now required (no HasField checks needed)
-      - Two new TC sensors added: tc102, tc102_5
-      - adc_read_time_ns added as a timing metric
-      - ValveStatus lost 'enabled', gained 'is_on' (is_on stored as float 0/1)
-      - pkt.is_abort removed — abort is now a SystemState (STATE_ABORT)
-      - controller_tick_time_ns added as a timing metric
+    only emits values for fields present in the active protobuf schema/message.
     """
-    # pts = pkt.pts
-    f = pkt.fuel_valve
-    l = pkt.lox_valve
-    return {
+    def _opt_pkt(field: str):
+        if not _has_msg_field(pkt, field):
+            return None
+        fd = pkt.DESCRIPTOR.fields_by_name[field]
+        try:
+            if not _fd_is_required(fd) and not pkt.HasField(field):
+                return None
+        except ValueError:
+            # Some scalars/required fields do not support HasField semantics.
+            pass
+        return float(getattr(pkt, field))
+
+    def _opt_msg(msg, field: str):
+        if not _has_msg_field(msg, field):
+            return None
+        fd = msg.DESCRIPTOR.fields_by_name[field]
+        try:
+            if not _fd_is_required(fd) and not msg.HasField(field):
+                return None
+        except ValueError:
+            pass
+        return float(getattr(msg, field))
+
+    row = {
         'time': recv_time,  # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
         'state': float(pkt.state),
         'data_queue_size': float(pkt.data_queue_size),
         'sequence_number': float(pkt.sequence_number),
         'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
-        'gnc_connected': bool(pkt.gnc_connected),
-        'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
-        'daq_connected': bool(pkt.daq_connected),
-        'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
-        # 'gnc_pt102': float(pts.pt102),
-        # 'gnc_pt103': float(pts.pt103),
-        # 'gnc_pt202': float(pts.pt202),
-        # 'gnc_pt203': float(pts.pt203),
-        # 'gnc_ptf401': float(pts.ptf401),
-        # 'gnc_pto401': float(pts.pto401),
-        # 'gnc_ptc401': float(pts.ptc401),
-        # 'gnc_ptc402': float(pts.ptc402),
-        # Fuel valve
-        'gnc_fuel_target': float(f.target_pos_deg),
-        'gnc_fuel_driver': float(f.driver_setpoint_pos_deg),
-        'gnc_fuel_encoder': float(f.encoder_pos_deg),
-        'gnc_fuel_is_on': float(f.is_on),  # PROTO CHANGE: was 'enabled'
-        # LOX valve — same changes as fuel
-        'gnc_lox_target': float(l.target_pos_deg),
-        'gnc_lox_driver': float(l.driver_setpoint_pos_deg),
-        'gnc_lox_encoder': float(l.encoder_pos_deg),
-        'gnc_lox_is_on': float(l.is_on),  # PROTO CHANGE: was 'enabled'
-        # State data
-        'fuel_found_hardstop': float(pkt.valve_calibration_data.fuel_found_hardstop),
-        'lox_found_hardstop': float(pkt.valve_calibration_data.lox_found_hardstop),
-        'fuel_hardstop_pos': float(pkt.valve_calibration_data.fuel_hardstop_pos),
-        'lox_hardstop_pos': float(pkt.valve_calibration_data.lox_hardstop_pos),
-        'cal_phase': float(pkt.valve_calibration_data.cal_phase),
-        'rep_count': float(pkt.valve_calibration_data.rep_count),
-        'fuel_err': float(pkt.valve_calibration_data.fuel_err),
-        'lox_err': float(pkt.valve_calibration_data.lox_err),
-        'predicted_thrust': float(pkt.thrust_sequence_data.predicted_thrust),
-        'predicted_of': float(pkt.thrust_sequence_data.predicted_of),
-        'mdot_fuel': float(pkt.thrust_sequence_data.mdot_fuel),
-        'mdot_lox': float(pkt.thrust_sequence_data.mdot_lox),
-        'target_thrust': float(pkt.thrust_sequence_data.target_thrust),
-        'thrust_error': float(pkt.thrust_sequence_data.thrust_error),
-        'change_alpha_cmd': float(pkt.thrust_sequence_data.change_alpha_cmd),
-        'clamped_change_alpha_cmd': float(pkt.thrust_sequence_data.clamped_change_alpha_cmd),
-        'alpha': float(pkt.thrust_sequence_data.alpha),
-        'thrust_from_alpha': float(pkt.thrust_sequence_data.thrust_from_alpha),
-        'fuel_valve_cmd': float(pkt.thrust_sequence_data.fuel_valve_cmd),
-        'lox_valve_cmd': float(pkt.thrust_sequence_data.lox_valve_cmd),
-    }
-
-
-def _packet_to_row_hornet(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
-    """
-    Flatten one DataPacket into a wide dict of numeric sensors for Hornet telemetry.
-    """
-
-    def _opt(field: str):
-        return float(getattr(pkt, field)) if pkt.HasField(field) else None
-
-    def _opt_msg(msg, field: str):
-        return float(getattr(msg, field)) if msg.HasField(field) else None
-
-    row = {
-        'time': recv_time,
-        'state': float(pkt.state),
-        'data_queue_size': float(pkt.data_queue_size),
-        'sequence_number': float(pkt.sequence_number),
-        'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
-        'analog_sense_ns': float(pkt.controller_timing.analog_sensors_sense_time_ns),
-        'lidar_sense_ns': float(pkt.controller_timing.lidar_sense_time_ns),
-        'imu_sense_ns': float(pkt.controller_timing.imu_sense_time_ns),
+        'analog_sense_ns': _opt_msg(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
+        'state_estimator_ns': _opt_msg(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        'lidar_sense_ns': _opt_msg(pkt.controller_timing, 'lidar_sense_time_ns'),
+        'imu_sense_ns': _opt_msg(pkt.controller_timing, 'imu_sense_time_ns'),
         'gnc_connected': float(pkt.gnc_connected),
         'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
         'daq_connected': float(pkt.daq_connected),
         'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
-        'battery_voltage': _opt_msg(pkt.analog_sensors, 'battery_voltage'),
-        'est_pos_x_m': float(pkt.estimated_state.position.x),
-        'est_pos_y_m': float(pkt.estimated_state.position.y),
-        'est_pos_z_m': float(pkt.estimated_state.position.z),
-        'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
-        'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
-        'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
-        'est_yaw_deg': float(pkt.estimated_state.euler.x),
-        'est_pitch_deg': float(pkt.estimated_state.euler.y),
-        'est_roll_deg': float(pkt.estimated_state.euler.z),
-        'main_propeller_command_us': _opt('main_propeller_command'),
-        'pitch_servo_command_us': _opt('pitch_servo_command'),
-        'yaw_servo_command_us': _opt('yaw_servo_command'),
-        'rcs_propeller_cw_command_us': _opt('rcs_propeller_cw_command'),
-        'rcs_propeller_ccw_command_us': _opt('rcs_propeller_ccw_command'),
-        'trace_time_msec': _opt('trace_time_msec'),
-        'throttle_thrust_command_lbf': _opt('throttle_thrust_command_lbf'),
-        'tvc_pitch_command_deg': _opt('tvc_pitch_command_deg'),
-        'tvc_yaw_command_deg': _opt('tvc_yaw_command_deg'),
-        'rcs_roll_command_deg': _opt('rcs_roll_command_deg'),
-        'flight_x_command_m': _opt('flight_x_command_m'),
-        'flight_y_command_m': _opt('flight_y_command_m'),
-        'flight_z_command_m': _opt('flight_z_command_m'),
-        'flight_pitch_accel_rad_s2': _opt('flight_pitch_accel_rad_s2'),
-        'flight_yaw_accel_rad_s2': _opt('flight_yaw_accel_rad_s2'),
-        'flight_z_accel_m_s2': _opt('flight_z_accel_m_s2'),
     }
 
-    if pkt.HasField('hornet_throttle_metrics'):
+    # Common analog/estimate data.
+    row.update(
+        {
+            'battery_voltage': _opt_msg(pkt.analog_sensors, 'battery_voltage'),
+            'est_pos_x_m': float(pkt.estimated_state.position.x),
+            'est_pos_y_m': float(pkt.estimated_state.position.y),
+            'est_pos_z_m': float(pkt.estimated_state.position.z),
+            'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
+            'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
+            'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
+            'est_yaw_deg': float(pkt.estimated_state.euler.x),
+            'est_pitch_deg': float(pkt.estimated_state.euler.y),
+            'est_roll_deg': float(pkt.estimated_state.euler.z),
+            'trace_time_msec': _opt_pkt('trace_time_msec'),
+            'throttle_thrust_command_lbf': _opt_pkt('throttle_thrust_command_lbf'),
+            'tvc_pitch_command_deg': _opt_pkt('tvc_pitch_command_deg'),
+            'tvc_yaw_command_deg': _opt_pkt('tvc_yaw_command_deg'),
+            'rcs_roll_command_deg': _opt_pkt('rcs_roll_command_deg'),
+            'flight_x_command_m': _opt_pkt('flight_x_command_m'),
+            'flight_y_command_m': _opt_pkt('flight_y_command_m'),
+            'flight_z_command_m': _opt_pkt('flight_z_command_m'),
+            'flight_pitch_accel_rad_s2': _opt_pkt('flight_pitch_accel_rad_s2'),
+            'flight_yaw_accel_rad_s2': _opt_pkt('flight_yaw_accel_rad_s2'),
+            'flight_z_accel_m_s2': _opt_pkt('flight_z_accel_m_s2'),
+            'main_propeller_command_us': _opt_pkt('main_propeller_command'),
+            'pitch_servo_command_us': _opt_pkt('pitch_servo_command'),
+            'yaw_servo_command_us': _opt_pkt('yaw_servo_command'),
+            'rcs_propeller_cw_command_us': _opt_pkt('rcs_propeller_cw_command'),
+            'rcs_propeller_ccw_command_us': _opt_pkt('rcs_propeller_ccw_command'),
+        }
+    )
+
+    # Optional GNSS data.
+    if _has_msg_field(pkt, 'gnss') and pkt.HasField('gnss'):
+        row.update(
+            {
+                'gnss_north_m': float(pkt.gnss.north_m),
+                'gnss_east_m': float(pkt.gnss.east_m),
+                'gnss_up_m': float(pkt.gnss.up_m),
+                'gnss_vx_ms': float(pkt.gnss.vx_ms),
+                'gnss_vy_ms': float(pkt.gnss.vy_ms),
+                'gnss_vz_ms': float(pkt.gnss.vz_ms),
+                'gnss_sol_type': float(pkt.gnss.sol_type),
+            }
+        )
+
+    # Optional lidar data.
+    if _has_msg_field(pkt, 'lidar_1') and pkt.HasField('lidar_1'):
+        row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
+    if _has_msg_field(pkt, 'lidar_2') and pkt.HasField('lidar_2'):
+        row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
+
+    # Optional Hornet metrics.
+    if _has_msg_field(pkt, 'hornet_throttle_metrics') and pkt.HasField('hornet_throttle_metrics'):
         row['hornet_thrust_N'] = _opt_msg(pkt.hornet_throttle_metrics, 'thrust_N')
     else:
         row['hornet_thrust_N'] = None
 
-    if pkt.HasField('flight_controller_metrics'):
+    if _has_msg_field(pkt, 'flight_controller_metrics') and pkt.HasField('flight_controller_metrics'):
         fcm = pkt.flight_controller_metrics
         row.update(
             {
@@ -335,6 +333,31 @@ def _packet_to_row_hornet(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             }
         )
 
+    # Optional Ranger command-style fields.
+    if _has_msg_field(pkt, 'fuel_valve_command') and pkt.HasField('fuel_valve_command'):
+        row['gnc_fuel_enable'] = _opt_msg(pkt.fuel_valve_command, 'enable')
+        row['gnc_fuel_set_pos'] = _opt_msg(pkt.fuel_valve_command, 'set_pos')
+        row['gnc_fuel_target_deg'] = _opt_msg(pkt.fuel_valve_command, 'target_deg')
+    if _has_msg_field(pkt, 'lox_valve_command') and pkt.HasField('lox_valve_command'):
+        row['gnc_lox_enable'] = _opt_msg(pkt.lox_valve_command, 'enable')
+        row['gnc_lox_set_pos'] = _opt_msg(pkt.lox_valve_command, 'set_pos')
+        row['gnc_lox_target_deg'] = _opt_msg(pkt.lox_valve_command, 'target_deg')
+
+    if _has_msg_field(pkt, 'ranger_throttle_metrics') and pkt.HasField('ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        row.update(
+            {
+                'predicted_thrust': _opt_msg(rtm, 'predicted_thrust_lbf'),
+                'predicted_of': _opt_msg(rtm, 'predicted_of'),
+                'mdot_fuel': _opt_msg(rtm, 'mdot_fuel'),
+                'mdot_lox': _opt_msg(rtm, 'mdot_lox'),
+                'change_alpha_cmd': _opt_msg(rtm, 'change_alpha_cmd'),
+                'clamped_change_alpha_cmd': _opt_msg(rtm, 'clamped_change_alpha_cmd'),
+                'alpha': _opt_msg(rtm, 'alpha'),
+                'thrust_from_alpha': _opt_msg(rtm, 'thrust_from_alpha_lbf'),
+            }
+        )
+
     return row
 
 
@@ -343,7 +366,7 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
     Expand one DataPacket into multiple CSV rows (one per sensor/field),
     matching the unpivoted schema written to ClickHouse raw_sensors.
     """
-    wide = _packet_to_row_hornet(recv_time, pkt)
+    wide = _packet_to_row(recv_time, pkt)
     ts = wide['time']
     rows = []
 
@@ -456,7 +479,7 @@ def _flush_loop():
             _packet_buffer.clear()
 
         try:
-            rows = [_packet_to_row_hornet(t, p) for t, p in batch]
+            rows = [_packet_to_row(t, p) for t, p in batch]
             df = (
                 pl.DataFrame(rows)
                 .unpivot(index=['time'], variable_name='sensor', value_name='value')
@@ -738,7 +761,6 @@ STATE_COLORS = {
     'STATE_ABORT': 'bold red',
 }
 
-# TODO: fix for proto changes
 def _build_status_renderable():
     """Build a rich renderable for the current telemetry snapshot."""
     with packet_lock:
@@ -755,187 +777,16 @@ def _build_status_renderable():
 
     state_name = clover_pb2.SystemState.Name(pkt.state)
     state_color = STATE_COLORS.get(state_name, 'white')
-
-    # abort is now STATE_ABORT in state enum
     is_abort = state_name == 'STATE_ABORT'
     abort_str = (
         f'[bold red]{t["icon_stop"]} ABORT[/bold red]' if is_abort else '[green]nominal[/green]'
     )
 
-    # ── Header ────────────────────────────────────────────────
     hdr = Table.grid(padding=(0, 3))
     for _ in range(5):
         hdr.add_column()
     hdr.add_row(
         Text(f'{t["icon_live"]} LIVE', style='bold green'),
-        Text(f'State: {state_name}', style=state_color),
-        # in nanoseconds
-        Text(f't = {pkt.time_ns / 1e9:.3f} s', style='white'),
-        Text(f'seq #{pkt.sequence_number}', style=t['muted']),
-        Text(f'queue: {pkt.data_queue_size}', style=t['muted']),
-    )
-    header_panel = Panel(hdr, border_style=t['panel_border'], padding=(0, 1), subtitle=abort_str)
-
-    # ── Valve table ───────────────────────────────────────────
-    vt = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    vt.add_column('Valve', style='bold white', no_wrap=True)
-    vt.add_column('On', no_wrap=True)
-    vt.add_column('Target °', style='white', no_wrap=True)
-    vt.add_column('Driver °', style='white', no_wrap=True)
-    vt.add_column('Encoder °', style='white', no_wrap=True)
-
-    for label, icon, color, v in [
-        ('FUEL', t['icon_fuel'], 'gold1', pkt.fuel_valve),
-        ('LOX', t['icon_lox'], 'dark_red', pkt.lox_valve),
-    ]:
-        vt.add_row(
-            f'{icon} [{color}]{label}[/{color}]',
-            '[green]YES[/green]' if v.is_on else '[red]NO[/red]',
-            f'{v.target_pos_deg:.2f}',
-            f'{v.driver_setpoint_pos_deg:.2f}',
-            f'{v.encoder_pos_deg:.2f}',
-        )
-
-    # ── Sensor table ──────────────────────────────────────────
-    #               Added TC-102, TC-102.5, ADC read time rows
-    st = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    st.add_column('Sensor', style='bold white', no_wrap=True)
-    st.add_column('Value', style='white', no_wrap=True, justify='right')
-    st.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    sensors = pkt.analog_sensors
-    for name, val, unit in [
-        ('PT-001', sensors.pt001, 'psi'),
-        ('PT-002', sensors.pt002, 'psi'),
-        ('PT-003', sensors.pt003, 'psi'),
-        # ('PT-203', sensors.pt203, 'psi'),
-        # ('PTF-401', sensors.ptf401, 'psi'),
-        ('PT-101', sensors.pt101, 'psi'),
-        ('TC-101', sensors.tc101, '°C'),
-        ('TC-102', sensors.tc102, '°C'),
-        # ("TC-102",     pts.tc102,            "°C"),
-        # ("TC-102.5",   pts.tc102_5,          "°C"),
-        # ("ADC t",      pts.adc_read_time_ns, "ns"),
-    ]:
-        val_str = f'{val:.2f}' if val != 0.0 else f'[{t["muted"]}]—[/{t["muted"]}]'
-        st.add_row(name, val_str, unit)
-
-    # ── Timings table ──────────────────────────────────────────
-    #               Added TC-102, TC-102.5, ADC read time rows
-    stime = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    stime.add_column('Sensor', style='bold white', no_wrap=True)
-    stime.add_column('Time taken', style='white', no_wrap=True, justify='right')
-    stime.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    sensors = pkt.analog_sensors
-    for name, val, unit in [
-        ('Controller Tick', pkt.controller_timing.controller_tick_time_ns / 1000, 'us'),
-        ('Analog Read', pkt.controller_timing.analog_sensors_sense_time_ns / 1000, 'us'),
-    ]:
-        val_str = f'{val:.2f}' if val != 0.0 else f'[{t["muted"]}]—[/{t["muted"]}]'
-        stime.add_row(name, val_str, unit)
-
-    # ── State data panel ──────────────────────────────────────
-    sd = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    sd.add_column('Field', style='bold white', no_wrap=True)
-    sd.add_column('Value', style='white', no_wrap=True, justify='right')
-
-    which = pkt.WhichOneof('throttle_state_data')
-    if which == 'valve_calibration_data':
-        c = pkt.valve_calibration_data
-
-        def _hs(found, pos):
-            return f'{pos:.2f}°' if found else f'[{t["muted"]}]—[/{t["muted"]}]'
-
-        sd.add_row('fuel hardstop', _hs(c.fuel_found_hardstop, c.fuel_hardstop_pos))
-        sd.add_row('lox hardstop', _hs(c.lox_found_hardstop, c.lox_hardstop_pos))
-        sd.add_row('cal phase', str(c.cal_phase))
-        sd.add_row('rep count', str(c.rep_count))
-        sd.add_row('fuel err', f'{c.fuel_err:.4f}')
-        sd.add_row('lox err', f'{c.lox_err:.4f}')
-    else:
-        sd.add_row(f'[{t["muted"]}]no state data[/{t["muted"]}]', '')
-
-    left = Group(
-        Panel(vt, title=f'[{t["primary"]}]Valves[/{t["primary"]}]', border_style=t['panel_border']),
-        Panel(
-            sd, title=f'[{t["primary"]}]State Data[/{t["primary"]}]', border_style=t['panel_border']
-        ),
-        Panel(
-            stime,
-            title=f'[{t["primary"]}]Timing Data[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
-    )
-    bottom = Columns(
-        [
-            left,
-            Panel(
-                st,
-                title=f'[{t["primary"]}]Sensors[/{t["primary"]}]',
-                border_style=t['panel_border'],
-            ),
-        ]
-    )
-
-    return Group(
-        header_panel,
-        bottom,
-        # Columns([_build_fuel_valve_graph(), _build_lox_valve_graph()]),
-        # Columns([_build_fuel_graph(),       _build_lox_graph()]),
-    )
-
-
-def _build_hornet_status_renderable():
-    """Build a Hornet-focused live telemetry dashboard."""
-    with packet_lock:
-        pkt = latest_packet
-
-    t = THEME
-
-    if pkt is None:
-        return Panel(
-            f'[{t["muted"]}]Waiting for telemetry...[/{t["muted"]}]',
-            title=f'[{t["primary"]}]{t["icon_live"]} HORNET LIVE STATUS[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        )
-
-    state_name = clover_pb2.SystemState.Name(pkt.state)
-    state_color = STATE_COLORS.get(state_name, 'white')
-    is_abort = state_name == 'STATE_ABORT'
-    abort_str = (
-        f'[bold red]{t["icon_stop"]} ABORT[/bold red]' if is_abort else '[green]nominal[/green]'
-    )
-
-    hdr = Table.grid(padding=(0, 3))
-    for _ in range(5):
-        hdr.add_column()
-    hdr.add_row(
-        Text(f'{t["icon_live"]} HORNET', style='bold green'),
         Text(f'State: {state_name}', style=state_color),
         Text(f't = {pkt.time_ns / 1e9:.3f} s', style='white'),
         Text(f'seq #{pkt.sequence_number}', style=t['muted']),
@@ -974,7 +825,7 @@ def _build_hornet_status_renderable():
     cmd.add_column('Value', style='white', justify='right', no_wrap=True)
     cmd.add_column('Unit', style=t['muted'], no_wrap=True)
 
-    if pkt.HasField('main_propeller_command'):
+    if _has(pkt, 'main_propeller_command'):
         pwm = max(1000, min(2000, pkt.main_propeller_command))
         throttle_pct = (pwm - 1000) / 10.0
         cmd.add_row('Main throttle', f'{throttle_pct:.2f}', '%')
@@ -989,10 +840,22 @@ def _build_hornet_status_renderable():
         ('rcs_propeller_cw_command', 'RCS CW PWM'),
         ('rcs_propeller_ccw_command', 'RCS CCW PWM'),
     ]:
-        if pkt.HasField(field):
+        if _has(pkt, field):
             cmd.add_row(label, str(getattr(pkt, field)), 'us')
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
+
+    # Ranger-style throttle valve commands (closest equivalent to old valve status display).
+    if _has(pkt, 'fuel_valve_command'):
+        fvc = pkt.fuel_valve_command
+        cmd.add_row('Fuel cmd enabled', 'YES' if fvc.enable else 'NO', '')
+        cmd.add_row('Fuel cmd set_pos', 'YES' if fvc.set_pos else 'NO', '')
+        cmd.add_row('Fuel cmd target', f'{fvc.target_deg:.2f}', 'deg')
+    if _has(pkt, 'lox_valve_command'):
+        lvc = pkt.lox_valve_command
+        cmd.add_row('LOX cmd enabled', 'YES' if lvc.enable else 'NO', '')
+        cmd.add_row('LOX cmd set_pos', 'YES' if lvc.set_pos else 'NO', '')
+        cmd.add_row('LOX cmd target', f'{lvc.target_deg:.2f}', 'deg')
 
     for field, label, unit in [
         ('trace_time_msec', 'Trace time', 'ms'),
@@ -1001,7 +864,7 @@ def _build_hornet_status_renderable():
         ('tvc_yaw_command_deg', 'TVC yaw cmd', 'deg'),
         ('rcs_roll_command_deg', 'RCS roll cmd', 'deg'),
     ]:
-        if pkt.HasField(field):
+        if _has(pkt, field):
             cmd.add_row(label, f'{getattr(pkt, field):.2f}', unit)
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
@@ -1017,25 +880,74 @@ def _build_hornet_status_renderable():
     sensors.add_column('Value', style='white', justify='right', no_wrap=True)
     sensors.add_column('Unit', style=t['muted'], no_wrap=True)
 
-    if pkt.analog_sensors.HasField('battery_voltage'):
-        sensors.add_row('Battery', f'{pkt.analog_sensors.battery_voltage:.2f}', 'V')
-    else:
-        sensors.add_row('Battery', f'[{t["muted"]}]—[/{t["muted"]}]', 'V')
+    def _add_analog_row(label: str, field: str, unit: str):
+        if _has(pkt.analog_sensors, field):
+            sensors.add_row(label, f'{getattr(pkt.analog_sensors, field):.2f}', unit)
+        elif _has_msg_field(pkt.analog_sensors, field):
+            sensors.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
 
-    if pkt.HasField('lidar_1'):
-        sensors.add_row('Lidar 1', f'{pkt.lidar_1.distance_m:.2f}', 'm')
-    else:
-        sensors.add_row('Lidar 1', f'[{t["muted"]}]—[/{t["muted"]}]', 'm')
+    # Analog sensors (shown when available in schema/config).
+    _add_analog_row('PT-001', 'pt001', 'psi')
+    _add_analog_row('PT-002', 'pt002', 'psi')
+    _add_analog_row('PT-003', 'pt003', 'psi')
+    _add_analog_row('PT-004', 'pt004', 'psi')
+    _add_analog_row('PT-005', 'pt005', 'psi')
+    _add_analog_row('PT-101', 'pt101', 'psi')
+    _add_analog_row('PT-201', 'pt201', 'psi')
+    _add_analog_row('PTF-1', 'ptf1', 'psi')
+    _add_analog_row('PTF-2', 'ptf2', 'psi')
+    _add_analog_row('PTO-1', 'pto1', 'psi')
+    _add_analog_row('PTC-1', 'ptc1', 'psi')
+    _add_analog_row('PTC-2', 'ptc2', 'psi')
+    _add_analog_row('TC-001', 'tc001', 'C')
+    _add_analog_row('TC-101', 'tc101', 'C')
+    _add_analog_row('TC-102', 'tc102', 'C')
+    _add_analog_row('TC-F1', 'tcf1', 'C')
+    _add_analog_row('TC-O1', 'tco1', 'C')
+    _add_analog_row('PT-G001', 'ptg001', 'psi')
+    _add_analog_row('PT-G002', 'ptg002', 'psi')
+    _add_analog_row('PT-G101', 'ptg101', 'psi')
+    _add_analog_row('Battery', 'battery_voltage', 'V')
 
-    if pkt.HasField('lidar_2'):
-        sensors.add_row('Lidar 2', f'{pkt.lidar_2.distance_m:.2f}', 'm')
-    else:
-        sensors.add_row('Lidar 2', f'[{t["muted"]}]—[/{t["muted"]}]', 'm')
+    sensors.add_row(
+        'Lidar 1',
+        f'{pkt.lidar_1.distance_m:.2f}' if _has(pkt, 'lidar_1') else f'[{t["muted"]}]—[/{t["muted"]}]',
+        'm',
+    )
+    sensors.add_row(
+        'Lidar 2',
+        f'{pkt.lidar_2.distance_m:.2f}' if _has(pkt, 'lidar_2') else f'[{t["muted"]}]—[/{t["muted"]}]',
+        'm',
+    )
 
-    if pkt.HasField('hornet_throttle_metrics') and pkt.hornet_throttle_metrics.HasField('thrust_N'):
-        sensors.add_row('Thrust', f'{pkt.hornet_throttle_metrics.thrust_N:.2f}', 'N')
-    else:
-        sensors.add_row('Thrust', f'[{t["muted"]}]—[/{t["muted"]}]', 'N')
+    thrust_value = None
+    if _has(pkt, 'hornet_throttle_metrics') and _has(pkt.hornet_throttle_metrics, 'thrust_N'):
+        thrust_value = f'{pkt.hornet_throttle_metrics.thrust_N:.2f}'
+    sensors.add_row('Thrust', thrust_value if thrust_value is not None else f'[{t["muted"]}]—[/{t["muted"]}]', 'N')
+
+    # Shared valve state telemetry.
+    if _has(pkt, 'valve_states'):
+        vs = pkt.valve_states
+
+        def _valve_state_to_str(v: int) -> str:
+            try:
+                return clover_pb2.ValveState.Name(v)
+            except ValueError:
+                return str(v)
+
+        for field, label in [
+            ('sv001', 'SV001'),
+            ('sv002', 'SV002'),
+            ('sv003', 'SV003'),
+            ('sv004', 'SV004'),
+            ('pbv002', 'PBV002'),
+            ('sv005', 'SV005'),
+            ('svg001', 'SVG001'),
+            ('svg002', 'SVG002'),
+            ('svg003', 'SVG003'),
+        ]:
+            if _has(vs, field):
+                sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
 
     timing = Table(
         box=box.SIMPLE_HEAD,
@@ -1048,13 +960,14 @@ def _build_hornet_status_renderable():
     timing.add_column('Value', style='white', justify='right', no_wrap=True)
     timing.add_column('Unit', style=t['muted'], no_wrap=True)
     timing.add_row('Controller tick', f'{pkt.controller_timing.controller_tick_time_ns / 1000:.2f}', 'us')
-    timing.add_row(
-        'Analog read',
-        f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}',
-        'us',
-    )
-    timing.add_row('Lidar read', f'{pkt.controller_timing.lidar_sense_time_ns / 1000:.2f}', 'us')
-    timing.add_row('IMU read', f'{pkt.controller_timing.imu_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'analog_sensors_sense_time_ns'):
+        timing.add_row('Analog read', f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'lidar_sense_time_ns'):
+        timing.add_row('Lidar read', f'{pkt.controller_timing.lidar_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'imu_sense_time_ns'):
+        timing.add_row('IMU read', f'{pkt.controller_timing.imu_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'state_estimator_update_time_ns'):
+        timing.add_row('State estimator', f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}', 'us')
 
     fcm = Table(
         box=box.SIMPLE_HEAD,
@@ -1067,7 +980,7 @@ def _build_hornet_status_renderable():
     fcm.add_column('Value', style='white', justify='right', no_wrap=True)
     fcm.add_column('Unit', style=t['muted'], no_wrap=True)
 
-    if pkt.HasField('flight_controller_metrics'):
+    if _has(pkt, 'flight_controller_metrics'):
         m = pkt.flight_controller_metrics
         fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
         fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
@@ -1077,8 +990,29 @@ def _build_hornet_status_renderable():
         fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
         fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
         fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
-    else:
-        fcm.add_row(f'[{t["muted"]}]No flight metrics available[/{t["muted"]}]', '', '')
+
+    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        if _has(rtm, 'predicted_thrust_lbf'):
+            fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
+        if _has(rtm, 'predicted_of'):
+            fcm.add_row('Pred O/F', f'{rtm.predicted_of:.3f}', '')
+        if _has(rtm, 'mdot_fuel'):
+            fcm.add_row('m_dot fuel', f'{rtm.mdot_fuel:.3f}', '')
+        if _has(rtm, 'mdot_lox'):
+            fcm.add_row('m_dot lox', f'{rtm.mdot_lox:.3f}', '')
+        if _has(rtm, 'change_alpha_cmd'):
+            fcm.add_row('d_alpha cmd', f'{rtm.change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'clamped_change_alpha_cmd'):
+            fcm.add_row('d_alpha clamped', f'{rtm.clamped_change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'alpha'):
+            fcm.add_row('alpha', f'{rtm.alpha:.3f}', '')
+        if _has(rtm, 'thrust_from_alpha_lbf'):
+            fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
+
+    if fcm.row_count == 0:
+        fcm.add_row(f'[{t["muted"]}]No controller metrics available[/{t["muted"]}]', '', '')
 
     top = Columns(
         [
@@ -1114,10 +1048,10 @@ def cmd_live_status():
     threading.Thread(target=_wait_for_enter, daemon=True).start()
 
     try:
-        with Live(_build_hornet_status_renderable(), refresh_per_second=5, screen=False) as live:
+        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
             while not stop.is_set():
                 time.sleep(0.2)
-                live.update(_build_hornet_status_renderable())
+                live.update(_build_status_renderable())
     except KeyboardInterrupt:
         pass
 
@@ -1133,52 +1067,8 @@ _TOOLBAR_STATE_TAGS = {
     'STATE_ABORT': ('ansired', 'ABORT'),
 }
 
-# TODO: Fix toolbar display with new proto changes
-# def get_toolbar():
-#     """Compact live telemetry for the prompt_toolkit bottom toolbar."""
-#     with packet_lock:
-#         pkt = latest_packet
-
-#     if pkt is None:
-#         return HTML(' <b>📡</b> No telemetry yet...')
-
-#     state_name = clover_pb2.SystemState.Name(pkt.state)
-#     tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ('ansiwhite', state_name))
-
-#     is_abort = state_name == 'STATE_ABORT'
-#     abort_html = '  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
-
-#     sensors = pkt.analog_sensors
-#     sensor_parts = [
-#         f'{lbl}: {val:.1f}'
-#         for lbl, val in [
-#             ('TC-101', sensors.tc101),
-#             ('TC-102', sensors.tc102),
-#             # ('PT-F401', pts.ptf401),
-#             # ('PT-O401', pts.pto401),
-#             # ('PT-C401', pts.ptc401),
-#             # ('PT-C402', pts.ptc402),
-#             # ('TC-102', pts.tc102),
-#             # ('TC-102.5', pts.tc102_5),  # new sensors
-#         ]
-#         if val != 0.0
-#     ]
-#     sensor_html = ('  │  ' + '  '.join(sensor_parts)) if sensor_parts else ''
-
-#     f = pkt.fuel_valve
-#     l = pkt.lox_valve
-#     return HTML(
-#         # 1e9 for seconds display
-#         f' 📡 <{tag}><b>{short}</b></{tag}>'
-#         f'  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}'
-#         f'  │  🟡 drv={f.driver_setpoint_pos_deg:.1f}°  enc={f.encoder_pos_deg:.1f}°'
-#         f'  │  🔴 drv={l.driver_setpoint_pos_deg:.1f}°  enc={l.encoder_pos_deg:.1f}°'
-#         + sensor_html
-#         + abort_html
-#     )
-
-def get_hornet_toolbar():
-    """Compact hornet telemetry for the prompt_toolkit bottom toolbar."""
+def get_toolbar():
+    """Compact live telemetry for the prompt_toolkit bottom toolbar."""
     with packet_lock:
         pkt = latest_packet
 
@@ -1191,23 +1081,45 @@ def get_hornet_toolbar():
     is_abort = state_name == 'STATE_ABORT'
     abort_html = '  │  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
 
-    throttle_pct = '--'
-    if pkt.HasField('main_propeller_command'):
+    sensors = pkt.analog_sensors
+    sensor_parts = []
+    for field, label in [('tc101', 'TC-101'), ('tc102', 'TC-102'), ('pt101', 'PT-101')]:
+        if _has_msg_field(sensors, field):
+            val = getattr(sensors, field)
+            if abs(val) > 1e-6:
+                sensor_parts.append(f'{label}: {val:.1f}')
+    sensor_html = ('  │  ' + '  '.join(sensor_parts)) if sensor_parts else ''
+
+    cmd_html = ''
+    if _has(pkt, 'main_propeller_command'):
         pwm = max(1000, min(2000, pkt.main_propeller_command))
-        throttle_pct = f'{(pwm - 1000) / 10:.2f}%'
+        throttle_pct = (pwm - 1000) / 10.0
+        cmd_html = f'  │  throttle={throttle_pct:.2f}%'
+    else:
+        ranger_parts = []
+        if _has(pkt, 'fuel_valve_command'):
+            ranger_parts.append(f'🟡 tgt={pkt.fuel_valve_command.target_deg:.1f}°')
+        if _has(pkt, 'lox_valve_command'):
+            ranger_parts.append(f'🔴 tgt={pkt.lox_valve_command.target_deg:.1f}°')
+        if ranger_parts:
+            cmd_html = '  │  ' + '  '.join(ranger_parts)
 
-    pos = pkt.estimated_state.position
-    position_html = f'  │  pos=({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})m'
+    position_html = ''
+    attitude_html = ''
+    if _has_msg_field(pkt, 'estimated_state'):
+        pos = pkt.estimated_state.position
+        position_html = f'  │  pos=({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})m'
 
-    euler = pkt.estimated_state.euler
-    attitude_html = f'  │  ypr=({euler.x:.1f}, {euler.y:.1f}, {euler.z:.1f})°'
+        euler = pkt.estimated_state.euler
+        attitude_html = f'  │  ypr=({euler.x:.1f}, {euler.y:.1f}, {euler.z:.1f})°'
 
     return HTML(
         f' 📡 <{tag}><b>{short}</b></{tag}>'
         f'  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}'
-        f'  │  throttle={throttle_pct}'
+        + cmd_html
         + position_html
         + attitude_html
+        + sensor_html
         + abort_html
     )
 
@@ -1345,10 +1257,10 @@ def cmd_configure_sensor_bias():
         ('2', 'PT-103', clover_pb2.PT103),
         ('3', 'PT-202', clover_pb2.PT202),
         ('4', 'PT-203', clover_pb2.PT203),
-        ('5', 'PT-F401', clover_pb2.PTF401),
-        ('6', 'PT-O401', clover_pb2.PTO401),
-        ('7', 'PT-C401', clover_pb2.PTC401),
-        ('8', 'PT-C402', clover_pb2.PTC402),
+        ('5', 'PTF-401', clover_pb2.PTF401),
+        ('6', 'PTO-401', clover_pb2.PTO401),
+        ('7', 'PTC-401', clover_pb2.PTC401),
+        ('8', 'PTC-402', clover_pb2.PTC402),
         ('9', 'TC-102', clover_pb2.TC102),
         ('10', 'TC-102.5', clover_pb2.TC102_5),
     ]
@@ -2193,7 +2105,7 @@ def main():
 
     print_menu()
 
-    session = PromptSession(bottom_toolbar=get_hornet_toolbar, refresh_interval=0.1)
+    session = PromptSession(bottom_toolbar=get_toolbar, refresh_interval=0.1)
 
     while True:
         try:
