@@ -180,7 +180,7 @@ _STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
 
 # ── Data flattening ──────────────────────────────────────────────────────────
 
-
+# TODO: fix (proto changes for ranger)
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
@@ -250,12 +250,100 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     }
 
 
+def _packet_to_row_hornet(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
+    """
+    Flatten one DataPacket into a wide dict of numeric sensors for Hornet telemetry.
+    """
+
+    def _opt(field: str):
+        return float(getattr(pkt, field)) if pkt.HasField(field) else None
+
+    def _opt_msg(msg, field: str):
+        return float(getattr(msg, field)) if msg.HasField(field) else None
+
+    row = {
+        'time': recv_time,
+        'state': float(pkt.state),
+        'data_queue_size': float(pkt.data_queue_size),
+        'sequence_number': float(pkt.sequence_number),
+        'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
+        'analog_sense_ns': float(pkt.controller_timing.analog_sensors_sense_time_ns),
+        'lidar_sense_ns': float(pkt.controller_timing.lidar_sense_time_ns),
+        'imu_sense_ns': float(pkt.controller_timing.imu_sense_time_ns),
+        'gnc_connected': float(pkt.gnc_connected),
+        'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
+        'daq_connected': float(pkt.daq_connected),
+        'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
+        'battery_voltage': _opt_msg(pkt.analog_sensors, 'battery_voltage'),
+        'est_pos_x_m': float(pkt.estimated_state.position.x),
+        'est_pos_y_m': float(pkt.estimated_state.position.y),
+        'est_pos_z_m': float(pkt.estimated_state.position.z),
+        'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
+        'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
+        'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
+        'est_yaw_deg': float(pkt.estimated_state.euler.x),
+        'est_pitch_deg': float(pkt.estimated_state.euler.y),
+        'est_roll_deg': float(pkt.estimated_state.euler.z),
+        'main_propeller_command_us': _opt('main_propeller_command'),
+        'pitch_servo_command_us': _opt('pitch_servo_command'),
+        'yaw_servo_command_us': _opt('yaw_servo_command'),
+        'rcs_propeller_cw_command_us': _opt('rcs_propeller_cw_command'),
+        'rcs_propeller_ccw_command_us': _opt('rcs_propeller_ccw_command'),
+        'trace_time_msec': _opt('trace_time_msec'),
+        'throttle_thrust_command_lbf': _opt('throttle_thrust_command_lbf'),
+        'tvc_pitch_command_deg': _opt('tvc_pitch_command_deg'),
+        'tvc_yaw_command_deg': _opt('tvc_yaw_command_deg'),
+        'rcs_roll_command_deg': _opt('rcs_roll_command_deg'),
+        'flight_x_command_m': _opt('flight_x_command_m'),
+        'flight_y_command_m': _opt('flight_y_command_m'),
+        'flight_z_command_m': _opt('flight_z_command_m'),
+        'flight_pitch_accel_rad_s2': _opt('flight_pitch_accel_rad_s2'),
+        'flight_yaw_accel_rad_s2': _opt('flight_yaw_accel_rad_s2'),
+        'flight_z_accel_m_s2': _opt('flight_z_accel_m_s2'),
+    }
+
+    if pkt.HasField('hornet_throttle_metrics'):
+        row['hornet_thrust_N'] = _opt_msg(pkt.hornet_throttle_metrics, 'thrust_N')
+    else:
+        row['hornet_thrust_N'] = None
+
+    if pkt.HasField('flight_controller_metrics'):
+        fcm = pkt.flight_controller_metrics
+        row.update(
+            {
+                'fcm_des_world_tilt_x_rad': float(fcm.desired_world_tilt_x_rad),
+                'fcm_des_world_tilt_y_rad': float(fcm.desired_world_tilt_y_rad),
+                'fcm_act_world_tilt_x_rad': float(fcm.actual_world_tilt_x_rad),
+                'fcm_act_world_tilt_y_rad': float(fcm.actual_world_tilt_y_rad),
+                'fcm_des_vz_m_s': float(fcm.desired_vertical_velocity_m_s),
+                'fcm_cmd_vacc_m_s2': float(fcm.commanded_vertical_acceleration_m_s2),
+                'fcm_cmd_pitch_accel_rad_s2': float(fcm.commanded_pitch_acceleration_rad_s2),
+                'fcm_cmd_yaw_accel_rad_s2': float(fcm.commanded_yaw_acceleration_rad_s2),
+            }
+        )
+    else:
+        row.update(
+            {
+                'fcm_des_world_tilt_x_rad': None,
+                'fcm_des_world_tilt_y_rad': None,
+                'fcm_act_world_tilt_x_rad': None,
+                'fcm_act_world_tilt_y_rad': None,
+                'fcm_des_vz_m_s': None,
+                'fcm_cmd_vacc_m_s2': None,
+                'fcm_cmd_pitch_accel_rad_s2': None,
+                'fcm_cmd_yaw_accel_rad_s2': None,
+            }
+        )
+
+    return row
+
+
 def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[dict]:
     """
     Expand one DataPacket into multiple CSV rows (one per sensor/field),
     matching the unpivoted schema written to ClickHouse raw_sensors.
     """
-    wide = _packet_to_row(recv_time, pkt)
+    wide = _packet_to_row_hornet(recv_time, pkt)
     ts = wide['time']
     rows = []
 
@@ -368,7 +456,7 @@ def _flush_loop():
             _packet_buffer.clear()
 
         try:
-            rows = [_packet_to_row(t, p) for t, p in batch]
+            rows = [_packet_to_row_hornet(t, p) for t, p in batch]
             df = (
                 pl.DataFrame(rows)
                 .unpivot(index=['time'], variable_name='sensor', value_name='value')
@@ -631,15 +719,26 @@ def _build_lox_graph() -> Panel:
 STATE_COLORS = {
     'STATE_UNKNOWN': 'dim white',
     'STATE_IDLE': 'green',
-    'STATE_CALIBRATE_VALVE': 'magenta',
-    'STATE_VALVE_PRIMED': 'cyan',
-    'STATE_VALVE_SEQ': 'gold1',
-    'STATE_THRUST_PRIMED': 'cyan',
-    'STATE_THRUST_SEQ': 'yellow',
+    'STATE_CALIBRATE_THROTTLE_VALVE': 'magenta',
+    'STATE_THROTTLE_VALVE_PRIMED': 'cyan',
+    'STATE_THROTTLE_VALVE': 'gold1',
+    'STATE_THROTTLE_PRIMED': 'cyan',
+    'STATE_THROTTLE': 'yellow',
+    'STATE_CALIBRATE_TVC': 'magenta',
+    'STATE_TVC_PRIMED': 'cyan',
+    'STATE_TVC': 'yellow',
+    'STATE_RCS_VALVE_PRIMED': 'cyan',
+    'STATE_RCS_VALVE': 'yellow',
+    'STATE_RCS_PRIMED': 'cyan',
+    'STATE_RCS': 'yellow',
+    'STATE_STATIC_FIRE_PRIMED': 'cyan',
+    'STATE_STATIC_FIRE': 'yellow',
+    'STATE_FLIGHT_PRIMED': 'cyan',
+    'STATE_FLIGHT': 'bold green',
     'STATE_ABORT': 'bold red',
 }
 
-
+# TODO: fix for proto changes
 def _build_status_renderable():
     """Build a rich renderable for the current telemetry snapshot."""
     with packet_lock:
@@ -811,6 +910,193 @@ def _build_status_renderable():
     )
 
 
+def _build_hornet_status_renderable():
+    """Build a Hornet-focused live telemetry dashboard."""
+    with packet_lock:
+        pkt = latest_packet
+
+    t = THEME
+
+    if pkt is None:
+        return Panel(
+            f'[{t["muted"]}]Waiting for telemetry...[/{t["muted"]}]',
+            title=f'[{t["primary"]}]{t["icon_live"]} HORNET LIVE STATUS[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        )
+
+    state_name = clover_pb2.SystemState.Name(pkt.state)
+    state_color = STATE_COLORS.get(state_name, 'white')
+    is_abort = state_name == 'STATE_ABORT'
+    abort_str = (
+        f'[bold red]{t["icon_stop"]} ABORT[/bold red]' if is_abort else '[green]nominal[/green]'
+    )
+
+    hdr = Table.grid(padding=(0, 3))
+    for _ in range(5):
+        hdr.add_column()
+    hdr.add_row(
+        Text(f'{t["icon_live"]} HORNET', style='bold green'),
+        Text(f'State: {state_name}', style=state_color),
+        Text(f't = {pkt.time_ns / 1e9:.3f} s', style='white'),
+        Text(f'seq #{pkt.sequence_number}', style=t['muted']),
+        Text(f'queue: {pkt.data_queue_size}', style=t['muted']),
+    )
+    header_panel = Panel(hdr, border_style=t['panel_border'], padding=(0, 1), subtitle=abort_str)
+
+    pose = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    pose.add_column('Vehicle', style='bold white', no_wrap=True)
+    pose.add_column('x', style='white', justify='right', no_wrap=True)
+    pose.add_column('y', style='white', justify='right', no_wrap=True)
+    pose.add_column('z', style='white', justify='right', no_wrap=True)
+    pose.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    pos = pkt.estimated_state.position
+    vel = pkt.estimated_state.velocity
+    euler = pkt.estimated_state.euler
+    pose.add_row('Position', f'{pos.x:.2f}', f'{pos.y:.2f}', f'{pos.z:.2f}', 'm')
+    pose.add_row('Velocity', f'{vel.x:.2f}', f'{vel.y:.2f}', f'{vel.z:.2f}', 'm/s')
+    pose.add_row('Y/P/R', f'{euler.x:.1f}', f'{euler.y:.1f}', f'{euler.z:.1f}', 'deg')
+
+    cmd = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    cmd.add_column('Command', style='bold white', no_wrap=True)
+    cmd.add_column('Value', style='white', justify='right', no_wrap=True)
+    cmd.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    if pkt.HasField('main_propeller_command'):
+        pwm = max(1000, min(2000, pkt.main_propeller_command))
+        throttle_pct = (pwm - 1000) / 10.0
+        cmd.add_row('Main throttle', f'{throttle_pct:.2f}', '%')
+        cmd.add_row('Main PWM', str(pkt.main_propeller_command), 'us')
+    else:
+        cmd.add_row('Main throttle', f'[{t["muted"]}]—[/{t["muted"]}]', '%')
+        cmd.add_row('Main PWM', f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
+
+    for field, label in [
+        ('pitch_servo_command', 'Pitch servo'),
+        ('yaw_servo_command', 'Yaw servo'),
+        ('rcs_propeller_cw_command', 'RCS CW PWM'),
+        ('rcs_propeller_ccw_command', 'RCS CCW PWM'),
+    ]:
+        if pkt.HasField(field):
+            cmd.add_row(label, str(getattr(pkt, field)), 'us')
+        else:
+            cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
+
+    for field, label, unit in [
+        ('trace_time_msec', 'Trace time', 'ms'),
+        ('throttle_thrust_command_lbf', 'Thrust cmd', 'lbf'),
+        ('tvc_pitch_command_deg', 'TVC pitch cmd', 'deg'),
+        ('tvc_yaw_command_deg', 'TVC yaw cmd', 'deg'),
+        ('rcs_roll_command_deg', 'RCS roll cmd', 'deg'),
+    ]:
+        if pkt.HasField(field):
+            cmd.add_row(label, f'{getattr(pkt, field):.2f}', unit)
+        else:
+            cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
+
+    sensors = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    sensors.add_column('Sensor', style='bold white', no_wrap=True)
+    sensors.add_column('Value', style='white', justify='right', no_wrap=True)
+    sensors.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    if pkt.analog_sensors.HasField('battery_voltage'):
+        sensors.add_row('Battery', f'{pkt.analog_sensors.battery_voltage:.2f}', 'V')
+    else:
+        sensors.add_row('Battery', f'[{t["muted"]}]—[/{t["muted"]}]', 'V')
+
+    if pkt.HasField('lidar_1'):
+        sensors.add_row('Lidar 1', f'{pkt.lidar_1.distance_m:.2f}', 'm')
+    else:
+        sensors.add_row('Lidar 1', f'[{t["muted"]}]—[/{t["muted"]}]', 'm')
+
+    if pkt.HasField('lidar_2'):
+        sensors.add_row('Lidar 2', f'{pkt.lidar_2.distance_m:.2f}', 'm')
+    else:
+        sensors.add_row('Lidar 2', f'[{t["muted"]}]—[/{t["muted"]}]', 'm')
+
+    if pkt.HasField('hornet_throttle_metrics') and pkt.hornet_throttle_metrics.HasField('thrust_N'):
+        sensors.add_row('Thrust', f'{pkt.hornet_throttle_metrics.thrust_N:.2f}', 'N')
+    else:
+        sensors.add_row('Thrust', f'[{t["muted"]}]—[/{t["muted"]}]', 'N')
+
+    timing = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    timing.add_column('Timing', style='bold white', no_wrap=True)
+    timing.add_column('Value', style='white', justify='right', no_wrap=True)
+    timing.add_column('Unit', style=t['muted'], no_wrap=True)
+    timing.add_row('Controller tick', f'{pkt.controller_timing.controller_tick_time_ns / 1000:.2f}', 'us')
+    timing.add_row(
+        'Analog read',
+        f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}',
+        'us',
+    )
+    timing.add_row('Lidar read', f'{pkt.controller_timing.lidar_sense_time_ns / 1000:.2f}', 'us')
+    timing.add_row('IMU read', f'{pkt.controller_timing.imu_sense_time_ns / 1000:.2f}', 'us')
+
+    fcm = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    fcm.add_column('Flight Controller Metric', style='bold white', no_wrap=True)
+    fcm.add_column('Value', style='white', justify='right', no_wrap=True)
+    fcm.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    if pkt.HasField('flight_controller_metrics'):
+        m = pkt.flight_controller_metrics
+        fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt X', f'{m.actual_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt Y', f'{m.actual_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Desired vz', f'{m.desired_vertical_velocity_m_s:.3f}', 'm/s')
+        fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
+        fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
+        fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
+    else:
+        fcm.add_row(f'[{t["muted"]}]No flight metrics available[/{t["muted"]}]', '', '')
+
+    top = Columns(
+        [
+            Panel(pose, title=f'[{t["primary"]}]Vehicle State[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(cmd, title=f'[{t["primary"]}]Commands[/{t["primary"]}]', border_style=t['panel_border']),
+        ]
+    )
+    bottom = Columns(
+        [
+            Panel(sensors, title=f'[{t["primary"]}]Sensors[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(timing, title=f'[{t["primary"]}]Timing[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(fcm, title=f'[{t["primary"]}]Controller[/{t["primary"]}]', border_style=t['panel_border']),
+        ]
+    )
+
+    return Group(header_panel, top, bottom)
+
+
 def cmd_live_status():
     """Stream full telemetry panel at 5 Hz (200 ms). Press Enter to return to menu."""
     stop = threading.Event()
@@ -828,10 +1114,10 @@ def cmd_live_status():
     threading.Thread(target=_wait_for_enter, daemon=True).start()
 
     try:
-        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
+        with Live(_build_hornet_status_renderable(), refresh_per_second=5, screen=False) as live:
             while not stop.is_set():
                 time.sleep(0.2)
-                live.update(_build_status_renderable())
+                live.update(_build_hornet_status_renderable())
     except KeyboardInterrupt:
         pass
 
@@ -847,9 +1133,52 @@ _TOOLBAR_STATE_TAGS = {
     'STATE_ABORT': ('ansired', 'ABORT'),
 }
 
+# TODO: Fix toolbar display with new proto changes
+# def get_toolbar():
+#     """Compact live telemetry for the prompt_toolkit bottom toolbar."""
+#     with packet_lock:
+#         pkt = latest_packet
 
-def get_toolbar():
-    """Compact live telemetry for the prompt_toolkit bottom toolbar."""
+#     if pkt is None:
+#         return HTML(' <b>📡</b> No telemetry yet...')
+
+#     state_name = clover_pb2.SystemState.Name(pkt.state)
+#     tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ('ansiwhite', state_name))
+
+#     is_abort = state_name == 'STATE_ABORT'
+#     abort_html = '  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
+
+#     sensors = pkt.analog_sensors
+#     sensor_parts = [
+#         f'{lbl}: {val:.1f}'
+#         for lbl, val in [
+#             ('TC-101', sensors.tc101),
+#             ('TC-102', sensors.tc102),
+#             # ('PT-F401', pts.ptf401),
+#             # ('PT-O401', pts.pto401),
+#             # ('PT-C401', pts.ptc401),
+#             # ('PT-C402', pts.ptc402),
+#             # ('TC-102', pts.tc102),
+#             # ('TC-102.5', pts.tc102_5),  # new sensors
+#         ]
+#         if val != 0.0
+#     ]
+#     sensor_html = ('  │  ' + '  '.join(sensor_parts)) if sensor_parts else ''
+
+#     f = pkt.fuel_valve
+#     l = pkt.lox_valve
+#     return HTML(
+#         # 1e9 for seconds display
+#         f' 📡 <{tag}><b>{short}</b></{tag}>'
+#         f'  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}'
+#         f'  │  🟡 drv={f.driver_setpoint_pos_deg:.1f}°  enc={f.encoder_pos_deg:.1f}°'
+#         f'  │  🔴 drv={l.driver_setpoint_pos_deg:.1f}°  enc={l.encoder_pos_deg:.1f}°'
+#         + sensor_html
+#         + abort_html
+#     )
+
+def get_hornet_toolbar():
+    """Compact hornet telemetry for the prompt_toolkit bottom toolbar."""
     with packet_lock:
         pkt = latest_packet
 
@@ -860,34 +1189,25 @@ def get_toolbar():
     tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ('ansiwhite', state_name))
 
     is_abort = state_name == 'STATE_ABORT'
-    abort_html = '  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
+    abort_html = '  │  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
 
-    sensors = pkt.analog_sensors
-    sensor_parts = [
-        f'{lbl}: {val:.1f}'
-        for lbl, val in [
-            ('TC-101', sensors.tc101),
-            ('TC-102', sensors.tc102),
-            # ('PT-F401', pts.ptf401),
-            # ('PT-O401', pts.pto401),
-            # ('PT-C401', pts.ptc401),
-            # ('PT-C402', pts.ptc402),
-            # ('TC-102', pts.tc102),
-            # ('TC-102.5', pts.tc102_5),  # new sensors
-        ]
-        if val != 0.0
-    ]
-    sensor_html = ('  │  ' + '  '.join(sensor_parts)) if sensor_parts else ''
+    throttle_pct = '--'
+    if pkt.HasField('main_propeller_command'):
+        pwm = max(1000, min(2000, pkt.main_propeller_command))
+        throttle_pct = f'{(pwm - 1000) / 10:.2f}%'
 
-    f = pkt.fuel_valve
-    l = pkt.lox_valve
+    pos = pkt.estimated_state.position
+    position_html = f'  │  pos=({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})m'
+
+    euler = pkt.estimated_state.euler
+    attitude_html = f'  │  ypr=({euler.x:.1f}, {euler.y:.1f}, {euler.z:.1f})°'
+
     return HTML(
-        # 1e9 for seconds display
         f' 📡 <{tag}><b>{short}</b></{tag}>'
         f'  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}'
-        f'  │  🟡 drv={f.driver_setpoint_pos_deg:.1f}°  enc={f.encoder_pos_deg:.1f}°'
-        f'  │  🔴 drv={l.driver_setpoint_pos_deg:.1f}°  enc={l.encoder_pos_deg:.1f}°'
-        + sensor_html
+        f'  │  throttle={throttle_pct}'
+        + position_html
+        + attitude_html
         + abort_html
     )
 
@@ -1350,7 +1670,7 @@ def cmd_start_throttle_valve_sequence():
 
 
 def cmd_load_throttle_sequence():
-    """Load a throttle sequence (IDLE → THROTTLE_PRIMED). Thrust trace is in Newtons."""
+    """Load a throttle sequence (IDLE → THROTTLE_PRIMED). Thrust trace is in lbf."""
     t = THEME
     console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Throttle Sequence[/{t["primary"]}]')
 
@@ -1366,7 +1686,7 @@ def cmd_load_throttle_sequence():
     thrust_trace = _build_control_trace()
 
     req = clover_pb2.Request()
-    req.load_throttle_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
+    req.load_throttle_sequence.thrust_lbf.CopyFrom(thrust_trace)
 
     if Confirm.ask('  Save this sequence for later?', default=False):
         _save_sequence(THRUST_SEQ_DIR, 't', req.load_throttle_sequence)
@@ -1390,61 +1710,98 @@ def cmd_start_throttle_sequence():
 
 
 def cmd_configure_flight_controller_gains():
-    """Configure flight controller PID gains and limits."""
+    """Configure flight controller PID gains."""
     t = THEME
     console.print(f'\n  [{t["primary"]}]Configure Flight Controller Gains[/{t["primary"]}]')
     console.print(f'  [{t["muted"]}]Leave blank to keep current value for any field.[/{t["muted"]}]')
 
+    # Mapping of user-friendly names to prefixes
+    pid_map = {
+        'xtilt': 'pidXTilt',
+        'ytilt': 'pidYTilt',
+        'x': 'pidX',
+        'y': 'pidY',
+        'z': 'pidZ',
+        'zvelocity': 'pidZVelocity',
+    }
+
     req = clover_pb2.Request()
     gains = req.configure_flight_controller_gains
+    configured_pids = set()
 
-    pid_fields = [
-        ('pidXTilt_kp', 'pidXTilt_ki', 'pidXTilt_kd'),
-        ('pidYTilt_kp', 'pidYTilt_ki', 'pidYTilt_kd'),
-        ('pidX_kp', 'pidX_ki', 'pidX_kd'),
-        ('pidY_kp', 'pidY_ki', 'pidY_kd'),
-        ('pidZ_kp', 'pidZ_ki', 'pidZ_kd'),
-        ('pidZVelocity_kp', 'pidZVelocity_ki', 'pidZVelocity_kd'),
-    ]
-    for kp, ki, kd in pid_fields:
-        prefix = kp[:-3]  # strip '_kp'
-        console.print(f'\n  [{t["muted"]}]{prefix}:[/{t["muted"]}]')
-        for field in (kp, ki, kd):
-            val = Prompt.ask(f'    {field}', default='')
-            if val:
-                setattr(gains, field, float(val))
+    while True:
+        console.print(f'\n  [{t["primary"]}]Available PIDs:[/{t["primary"]}]')
+        for alias in sorted(pid_map.keys()):
+            prefix = pid_map[alias]
+            status = f'[green]✓ configured[/green]' if prefix in configured_pids else ''
+            console.print(f'    {alias:<12} → {prefix:<20} {status}')
+        console.print(f'    {"done":<12} → finish configuration')
 
-    if Confirm.ask('\n  Set output limits?', default=False):
-        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
-            mn = Prompt.ask(f'    {prefix}_min_out', default='')
-            mx = Prompt.ask(f'    {prefix}_max_out', default='')
-            if mn:
-                setattr(gains, f'{prefix}_min_out', float(mn))
-            if mx:
-                setattr(gains, f'{prefix}_max_out', float(mx))
+        pid_choice = Prompt.ask('  Select PID to configure').strip().lower()
 
-    if Confirm.ask('  Set integral limits?', default=False):
-        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
-            mn = Prompt.ask(f'    {prefix}_min_integral', default='')
-            mx = Prompt.ask(f'    {prefix}_max_integral', default='')
-            if mn:
-                setattr(gains, f'{prefix}_min_integral', float(mn))
-            if mx:
-                setattr(gains, f'{prefix}_max_integral', float(mx))
+        if pid_choice == 'done':
+            break
 
-    if Confirm.ask('  Set integral zones?', default=False):
-        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
-            val = Prompt.ask(f'    {prefix}_integral_zone', default='')
-            if val:
-                setattr(gains, f'{prefix}_integral_zone', float(val))
+        if pid_choice not in pid_map:
+            console.print(
+                f'  [{t["warning"]}]Unknown PID "{pid_choice}". Try again.[/{t["warning"]}]'
+            )
+            continue
 
-    if Confirm.ask('  Set derivative low-pass filter (Hz)?', default=False):
-        for prefix in ('pidXTilt', 'pidYTilt', 'pidX', 'pidY', 'pidZ', 'pidZVelocity'):
-            val = Prompt.ask(f'    {prefix}_deriv_lp_hz', default='')
-            if val:
-                setattr(gains, f'{prefix}_deriv_lp_hz', float(val))
+        prefix = pid_map[pid_choice]
+        console.print(f'\n  [{t["primary"]}]Configuring {prefix}:[/{t["primary"]}]')
 
-    send_request(req, 'CONFIGURE_FLIGHT_CONTROLLER_GAINS')
+        kp = Prompt.ask(f'    {prefix}_kp', default='')
+        ki = Prompt.ask(f'    {prefix}_ki', default='')
+        kd = Prompt.ask(f'    {prefix}_kd', default='')
+
+        if kp:
+            setattr(gains, f'{prefix}_kp', float(kp))
+        if ki:
+            setattr(gains, f'{prefix}_ki', float(ki))
+        if kd:
+            setattr(gains, f'{prefix}_kd', float(kd))
+
+        configured_pids.add(prefix)
+
+        # Offer optional limits/integral/deriv per PID
+        if Confirm.ask(f'  Set advanced options for {prefix}?', default=False):
+            if Confirm.ask(f'    Set output limits?', default=False):
+                mn = Prompt.ask(f'      {prefix}_min_out', default='')
+                mx = Prompt.ask(f'      {prefix}_max_out', default='')
+                if mn:
+                    setattr(gains, f'{prefix}_min_out', float(mn))
+                if mx:
+                    setattr(gains, f'{prefix}_max_out', float(mx))
+
+            if Confirm.ask(f'    Set integral limits?', default=False):
+                mn = Prompt.ask(f'      {prefix}_min_integral', default='')
+                mx = Prompt.ask(f'      {prefix}_max_integral', default='')
+                if mn:
+                    setattr(gains, f'{prefix}_min_integral', float(mn))
+                if mx:
+                    setattr(gains, f'{prefix}_max_integral', float(mx))
+
+            if Confirm.ask(f'    Set integral zone?', default=False):
+                val = Prompt.ask(f'      {prefix}_integral_zone', default='')
+                if val:
+                    setattr(gains, f'{prefix}_integral_zone', float(val))
+
+            if Confirm.ask(f'    Set derivative low-pass filter (Hz)?', default=False):
+                val = Prompt.ask(f'      {prefix}_deriv_lp_hz', default='')
+                if val:
+                    setattr(gains, f'{prefix}_deriv_lp_hz', float(val))
+
+        if not Confirm.ask('  Configure another PID?', default=False):
+            break
+
+    if configured_pids:
+        console.print(
+            f'\n  [{t["success"]}]Configured: {", ".join(sorted(configured_pids))}[/{t["success"]}]'
+        )
+        send_request(req, 'CONFIGURE_FLIGHT_CONTROLLER_GAINS')
+    else:
+        console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
 
 # TODO: is this all that's needed?
 def cmd_calibrate_tvc():
@@ -1504,9 +1861,9 @@ def cmd_start_tvc_sequence():
     req.start_tvc_sequence.SetInParent()
     send_request(req, 'START_TVC_SEQUENCE')
 
-# TODO: test if this works
+# TODO: This is not a linear or sin trace
 def cmd_load_rcs_valve_sequence():
-    """Load an RCS valve sequence (IDLE → RCS_VALVE_PRIMED)."""
+    """Load an RCS valve sequence (IDLE → RCmenuS_VALVE_PRIMED)."""
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Valve Sequence[/{t["primary"]}]')
 
@@ -1599,11 +1956,11 @@ def cmd_load_static_fire_sequence():
         send_request(req, 'LOAD_STATIC_FIRE_SEQUENCE')
         return
 
-    console.print(f'  [{t["muted"]}]Define thrust (N), pitch (deg), and yaw (deg) traces.[/{t["muted"]}]')
+    console.print(f'  [{t["muted"]}]Define thrust (lbf), pitch (deg), and yaw (deg) traces.[/{t["muted"]}]')
     req = clover_pb2.Request()
 
-    console.print(f'\n  [{t["primary"]}]Thrust trace (N):[/{t["primary"]}]')
-    req.load_static_fire_sequence.thrust_trace_N.CopyFrom(_build_control_trace())
+    console.print(f'\n  [{t["primary"]}]Thrust trace (lbf):[/{t["primary"]}]')
+    req.load_static_fire_sequence.thrust_lbf.CopyFrom(_build_control_trace())
 
     console.print(f'\n  [{t["primary"]}]Pitch trace (deg):[/{t["primary"]}]')
     req.load_static_fire_sequence.pitch_trace_deg.CopyFrom(_build_control_trace())
@@ -1836,7 +2193,7 @@ def main():
 
     print_menu()
 
-    session = PromptSession(bottom_toolbar=get_toolbar, refresh_interval=0.1)
+    session = PromptSession(bottom_toolbar=get_hornet_toolbar, refresh_interval=0.1)
 
     while True:
         try:
