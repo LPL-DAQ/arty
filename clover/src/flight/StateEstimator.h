@@ -10,7 +10,12 @@ namespace StateEstimator {
 
     void init();
     void reset();
-    std::optional<EstimatedState> estimate(DataPacket& data);
+    std::optional<EstimatedState> estimate(
+        LidarReading& lidar_1,
+        LidarReading& lidar_2,
+        ImuReading& imu,
+        GnssReadings& gnss
+    );
 
 
 }

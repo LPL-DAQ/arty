@@ -25,7 +25,12 @@ void StateEstimator::reset()
     has_last_time = false;
 }
 
-std::optional<EstimatedState> StateEstimator::estimate(DataPacket& data)
+std::optional<EstimatedState> StateEstimator::estimate(
+    LidarReading& lidar_1,
+    LidarReading& lidar_2,
+    ImuReading& imu,
+    GnssReadings& gnss
+)
 {
     // TODO: Fill in when the real sensors exist
 

@@ -10,7 +10,7 @@ def launch_flasherd_command(logger, command_req: flasherd_pb2.RunCommandRequest,
     binaries should map binary_name to the dev container path to binaries to stream beforehand.
     """
 
-    with grpc.insecure_channel('localhost:6767') as channel:
+    with grpc.insecure_channel('host.docker.internal:6767') as channel:
         stub = flasherd_pb2_grpc.FlasherdStub(channel)
         reqs = []
 
