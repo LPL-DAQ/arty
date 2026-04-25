@@ -417,13 +417,13 @@ static void step_control_loop(k_work*)
         data.gnss.sol_type         = gnss->sol_type;
         data.gnss.sense_time_ns    = gnss->sense_time_ns;
         LOG_INF("[Gnss] sol_type=%u sol_time=%u ms rx_time=%u ms",
-            current_reading.sol_type, current_reading.solution_time_ms, current_reading.receiver_time_ms);
+            Gnss::current_reading.sol_type, Gnss::current_reading.solution_time_ms, Gnss::current_reading.receiver_time_ms);
         LOG_INF("[Gnss] pos  N=%.3f E=%.3f U=%.3f sigma=%.3f m",
-            current_reading.north_m, current_reading.east_m, current_reading.up_m, (double)current_reading.pos_sigma_m);
+            Gnss::current_reading.north_m, Gnss::current_reading.east_m, Gnss::current_reading.up_m, (double)Gnss::current_reading.pos_sigma_m);
         LOG_INF("[Gnss] vel  vx=%.3f vy=%.3f vz=%.3f sigma=%.3f m/s",
-            (double)current_reading.vx_ms, (double)current_reading.vy_ms, (double)current_reading.vz_ms, (double)current_reading.vel_sigma_ms);
+            (double)Gnss::current_reading.vx_ms, (double)Gnss::current_reading.vy_ms, (double)Gnss::current_reading.vz_ms, (double)Gnss::current_reading.vel_sigma_ms);
         LOG_INF("[Gnss] rms  hpos=%.3f vpos=%.3f hvel=%.3f vvel=%.3f",
-            (double)current_reading.hrms_m, (double)current_reading.vrms_m, (double)current_reading.hvel_rms_ms, (double)current_reading.vvel_rms_ms);
+            (double)Gnss::current_reading.hrms_m, (double)Gnss::current_reading.vrms_m, (double)Gnss::current_reading.hvel_rms_ms, (double)Gnss::current_reading.vvel_rms_ms);
     }
 
     // LiDAR read
