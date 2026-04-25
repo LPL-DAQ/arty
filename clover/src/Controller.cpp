@@ -398,24 +398,24 @@ static void step_control_loop(k_work*)
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 
-    if (auto gnss_result = Gnss::read()) {
-        const auto& [gnss, gnss_sense_time_ns] = *gnss_result;
+    if (auto gnss = Gnss::read()) {
         data.has_gnss              = true;
-        data.gnss.north_m          = gnss.north_m;
-        data.gnss.east_m           = gnss.east_m;
-        data.gnss.up_m             = gnss.up_m;
-        data.gnss.pos_sigma_m      = gnss.pos_sigma_m;
-        data.gnss.vx_ms            = gnss.vx_ms;
-        data.gnss.vy_ms            = gnss.vy_ms;
-        data.gnss.vz_ms            = gnss.vz_ms;
-        data.gnss.vel_sigma_ms     = gnss.vel_sigma_ms;
-        data.gnss.hrms_m           = gnss.hrms_m;
-        data.gnss.vrms_m           = gnss.vrms_m;
-        data.gnss.hvel_rms_ms      = gnss.hvel_rms_ms;
-        data.gnss.vvel_rms_ms      = gnss.vvel_rms_ms;
-        data.gnss.solution_time_ms = gnss.solution_time_ms;
-        data.gnss.receiver_time_ms = gnss.receiver_time_ms;
-        data.gnss.sol_type         = gnss.sol_type;
+        data.gnss.north_m          = gnss->north_m;
+        data.gnss.east_m           = gnss->east_m;
+        data.gnss.up_m             = gnss->up_m;
+        data.gnss.pos_sigma_m      = gnss->pos_sigma_m;
+        data.gnss.vx_ms            = gnss->vx_ms;
+        data.gnss.vy_ms            = gnss->vy_ms;
+        data.gnss.vz_ms            = gnss->vz_ms;
+        data.gnss.vel_sigma_ms     = gnss->vel_sigma_ms;
+        data.gnss.hrms_m           = gnss->hrms_m;
+        data.gnss.vrms_m           = gnss->vrms_m;
+        data.gnss.hvel_rms_ms      = gnss->hvel_rms_ms;
+        data.gnss.vvel_rms_ms      = gnss->vvel_rms_ms;
+        data.gnss.solution_time_ms = gnss->solution_time_ms;
+        data.gnss.receiver_time_ms = gnss->receiver_time_ms;
+        data.gnss.sol_type         = gnss->sol_type;
+        data.gnss.sense_time_ns    = gnss->sense_time_ns;
         LOG_INF("[Gnss] sol_type=%u sol_time=%u ms rx_time=%u ms",
             current_reading.sol_type, current_reading.solution_time_ms, current_reading.receiver_time_ms);
         LOG_INF("[Gnss] pos  N=%.3f E=%.3f U=%.3f sigma=%.3f m",
@@ -427,34 +427,25 @@ static void step_control_loop(k_work*)
     }
 
     // LiDAR read
-    auto lidar1 = Lidar1::read();
-    if (lidar1) {
-        LidarReading reading;
-        float sense_time_ns = 0.0f;
-        std::tie(reading, sense_time_ns) = *lidar1;
-        data.lidar_1 = reading;
-        LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+    if (auto lidar1 = Lidar1::read()) {
+        data.lidar_1 = *lidar1;
+        LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)data.lidar_1.distance_m, (double)data.lidar_1.strength, (double)data.lidar_1.sense_time_ns);
     }
 
-    auto lidar2 = Lidar2::read();
-    if (lidar2) {
-        LidarReading reading;
-        float sense_time_ns = 0.0f;
-        std::tie(reading, sense_time_ns) = *lidar2;
-        data.lidar_2 = reading;
-        LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)reading.distance_m, (double)reading.strength, (double)sense_time_ns);
+    if (auto lidar2 = Lidar2::read()) {
+        data.lidar_2 = *lidar2;
+        LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)data.lidar_2.distance_m, (double)data.lidar_2.strength, (double)data.lidar_2.sense_time_ns);
     }
 
 
     // VectornavIMU read
-    auto vectornav = VectornavImu::read();
-    if (vectornav) {
-        std::tie(data.imu, data.controller_timing.imu_sense_time_ns) = *vectornav;
+    if (auto vectornav = VectornavImu::read()) {
+        data.imu = *vectornav;
         data.has_imu = true;
         LOG_INF("VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
             (double)data.imu.quat_w, (double)data.imu.quat_x,
             (double)data.imu.quat_y, (double)data.imu.quat_z,
-            (double)data.controller_timing.imu_sense_time_ns);
+            (double)data.imu.sense_time_ns);
         LOG_INF("VectornavIMU: accel: [%f %f %f] gyro: [%f %f %f] mag: [%f %f %f]",
             (double)data.imu.accel_x, (double)data.imu.accel_y, (double)data.imu.accel_z,
             (double)data.imu.gyro_x, (double)data.imu.gyro_y, (double)data.imu.gyro_z,

@@ -37,6 +37,8 @@ struct GnssReading {
 
     // Solution type (0=none, 1=standalone, 2=DGPS, 3=float, 4=fixed)
     uint8_t sol_type;
+
+    float sense_time_ns;
 };
 
 extern k_sem gnss_ready_sem;  // Must be static-initialized as the sense thread waits on this
@@ -82,7 +84,7 @@ uint8_t calculate_checksum(const char id[2], const char length_buf[4], const uin
 
 std::expected<void, Error> init();
 void start_sense();
-std::optional<std::pair<GnssReading, float>> read();
+std::optional<GnssReading> read();
 
 // Main sense loop thread, do not call directly.
 void sense();
@@ -380,12 +382,13 @@ inline void Gnss::start_sense()
 }
 
 /// Returns the latest complete GNSS epoch reading and sense cycle time [ns], if available.
-inline std::optional<std::pair<GnssReading, float>> Gnss::read()
+inline std::optional<GnssReading> Gnss::read()
 {
     MutexGuard g{&reading_mutex};
     if (!has_reading) {
         return std::nullopt;
     }
     has_reading = false;
-    return {{current_reading, sense_time_ns}};
+    current_reading.sense_time_ns = sense_time_ns;
+    return {current_reading};
 }

@@ -559,8 +559,6 @@ message DataPacket {
 message ControllerTiming {
   required float controller_tick_time_ns = 1;
   required float analog_sensors_sense_time_ns = 2;
-  required float lidar_sense_time_ns = 3;
-  required float imu_sense_time_ns = 4;
 }
 
 message ValveStatus {
@@ -641,6 +639,7 @@ message ValveStates {
 message LidarReading {
   required float distance_m = 1;
   required float strength = 2;
+  required float sense_time_ns = 3;
 }
 
 message ImuReading {
@@ -675,6 +674,8 @@ message ImuReading {
   required float quat_x = 23;
   required float quat_y = 24;
   required float quat_z = 25;
+
+  required float sense_time_ns = 26;
 }
 
 // this is what is sent to other controllers, calculated in FlightController
@@ -763,5 +764,7 @@ message GnssReadings {
 
   // Solution type: 0=none, 1=standalone, 2=DGPS, 3=float, 4=fixed
   required uint32 sol_type = 15;
+
+  required float sense_time_ns = 16;
 }
 
