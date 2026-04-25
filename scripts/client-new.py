@@ -1722,7 +1722,7 @@ def cmd_configure_flight_controller_gains():
         'x': 'pidX',
         'y': 'pidY',
         'z': 'pidZ',
-        'zvelocity': 'pidZVelocity',
+        'zvel': 'pidZVelocity',
     }
 
     req = clover_pb2.Request()
