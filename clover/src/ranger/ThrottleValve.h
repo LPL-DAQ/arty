@@ -1,5 +1,6 @@
 #pragma once
 
+#include "clover.pb.h"
 #include "Error.h"
 #include "MutexGuard.h"
 #include <algorithm>
@@ -75,7 +76,7 @@ public:
     ThrottleValve() = delete;
 
     static std::expected<void, Error> init();
-    static std::expected<void, Error> tick(const ThrottleValveCommand& command);
+    static std::expected<ValveStatus, Error> tick(const ThrottleValveCommand& command);
 
     static void move(float target_deg);
     static void stop();
@@ -301,7 +302,7 @@ template <
     gpio_dt_spec enc_a_dt_init,
     gpio_dt_spec enc_b_dt_init,
     const device* control_counter_dt_init>
-std::expected<void, Error>
+std::expected<ValveStatus, Error>
 ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(const ThrottleValveCommand& command)
 {
     const auto& on = command.enable;
@@ -334,7 +335,12 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
         move(target_deg);
         break;
     }
-    return {};
+
+    ValveStatus status = ValveStatus_init_default;
+    status.driver_setpoint_pos_deg = get_pos_internal();
+    status.encoder_pos_deg = get_pos_encoder();
+    status.is_on = get_power_on();
+    return status;
 }
 
 template <

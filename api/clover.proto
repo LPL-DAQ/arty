@@ -564,7 +564,6 @@ message ControllerTiming {
 }
 
 message ValveStatus {
-  required float target_pos_deg = 1;
   required float driver_setpoint_pos_deg = 2;
   required float encoder_pos_deg = 3;
   required bool is_on = 4;
@@ -727,6 +726,8 @@ message RangerThrottleMetrics {
   optional float clamped_change_alpha_cmd = 8;
   optional float alpha = 9;
   optional float thrust_from_alpha_lbf = 10;
+  optional ValveStatus fuel_valve = 11;
+  optional ValveStatus lox_valve = 12;
 }
 
 message HornetThrottleMetrics {

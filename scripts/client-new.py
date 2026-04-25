@@ -201,46 +201,26 @@ def _has(msg, field: str) -> bool:
         return True
 
 
-# ── Data flattening ──────────────────────────────────────────────────────────
+def _opt(msg, field: str):
+    """Return float(msg.field) if present, else None."""
+    return float(getattr(msg, field)) if _has(msg, field) else None
+
 
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
-    only emits values for fields present in the active protobuf schema/message.
+    only emits values for fields present.
     """
-    def _opt_pkt(field: str):
-        if not _has_msg_field(pkt, field):
-            return None
-        fd = pkt.DESCRIPTOR.fields_by_name[field]
-        try:
-            if not _fd_is_required(fd) and not pkt.HasField(field):
-                return None
-        except ValueError:
-            # Some scalars/required fields do not support HasField semantics.
-            pass
-        return float(getattr(pkt, field))
-
-    def _opt_msg(msg, field: str):
-        if not _has_msg_field(msg, field):
-            return None
-        fd = msg.DESCRIPTOR.fields_by_name[field]
-        try:
-            if not _fd_is_required(fd) and not msg.HasField(field):
-                return None
-        except ValueError:
-            pass
-        return float(getattr(msg, field))
-
     row = {
         'time': recv_time,  # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
         'state': float(pkt.state),
         'data_queue_size': float(pkt.data_queue_size),
         'sequence_number': float(pkt.sequence_number),
         'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
-        'analog_sense_ns': _opt_msg(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
-        'state_estimator_ns': _opt_msg(pkt.controller_timing, 'state_estimator_update_time_ns'),
-        'lidar_sense_ns': _opt_msg(pkt.controller_timing, 'lidar_sense_time_ns'),
-        'imu_sense_ns': _opt_msg(pkt.controller_timing, 'imu_sense_time_ns'),
+        'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
+        'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
+        'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
         'gnc_connected': float(pkt.gnc_connected),
         'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
         'daq_connected': float(pkt.daq_connected),
@@ -250,7 +230,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     # Common analog/estimate data.
     row.update(
         {
-            'battery_voltage': _opt_msg(pkt.analog_sensors, 'battery_voltage'),
+            'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
             'est_pos_x_m': float(pkt.estimated_state.position.x),
             'est_pos_y_m': float(pkt.estimated_state.position.y),
             'est_pos_z_m': float(pkt.estimated_state.position.z),
@@ -260,27 +240,27 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             'est_yaw_deg': float(pkt.estimated_state.euler.x),
             'est_pitch_deg': float(pkt.estimated_state.euler.y),
             'est_roll_deg': float(pkt.estimated_state.euler.z),
-            'trace_time_msec': _opt_pkt('trace_time_msec'),
-            'throttle_thrust_command_lbf': _opt_pkt('throttle_thrust_command_lbf'),
-            'tvc_pitch_command_deg': _opt_pkt('tvc_pitch_command_deg'),
-            'tvc_yaw_command_deg': _opt_pkt('tvc_yaw_command_deg'),
-            'rcs_roll_command_deg': _opt_pkt('rcs_roll_command_deg'),
-            'flight_x_command_m': _opt_pkt('flight_x_command_m'),
-            'flight_y_command_m': _opt_pkt('flight_y_command_m'),
-            'flight_z_command_m': _opt_pkt('flight_z_command_m'),
-            'flight_pitch_accel_rad_s2': _opt_pkt('flight_pitch_accel_rad_s2'),
-            'flight_yaw_accel_rad_s2': _opt_pkt('flight_yaw_accel_rad_s2'),
-            'flight_z_accel_m_s2': _opt_pkt('flight_z_accel_m_s2'),
-            'main_propeller_command_us': _opt_pkt('main_propeller_command'),
-            'pitch_servo_command_us': _opt_pkt('pitch_servo_command'),
-            'yaw_servo_command_us': _opt_pkt('yaw_servo_command'),
-            'rcs_propeller_cw_command_us': _opt_pkt('rcs_propeller_cw_command'),
-            'rcs_propeller_ccw_command_us': _opt_pkt('rcs_propeller_ccw_command'),
+            'trace_time_msec': _opt(pkt, 'trace_time_msec'),
+            'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
+            'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
+            'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
+            'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
+            'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
+            'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
+            'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
+            'flight_pitch_accel_rad_s2': _opt(pkt, 'flight_pitch_accel_rad_s2'),
+            'flight_yaw_accel_rad_s2': _opt(pkt, 'flight_yaw_accel_rad_s2'),
+            'flight_z_accel_m_s2': _opt(pkt, 'flight_z_accel_m_s2'),
+            'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
+            'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
+            'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
+            'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
+            'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
         }
     )
 
     # Optional GNSS data.
-    if _has_msg_field(pkt, 'gnss') and pkt.HasField('gnss'):
+    if _has(pkt, 'gnss'):
         row.update(
             {
                 'gnss_north_m': float(pkt.gnss.north_m),
@@ -294,18 +274,18 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         )
 
     # Optional lidar data.
-    if _has_msg_field(pkt, 'lidar_1') and pkt.HasField('lidar_1'):
+    if _has(pkt, 'lidar_1'):
         row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
-    if _has_msg_field(pkt, 'lidar_2') and pkt.HasField('lidar_2'):
+    if _has(pkt, 'lidar_2'):
         row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
 
     # Optional Hornet metrics.
-    if _has_msg_field(pkt, 'hornet_throttle_metrics') and pkt.HasField('hornet_throttle_metrics'):
-        row['hornet_thrust_N'] = _opt_msg(pkt.hornet_throttle_metrics, 'thrust_N')
+    if _has(pkt, 'hornet_throttle_metrics'):
+        row['hornet_thrust_N'] = _opt(pkt.hornet_throttle_metrics, 'thrust_N')
     else:
         row['hornet_thrust_N'] = None
 
-    if _has_msg_field(pkt, 'flight_controller_metrics') and pkt.HasField('flight_controller_metrics'):
+    if _has(pkt, 'flight_controller_metrics'):
         fcm = pkt.flight_controller_metrics
         row.update(
             {
@@ -333,28 +313,46 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             }
         )
 
-    # Optional Ranger command-style fields.
-    if _has_msg_field(pkt, 'fuel_valve_command') and pkt.HasField('fuel_valve_command'):
-        row['gnc_fuel_enable'] = _opt_msg(pkt.fuel_valve_command, 'enable')
-        row['gnc_fuel_set_pos'] = _opt_msg(pkt.fuel_valve_command, 'set_pos')
-        row['gnc_fuel_target_deg'] = _opt_msg(pkt.fuel_valve_command, 'target_deg')
-    if _has_msg_field(pkt, 'lox_valve_command') and pkt.HasField('lox_valve_command'):
-        row['gnc_lox_enable'] = _opt_msg(pkt.lox_valve_command, 'enable')
-        row['gnc_lox_set_pos'] = _opt_msg(pkt.lox_valve_command, 'set_pos')
-        row['gnc_lox_target_deg'] = _opt_msg(pkt.lox_valve_command, 'target_deg')
+    # Throttle valve commands and motor feedback.
+    if _has(pkt, 'fuel_valve_command'):
+        row['gnc_fuel_enable'] = _opt(pkt.fuel_valve_command, 'enable')
+        row['gnc_fuel_set_pos'] = _opt(pkt.fuel_valve_command, 'set_pos')
+        row['gnc_fuel_target_deg'] = _opt(pkt.fuel_valve_command, 'target_deg')
+    if _has(pkt, 'lox_valve_command'):
+        row['gnc_lox_enable'] = _opt(pkt.lox_valve_command, 'enable')
+        row['gnc_lox_set_pos'] = _opt(pkt.lox_valve_command, 'set_pos')
+        row['gnc_lox_target_deg'] = _opt(pkt.lox_valve_command, 'target_deg')
 
-    if _has_msg_field(pkt, 'ranger_throttle_metrics') and pkt.HasField('ranger_throttle_metrics'):
+    # Motor position feedback (ValveStatus: target / driver setpoint / encoder).
+    if _has(pkt, 'fuel_valve'):
+        row.update(
+            {
+                'fuel_driver_setpoint_pos_deg': float(pkt.fuel_valve.driver_setpoint_pos_deg),
+                'fuel_encoder_pos_deg': float(pkt.fuel_valve.encoder_pos_deg),
+                'fuel_is_on': float(pkt.fuel_valve.is_on),
+            }
+        )
+    if _has(pkt, 'lox_valve'):
+        row.update(
+            {
+                'lox_driver_setpoint_pos_deg': float(pkt.lox_valve.driver_setpoint_pos_deg),
+                'lox_encoder_pos_deg': float(pkt.lox_valve.encoder_pos_deg),
+                'lox_is_on': float(pkt.lox_valve.is_on),
+            }
+        )
+
+    if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
         row.update(
             {
-                'predicted_thrust': _opt_msg(rtm, 'predicted_thrust_lbf'),
-                'predicted_of': _opt_msg(rtm, 'predicted_of'),
-                'mdot_fuel': _opt_msg(rtm, 'mdot_fuel'),
-                'mdot_lox': _opt_msg(rtm, 'mdot_lox'),
-                'change_alpha_cmd': _opt_msg(rtm, 'change_alpha_cmd'),
-                'clamped_change_alpha_cmd': _opt_msg(rtm, 'clamped_change_alpha_cmd'),
-                'alpha': _opt_msg(rtm, 'alpha'),
-                'thrust_from_alpha': _opt_msg(rtm, 'thrust_from_alpha_lbf'),
+                'predicted_thrust': _opt(rtm, 'predicted_thrust_lbf'),
+                'predicted_of': _opt(rtm, 'predicted_of'),
+                'mdot_fuel': _opt(rtm, 'mdot_fuel'),
+                'mdot_lox': _opt(rtm, 'mdot_lox'),
+                'change_alpha_cmd': _opt(rtm, 'change_alpha_cmd'),
+                'clamped_change_alpha_cmd': _opt(rtm, 'clamped_change_alpha_cmd'),
+                'alpha': _opt(rtm, 'alpha'),
+                'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
             }
         )
 
@@ -1246,38 +1244,6 @@ def cmd_is_not_aborted():
     send_request(req, 'IS_NOT_ABORTED')
 
 
-# TODO: configure sensor bias is no longer up to date with ranger
-def cmd_configure_sensor_bias():
-    """PROTO CHANGE: new request — set analog bias for a PT or TC sensor."""
-    t = THEME
-    console.print(f'\n  [{t["primary"]}]Configure Analog Sensor Bias[/{t["primary"]}]')
-
-    sensors = [
-        ('1', 'PT-102', clover_pb2.PT102),
-        ('2', 'PT-103', clover_pb2.PT103),
-        ('3', 'PT-202', clover_pb2.PT202),
-        ('4', 'PT-203', clover_pb2.PT203),
-        ('5', 'PTF-401', clover_pb2.PTF401),
-        ('6', 'PTO-401', clover_pb2.PTO401),
-        ('7', 'PTC-401', clover_pb2.PTC401),
-        ('8', 'PTC-402', clover_pb2.PTC402),
-        ('9', 'TC-102', clover_pb2.TC102),
-        ('10', 'TC-102.5', clover_pb2.TC102_5),
-    ]
-    for num, name, _ in sensors:
-        console.print(f'    [{num:>2}] {name}')
-
-    choice = Prompt.ask('  Select sensor', choices=[s[0] for s in sensors])
-    _, sensor_name, sensor_val = next(s for s in sensors if s[0] == choice)
-
-    bias = FloatPrompt.ask(f'  Bias value for {sensor_name}')
-
-    req = clover_pb2.Request()
-    req.configure_analog_sensors_bias.sensor = sensor_val
-    req.configure_analog_sensors_bias.bias = bias
-    send_request(req, f'CONFIGURE_SENSOR_BIAS ({sensor_name} bias={bias:.4f})')
-
-
 def cmd_reset_valve_position():
     """Reset a valve to a specified degree position."""
     t = THEME
@@ -1956,7 +1922,7 @@ MENU_ITEMS = [
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
-    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_sensor_bias),
+    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
     ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),

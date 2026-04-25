@@ -602,8 +602,19 @@ static void step_control_loop(k_work*)
 
     // Dispatch commands to actuators
 #if CONFIG_RANGER
-    FuelValve::tick(data.fuel_valve_command);
-    LoxValve::tick(data.lox_valve_command);
+    auto fuel_valve_status = FuelValve::tick(data.fuel_valve_command);
+    auto lox_valve_status = LoxValve::tick(data.lox_valve_command);
+
+    if (data.has_ranger_throttle_metrics) {
+        if (fuel_valve_status.has_value()) {
+            data.ranger_throttle_metrics.has_fuel_valve = true;
+            data.ranger_throttle_metrics.fuel_valve = *fuel_valve_status;
+        }
+        if (lox_valve_status.has_value()) {
+            data.ranger_throttle_metrics.has_lox_valve = true;
+            data.ranger_throttle_metrics.lox_valve = *lox_valve_status;
+        }
+    }
     // RCS valves, TVC actuators
 #elif CONFIG_HORNET
     // TODO: do something if these return an error
