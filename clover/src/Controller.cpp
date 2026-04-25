@@ -435,8 +435,9 @@ static void step_control_loop(k_work*)
             (double)data.imu.gyro_x, (double)data.imu.gyro_y, (double)data.imu.gyro_z,
             (double)data.imu.mag_x, (double)data.imu.mag_y, (double)data.imu.mag_z);
     }
-    else
+    else {
         // LOG_INF("VectornavIMU no reading");
+    }
 
     // TODO: dont provide whole data, this is temp caause we dont have the sensors
     auto estimated_state = StateEstimator::estimate(data);

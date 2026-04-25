@@ -485,7 +485,7 @@ message DataPacket {
   optional LidarReading lidar_2 = 22;
 
   //IMU
-  optional ImuReading imu = 23;  
+  optional ImuReading imu = 23;
 
   // state estimate
   required EstimatedState estimated_state = 86;
@@ -689,6 +689,7 @@ message Quaternion {
 // Estimated vehicle state for telemetry and flight path monitoring.
 message EstimatedState {
   required Quaternion R_WB = 1; // world to body
+  required Vector3D euler = 4; // for data logging ease 
   required Vector3D position = 2;
   required Vector3D velocity = 3;
 }
