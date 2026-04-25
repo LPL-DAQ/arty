@@ -32,7 +32,7 @@
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 35, 1);
+K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 20, 1);
 
 // Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
@@ -436,7 +436,7 @@ static void step_control_loop(k_work*)
             (double)data.imu.mag_x, (double)data.imu.mag_y, (double)data.imu.mag_z);
     }
     else
-        LOG_INF("VectornavIMU no reading");
+        // LOG_INF("VectornavIMU no reading");
 
     // TODO: dont provide whole data, this is temp caause we dont have the sensors
     auto estimated_state = StateEstimator::estimate(data);
