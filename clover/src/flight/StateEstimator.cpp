@@ -48,7 +48,7 @@ std::optional<EstimatedState> StateEstimator::estimate(
     bool gnss_updated = false;
 
     // IMU: update quaternion if timestamp changed.
-    if (imu.sense_time_ns >= imu_update_timestamp_ns) {
+    if (imu.sense_time_ns > imu_update_timestamp_ns) {
         imu_update_timestamp_ns = imu.sense_time_ns;
         current_estimate.R_WB.qw = imu.quat_w;
         current_estimate.R_WB.qx = imu.quat_x;
@@ -57,7 +57,7 @@ std::optional<EstimatedState> StateEstimator::estimate(
     }
 
     // GNSS: update x/y position and x/y/z velocity if timestamp changed.
-    if (gnss.sense_time_ns >= gnss_update_timestamp_ns) {
+    if (gnss.sense_time_ns > gnss_update_timestamp_ns) {
         gnss_update_timestamp_ns = gnss.sense_time_ns;
         gnss_updated = true;
         current_estimate.position.x = gnss.north_m;
@@ -69,13 +69,13 @@ std::optional<EstimatedState> StateEstimator::estimate(
     }
 
     // Lidar 1: track timestamp.
-    if (lidar_1.sense_time_ns >= lidar_1_update_timestamp_ns) {
+    if (lidar_1.sense_time_ns > lidar_1_update_timestamp_ns) {
         lidar_1_update_timestamp_ns = lidar_1.sense_time_ns;
         lidar_1_updated = true;
     }
 
     // Lidar 2: track timestamp.
-    if (lidar_2.sense_time_ns >= lidar_2_update_timestamp_ns) {
+    if (lidar_2.sense_time_ns > lidar_2_update_timestamp_ns) {
         lidar_2_update_timestamp_ns = lidar_2.sense_time_ns;
         lidar_2_updated = true;
     }
