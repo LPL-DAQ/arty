@@ -31,12 +31,10 @@ static constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
 static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
 // Controller constants
-
 static inline float alpha = -1.0f;
 static inline uint32_t low_ptc_start_time_ms = 0;
-static inline float target_of = 1.2f;
-// TODO: Tune controller constants
-static constexpr float THRUST_KP = 0.015f;
+static inline float target_of = 1.5f;
+static constexpr float THRUST_KP = 0.008283f;
 static constexpr float MAX_CHANGE_ALPHA = 20.0f;
 static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
 static constexpr float MIN_ALPHA = 0.0f;
@@ -45,6 +43,7 @@ static constexpr float MIN_VALVE_POS = 25.0f;
 static constexpr float MAX_VALVE_POS = 90.0f;
 
 // Controller state variables
+// TODO: James pls check
 static constexpr float MAX_threshold_PT2k = 1900.0f; // Define a maximum value for sensor validation
 static constexpr float MAX_threshold_PT1k = 950.0f; // Define a maximum value for sensor validation
 static constexpr float MIN_threshold = 50.0f;// Define a maximum value for sensor validation
@@ -237,6 +236,7 @@ static inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
     return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
+// TODO: james pls turn into lookup table using rupin's csv
 
     // ISP lookup axes: chamber pressure (pc) vs O/F.
 static constexpr int ISP_PC_LEN = 29;
@@ -1980,6 +1980,7 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     // 2. Read pressures
     // TODO: these were also battery voltage? That seems wrong
     // TODO: ARRE THESE THE CORRECT PTS? NEEDS TO BE UPDATED FOR RANGER
+    // TODO: james, rupin says he doesnt know what to do - He cant find the P&ID 
     float ptc401_val = analog_sensors.ptc1;                                    // Adjusted value
     float pto401_val = analog_sensors.pto1 + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
     float pt103_val = analog_sensors.pt101;                                      // Adjusted value
