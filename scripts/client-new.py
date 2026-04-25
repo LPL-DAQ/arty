@@ -744,7 +744,7 @@ STATE_COLORS = {
     'STATE_IDLE': 'green',
     'STATE_CALIBRATE_THROTTLE_VALVE': 'magenta',
     'STATE_THROTTLE_VALVE_PRIMED': 'cyan',
-    'STATE_THROTTLE_VALVE': 'gold1',
+    'STATE_THROTTLE_VALVE': 'yellow',
     'STATE_THROTTLE_PRIMED': 'cyan',
     'STATE_THROTTLE': 'yellow',
     'STATE_CALIBRATE_TVC': 'magenta',
