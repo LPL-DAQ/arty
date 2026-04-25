@@ -57,6 +57,11 @@ THEME = {
 
 VALVE_SEQ_DIR = pathlib.Path('sequences/valve')
 THRUST_SEQ_DIR = pathlib.Path('sequences/thrust')
+TVC_SEQ_DIR = pathlib.Path('sequences/tvc')
+RCS_VALVE_SEQ_DIR = pathlib.Path('sequences/rcs_valve')
+RCS_SEQ_DIR = pathlib.Path('sequences/rcs')
+STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
+FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 ZEPHYR_IP = '169.254.99.99'  # real board
@@ -173,76 +178,185 @@ def listen_for_telemetry():
 _STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
 
 
-# ── Data flattening ──────────────────────────────────────────────────────────
+# Shared protobuf descriptor helpers.
+def _has_msg_field(msg, field: str) -> bool:
+    return field in msg.DESCRIPTOR.fields_by_name
+
+
+def _fd_is_required(fd) -> bool:
+    marker = getattr(fd, 'is_required', None)
+    if callable(marker):
+        return marker()
+    if marker is not None:
+        return bool(marker)
+    return fd.label == fd.LABEL_REQUIRED
+
+
+def _has(msg, field: str) -> bool:
+    if not _has_msg_field(msg, field):
+        return False
+    try:
+        return msg.HasField(field)
+    except ValueError:
+        return True
+
+
+def _opt(msg, field: str):
+    """Return float(msg.field) if present, else None."""
+    return float(getattr(msg, field)) if _has(msg, field) else None
 
 
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
-
-    PROTO CHANGES applied here:
-      - pkt.time   → pkt.time_ns  (field renamed; now nanoseconds uint64)
-      - pkt.sensors (old Sensors message) → pkt.analog_sensors (new AnalogSensors)
-      - AnalogSensors fields are now required (no HasField checks needed)
-      - Two new TC sensors added: tc102, tc102_5
-      - adc_read_time_ns added as a timing metric
-      - ValveStatus lost 'enabled', gained 'is_on' (is_on stored as float 0/1)
-      - pkt.is_abort removed — abort is now a SystemState (STATE_ABORT)
-      - controller_tick_time_ns added as a timing metric
+    only emits values for fields present.
     """
-    # pts = pkt.pts
-    f = pkt.fuel_valve
-    l = pkt.lox_valve
-    return {
+    row = {
         'time': recv_time,  # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
         'state': float(pkt.state),
         'data_queue_size': float(pkt.data_queue_size),
         'sequence_number': float(pkt.sequence_number),
         'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
-        'gnc_connected': bool(pkt.gnc_connected),
+        'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
+        'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
+        'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
+        'gnc_connected': float(pkt.gnc_connected),
         'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
-        'daq_connected': bool(pkt.daq_connected),
+        'daq_connected': float(pkt.daq_connected),
         'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
-        # 'gnc_pt102': float(pts.pt102),
-        # 'gnc_pt103': float(pts.pt103),
-        # 'gnc_pt202': float(pts.pt202),
-        # 'gnc_pt203': float(pts.pt203),
-        # 'gnc_ptf401': float(pts.ptf401),
-        # 'gnc_pto401': float(pts.pto401),
-        # 'gnc_ptc401': float(pts.ptc401),
-        # 'gnc_ptc402': float(pts.ptc402),
-        # Fuel valve
-        'gnc_fuel_target': float(f.target_pos_deg),
-        'gnc_fuel_driver': float(f.driver_setpoint_pos_deg),
-        'gnc_fuel_encoder': float(f.encoder_pos_deg),
-        'gnc_fuel_is_on': float(f.is_on),  # PROTO CHANGE: was 'enabled'
-        # LOX valve — same changes as fuel
-        'gnc_lox_target': float(l.target_pos_deg),
-        'gnc_lox_driver': float(l.driver_setpoint_pos_deg),
-        'gnc_lox_encoder': float(l.encoder_pos_deg),
-        'gnc_lox_is_on': float(l.is_on),  # PROTO CHANGE: was 'enabled'
-        # State data
-        'fuel_found_hardstop': float(pkt.valve_calibration_data.fuel_found_hardstop),
-        'lox_found_hardstop': float(pkt.valve_calibration_data.lox_found_hardstop),
-        'fuel_hardstop_pos': float(pkt.valve_calibration_data.fuel_hardstop_pos),
-        'lox_hardstop_pos': float(pkt.valve_calibration_data.lox_hardstop_pos),
-        'cal_phase': float(pkt.valve_calibration_data.cal_phase),
-        'rep_count': float(pkt.valve_calibration_data.rep_count),
-        'fuel_err': float(pkt.valve_calibration_data.fuel_err),
-        'lox_err': float(pkt.valve_calibration_data.lox_err),
-        'predicted_thrust': float(pkt.thrust_sequence_data.predicted_thrust),
-        'predicted_of': float(pkt.thrust_sequence_data.predicted_of),
-        'mdot_fuel': float(pkt.thrust_sequence_data.mdot_fuel),
-        'mdot_lox': float(pkt.thrust_sequence_data.mdot_lox),
-        'target_thrust': float(pkt.thrust_sequence_data.target_thrust),
-        'thrust_error': float(pkt.thrust_sequence_data.thrust_error),
-        'change_alpha_cmd': float(pkt.thrust_sequence_data.change_alpha_cmd),
-        'clamped_change_alpha_cmd': float(pkt.thrust_sequence_data.clamped_change_alpha_cmd),
-        'alpha': float(pkt.thrust_sequence_data.alpha),
-        'thrust_from_alpha': float(pkt.thrust_sequence_data.thrust_from_alpha),
-        'fuel_valve_cmd': float(pkt.thrust_sequence_data.fuel_valve_cmd),
-        'lox_valve_cmd': float(pkt.thrust_sequence_data.lox_valve_cmd),
     }
+
+    # Common analog/estimate data.
+    row.update(
+        {
+            'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
+            'est_pos_x_m': float(pkt.estimated_state.position.x),
+            'est_pos_y_m': float(pkt.estimated_state.position.y),
+            'est_pos_z_m': float(pkt.estimated_state.position.z),
+            'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
+            'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
+            'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
+            'est_yaw_deg': float(pkt.estimated_state.euler.x),
+            'est_pitch_deg': float(pkt.estimated_state.euler.y),
+            'est_roll_deg': float(pkt.estimated_state.euler.z),
+            'trace_time_msec': _opt(pkt, 'trace_time_msec'),
+            'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
+            'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
+            'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
+            'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
+            'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
+            'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
+            'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
+            'flight_pitch_accel_rad_s2': _opt(pkt, 'flight_pitch_accel_rad_s2'),
+            'flight_yaw_accel_rad_s2': _opt(pkt, 'flight_yaw_accel_rad_s2'),
+            'flight_z_accel_m_s2': _opt(pkt, 'flight_z_accel_m_s2'),
+            'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
+            'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
+            'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
+            'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
+            'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
+        }
+    )
+
+    # Optional GNSS data.
+    if _has(pkt, 'gnss'):
+        row.update(
+            {
+                'gnss_north_m': float(pkt.gnss.north_m),
+                'gnss_east_m': float(pkt.gnss.east_m),
+                'gnss_up_m': float(pkt.gnss.up_m),
+                'gnss_vx_ms': float(pkt.gnss.vx_ms),
+                'gnss_vy_ms': float(pkt.gnss.vy_ms),
+                'gnss_vz_ms': float(pkt.gnss.vz_ms),
+                'gnss_sol_type': float(pkt.gnss.sol_type),
+            }
+        )
+
+    # Optional lidar data.
+    if _has(pkt, 'lidar_1'):
+        row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
+    if _has(pkt, 'lidar_2'):
+        row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
+
+    # Optional Hornet metrics.
+    if _has(pkt, 'hornet_throttle_metrics'):
+        row['hornet_thrust_N'] = _opt(pkt.hornet_throttle_metrics, 'thrust_N')
+    else:
+        row['hornet_thrust_N'] = None
+
+    if _has(pkt, 'flight_controller_metrics'):
+        fcm = pkt.flight_controller_metrics
+        row.update(
+            {
+                'fcm_des_world_tilt_x_rad': float(fcm.desired_world_tilt_x_rad),
+                'fcm_des_world_tilt_y_rad': float(fcm.desired_world_tilt_y_rad),
+                'fcm_act_world_tilt_x_rad': float(fcm.actual_world_tilt_x_rad),
+                'fcm_act_world_tilt_y_rad': float(fcm.actual_world_tilt_y_rad),
+                'fcm_des_vz_m_s': float(fcm.desired_vertical_velocity_m_s),
+                'fcm_cmd_vacc_m_s2': float(fcm.commanded_vertical_acceleration_m_s2),
+                'fcm_cmd_pitch_accel_rad_s2': float(fcm.commanded_pitch_acceleration_rad_s2),
+                'fcm_cmd_yaw_accel_rad_s2': float(fcm.commanded_yaw_acceleration_rad_s2),
+            }
+        )
+    else:
+        row.update(
+            {
+                'fcm_des_world_tilt_x_rad': None,
+                'fcm_des_world_tilt_y_rad': None,
+                'fcm_act_world_tilt_x_rad': None,
+                'fcm_act_world_tilt_y_rad': None,
+                'fcm_des_vz_m_s': None,
+                'fcm_cmd_vacc_m_s2': None,
+                'fcm_cmd_pitch_accel_rad_s2': None,
+                'fcm_cmd_yaw_accel_rad_s2': None,
+            }
+        )
+
+    # Throttle valve commands and motor feedback.
+    if _has(pkt, 'fuel_valve_command'):
+        row['gnc_fuel_enable'] = _opt(pkt.fuel_valve_command, 'enable')
+        row['gnc_fuel_set_pos'] = _opt(pkt.fuel_valve_command, 'set_pos')
+        row['gnc_fuel_target_deg'] = _opt(pkt.fuel_valve_command, 'target_deg')
+    if _has(pkt, 'lox_valve_command'):
+        row['gnc_lox_enable'] = _opt(pkt.lox_valve_command, 'enable')
+        row['gnc_lox_set_pos'] = _opt(pkt.lox_valve_command, 'set_pos')
+        row['gnc_lox_target_deg'] = _opt(pkt.lox_valve_command, 'target_deg')
+
+    # Motor position feedback (ValveStatus: target / driver setpoint / encoder).
+    if _has(pkt, 'fuel_valve'):
+        row.update(
+            {
+                'fuel_driver_setpoint_pos_deg': float(pkt.fuel_valve.driver_setpoint_pos_deg),
+                'fuel_encoder_pos_deg': float(pkt.fuel_valve.encoder_pos_deg),
+                'fuel_is_on': float(pkt.fuel_valve.is_on),
+            }
+        )
+    if _has(pkt, 'lox_valve'):
+        row.update(
+            {
+                'lox_driver_setpoint_pos_deg': float(pkt.lox_valve.driver_setpoint_pos_deg),
+                'lox_encoder_pos_deg': float(pkt.lox_valve.encoder_pos_deg),
+                'lox_is_on': float(pkt.lox_valve.is_on),
+            }
+        )
+
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        row.update(
+            {
+                'predicted_thrust': _opt(rtm, 'predicted_thrust_lbf'),
+                'predicted_of': _opt(rtm, 'predicted_of'),
+                'mdot_fuel': _opt(rtm, 'mdot_fuel'),
+                'mdot_lox': _opt(rtm, 'mdot_lox'),
+                'change_alpha_cmd': _opt(rtm, 'change_alpha_cmd'),
+                'clamped_change_alpha_cmd': _opt(rtm, 'clamped_change_alpha_cmd'),
+                'alpha': _opt(rtm, 'alpha'),
+                'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
+            }
+        )
+
+    return row
 
 
 def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[dict]:
@@ -626,14 +740,24 @@ def _build_lox_graph() -> Panel:
 STATE_COLORS = {
     'STATE_UNKNOWN': 'dim white',
     'STATE_IDLE': 'green',
-    'STATE_CALIBRATE_VALVE': 'magenta',
-    'STATE_VALVE_PRIMED': 'cyan',
-    'STATE_VALVE_SEQ': 'gold1',
-    'STATE_THRUST_PRIMED': 'cyan',
-    'STATE_THRUST_SEQ': 'yellow',
+    'STATE_CALIBRATE_THROTTLE_VALVE': 'magenta',
+    'STATE_THROTTLE_VALVE_PRIMED': 'cyan',
+    'STATE_THROTTLE_VALVE': 'yellow',
+    'STATE_THROTTLE_PRIMED': 'cyan',
+    'STATE_THROTTLE': 'yellow',
+    'STATE_CALIBRATE_TVC': 'magenta',
+    'STATE_TVC_PRIMED': 'cyan',
+    'STATE_TVC': 'yellow',
+    'STATE_RCS_VALVE_PRIMED': 'cyan',
+    'STATE_RCS_VALVE': 'yellow',
+    'STATE_RCS_PRIMED': 'cyan',
+    'STATE_RCS': 'yellow',
+    'STATE_STATIC_FIRE_PRIMED': 'cyan',
+    'STATE_STATIC_FIRE': 'yellow',
+    'STATE_FLIGHT_PRIMED': 'cyan',
+    'STATE_FLIGHT': 'bold green',
     'STATE_ABORT': 'bold red',
 }
-
 
 def _build_status_renderable():
     """Build a rich renderable for the current telemetry snapshot."""
@@ -651,159 +775,263 @@ def _build_status_renderable():
 
     state_name = clover_pb2.SystemState.Name(pkt.state)
     state_color = STATE_COLORS.get(state_name, 'white')
-
-    # abort is now STATE_ABORT in state enum
     is_abort = state_name == 'STATE_ABORT'
     abort_str = (
         f'[bold red]{t["icon_stop"]} ABORT[/bold red]' if is_abort else '[green]nominal[/green]'
     )
 
-    # ── Header ────────────────────────────────────────────────
     hdr = Table.grid(padding=(0, 3))
     for _ in range(5):
         hdr.add_column()
     hdr.add_row(
         Text(f'{t["icon_live"]} LIVE', style='bold green'),
         Text(f'State: {state_name}', style=state_color),
-        # in nanoseconds
         Text(f't = {pkt.time_ns / 1e9:.3f} s', style='white'),
         Text(f'seq #{pkt.sequence_number}', style=t['muted']),
         Text(f'queue: {pkt.data_queue_size}', style=t['muted']),
     )
     header_panel = Panel(hdr, border_style=t['panel_border'], padding=(0, 1), subtitle=abort_str)
 
-    # ── Valve table ───────────────────────────────────────────
-    vt = Table(
+    # Pose table
+    pose = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
         header_style=t['primary'],
         border_style=t['panel_border'],
         padding=(0, 1),
     )
-    vt.add_column('Valve', style='bold white', no_wrap=True)
-    vt.add_column('On', no_wrap=True)
-    vt.add_column('Target °', style='white', no_wrap=True)
-    vt.add_column('Driver °', style='white', no_wrap=True)
-    vt.add_column('Encoder °', style='white', no_wrap=True)
+    pose.add_column('Vehicle', style='bold white', no_wrap=True)
+    pose.add_column('x', style='white', justify='right', no_wrap=True)
+    pose.add_column('y', style='white', justify='right', no_wrap=True)
+    pose.add_column('z', style='white', justify='right', no_wrap=True)
+    pose.add_column('Unit', style=t['muted'], no_wrap=True)
 
-    for label, icon, color, v in [
-        ('FUEL', t['icon_fuel'], 'gold1', pkt.fuel_valve),
-        ('LOX', t['icon_lox'], 'dark_red', pkt.lox_valve),
-    ]:
-        vt.add_row(
-            f'{icon} [{color}]{label}[/{color}]',
-            '[green]YES[/green]' if v.is_on else '[red]NO[/red]',
-            f'{v.target_pos_deg:.2f}',
-            f'{v.driver_setpoint_pos_deg:.2f}',
-            f'{v.encoder_pos_deg:.2f}',
-        )
+    pos = pkt.estimated_state.position
+    vel = pkt.estimated_state.velocity
+    euler = pkt.estimated_state.euler
+    pose.add_row('Position', f'{pos.x:.2f}', f'{pos.y:.2f}', f'{pos.z:.2f}', 'm')
+    pose.add_row('Velocity', f'{vel.x:.2f}', f'{vel.y:.2f}', f'{vel.z:.2f}', 'm/s')
+    pose.add_row('Y/P/R', f'{euler.x:.1f}', f'{euler.y:.1f}', f'{euler.z:.1f}', 'deg')
 
-    # ── Sensor table ──────────────────────────────────────────
-    #               Added TC-102, TC-102.5, ADC read time rows
-    st = Table(
+    # Command table
+    cmd = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
         header_style=t['primary'],
         border_style=t['panel_border'],
         padding=(0, 1),
     )
-    st.add_column('Sensor', style='bold white', no_wrap=True)
-    st.add_column('Value', style='white', no_wrap=True, justify='right')
-    st.add_column('Unit', style=t['muted'], no_wrap=True)
+    cmd.add_column('Command', style='bold white', no_wrap=True)
+    cmd.add_column('Value', style='white', justify='right', no_wrap=True)
+    cmd.add_column('Unit', style=t['muted'], no_wrap=True)
 
-    sensors = pkt.analog_sensors
-    for name, val, unit in [
-        ('PT-001', sensors.pt001, 'psi'),
-        ('PT-002', sensors.pt002, 'psi'),
-        ('PT-003', sensors.pt003, 'psi'),
-        # ('PT-203', sensors.pt203, 'psi'),
-        # ('PTF-401', sensors.ptf401, 'psi'),
-        ('PT-101', sensors.pt101, 'psi'),
-        ('TC-101', sensors.tc101, '°C'),
-        ('TC-102', sensors.tc102, '°C'),
-        # ("TC-102",     pts.tc102,            "°C"),
-        # ("TC-102.5",   pts.tc102_5,          "°C"),
-        # ("ADC t",      pts.adc_read_time_ns, "ns"),
-    ]:
-        val_str = f'{val:.2f}' if val != 0.0 else f'[{t["muted"]}]—[/{t["muted"]}]'
-        st.add_row(name, val_str, unit)
-
-    # ── Timings table ──────────────────────────────────────────
-    #               Added TC-102, TC-102.5, ADC read time rows
-    stime = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    stime.add_column('Sensor', style='bold white', no_wrap=True)
-    stime.add_column('Time taken', style='white', no_wrap=True, justify='right')
-    stime.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    sensors = pkt.analog_sensors
-    for name, val, unit in [
-        ('Controller Tick', pkt.controller_timing.controller_tick_time_ns / 1000, 'us'),
-        ('Analog Read', pkt.controller_timing.analog_sensors_sense_time_ns / 1000, 'us'),
-    ]:
-        val_str = f'{val:.2f}' if val != 0.0 else f'[{t["muted"]}]—[/{t["muted"]}]'
-        stime.add_row(name, val_str, unit)
-
-    # ── State data panel ──────────────────────────────────────
-    sd = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    sd.add_column('Field', style='bold white', no_wrap=True)
-    sd.add_column('Value', style='white', no_wrap=True, justify='right')
-
-    which = pkt.WhichOneof('throttle_state_data')
-    if which == 'valve_calibration_data':
-        c = pkt.valve_calibration_data
-
-        def _hs(found, pos):
-            return f'{pos:.2f}°' if found else f'[{t["muted"]}]—[/{t["muted"]}]'
-
-        sd.add_row('fuel hardstop', _hs(c.fuel_found_hardstop, c.fuel_hardstop_pos))
-        sd.add_row('lox hardstop', _hs(c.lox_found_hardstop, c.lox_hardstop_pos))
-        sd.add_row('cal phase', str(c.cal_phase))
-        sd.add_row('rep count', str(c.rep_count))
-        sd.add_row('fuel err', f'{c.fuel_err:.4f}')
-        sd.add_row('lox err', f'{c.lox_err:.4f}')
+    if _has(pkt, 'main_propeller_command'):
+        pwm = max(1000, min(2000, pkt.main_propeller_command))
+        throttle_pct = (pwm - 1000) / 10.0
+        cmd.add_row('Main throttle', f'{throttle_pct:.2f}', '%')
+        cmd.add_row('Main PWM', str(pkt.main_propeller_command), 'us')
     else:
-        sd.add_row(f'[{t["muted"]}]no state data[/{t["muted"]}]', '')
+        cmd.add_row('Main throttle', f'[{t["muted"]}]—[/{t["muted"]}]', '%')
+        cmd.add_row('Main PWM', f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
 
-    left = Group(
-        Panel(vt, title=f'[{t["primary"]}]Valves[/{t["primary"]}]', border_style=t['panel_border']),
-        Panel(
-            sd, title=f'[{t["primary"]}]State Data[/{t["primary"]}]', border_style=t['panel_border']
-        ),
-        Panel(
-            stime,
-            title=f'[{t["primary"]}]Timing Data[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
+    for field, label in [
+        ('pitch_servo_command', 'Pitch servo'),
+        ('yaw_servo_command', 'Yaw servo'),
+        ('rcs_propeller_cw_command', 'RCS CW PWM'),
+        ('rcs_propeller_ccw_command', 'RCS CCW PWM'),
+    ]:
+        if _has(pkt, field):
+            cmd.add_row(label, str(getattr(pkt, field)), 'us')
+        else:
+            cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
+
+    # Ranger-style throttle valve commands
+    if _has(pkt, 'fuel_valve_command'):
+        fvc = pkt.fuel_valve_command
+        cmd.add_row('Fuel cmd enabled', 'YES' if fvc.enable else 'NO', '')
+        cmd.add_row('Fuel cmd set_pos', 'YES' if fvc.set_pos else 'NO', '')
+        cmd.add_row('Fuel cmd target', f'{fvc.target_deg:.2f}', 'deg')
+    if _has(pkt, 'lox_valve_command'):
+        lvc = pkt.lox_valve_command
+        cmd.add_row('LOX cmd enabled', 'YES' if lvc.enable else 'NO', '')
+        cmd.add_row('LOX cmd set_pos', 'YES' if lvc.set_pos else 'NO', '')
+        cmd.add_row('LOX cmd target', f'{lvc.target_deg:.2f}', 'deg')
+
+    for field, label, unit in [
+        ('trace_time_msec', 'Trace time', 'ms'),
+        ('throttle_thrust_command_lbf', 'Thrust cmd', 'lbf'),
+        ('tvc_pitch_command_deg', 'TVC pitch cmd', 'deg'),
+        ('tvc_yaw_command_deg', 'TVC yaw cmd', 'deg'),
+        ('rcs_roll_command_deg', 'RCS roll cmd', 'deg'),
+    ]:
+        if _has(pkt, field):
+            cmd.add_row(label, f'{getattr(pkt, field):.2f}', unit)
+        else:
+            cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
+
+    # Analog Table
+    sensors = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    sensors.add_column('Sensor', style='bold white', no_wrap=True)
+    sensors.add_column('Value', style='white', justify='right', no_wrap=True)
+    sensors.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    def _add_analog_row(label: str, field: str, unit: str):
+        if _has(pkt.analog_sensors, field):
+            sensors.add_row(label, f'{getattr(pkt.analog_sensors, field):.2f}', unit)
+        elif _has_msg_field(pkt.analog_sensors, field):
+            sensors.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
+
+    # Analog sensors (shown when available in schema/config).
+    _add_analog_row('PT-001', 'pt001', 'psi')
+    _add_analog_row('PT-002', 'pt002', 'psi')
+    _add_analog_row('PT-003', 'pt003', 'psi')
+    _add_analog_row('PT-004', 'pt004', 'psi')
+    _add_analog_row('PT-005', 'pt005', 'psi')
+    _add_analog_row('PT-101', 'pt101', 'psi')
+    _add_analog_row('PT-201', 'pt201', 'psi')
+    _add_analog_row('PTF-1', 'ptf1', 'psi')
+    _add_analog_row('PTF-2', 'ptf2', 'psi')
+    _add_analog_row('PTO-1', 'pto1', 'psi')
+    _add_analog_row('PTC-1', 'ptc1', 'psi')
+    _add_analog_row('PTC-2', 'ptc2', 'psi')
+    _add_analog_row('TC-001', 'tc001', 'C')
+    _add_analog_row('TC-101', 'tc101', 'C')
+    _add_analog_row('TC-102', 'tc102', 'C')
+    _add_analog_row('TC-F1', 'tcf1', 'C')
+    _add_analog_row('TC-O1', 'tco1', 'C')
+    _add_analog_row('PT-G001', 'ptg001', 'psi')
+    _add_analog_row('PT-G002', 'ptg002', 'psi')
+    _add_analog_row('PT-G101', 'ptg101', 'psi')
+    _add_analog_row('Battery', 'battery_voltage', 'V')
+
+    sensors.add_row(
+        'Lidar 1',
+        f'{pkt.lidar_1.distance_m:.2f}' if _has(pkt, 'lidar_1') else f'[{t["muted"]}]—[/{t["muted"]}]',
+        'm',
+    )
+    sensors.add_row(
+        'Lidar 2',
+        f'{pkt.lidar_2.distance_m:.2f}' if _has(pkt, 'lidar_2') else f'[{t["muted"]}]—[/{t["muted"]}]',
+        'm',
+    )
+
+    thrust_value = None
+    if _has(pkt, 'hornet_throttle_metrics') and _has(pkt.hornet_throttle_metrics, 'thrust_N'):
+        thrust_value = f'{pkt.hornet_throttle_metrics.thrust_N:.2f}'
+    sensors.add_row('Thrust', thrust_value if thrust_value is not None else f'[{t["muted"]}]—[/{t["muted"]}]', 'N')
+
+    # Shared valve state telemetry.
+    if _has(pkt, 'valve_states'):
+        vs = pkt.valve_states
+
+        def _valve_state_to_str(v: int) -> str:
+            try:
+                return clover_pb2.ValveState.Name(v)
+            except ValueError:
+                return str(v)
+
+        for field, label in [
+            ('sv001', 'SV001'),
+            ('sv002', 'SV002'),
+            ('sv003', 'SV003'),
+            ('sv004', 'SV004'),
+            ('pbv002', 'PBV002'),
+            ('sv005', 'SV005'),
+            ('svg001', 'SVG001'),
+            ('svg002', 'SVG002'),
+            ('svg003', 'SVG003'),
+        ]:
+            if _has(vs, field):
+                sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
+
+    # Timing table
+    timing = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    timing.add_column('Timing', style='bold white', no_wrap=True)
+    timing.add_column('Value', style='white', justify='right', no_wrap=True)
+    timing.add_column('Unit', style=t['muted'], no_wrap=True)
+    timing.add_row('Controller tick', f'{pkt.controller_timing.controller_tick_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'analog_sensors_sense_time_ns'):
+        timing.add_row('Analog read', f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'lidar_sense_time_ns'):
+        timing.add_row('Lidar read', f'{pkt.controller_timing.lidar_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'imu_sense_time_ns'):
+        timing.add_row('IMU read', f'{pkt.controller_timing.imu_sense_time_ns / 1000:.2f}', 'us')
+    if _has(pkt.controller_timing, 'state_estimator_update_time_ns'):
+        timing.add_row('State estimator', f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}', 'us')
+
+    # controller metrics table
+    fcm = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    fcm.add_column('Flight Controller Metric', style='bold white', no_wrap=True)
+    fcm.add_column('Value', style='white', justify='right', no_wrap=True)
+    fcm.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    if _has(pkt, 'flight_controller_metrics'):
+        m = pkt.flight_controller_metrics
+        fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt X', f'{m.actual_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt Y', f'{m.actual_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Desired vz', f'{m.desired_vertical_velocity_m_s:.3f}', 'm/s')
+        fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
+        fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
+        fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
+
+    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        if _has(rtm, 'predicted_thrust_lbf'):
+            fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
+        if _has(rtm, 'predicted_of'):
+            fcm.add_row('Pred O/F', f'{rtm.predicted_of:.3f}', '')
+        if _has(rtm, 'mdot_fuel'):
+            fcm.add_row('m_dot fuel', f'{rtm.mdot_fuel:.3f}', '')
+        if _has(rtm, 'mdot_lox'):
+            fcm.add_row('m_dot lox', f'{rtm.mdot_lox:.3f}', '')
+        if _has(rtm, 'change_alpha_cmd'):
+            fcm.add_row('d_alpha cmd', f'{rtm.change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'clamped_change_alpha_cmd'):
+            fcm.add_row('d_alpha clamped', f'{rtm.clamped_change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'alpha'):
+            fcm.add_row('alpha', f'{rtm.alpha:.3f}', '')
+        if _has(rtm, 'thrust_from_alpha_lbf'):
+            fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
+
+    if fcm.row_count == 0:
+        fcm.add_row(f'[{t["muted"]}]No controller metrics available[/{t["muted"]}]', '', '')
+
+    top = Columns(
+        [
+            Panel(pose, title=f'[{t["primary"]}]Vehicle State[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(cmd, title=f'[{t["primary"]}]Commands[/{t["primary"]}]', border_style=t['panel_border']),
+        ]
     )
     bottom = Columns(
         [
-            left,
-            Panel(
-                st,
-                title=f'[{t["primary"]}]Sensors[/{t["primary"]}]',
-                border_style=t['panel_border'],
-            ),
+            Panel(sensors, title=f'[{t["primary"]}]Sensors[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(timing, title=f'[{t["primary"]}]Timing[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(fcm, title=f'[{t["primary"]}]Controller[/{t["primary"]}]', border_style=t['panel_border']),
         ]
     )
 
-    return Group(
-        header_panel,
-        bottom,
-        # Columns([_build_fuel_valve_graph(), _build_lox_valve_graph()]),
-        # Columns([_build_fuel_graph(),       _build_lox_graph()]),
-    )
+    return Group(header_panel, top, bottom)
 
 
 def cmd_live_status():
@@ -842,7 +1070,6 @@ _TOOLBAR_STATE_TAGS = {
     'STATE_ABORT': ('ansired', 'ABORT'),
 }
 
-
 def get_toolbar():
     """Compact live telemetry for the prompt_toolkit bottom toolbar."""
     with packet_lock:
@@ -855,33 +1082,46 @@ def get_toolbar():
     tag, short = _TOOLBAR_STATE_TAGS.get(state_name, ('ansiwhite', state_name))
 
     is_abort = state_name == 'STATE_ABORT'
-    abort_html = '  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
+    abort_html = '  │  <ansired><b>🛑 ABORT</b></ansired>' if is_abort else ''
 
     sensors = pkt.analog_sensors
-    sensor_parts = [
-        f'{lbl}: {val:.1f}'
-        for lbl, val in [
-            ('TC-101', sensors.tc101),
-            ('TC-102', sensors.tc102),
-            # ('PT-F401', pts.ptf401),
-            # ('PT-O401', pts.pto401),
-            # ('PT-C401', pts.ptc401),
-            # ('PT-C402', pts.ptc402),
-            # ('TC-102', pts.tc102),
-            # ('TC-102.5', pts.tc102_5),  # new sensors
-        ]
-        if val != 0.0
-    ]
+    sensor_parts = []
+    for field, label in [('tc101', 'TC-101'), ('tc102', 'TC-102'), ('pt101', 'PT-101')]:
+        if _has_msg_field(sensors, field):
+            val = getattr(sensors, field)
+            if abs(val) > 1e-6:
+                sensor_parts.append(f'{label}: {val:.1f}')
     sensor_html = ('  │  ' + '  '.join(sensor_parts)) if sensor_parts else ''
 
-    f = pkt.fuel_valve
-    l = pkt.lox_valve
+    cmd_html = ''
+    if _has(pkt, 'main_propeller_command'):
+        pwm = max(1000, min(2000, pkt.main_propeller_command))
+        throttle_pct = (pwm - 1000) / 10.0
+        cmd_html = f'  │  throttle={throttle_pct:.2f}%'
+    else:
+        ranger_parts = []
+        if _has(pkt, 'fuel_valve_command'):
+            ranger_parts.append(f'🟡 tgt={pkt.fuel_valve_command.target_deg:.1f}°')
+        if _has(pkt, 'lox_valve_command'):
+            ranger_parts.append(f'🔴 tgt={pkt.lox_valve_command.target_deg:.1f}°')
+        if ranger_parts:
+            cmd_html = '  │  ' + '  '.join(ranger_parts)
+
+    position_html = ''
+    attitude_html = ''
+    if _has_msg_field(pkt, 'estimated_state'):
+        pos = pkt.estimated_state.position
+        position_html = f'  │  pos=({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})m'
+
+        euler = pkt.estimated_state.euler
+        attitude_html = f'  │  ypr=({euler.x:.1f}, {euler.y:.1f}, {euler.z:.1f})°'
+
     return HTML(
-        # 1e9 for seconds display
         f' 📡 <{tag}><b>{short}</b></{tag}>'
         f'  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}'
-        f'  │  🟡 drv={f.driver_setpoint_pos_deg:.1f}°  enc={f.encoder_pos_deg:.1f}°'
-        f'  │  🔴 drv={l.driver_setpoint_pos_deg:.1f}°  enc={l.encoder_pos_deg:.1f}°'
+        + cmd_html
+        + position_html
+        + attitude_html
         + sensor_html
         + abort_html
     )
@@ -1009,37 +1249,6 @@ def cmd_is_not_aborted():
     send_request(req, 'IS_NOT_ABORTED')
 
 
-def cmd_configure_sensor_bias():
-    """PROTO CHANGE: new request — set analog bias for a PT or TC sensor."""
-    t = THEME
-    console.print(f'\n  [{t["primary"]}]Configure Analog Sensor Bias[/{t["primary"]}]')
-
-    sensors = [
-        ('1', 'PT-102', clover_pb2.PT102),
-        ('2', 'PT-103', clover_pb2.PT103),
-        ('3', 'PT-202', clover_pb2.PT202),
-        ('4', 'PT-203', clover_pb2.PT203),
-        ('5', 'PT-F401', clover_pb2.PTF401),
-        ('6', 'PT-O401', clover_pb2.PTO401),
-        ('7', 'PT-C401', clover_pb2.PTC401),
-        ('8', 'PT-C402', clover_pb2.PTC402),
-        ('9', 'TC-102', clover_pb2.TC102),
-        ('10', 'TC-102.5', clover_pb2.TC102_5),
-    ]
-    for num, name, _ in sensors:
-        console.print(f'    [{num:>2}] {name}')
-
-    choice = Prompt.ask('  Select sensor', choices=[s[0] for s in sensors])
-    _, sensor_name, sensor_val = next(s for s in sensors if s[0] == choice)
-
-    bias = FloatPrompt.ask(f'  Bias value for {sensor_name}')
-
-    req = clover_pb2.Request()
-    req.configure_analog_sensors_bias.sensor = sensor_val
-    req.configure_analog_sensors_bias.bias = bias
-    send_request(req, f'CONFIGURE_SENSOR_BIAS ({sensor_name} bias={bias:.4f})')
-
-
 def cmd_reset_valve_position():
     """Reset a valve to a specified degree position."""
     t = THEME
@@ -1053,8 +1262,8 @@ def cmd_reset_valve_position():
     pos = FloatPrompt.ask(f'  New position for {valve_name} valve (degrees)')
 
     req = clover_pb2.Request()
-    req.reset_valve_position.valve = valve
-    req.reset_valve_position.new_pos_deg = pos
+    req.throttle_reset_valve_position.valve = valve
+    req.throttle_reset_valve_position.new_pos_deg = pos
     send_request(req, f'RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)')
 
 
@@ -1070,7 +1279,7 @@ def cmd_power_on_valve():
     valve_name = 'FUEL' if choice == '1' else 'LOX'
 
     req = clover_pb2.Request()
-    req.power_on_valve.valve = valve
+    req.throttle_power_on.valve = valve
     send_request(req, f'POWER_ON_VALVE ({valve_name})')
 
 
@@ -1086,7 +1295,7 @@ def cmd_power_off_valve():
     valve_name = 'FUEL' if choice == '1' else 'LOX'
 
     req = clover_pb2.Request()
-    req.power_off_valve.valve = valve
+    req.throttle_power_off.valve = valve
     send_request(req, f'POWER_OFF_VALVE ({valve_name})')
 
 
@@ -1135,10 +1344,10 @@ def cmd_unprime():
     send_request(req, 'UNPRIME')
 
 
-def cmd_calibrate_valve():
-    """enter valve calibration mode (IDLE → CALIBRATE_VALVE)."""
+def cmd_calibrate_throttle_valve():
+    """Enter throttle valve calibration mode (IDLE → CALIBRATE_THROTTLE_VALVE)."""
     t = THEME
-    console.print(f'\n  {t["icon_valve"]} [{t["primary"]}]Calibrate Valve[/{t["primary"]}]')
+    console.print(f'\n  {t["icon_valve"]} [{t["primary"]}]Calibrate Throttle Valve[/{t["primary"]}]')
     console.print('    [1] FUEL')
     console.print('    [2] LOX')
 
@@ -1147,8 +1356,8 @@ def cmd_calibrate_valve():
     valve_name = 'FUEL' if choice == '1' else 'LOX'
 
     req = clover_pb2.Request()
-    req.calibrate_valve.valve = valve
-    send_request(req, f'CALIBRATE_VALVE ({valve_name})')
+    req.calibrate_throttle_valve.valve = valve
+    send_request(req, f'CALIBRATE_THROTTLE_VALVE ({valve_name})')
 
 
 def _list_saved_sequences(subdir: pathlib.Path) -> list[pathlib.Path]:
@@ -1285,20 +1494,17 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
     return trace
 
 
-def cmd_load_valve_sequence():
-    """
-    Load a valve sequence (IDLE → VALVE_PRIMED). At least one trace required.
-    New field names: fuel_trace_deg, lox_trace_deg
-    """
+def cmd_load_throttle_valve_sequence():
+    """Load a throttle valve sequence (IDLE → THROTTLE_VALVE_PRIMED). At least one trace required."""
     t = THEME
-    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Valve Sequence[/{t["primary"]}]')
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Throttle Valve Sequence[/{t["primary"]}]')
 
     saved = _list_saved_sequences(VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadValveSequenceRequest)
+        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadThrottleValveSequenceRequest)
         req = clover_pb2.Request()
-        req.load_valve_sequence.CopyFrom(loaded)
-        send_request(req, 'LOAD_VALVE_SEQUENCE')
+        req.load_throttle_valve_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_THROTTLE_VALVE_SEQUENCE')
         return
 
     console.print(
@@ -1311,13 +1517,13 @@ def cmd_load_valve_sequence():
     if do_fuel:
         console.print(f'\n  {t["icon_fuel"]} [{t["warning"]}]FUEL trace setup:[/{t["warning"]}]')
         fuel_trace = _build_control_trace()
-        req.load_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
+        req.load_throttle_valve_sequence.fuel_trace_deg.CopyFrom(fuel_trace)
 
     do_lox = Confirm.ask('\n  Configure LOX trace (degrees)?', default=True)
     if do_lox:
         console.print(f'\n  {t["icon_lox"]} [{t["info"]}]LOX trace setup:[/{t["info"]}]')
         lox_trace = _build_control_trace()
-        req.load_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
+        req.load_throttle_valve_sequence.lox_trace_deg.CopyFrom(lox_trace)
 
     if not do_fuel and not do_lox:
         console.print(
@@ -1326,114 +1532,425 @@ def cmd_load_valve_sequence():
         return
 
     if Confirm.ask('  Save this sequence for later?', default=False):
-        _save_sequence(VALVE_SEQ_DIR, 'v', req.load_valve_sequence)
+        _save_sequence(VALVE_SEQ_DIR, 'v', req.load_throttle_valve_sequence)
 
-    send_request(req, 'LOAD_VALVE_SEQUENCE')
+    send_request(req, 'LOAD_THROTTLE_VALVE_SEQUENCE')
 
 
-def cmd_start_valve_sequence():
-    """Replacement of start_sequence"""
+def cmd_start_throttle_valve_sequence():
+    """Start throttle valve sequence (THROTTLE_VALVE_PRIMED → THROTTLE_VALVE)."""
     t = THEME
     confirmed = Confirm.ask(
-        f'\n  {t["icon_fire"]} [{t["warning"]}]START VALVE SEQUENCE — are you sure?[/{t["warning"]}]',
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START THROTTLE VALVE SEQUENCE — are you sure?[/{t["warning"]}]',
         default=False,
     )
     if not confirmed:
         console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
         return
     req = clover_pb2.Request()
-    req.start_valve_sequence.SetInParent()
-    send_request(req, 'START_VALVE_SEQUENCE')
+    req.start_throttle_valve_sequence.SetInParent()
+    send_request(req, 'START_THROTTLE_VALVE_SEQUENCE')
 
 
-def cmd_load_thrust_sequence():
-    """
-    Load a thrust sequence (IDLE → THRUST_PRIMED).
-    Thrust trace is in lbf
-    """
+def cmd_load_throttle_sequence():
+    """Load a throttle sequence (IDLE → THROTTLE_PRIMED). Thrust trace is in lbf."""
     t = THEME
-    console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Thrust Sequence[/{t["primary"]}]')
+    console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Throttle Sequence[/{t["primary"]}]')
 
     saved = _list_saved_sequences(THRUST_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrustSequenceRequest)
+        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrottleSequenceRequest)
         req = clover_pb2.Request()
-        req.load_thrust_sequence.CopyFrom(loaded)
-        send_request(req, 'LOAD_THRUST_SEQUENCE')
+        req.load_throttle_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_THROTTLE_SEQUENCE')
         return
     console.print(f'  [{t["muted"]}]Thrust trace values are in lbf.[/{t["muted"]}]')
 
     thrust_trace = _build_control_trace()
 
     req = clover_pb2.Request()
-    req.load_thrust_sequence.thrust_trace_lbf.CopyFrom(thrust_trace)
+    req.load_throttle_sequence.thrust_lbf.CopyFrom(thrust_trace)
 
     if Confirm.ask('  Save this sequence for later?', default=False):
-        _save_sequence(THRUST_SEQ_DIR, 't', req.load_thrust_sequence)
+        _save_sequence(THRUST_SEQ_DIR, 't', req.load_throttle_sequence)
 
-    send_request(req, 'LOAD_THRUST_SEQUENCE')
+    send_request(req, 'LOAD_THROTTLE_SEQUENCE')
 
 
-def cmd_start_thrust_sequence():
-    """Start thrust sequence."""
+def cmd_start_throttle_sequence():
+    """Start throttle sequence (THROTTLE_PRIMED → THROTTLE)."""
     t = THEME
     confirmed = Confirm.ask(
-        f'\n  {t["icon_fire"]} [{t["warning"]}]START THRUST SEQUENCE — are you sure?[/{t["warning"]}]',
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START THROTTLE SEQUENCE — are you sure?[/{t["warning"]}]',
         default=False,
     )
     if not confirmed:
         console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
         return
     req = clover_pb2.Request()
-    req.start_thrust_sequence.SetInParent()
-    send_request(req, 'START_THRUST_SEQUENCE')
+    req.start_throttle_sequence.SetInParent()
+    send_request(req, 'START_THROTTLE_SEQUENCE')
+
+
+def cmd_configure_flight_controller_gains():
+    """Configure flight controller PID gains."""
+    t = THEME
+    console.print(f'\n  [{t["primary"]}]Configure Flight Controller Gains[/{t["primary"]}]')
+    console.print(f'  [{t["muted"]}]Leave blank to keep current value for any field.[/{t["muted"]}]')
+
+    # Mapping of user-friendly names to prefixes
+    pid_map = {
+        'xtilt': 'pidXTilt',
+        'ytilt': 'pidYTilt',
+        'x': 'pidX',
+        'y': 'pidY',
+        'z': 'pidZ',
+        'zvel': 'pidZVelocity',
+    }
+
+    req = clover_pb2.Request()
+    gains = req.configure_flight_controller_gains
+    configured_pids = set()
+
+    while True:
+        console.print(f'\n  [{t["primary"]}]Available PIDs:[/{t["primary"]}]')
+        for alias in sorted(pid_map.keys()):
+            prefix = pid_map[alias]
+            status = f'[green]✓ configured[/green]' if prefix in configured_pids else ''
+            console.print(f'    {alias:<12} → {prefix:<20} {status}')
+        console.print(f'    {"done":<12} → finish configuration')
+
+        pid_choice = Prompt.ask('  Select PID to configure').strip().lower()
+
+        if pid_choice == 'done':
+            break
+
+        if pid_choice not in pid_map:
+            console.print(
+                f'  [{t["warning"]}]Unknown PID "{pid_choice}". Try again.[/{t["warning"]}]'
+            )
+            continue
+
+        prefix = pid_map[pid_choice]
+        console.print(f'\n  [{t["primary"]}]Configuring {prefix}:[/{t["primary"]}]')
+
+        kp = Prompt.ask(f'    {prefix}_kp', default='')
+        ki = Prompt.ask(f'    {prefix}_ki', default='')
+        kd = Prompt.ask(f'    {prefix}_kd', default='')
+
+        if kp:
+            setattr(gains, f'{prefix}_kp', float(kp))
+        if ki:
+            setattr(gains, f'{prefix}_ki', float(ki))
+        if kd:
+            setattr(gains, f'{prefix}_kd', float(kd))
+
+        configured_pids.add(prefix)
+
+        # Offer optional limits/integral/deriv per PID
+        if Confirm.ask(f'  Set advanced options for {prefix}?', default=False):
+            if Confirm.ask(f'    Set output limits?', default=False):
+                mn = Prompt.ask(f'      {prefix}_min_out', default='')
+                mx = Prompt.ask(f'      {prefix}_max_out', default='')
+                if mn:
+                    setattr(gains, f'{prefix}_min_out', float(mn))
+                if mx:
+                    setattr(gains, f'{prefix}_max_out', float(mx))
+
+            if Confirm.ask(f'    Set integral limits?', default=False):
+                mn = Prompt.ask(f'      {prefix}_min_integral', default='')
+                mx = Prompt.ask(f'      {prefix}_max_integral', default='')
+                if mn:
+                    setattr(gains, f'{prefix}_min_integral', float(mn))
+                if mx:
+                    setattr(gains, f'{prefix}_max_integral', float(mx))
+
+            if Confirm.ask(f'    Set integral zone?', default=False):
+                val = Prompt.ask(f'      {prefix}_integral_zone', default='')
+                if val:
+                    setattr(gains, f'{prefix}_integral_zone', float(val))
+
+            if Confirm.ask(f'    Set derivative low-pass filter (Hz)?', default=False):
+                val = Prompt.ask(f'      {prefix}_deriv_lp_hz', default='')
+                if val:
+                    setattr(gains, f'{prefix}_deriv_lp_hz', float(val))
+
+        if not Confirm.ask('  Configure another PID?', default=False):
+            break
+
+    if configured_pids:
+        console.print(
+            f'\n  [{t["success"]}]Configured: {", ".join(sorted(configured_pids))}[/{t["success"]}]'
+        )
+        send_request(req, 'CONFIGURE_FLIGHT_CONTROLLER_GAINS')
+    else:
+        console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
+
+# TODO: is this all that's needed?
+def cmd_calibrate_tvc():
+    """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  [{t["warning"]}]CALIBRATE TVC — enter calibration mode?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.calibrate_tvc.SetInParent()
+    send_request(req, 'CALIBRATE_TVC')
+
+# TODO: test if this works
+def cmd_load_tvc_sequence():
+    """Load a TVC sequence (IDLE → TVC_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load TVC Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(TVC_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(TVC_SEQ_DIR, clover_pb2.LoadTvcSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_tvc_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_TVC_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define pitch and yaw traces (degrees).[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]Pitch trace:[/{t["primary"]}]')
+    req.load_tvc_sequence.pitch_trace_deg.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Yaw trace:[/{t["primary"]}]')
+    req.load_tvc_sequence.yaw_trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(TVC_SEQ_DIR, 'tvc', req.load_tvc_sequence)
+
+    send_request(req, 'LOAD_TVC_SEQUENCE')
+
+
+def cmd_start_tvc_sequence():
+    """Start TVC sequence (TVC_PRIMED → TVC)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START TVC SEQUENCE — are you sure?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_tvc_sequence.SetInParent()
+    send_request(req, 'START_TVC_SEQUENCE')
+
+# TODO: This is not a linear or sin trace
+def cmd_load_rcs_valve_sequence():
+    """Load an RCS valve sequence (IDLE → RCmenuS_VALVE_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Valve Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(RCS_VALVE_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(RCS_VALVE_SEQ_DIR, clover_pb2.LoadRcsValveSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_rcs_valve_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_RCS_VALVE_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define CW and CCW valve traces (0=off, 1=on).[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]CW valve trace:[/{t["primary"]}]')
+    req.load_rcs_valve_sequence.rcs_cw_valve_trace.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]CCW valve trace:[/{t["primary"]}]')
+    req.load_rcs_valve_sequence.rcs_ccw_valve_trace.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(RCS_VALVE_SEQ_DIR, 'rcsv', req.load_rcs_valve_sequence)
+
+    send_request(req, 'LOAD_RCS_VALVE_SEQUENCE')
+
+
+def cmd_start_rcs_valve_sequence():
+    """Start RCS valve sequence (RCS_VALVE_PRIMED → RCS_VALVE)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START RCS VALVE SEQUENCE — are you sure?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_rcs_valve_sequence.SetInParent()
+    send_request(req, 'START_RCS_VALVE_SEQUENCE')
+
+
+def cmd_load_rcs_sequence():
+    """Load an RCS roll sequence (IDLE → RCS_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(RCS_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(RCS_SEQ_DIR, clover_pb2.LoadRcsSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_rcs_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_RCS_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define roll trace (degrees).[/{t["muted"]}]')
+    req = clover_pb2.Request()
+    req.load_rcs_sequence.trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(RCS_SEQ_DIR, 'rcs', req.load_rcs_sequence)
+
+    send_request(req, 'LOAD_RCS_SEQUENCE')
+
+
+def cmd_start_rcs_sequence():
+    """Start RCS sequence (RCS_PRIMED → RCS)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["warning"]}]START RCS SEQUENCE — are you sure?[/{t["warning"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_rcs_sequence.SetInParent()
+    send_request(req, 'START_RCS_SEQUENCE')
+
+# TODO: test if this works
+def cmd_load_static_fire_sequence():
+    """Load a static fire sequence (IDLE → STATIC_FIRE_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Static Fire Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(STATIC_FIRE_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(STATIC_FIRE_SEQ_DIR, clover_pb2.LoadStaticFireSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_static_fire_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_STATIC_FIRE_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define thrust (lbf), pitch (deg), and yaw (deg) traces.[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]Thrust trace (lbf):[/{t["primary"]}]')
+    req.load_static_fire_sequence.thrust_lbf.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Pitch trace (deg):[/{t["primary"]}]')
+    req.load_static_fire_sequence.pitch_trace_deg.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Yaw trace (deg):[/{t["primary"]}]')
+    req.load_static_fire_sequence.yaw_trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(STATIC_FIRE_SEQ_DIR, 'sf', req.load_static_fire_sequence)
+
+    send_request(req, 'LOAD_STATIC_FIRE_SEQUENCE')
+
+
+def cmd_start_static_fire_sequence():
+    """Start static fire sequence (STATIC_FIRE_PRIMED → STATIC_FIRE)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["danger"]}]START STATIC FIRE SEQUENCE — are you sure?[/{t["danger"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_static_fire_sequence.SetInParent()
+    send_request(req, 'START_STATIC_FIRE_SEQUENCE')
+
+# TODO: test if this works
+def cmd_load_flight_sequence():
+    """Load a flight sequence (IDLE → FLIGHT_PRIMED)."""
+    t = THEME
+    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Flight Sequence[/{t["primary"]}]')
+
+    saved = _list_saved_sequences(FLIGHT_SEQ_DIR)
+    if saved and Confirm.ask('  Load a saved sequence?', default=True):
+        loaded = _pick_and_load_sequence(FLIGHT_SEQ_DIR, clover_pb2.LoadFlightSequenceRequest)
+        req = clover_pb2.Request()
+        req.load_flight_sequence.CopyFrom(loaded)
+        send_request(req, 'LOAD_FLIGHT_SEQUENCE')
+        return
+
+    console.print(f'  [{t["muted"]}]Define X (m), Y (m), Z (m), and roll (deg) traces.[/{t["muted"]}]')
+    req = clover_pb2.Request()
+
+    console.print(f'\n  [{t["primary"]}]X position trace (m):[/{t["primary"]}]')
+    req.load_flight_sequence.x_position_trace_m.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Y position trace (m):[/{t["primary"]}]')
+    req.load_flight_sequence.y_position_trace_m.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Z position trace (m):[/{t["primary"]}]')
+    req.load_flight_sequence.z_position_trace_m.CopyFrom(_build_control_trace())
+
+    console.print(f'\n  [{t["primary"]}]Roll angle trace (deg):[/{t["primary"]}]')
+    req.load_flight_sequence.roll_angle_trace_deg.CopyFrom(_build_control_trace())
+
+    if Confirm.ask('  Save this sequence for later?', default=False):
+        _save_sequence(FLIGHT_SEQ_DIR, 'flt', req.load_flight_sequence)
+
+    send_request(req, 'LOAD_FLIGHT_SEQUENCE')
+
+
+def cmd_start_flight_sequence():
+    """Start flight sequence (FLIGHT_PRIMED → FLIGHT)."""
+    t = THEME
+    confirmed = Confirm.ask(
+        f'\n  {t["icon_fire"]} [{t["danger"]}]START FLIGHT SEQUENCE — are you sure?[/{t["danger"]}]',
+        default=False,
+    )
+    if not confirmed:
+        console.print(f'  [{t["muted"]}]Cancelled.[/{t["muted"]}]')
+        return
+    req = clover_pb2.Request()
+    req.start_flight_sequence.SetInParent()
+    send_request(req, 'START_FLIGHT_SEQUENCE')
 
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
 
-# changed options based on updated .proto file
 MENU_ITEMS = [
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
-    ('bias', 'bias', 'Configure analog sensor bias', cmd_configure_sensor_bias),
-    ('reset', 'reset', 'Reset valve position', cmd_reset_valve_position),
-    ('pon', 'poweron', 'Power ON valve (enable stepper)', cmd_power_on_valve),
-    ('poff', 'poweroff', 'Power OFF valve (disable stepper)', cmd_power_off_valve),
-    (
-        'cal',
-        'calibrate',
-        'Calibrate valve  (IDLE → CALIBRATE_VALVE)',
-        cmd_calibrate_valve,
-    ),
-    (
-        'lvseq',
-        'loadvalve',
-        'Load valve sequence  (IDLE → VALVE_PRIMED)',
-        cmd_load_valve_sequence,
-    ),
-    (
-        'svseq',
-        'startvalve',
-        'Start valve sequence (VALVE_PRIMED → VALVE_SEQ)',
-        cmd_start_valve_sequence,
-    ),
-    (
-        'ltseq',
-        'loadthrust',
-        'Load thrust sequence (IDLE → THRUST_PRIMED)',
-        cmd_load_thrust_sequence,
-    ),
-    (
-        'stseq',
-        'startthrust',
-        'Start thrust sequence (THRUST_PRIMED → THRUST_SEQ)',
-        cmd_start_thrust_sequence,
-    ),
-    ('unprime', 'unprime', 'Unprime  (VALVE/THRUST_PRIMED → IDLE)', cmd_unprime),
-    ('abort', 'abort', 'ABORT active sequence → safe state', cmd_abort),
-    ('halt', 'halt', 'HALT all actuators', cmd_halt),
-    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('bias', 'bias', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
+    ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
+    ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),
+    ('gains', 'gains', 'Configure flight controller gains', cmd_configure_flight_controller_gains),
+    ('cal', 'calibrate', 'Calibrate throttle valve  (IDLE → CALIBRATE_THROTTLE_VALVE)', cmd_calibrate_throttle_valve),
+    ('lvseq', 'loadvalve', 'Load throttle valve sequence  (IDLE → THROTTLE_VALVE_PRIMED)', cmd_load_throttle_valve_sequence),
+    ('svseq', 'startvalve', 'Start throttle valve sequence (THROTTLE_VALVE_PRIMED → THROTTLE_VALVE)', cmd_start_throttle_valve_sequence),
+    ('ltseq', 'loadthrust', 'Load throttle sequence  (IDLE → THROTTLE_PRIMED)', cmd_load_throttle_sequence),
+    ('stseq', 'startthrust', 'Start throttle sequence (THROTTLE_PRIMED → THROTTLE)', cmd_start_throttle_sequence),
+    ('caltvc', 'caltvc', 'Calibrate TVC  (IDLE → CALIBRATE_TVC)', cmd_calibrate_tvc),
+    ('ltvcseq', 'loadtvc', 'Load TVC sequence  (IDLE → TVC_PRIMED)', cmd_load_tvc_sequence),
+    ('stvcseq', 'starttvc', 'Start TVC sequence (TVC_PRIMED → TVC)', cmd_start_tvc_sequence),
+    ('lrvseq', 'loadrcsvalve', 'Load RCS valve sequence  (IDLE → RCS_VALVE_PRIMED)', cmd_load_rcs_valve_sequence),
+    ('srvseq', 'startrcsvalve', 'Start RCS valve sequence (RCS_VALVE_PRIMED → RCS_VALVE)', cmd_start_rcs_valve_sequence),
+    ('lrseq', 'loadrcs', 'Load RCS sequence  (IDLE → RCS_PRIMED)', cmd_load_rcs_sequence),
+    ('srseq', 'startrcs', 'Start RCS sequence (RCS_PRIMED → RCS)', cmd_start_rcs_sequence),
+    ('lsfseq', 'loadstaticfire', 'Load static fire sequence  (IDLE → STATIC_FIRE_PRIMED)', cmd_load_static_fire_sequence),
+    ('ssfseq', 'startstaticfire', 'Start static fire sequence (STATIC_FIRE_PRIMED → STATIC_FIRE)', cmd_start_static_fire_sequence),
+    ('lfseq', 'loadflight', 'Load flight sequence  (IDLE → FLIGHT_PRIMED)', cmd_load_flight_sequence),
+    ('sfseq', 'startflight', 'Start flight sequence (FLIGHT_PRIMED → FLIGHT)', cmd_start_flight_sequence),
+    ('unprime', 'unprime', 'Unprime  (any PRIMED → IDLE)', cmd_unprime),
+    ('halt', 'halt', 'HALT active sequence → IDLE', cmd_halt),
+    ('abort', 'abort', 'ABORT → safe state', cmd_abort),
     ('status', 'status', 'Live telemetry dashboard (Enter to exit)', None),
     ('quit', 'quit', 'Exit', None),
 ]
@@ -1463,14 +1980,26 @@ def print_menu():
         'reset': THEME['icon_valve'],
         'pon': '🟢',
         'poff': '⚫',
+        'gains': '📊',
         'cal': '📐',
         'lvseq': THEME['icon_seq'],
         'svseq': THEME['icon_fire'],
         'ltseq': THEME['icon_loop'],
         'stseq': THEME['icon_fire'],
+        'caltvc': '📐',
+        'ltvcseq': THEME['icon_seq'],
+        'stvcseq': THEME['icon_fire'],
+        'lrvseq': THEME['icon_seq'],
+        'srvseq': THEME['icon_fire'],
+        'lrseq': THEME['icon_seq'],
+        'srseq': THEME['icon_fire'],
+        'lsfseq': THEME['icon_seq'],
+        'ssfseq': THEME['icon_fire'],
+        'lfseq': THEME['icon_seq'],
+        'sfseq': THEME['icon_fire'],
         'unprime': '↩️ ',
-        'abort': THEME['icon_stop'],
         'halt': THEME['icon_stop'],
+        'abort': THEME['icon_stop'],
         'status': THEME['icon_live'],
         'quit': THEME['icon_quit'],
     }

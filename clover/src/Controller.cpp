@@ -69,7 +69,7 @@ static float trace_total_time_msec = 0;
 static uint64_t abort_start_cycle = 0;
 
 // Valid in THROTTLE_PRIMED and THROTTLE
-static Trace throttle_thrust_trace_N;
+static Trace throttle_thrust_lbf;
 
 // Valid in TVC_PRIMED and TVC
 static Trace tvc_pitch_trace_deg;
@@ -83,6 +83,11 @@ static Trace flight_x_trace_m;
 static Trace flight_y_trace_m;
 static Trace flight_z_trace_m;
 static Trace flight_roll_trace_deg;
+
+// Valid in CALIBRATE_THROTTLE_VALVE, and if CONFIG_RANGER is set.
+#ifdef CONFIG_RANGER
+static ThrottleValveType calibrating_valve = ThrottleValveType_UNKNOWN_THROTTLE_VALVE_TYPE;
+#endif
 
 // Valid in THROTTLE_VALVE_PRIMED and THROTTLE_VALVE, and if CONFIG_RANGER is set.
 static bool has_fuel_valve_trace = false;
@@ -215,7 +220,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     // Sample throttle trace
     if (current_state == SystemState_STATE_STATIC_FIRE || current_state == SystemState_STATE_THROTTLE) {
         // Sample thrust trace
-        auto thrust_sample = throttle_thrust_trace_N.sample(data.trace_time_msec);
+        auto thrust_sample = throttle_thrust_lbf.sample(data.trace_time_msec);
         if (!thrust_sample.has_value()) {
             return std::unexpected(thrust_sample.error().context("failed to sample throttle thrust trace"));
         }
@@ -529,9 +534,32 @@ static void step_control_loop(k_work*)
     }
 
     // Calibration of throttle valves.
-    case SystemState_STATE_CALIBRATE_THROTTLE_VALVE:
-        // TODO
+    case SystemState_STATE_CALIBRATE_THROTTLE_VALVE: {
+#ifdef CONFIG_RANGER
+        const float valve_pos = (calibrating_valve == ThrottleValveType_FUEL)
+            ? FuelValve::get_pos_internal()
+            : LoxValve::get_pos_internal();
+        const float valve_pos_enc = (calibrating_valve == ThrottleValveType_FUEL)
+            ? FuelValve::get_pos_encoder()
+            : LoxValve::get_pos_encoder();
+
+        auto cal_result = RangerThrottle::calibration_tick(
+            calibrating_valve, (uint32_t)k_uptime_get(), valve_pos, valve_pos_enc);
+
+        if (!cal_result.has_value()) {
+            LOG_ERR("Throttle valve calibration error: %s", cal_result.error().build_message().c_str());
+            current_state = SystemState_STATE_IDLE;
+            break;
+        }
+
+        if (calibrating_valve == ThrottleValveType_FUEL) {
+            data.fuel_valve_command = *cal_result;
+        } else {
+            data.lox_valve_command = *cal_result;
+        }
+#endif
         break;
+    }
     case SystemState_STATE_CALIBRATE_TVC:
         // TODO
         break;
@@ -574,8 +602,19 @@ static void step_control_loop(k_work*)
 
     // Dispatch commands to actuators
 #if CONFIG_RANGER
-    FuelValve::tick(data.fuel_valve_command);
-    LoxValve::tick(data.lox_valve_command);
+    auto fuel_valve_status = FuelValve::tick(data.fuel_valve_command);
+    auto lox_valve_status = LoxValve::tick(data.lox_valve_command);
+
+    if (data.has_ranger_throttle_metrics) {
+        if (fuel_valve_status.has_value()) {
+            data.ranger_throttle_metrics.has_fuel_valve = true;
+            data.ranger_throttle_metrics.fuel_valve = *fuel_valve_status;
+        }
+        if (lox_valve_status.has_value()) {
+            data.ranger_throttle_metrics.has_lox_valve = true;
+            data.ranger_throttle_metrics.lox_valve = *lox_valve_status;
+        }
+    }
     // RCS valves, TVC actuators
 #elif CONFIG_HORNET
     // TODO: do something if these return an error
@@ -717,6 +756,22 @@ std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const Cal
     return std::unexpected(Error::from_cause("must be ranger config for throttle valve calibration"));
 #endif
 
+    if (req.valve != ThrottleValveType_FUEL && req.valve != ThrottleValveType_LOX) {
+        return std::unexpected(Error::from_cause("unknown valve type for throttle valve calibration"));
+    }
+
+#ifdef CONFIG_RANGER
+    const float valve_pos = (req.valve == ThrottleValveType_FUEL)
+        ? FuelValve::get_pos_internal()
+        : LoxValve::get_pos_internal();
+    const float valve_pos_enc = (req.valve == ThrottleValveType_FUEL)
+        ? FuelValve::get_pos_encoder()
+        : LoxValve::get_pos_encoder();
+
+    RangerThrottle::calibration_reset(req.valve, valve_pos, valve_pos_enc);
+    calibrating_valve = req.valve;
+#endif
+
     current_state = SystemState_STATE_CALIBRATE_THROTTLE_VALVE;
 
     return {};
@@ -810,11 +865,11 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
     }
 
     // Try loading thrust trace
-    auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N);
+    auto ret = throttle_thrust_lbf.load(req.thrust_lbf);
     if (!ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load thrust trace"));
     }
-    trace_total_time_msec = throttle_thrust_trace_N.get_total_time_ms();
+    trace_total_time_msec = throttle_thrust_lbf.get_total_time_ms();
 
     current_state = SystemState_STATE_THROTTLE_PRIMED;
     LOG_INF("Primed throttle thrust sequence");
@@ -1008,7 +1063,7 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // Try loading throttle trace
-    if (auto ret = throttle_thrust_trace_N.load(req.thrust_trace_N); !ret.has_value()) {
+    if (auto ret = throttle_thrust_lbf.load(req.thrust_lbf); !ret.has_value()) {
         return std::unexpected(ret.error().context("failed to load static fire thrust trace"));
     }
 
@@ -1023,12 +1078,12 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     }
 
     // All traces must be the same length
-    if (!(throttle_thrust_trace_N.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
+    if (!(throttle_thrust_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
           tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
         return std::unexpected(
             Error::from_cause(
                 "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
-                static_cast<double>(throttle_thrust_trace_N.get_total_time_ms()),
+                static_cast<double>(throttle_thrust_lbf.get_total_time_ms()),
                 static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
                 static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }
