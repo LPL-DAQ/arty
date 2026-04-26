@@ -33,14 +33,13 @@ void StateEstimator::reset()
 }
 
 std::optional<EstimatedState> StateEstimator::estimate(
-    ControllerTiming& controller_timing,
     LidarReading& lidar_1,
     LidarReading& lidar_2,
     ImuReading& imu,
     GnssReadings& gnss
 )
 {
-    update_timestamp_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
+    update_timestamp_ns = static_cast<float>(k_cycle_get_64()) / sys_clock_hw_cycles_per_sec() * 1e9f;
     has_update_timestamp_ns = true;
 
     bool lidar_1_updated = false;

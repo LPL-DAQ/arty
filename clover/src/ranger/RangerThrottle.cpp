@@ -1,6 +1,6 @@
 #include "RangerThrottle.h"
 #include "Controller.h"
-#include "LookupTable.h"
+#include "LookupTable1D.h"
 #include "MutexGuard.h"
 #include "../lut/thrust_to_fuel.h"
 #include "../lut/thrust_to_lox.h"
