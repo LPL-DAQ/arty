@@ -1955,15 +1955,9 @@ void RangerThrottle::calibration_reset(ThrottleValveType valve, float valve_pos,
     refs.starting_error = valve_pos - valve_pos_enc;
 }
 
-/// Generate a comomand for the fuel and lox valve positions in degrees.
-std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_lbf)
+static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog_sensors, RangerThrottleMetrics& metrics)
 {
-    MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
-    RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
-
-    // TODO: Tripple check that the abort stuff works
-    // 1. Safety: abort if PTC401 is below threshold for some time
-    // TODO: this used to be .battery_voltage, but that seemed wrong
+    // Safety: abort if PTC401 is below threshold for too long.
     uint32_t current_time = (uint32_t)k_uptime_get();
     if (analog_sensors.ptc1 <= PTC401_ABORT_THRESHOLD) {
         if (low_ptc_start_time_ms == 0) {
@@ -1980,19 +1974,20 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     // 2. Read pressures
     // TODO: these were also battery voltage? That seems wrong
     // TODO: ARRE THESE THE CORRECT PTS? NEEDS TO BE UPDATED FOR RANGER
-    // TODO: james, rupin says he doesnt know what to do - He cant find the P&ID 
-    float ptc401_val = analog_sensors.ptc1;                                    // Adjusted value
-    float pto401_val = analog_sensors.pto1 + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
-    float pt103_val = analog_sensors.pt101;                                      // Adjusted value
-    float ptf401_val = analog_sensors.ptf1 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
-    float pt203_val = analog_sensors.pt201;                                      // Adjusted value
-    float ptc402_val = analog_sensors.ptc2;                                    // Adjusted value
+    // TODO: james, rupin says he doesnt know what to do - He cant find the P&ID
+    float ptc401_val = analog_sensors.ptc1;
+    float pto401_val = analog_sensors.pto1 + LOX_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+    float pt103_val = analog_sensors.pt101;
+    float ptf401_val = analog_sensors.ptf1 + FUEL_ENGINE_INLET_LINE_LOSS_PSI; // Adjusted value
+    float pt203_val = analog_sensors.pt201;
+    float ptc402_val = analog_sensors.ptc2;
     bool pt203_valid = (analog_sensors.pt201 >= MIN_threshold && analog_sensors.pt201 <= MAX_threshold_PT2k);
     bool ptf401_valid = (analog_sensors.ptf1 >= MIN_threshold && analog_sensors.ptf1 <= MAX_threshold_PT2k);
     bool pt103_valid = (analog_sensors.pt101 >= MIN_threshold && analog_sensors.pt101 <= MAX_threshold_PT2k);
     bool pto401_valid = (analog_sensors.pto1 >= MIN_threshold && analog_sensors.pto1 <= MAX_threshold_PT2k);
     bool ptc401_valid = (analog_sensors.ptc1 >= MIN_threshold && analog_sensors.ptc1 <= MAX_threshold_PT1k);
     bool ptc402_valid = (analog_sensors.ptc2 >= MIN_threshold && analog_sensors.ptc2 <= MAX_threshold_PT1k);
+
     float p_inj_fuel;
     float p_inj_lox;
     float p_ch;
@@ -2011,6 +2006,7 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     else {
         return std::unexpected(Error::from_cause("NO PTC 401 / PTC402"));
     }
+
     if (pt203_valid && ptf401_valid) {
         // Both are healthy: Take the average
         p_inj_fuel = (pt203_val + ptf401_val) / 2.0f;
@@ -2063,10 +2059,17 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     // 8. Predict thrust (convert to lbf-equivalent)
     float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
 
-    // Clamp requested O/F into safe range as well
-    float target_of_safe = std::clamp(target_of, MIN_SAFE_OF, MAX_SAFE_OF);
+    metrics.predicted_thrust_lbf = predicted_thrust_lbf;
+    metrics.predicted_of = predicted_of;
+    metrics.mdot_fuel = mdot_f;
+    metrics.mdot_lox = mdot_lox;
 
-    // 9. Compute PID
+    return predicted_thrust_lbf;
+}
+
+static std::tuple<ThrottleValveCommand, ThrottleValveCommand> active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics)
+{
+    float target_of_safe = std::clamp(target_of, MIN_SAFE_OF, MAX_SAFE_OF);
     float dt = Controller::SEC_PER_CONTROL_TICK;
     float thrust_error = thrust_command_lbf - predicted_thrust_lbf;
     float change_alpha_cmd = THRUST_KP * thrust_error;
@@ -2074,37 +2077,44 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
 
     // 10. Integrate PID to get alpha
-    if (alpha == -1.0f) {
+    if (alpha_state == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
-        alpha = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+        alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
     }
-    alpha += clamped_change_alpha_cmd;
-    alpha = std::clamp(alpha, MIN_ALPHA, MAX_ALPHA);
+    alpha_state += clamped_change_alpha_cmd;
+    alpha_state = std::clamp(alpha_state, MIN_ALPHA, MAX_ALPHA);
 
     // 11. Plug alpha into Mprime contour
-    float thrust_from_alpha_lbf = alpha * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
+    float thrust_from_alpha_lbf = alpha_state * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
     float fuel_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, fuel_valve_grid_internal, thrust_from_alpha_lbf, target_of_safe);
-
     float lox_valve_command_deg = interp2D(thrust_axis_internal, 100, of_axis_internal, 100, lox_valve_grid_internal, thrust_from_alpha_lbf, target_of_safe);
 
     // 12. Clamp valve commands to safe ranges
     fuel_valve_command_deg = std::clamp(fuel_valve_command_deg, MIN_VALVE_POS, MAX_VALVE_POS);
     lox_valve_command_deg = std::clamp(lox_valve_command_deg, MIN_VALVE_POS, MAX_VALVE_POS);
 
-    // Populate telemetry datadata.has_predicted_thrust = true;
-    metrics.predicted_thrust_lbf = predicted_thrust_lbf;
-    metrics.predicted_of = predicted_of;
-    metrics.mdot_fuel = mdot_f;
-    metrics.mdot_lox = mdot_lox;
     metrics.change_alpha_cmd = change_alpha_cmd;
     metrics.clamped_change_alpha_cmd = clamped_change_alpha_cmd;
-    metrics.alpha = alpha;
+    metrics.alpha = alpha_state;
     metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
 
-
-
     return {
-        {ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = fuel_valve_command_deg},
-         ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = lox_valve_command_deg},
-         metrics}};
+        ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = fuel_valve_command_deg},
+        ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = lox_valve_command_deg}};
+}
+
+/// Generate a comomand for the fuel and lox valve positions in degrees.
+std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrottleMetrics>, Error> RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_lbf)
+{
+    MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
+    RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
+
+    auto predicted_thrust = thrust_predictor(analog_sensors, metrics);
+    if (!predicted_thrust) {
+        return std::unexpected(predicted_thrust.error());
+    }
+
+    auto [fuel_command, lox_command] = active_control(alpha, *predicted_thrust, thrust_command_lbf, metrics);
+
+    return {{fuel_command, lox_command, metrics}};
 }
