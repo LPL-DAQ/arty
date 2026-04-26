@@ -32,10 +32,9 @@ static constexpr float MAX_SAFE_OF = 3.0f;
 static constexpr float PTC401_ABORT_THRESHOLD = 10.0f;  //
 static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
-// Controller constants
+// Controller constants (NOTE: Currently using OF = 1.4)
 static inline float alpha = -1.0f;
 static inline uint32_t low_ptc_start_time_ms = 0;
-static inline float target_of = 1.4f;
 static constexpr float THRUST_KP = 0.0076f;
 static constexpr float MAX_CHANGE_ALPHA = 20.0f;
 static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
@@ -94,30 +93,6 @@ static CalibrationValveRefs get_valve_refs(ThrottleValveType valve)
         return CalibrationValveRefs{cal_fuel_target_position, cal_fuel_hardstop_position, cal_fuel_found_stop, cal_fuel_starting_error};
     }
     return CalibrationValveRefs{cal_lox_target_position, cal_lox_hardstop_position, cal_lox_found_stop, cal_lox_starting_error};
-}
-
-static int calibration_get_phase_id()
-{
-    switch (cal_phase) {
-    case CalPhase::SEEK_HARDSTOP:
-        return 0;
-    case CalPhase::BACK_OFF:
-        return 1;
-    case CalPhase::END_MOVEMENT:
-        return 2;
-    case CalPhase::POWER_OFF:
-        return 3;
-    case CalPhase::REPOWER:
-        return 4;
-    case CalPhase::COMPLETE:
-        return 5;
-    case CalPhase::MEASURE:
-        return 6;
-    case CalPhase::ERROR:
-        return 7;
-    default:
-        return -1;
-    }
 }
 
 static void calibration_seek_hardstop(ThrottleValveCommand& command, float valve_pos, float valve_pos_enc, CalibrationValveRefs refs)
@@ -499,25 +474,28 @@ void RangerThrottle::calibration_reset(ThrottleValveType valve, float valve_pos,
     float predicted_of = mdot_lox / mdot_f_safe;
 
     // 6. Clamp O/F for lookup
-    float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
+    [[maybe_unused]] float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
+    // TODO: add lut for cea
     // 7. Predict Isp using chamber pressure and O/F
-    float predicted_isp = interp2D(isp_pc_axis_internal, 29, isp_of_axis_internal, 34, isp_data_internal, p_ch, of_safe);
+    // float predicted_isp = interp2D(isp_pc_axis_internal, 29, isp_of_axis_internal, 34, isp_data_internal, p_ch, of_safe);
 
     // 8. Predict thrust (convert to lbf-equivalent)
-    float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
+    // float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
 
-    metrics.predicted_thrust_lbf = predicted_thrust_lbf;
+    metrics.predicted_thrust_lbf = 0;
+    // metrics.predicted_thrust_lbf = predicted_thrust_lbf;
+
     metrics.predicted_of = predicted_of;
     metrics.mdot_fuel = mdot_f;
     metrics.mdot_lox = mdot_lox;
 
-    return predicted_thrust_lbf;
+    // return predicted_thrust_lbf;
+    return 0.0f;
 }
 
 static std::tuple<ThrottleValveCommand, ThrottleValveCommand> active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics)
 {
-    float target_of_safe = std::clamp(target_of, MIN_SAFE_OF, MAX_SAFE_OF);
     float dt = Controller::SEC_PER_CONTROL_TICK;
     float thrust_error = thrust_command_lbf - predicted_thrust_lbf;
     float change_alpha_cmd = THRUST_KP * thrust_error;
