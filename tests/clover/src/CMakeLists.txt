@@ -3,4 +3,5 @@
 # add_subdirectory(LookupTable2D)
 add_subdirectory(flight)
 add_subdirectory(hornet_modules)
+add_subdirectory(throttle)
 # add_subdirectory(ranger_modules)
