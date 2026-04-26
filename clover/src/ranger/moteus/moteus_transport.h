@@ -11,7 +11,6 @@
 
 #include <functional>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -190,9 +189,7 @@ class ZephyrCanTransport : public Transport {
 // never be reached.
 inline std::shared_ptr<Transport> MakeSingletonTransport(
     const std::vector<std::string>&) {
-  throw std::runtime_error(
-      "No default transport on Zephyr. "
-      "Set Controller::Options::transport to a ZephyrCanTransport.");
+  abort();
   return {};
 }
 

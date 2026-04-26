@@ -1,90 +1,100 @@
 #include "RangerTvc.h"
-#include <zephyr/kernel.h>
+#include "moteus/moteus.h"
+
+#include <optional>
+
 #include <zephyr/device.h>
-#include <zephyr/drivers/can.h>
-#include <math.h> // For isfinite()
-#include "Moteus.h" 
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
-#define TVC_STACK_SIZE 4096 // Smaller stack is safer when using static objects
-#define TVC_PRIORITY 5
+LOG_MODULE_REGISTER(RangerTVC);
 
-CAN_MSGQ_DEFINE(tvc_rx_msgq, 10);
+namespace RangerTvc {
+namespace {
 
-// Move the object out of the thread stack to prevent overflows
-static Moteus moteus1; 
+static const struct device *s_can_dev =
+    DEVICE_DT_GET(DT_CHOSEN(zephyr_canbus));
 
-void tvc_thread(void) {
-    k_sleep(K_SECONDS(5));
-    printk("\n--- ENABLING HARDENED TVC LOOP ---\n");
+static std::shared_ptr<mjbots::moteus::ZephyrCanTransport> s_transport;
+static std::optional<mjbots::moteus::Controller> s_motor;
 
-    const struct device *can_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_canbus));
-    
-    // Hardware Handshake
-    can_stop(can_dev);
-    k_sleep(K_MSEC(100));
-    can_set_mode(can_dev, CAN_MODE_FD);
-    k_sleep(K_MSEC(100));
-    can_start(can_dev);
-
-    const struct can_filter filter = { .id = 0, .mask = 0, .flags = CAN_FILTER_IDE };
-    can_add_rx_filter_msgq(can_dev, &tvc_rx_msgq, &filter);
-
-    moteus1.Initialize(); 
-    printk("System Online. Starting 10Hz warmup...\n");
-
-    uint32_t loop_count = 0;
-
-    while (1) {
-        int64_t start_time = k_uptime_get();
-
-        Moteus::PositionMode::Command spin_cmd;
-        spin_cmd.position = 0.0f;       
-        spin_cmd.velocity = 0.5f; 
-        spin_cmd.accel_limit = 1.0f;    
-        spin_cmd.maximum_torque = 0.5f; 
-        spin_cmd.kp_scale = 0.0f; 
-        spin_cmd.kd_scale = 1.0f; 
-
-        auto payload = moteus1.MakePosition(spin_cmd);
-
-        struct can_frame z_frame = {0};
-        z_frame.id = payload.arbitration_id; 
-        z_frame.flags = CAN_FRAME_IDE | CAN_FRAME_FDF | CAN_FRAME_BRS; 
-        z_frame.dlc = can_bytes_to_dlc(payload.size);
-        memcpy(z_frame.data, payload.data, payload.size);
-
-        can_send(can_dev, &z_frame, K_MSEC(5), NULL, NULL);
-
-        // --- FIXED TELEMETRY BLOCK ---
-        struct can_frame rx_frame; // Declared ONCE
-        while (k_msgq_get(&tvc_rx_msgq, &rx_frame, K_NO_WAIT) == 0) {
-            // SNIFFER: Print raw ID of anything hitting the Teensy
-            if (loop_count % 10 == 0) {
-                printk("  RAW RX: ID 0x%08X | DLC %d\n", rx_frame.id, rx_frame.dlc);
-            }
-            moteus1.ParseTelemetry(rx_frame.data, can_dlc_to_bytes(rx_frame.dlc));
-        }
-
-        // --- PRINT TELEMETRY ---
-        if (loop_count % 10 == 0) {
-            float pos = moteus1.last_result().values.position;
-            float vel = moteus1.last_result().values.velocity;
-
-            if (isfinite(pos) && isfinite(vel)) {
-                printk("M1 Pos: %d | Velo: %d (mdeg/sec)\n", 
-                       (int)(pos * 1000.0f), (int)(vel * 1000.0f));
-            } else {
-                printk("M1: Waiting for valid telemetry...\n");
-            }
-        }
-        loop_count++;
-
-        int delay = (loop_count < 50) ? 100 : 20;
-        int64_t elapsed = k_uptime_get() - start_time;
-        if (elapsed < delay) {
-            k_sleep(K_MSEC(delay - elapsed));
-        }
-    }
+static mjbots::moteus::Controller::Options make_motor_opts(
+    int id, std::shared_ptr<mjbots::moteus::ZephyrCanTransport> transport) {
+    mjbots::moteus::Controller::Options opts;
+    opts.id        = id;
+    opts.transport = transport;
+    opts.query_format.position = mjbots::moteus::kFloat;
+    opts.query_format.velocity = mjbots::moteus::kFloat;
+    opts.query_format.torque   = mjbots::moteus::kFloat;
+    return opts;
 }
 
-K_THREAD_DEFINE(tvc_tid, TVC_STACK_SIZE, tvc_thread, NULL, NULL, NULL, TVC_PRIORITY, 0, 0);
+}  // namespace
+
+void reset() {
+    if (!device_is_ready(s_can_dev)) {
+        LOG_ERR("CAN device not ready");
+        return;
+    }
+
+    can_stop(s_can_dev);
+
+    int ret = can_set_mode(s_can_dev, CAN_MODE_FD);
+    if (ret != 0) {
+        LOG_ERR("can_set_mode(FD) failed: %d", ret);
+        return;
+    }
+
+    ret = can_start(s_can_dev);
+    if (ret != 0) {
+        LOG_ERR("can_start failed: %d", ret);
+        return;
+    }
+
+    LOG_INF("CAN started in FD mode");
+
+    mjbots::moteus::ZephyrCanTransport::Options t_opts;
+    t_opts.can_dev = s_can_dev;
+    s_transport = std::make_shared<mjbots::moteus::ZephyrCanTransport>(t_opts);
+
+    s_motor.emplace(make_motor_opts(1, s_transport));
+
+    mjbots::moteus::PositionMode::Command init_cmd;
+    init_cmd.position = 1.0f;
+    init_cmd.velocity = 1.0f;
+    s_motor->SetPosition(init_cmd);
+
+    LOG_INF("controller ready (motor id=1)");
+}
+
+std::expected<std::tuple<TvcActuatorCommand, TvcActuatorCommand, RangerTvcMetrics>, Error>
+tick(float pitch_command_deg) {
+    if (!s_motor) {
+        return std::unexpected(Error::from_cause("RangerTvc not initialized"));
+    }
+
+    mjbots::moteus::PositionMode::Command cmd;
+    cmd.position = pitch_command_deg / 360.0f;
+
+    LOG_INF("tx: pos=%d mrot", (int)(cmd.position * 1000));
+
+    auto result = s_motor->SetPosition(cmd);
+
+    if (result) {
+        LOG_INF("rx: pos=%d mrot  vel=%d mrot/s  torq=%d mNm  mode=%d",
+            (int)(result->values.position * 1000),
+            (int)(result->values.velocity * 1000),
+            (int)(result->values.torque   * 1000),
+            (int)result->values.mode);
+    } else {
+        LOG_WRN("rx: no reply");
+    }
+
+    if (!result) {
+        return std::unexpected(Error::from_cause("RangerTvc: no motor reply"));
+    }
+
+    return std::make_tuple(TvcActuatorCommand{}, TvcActuatorCommand{}, RangerTvcMetrics{});
+}
+
+}  // namespace RangerTvc

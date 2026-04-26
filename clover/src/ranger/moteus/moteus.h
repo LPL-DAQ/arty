@@ -127,7 +127,7 @@ class Controller {
   static std::shared_ptr<Transport> RequireSingletonTransport() {
     auto& g_transport = *GlobalTransport();
     if (!g_transport) {
-      throw std::logic_error("Unexpectedly cannot find global transport");
+      abort();
     }
     return g_transport;
   }
@@ -922,7 +922,7 @@ class Controller {
   void VerifySchemaVersion() {
     const auto result = ExecuteSingleCommand(MakeSchemaVersionQuery());
     if (!result) {
-      throw std::runtime_error("No response to schema version query");
+      abort();
     }
     CheckRegisterMapVersion(*result);
   }
@@ -1281,18 +1281,12 @@ class Controller {
   static void CheckRegisterMapVersion(const Result& result) {
     if (result.values.extra[0].register_number !=
         Register::kRegisterMapVersion) {
-      throw std::runtime_error("Malformed response to schema version query");
+      abort();
     }
 
     const auto int_version = static_cast<int>(result.values.extra[0].value);
     if (kCurrentRegisterMapVersion != int_version) {
-      std::ostringstream ostr;
-      ostr << "Register map version mismatch device is "
-           << int_version
-           << " but library requires "
-           << kCurrentRegisterMapVersion;
-
-      throw std::runtime_error(ostr.str());
+      abort();
     }
   }
 
