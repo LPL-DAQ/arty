@@ -544,3 +544,10 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
 
     return {{fuel_command, lox_command, metrics}};
 }
+
+#if CONFIG_TEST
+std::tuple<ThrottleValveCommand, ThrottleValveCommand> RangerThrottle::active_control_test(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics)
+{
+    return ::active_control(alpha_state, predicted_thrust_lbf, thrust_command_lbf, metrics);
+}
+#endif

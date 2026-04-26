@@ -1,123 +1,119 @@
 #include "../../../../clover/src/ranger/RangerThrottle.h"
 
-#include <array>
-#include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <zephyr/ztest.h>
 
-struct PredictorExpected {
-	float predicted_thrust_lbf;
-	float predicted_of;
-	float mdot_fuel;
-	float mdot_lox;
-	float tolerance;
-};
+#include "alpha.h"
+#include "change_alpha_cmd.h"
+#include "fuel_valve_deg.h"
+#include "lox_valve_deg.h"
+#include "predicted_thrust.h"
+#include "target_thrust.h"
 
-struct PredictorCase {
-	const char* name;
-	AnalogSensorReadings input;
-	PredictorExpected expected;
-};
+static constexpr float kToleranceAlpha = 1e-4f;
+static constexpr float kToleranceChangeAlphaCmd = 1e-4f;
+static constexpr float kTolerancePredictedThrust = 1e-3f;
+static constexpr float kToleranceValveDeg = 1e-3f;
 
-struct ActiveControlExpected {
-	float fuel_target_deg;
-	float lox_target_deg;
-	float alpha;
-	float change_alpha_cmd;
-	float clamped_change_alpha_cmd;
-	float thrust_from_alpha_lbf;
-	float tolerance;
-};
+// ZTEST(RangerThrottle_tests, test_thrust_predictor_single_case_template)
+// {
+// 	RangerThrottle::reset();
 
-struct ActiveControlStep {
-	const char* name;
-    float alpha;
-	float predicted_thrust_lbf;
-	float thrust_command_lbf;
-	ActiveControlExpected expected;
-};
+// 	// Fill this case with one input snapshot and one expected output snapshot.
 
-ZTEST(RangerThrottle_tests, test_thrust_predictor_single_case_template)
+// 		AnalogSensorReadings sensors = AnalogSensorReadings_init_default;
+
+//         float predicted_thrust_lbf = 0.0f, // predicted_thrust_lbf
+//             0.0f, //
+//             0.0f, // mdot_fuel
+//             0.0f, // mdot_lox
+//             0.01f, // tolerance for all comparisons
+
+
+// 	RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
+// 	auto result = RangerThrottle::test_hooks::thrust_predictor(test_case.input, metrics);
+
+//     zassert_true(result.has_value(), "predictor case should succeed: %s", test_case.name);
+
+//     zassert_within(*result, test_case.expected.predicted_thrust_lbf, test_case.expected.tolerance,
+//                     "predicted thrust mismatch: %s", test_case.name);
+
+//     zassert_within(metrics.predicted_of, test_case.expected.predicted_of, test_case.expected.tolerance,
+//                     "predicted O/F mismatch: %s", test_case.name);
+
+//     zassert_within(metrics.mdot_fuel, test_case.expected.mdot_fuel, test_case.expected.tolerance,
+//                     "fuel mdot mismatch: %s", test_case.name);
+
+//     zassert_within(metrics.mdot_lox, test_case.expected.mdot_lox, test_case.expected.tolerance,
+//                     "lox mdot mismatch: %s", test_case.name);
+// }
+
+ZTEST(RangerThrottle_tests, test_active_control_time_series_lut)
 {
 	RangerThrottle::reset();
 
-	// Fill this case with one input snapshot and one expected output snapshot.
-	PredictorCase test_case = {
-		"TODO_fill_predictor_case",
-		AnalogSensorReadings_init_default,
-		{
-			0.0f,
-			0.0f,
-			0.0f,
-			0.0f,
-			0.001f,
-		},
-	};
+	static_assert(TIME_ALPHA_X_LEN == TIME_PREDICTED_THRUST_X_LEN);
+	static_assert(TIME_ALPHA_X_LEN == TIME_TARGET_THRUST_X_LEN);
+	static_assert(TIME_ALPHA_X_LEN == TIME_CHANGE_ALPHA_CMD_X_LEN);
+	static_assert(TIME_ALPHA_X_LEN == TIME_FUEL_VALVE_DEG_X_LEN);
+	static_assert(TIME_ALPHA_X_LEN == TIME_LOX_VALVE_DEG_X_LEN);
 
-	RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
-	auto result = RangerThrottle::test_hooks::thrust_predictor(test_case.input, metrics);
+	for (std::size_t i = 300; i < TIME_TARGET_THRUST_X_LEN; ++i) {
+		float t = TIME_TARGET_THRUST_X_MIN + static_cast<float>(i) * TIME_TARGET_THRUST_X_GAP;
+		float t_prev = t - TIME_TARGET_THRUST_X_GAP;
 
-    zassert_true(result.has_value(), "predictor case should succeed: %s", test_case.name);
+		float alpha_prev = TimeAlpha::sample(t_prev);
+		float predicted_thrust_prev_lbf = TimePredictedThrust::sample(t_prev);
+		float target_thrust_lbf = TimeTargetThrust::sample(t);
 
-    zassert_within(*result, test_case.expected.predicted_thrust_lbf, test_case.expected.tolerance,
-                    "predicted thrust mismatch: %s", test_case.name);
+		float expected_alpha = TimeAlpha::sample(t);
+		float expected_predicted_thrust_lbf = TimePredictedThrust::sample(t);
+		float expected_fuel_deg = TimeFuel_valve_deg::sample(t);
+		float expected_lox_deg = TimeLoxValveDeg::sample(t);
 
-    zassert_within(metrics.predicted_of, test_case.expected.predicted_of, test_case.expected.tolerance,
-                    "predicted O/F mismatch: %s", test_case.name);
-
-    zassert_within(metrics.mdot_fuel, test_case.expected.mdot_fuel, test_case.expected.tolerance,
-                    "fuel mdot mismatch: %s", test_case.name);
-
-    zassert_within(metrics.mdot_lox, test_case.expected.mdot_lox, test_case.expected.tolerance,
-                    "lox mdot mismatch: %s", test_case.name);
-}
-
-ZTEST(RangerThrottle_tests, test_active_control_time_series_template)
-{
-	RangerThrottle::reset();
-
-	// Fill this with your full time-series expected inputs and outputs.
-	const std::array<ActiveControlStep, 1> series = {{
-		{
-			"TODO_fill_step_0",
-			-1.0f,
-			0.0f,
-            0.0f
-			{
-				0.0f,
-				0.0f,
-				0.0f,
-				0.0f,
-				0.0f,
-				0.001f,
-			},
-		},
-	}};
-
-	float alpha_state = -1.0f;
-	for (const auto& step : series) {
+		float alpha_state = alpha_prev;
 		RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
-		auto [fuel_cmd, lox_cmd] = RangerThrottle::test_hooks::active_control(
-			alpha_state, step.predicted_thrust_lbf, step.thrust_command_lbf, metrics);
+		auto [fuel_cmd, lox_cmd] = RangerThrottle::active_control_test(
+			alpha_state, predicted_thrust_prev_lbf, target_thrust_lbf, metrics);
 
-		zassert_within(fuel_cmd.target_deg, step.expected.fuel_target_deg, step.expected.tolerance,
-					   "fuel command mismatch: %s", step.name);
-		zassert_within(lox_cmd.target_deg, step.expected.lox_target_deg, step.expected.tolerance,
-					   "lox command mismatch: %s", step.name);
-        zassert_within(lox_cmd.target_deg, step.expected.lox_target_deg, step.expected.tolerance,
-                        "lox command mismatch: %s", step.name);
+		char assert_msg[192];
 
-        zassert_within(metrics.alpha, step.expected.alpha, step.expected.tolerance,
-                        "alpha mismatch: %s", step.name);
+		std::snprintf(
+			assert_msg,
+			sizeof(assert_msg),
+			"alpha mismatch at t=%.3f (expected=%.6f, actual=%.6f)",
+			(double)t,
+			(double)expected_alpha,
+			(double)metrics.alpha);
+		zassert_within(metrics.alpha, expected_alpha, kToleranceAlpha, assert_msg);
 
-        zassert_within(metrics.change_alpha_cmd, step.expected.change_alpha_cmd, step.expected.tolerance,
-                        "change alpha mismatch: %s", step.name);
+		std::snprintf(
+			assert_msg,
+			sizeof(assert_msg),
+			"predicted thrust mismatch at t=%.3f (expected=%.6f, actual=%.6f)",
+			(double)t,
+			(double)expected_predicted_thrust_lbf,
+			(double)metrics.thrust_from_alpha_lbf);
+		zassert_within(metrics.thrust_from_alpha_lbf, expected_predicted_thrust_lbf, kTolerancePredictedThrust, assert_msg);
 
-        zassert_within(metrics.clamped_change_alpha_cmd, step.expected.clamped_change_alpha_cmd,
-                        step.expected.tolerance, "clamped change alpha mismatch: %s", step.name);
+		std::snprintf(
+			assert_msg,
+			sizeof(assert_msg),
+			"fuel valve command mismatch at t=%.3f (expected=%.6f, actual=%.6f)",
+			(double)t,
+			(double)expected_fuel_deg,
+			(double)fuel_cmd.target_deg);
+		zassert_within(fuel_cmd.target_deg, expected_fuel_deg, kToleranceValveDeg, assert_msg);
 
-        zassert_within(metrics.thrust_from_alpha_lbf, step.expected.thrust_from_alpha_lbf,
-                        step.expected.tolerance, "thrust-from-alpha mismatch: %s", step.name);
-    
+		std::snprintf(
+			assert_msg,
+			sizeof(assert_msg),
+			"lox valve command mismatch at t=%.3f (expected=%.6f, actual=%.6f)",
+			(double)t,
+			(double)expected_lox_deg,
+			(double)lox_cmd.target_deg);
+		zassert_within(lox_cmd.target_deg, expected_lox_deg, kToleranceValveDeg, assert_msg);
 	}
 }
 
