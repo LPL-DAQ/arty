@@ -1,0 +1,5 @@
+description: TI ADS7953-Q1 16-channel 12-bit SPI ADC
+
+compatible: "ti,ads7953"
+
+include: ti,ads79xx-base.yaml
