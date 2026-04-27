@@ -22,30 +22,30 @@ static constexpr float kToleranceValveDeg = 1e-3f;
 
 // 	// Fill this case with one input snapshot and one expected output snapshot.
 
-// 		AnalogSensorReadings sensors = AnalogSensorReadings_init_default;
+//     AnalogSensorReadings sensors = AnalogSensorReadings_init_default;
 
-//         float predicted_thrust_lbf = 0.0f, // predicted_thrust_lbf
-//             0.0f, //
-//             0.0f, // mdot_fuel
-//             0.0f, // mdot_lox
-//             0.01f, // tolerance for all comparisons
+//     float predicted_thrust_lbf = 0.0f, // predicted_thrust_lbf
+//         0.0f, //
+//     float mdot_fuel = 0.0f, //
+//     float  mdot_lox =0.0f, //
+//     float tolerance = 0.01f; // tolerance for all comparisons
 
 
 // 	RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
-// 	auto result = RangerThrottle::test_hooks::thrust_predictor(test_case.input, metrics);
+// 	auto result = RangerThrottle::thrust_predictor(sensors, metrics);
 
-//     zassert_true(result.has_value(), "predictor case should succeed: %s", test_case.name);
+//     zassert_true(result.has_value(), "predictor case should succeed");
 
-//     zassert_within(*result, test_case.expected.predicted_thrust_lbf, test_case.expected.tolerance,
+//     zassert_within(metrics.predicted_thrust_lbf, predicted_thrust_lbf, tolerance,
 //                     "predicted thrust mismatch: %s", test_case.name);
 
-//     zassert_within(metrics.predicted_of, test_case.expected.predicted_of, test_case.expected.tolerance,
+//     zassert_within(metrics.predicted_of, expected.predicted_of,  expected.tolerance,
 //                     "predicted O/F mismatch: %s", test_case.name);
 
-//     zassert_within(metrics.mdot_fuel, test_case.expected.mdot_fuel, test_case.expected.tolerance,
+//     zassert_within(metrics.mdot_fuel, expected.mdot_fuel, expected.tolerance,
 //                     "fuel mdot mismatch: %s", test_case.name);
 
-//     zassert_within(metrics.mdot_lox, test_case.expected.mdot_lox, test_case.expected.tolerance,
+//     zassert_within(metrics.mdot_lox,    expected.mdot_lox, expected.tolerance,
 //                     "lox mdot mismatch: %s", test_case.name);
 // }
 
