@@ -7,7 +7,7 @@ Ranger 1 board.
 #include <../boards/pjrc/teensy4/teensy41.dts>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
-#define ANALOG_SENSORS_ADC_OVERSAMPLING 1
+#define ANALOG_SENSORS_ADC_OVERSAMPLING 0
 
 /*
 TODO:
@@ -54,16 +54,18 @@ TODO:
         lox-valve-encoder-b-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 1
 
         // ADC channels used by AnalogSensors.
-        analog-sensor-max-adc-channels = <16>;
-        io-channels = <&adc1 5>,
-                      <&adc1 6>,
-                      <&adc1 8>,
-                      <&adc1 9>,
-                      <&adc1 10>,
-                      <&adc1 11>,
-                      <&adc1 12>,
-                      <&adc1 15>;
-        analog-sensor-adcs = <&adc1>;
+        // U7 (AIN0–15) + U8 (AIN16–31) via ADS7953 on lpspi3.
+        analog-sensor-max-adc-channels = <17>; // 16 channels + 1 sentinel slot
+        io-channels =
+            <&ads7953_1 0>,  <&ads7953_1 1>,  <&ads7953_1 2>,  <&ads7953_1 3>,
+            <&ads7953_1 4>,  <&ads7953_1 5>,  <&ads7953_1 6>,  <&ads7953_1 7>,
+            <&ads7953_1 8>,  <&ads7953_1 9>,  <&ads7953_1 10>, <&ads7953_1 11>,
+            <&ads7953_1 12>, <&ads7953_1 13>, <&ads7953_1 14>, <&ads7953_1 15>,
+            <&ads7953_2 0>,  <&ads7953_2 1>,  <&ads7953_2 2>,  <&ads7953_2 3>,
+            <&ads7953_2 4>,  <&ads7953_2 5>,  <&ads7953_2 6>,  <&ads7953_2 7>,
+            <&ads7953_2 8>,  <&ads7953_2 9>,  <&ads7953_2 10>, <&ads7953_2 11>,
+            <&ads7953_2 12>, <&ads7953_2 13>, <&ads7953_2 14>, <&ads7953_2 15>;
+        analog-sensor-adcs = <&ads7953_1 &ads7953_2>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
@@ -337,6 +339,108 @@ TODO:
         zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
         zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
         zephyr,oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
+    };
+};
+
+// ADS7953 dual SPI ADC (U7 + U8)
+// MOSI=pin26, MISO=pin39, SCK=pin27 → lpspi3 (pinmux defined upstream)
+// CS: pin37=gpio3_25 (U7/AIN0-15), pin36=gpio3_24 (U8/AIN16-31)
+&lpspi3 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpspi3>;
+    pinctrl-names = "default";
+
+    cs-gpios = <&gpio3 25 GPIO_ACTIVE_LOW>,   // Pin 37 → U7 (AIN0–15)
+               <&gpio3 24 GPIO_ACTIVE_LOW>;   // Pin 36 → U8 (AIN16–31)
+
+    ads7953_1: adc@0 {
+        compatible = "ti,ads7953";
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(5)>;
+        #io-channel-cells = <1>;
+        ti,range = <2>;
+        status = "okay";
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        channel@0  { reg = <0>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@1  { reg = <1>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@2  { reg = <2>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@3  { reg = <3>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@4  { reg = <4>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@5  { reg = <5>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@6  { reg = <6>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@7  { reg = <7>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@8  { reg = <8>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@9  { reg = <9>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@a  { reg = <10>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@b  { reg = <11>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@c  { reg = <12>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@d  { reg = <13>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@e  { reg = <14>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@f  { reg = <15>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+    };
+
+    ads7953_2: adc@1 {
+        compatible = "ti,ads7953";
+        reg = <1>;
+        spi-max-frequency = <DT_FREQ_M(5)>;
+        #io-channel-cells = <1>;
+        ti,range = <2>;
+        status = "okay";
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        channel@0  { reg = <0>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@1  { reg = <1>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@2  { reg = <2>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@3  { reg = <3>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@4  { reg = <4>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@5  { reg = <5>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@6  { reg = <6>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@7  { reg = <7>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@8  { reg = <8>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@9  { reg = <9>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@a  { reg = <10>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@b  { reg = <11>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@c  { reg = <12>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@d  { reg = <13>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@e  { reg = <14>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+        channel@f  { reg = <15>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_VDD_1"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>; };
+    };
+};
+
+// MCP23017 U6 — I²C GPIO expander, GPIO_17–GPIO_32
+// SCL=pin19 (AD_B1_00), SDA=pin18 (AD_B1_01) → lpi2c1
+&lpi2c1 {
+    pinctrl-0 = <&pinmux_lpi2c1>;
+    pinctrl-names = "default";
+    clock-frequency = <100000>;
+    status = "okay";
+
+    mcp23017_u6: gpio@20 {
+        compatible = "microchip,mcp23017";
+        reg = <0x20>;
+        gpio-controller;
+        #gpio-cells = <2>;
+        status = "okay";
+    };
+};
+
+// MCP23017 U4 — I²C GPIO expander, GPIO_1–GPIO_16
+// SCL=pin16 (AD_B1_07), SDA=pin17 (AD_B1_06) → lpi2c3
+&lpi2c3 {
+    pinctrl-0 = <&pinmux_lpi2c3>;
+    pinctrl-names = "default";
+    clock-frequency = <100000>;
+    status = "okay";
+
+    mcp23017_u4: gpio@20 {
+        compatible = "microchip,mcp23017";
+        reg = <0x20>;
+        gpio-controller;
+        #gpio-cells = <2>;
+        status = "okay";
     };
 };
 
