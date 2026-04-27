@@ -280,53 +280,54 @@ static void sense()
                         sensor_readings.pt005 = curr_reading;
                         break;
                     }
+                    case AnalogSensor_PT006: {
+                        sensor_readings.has_pt006 = true;
+                        sensor_readings.pt006 = curr_reading;
+                        break;
+                    }
                     // Vehicle fuel side
-                    case AnalogSensor_PT101: {
-                        sensor_readings.has_pt101 = true;
-                        sensor_readings.pt101 = curr_reading;
+                    case AnalogSensor_PT103: {
+                        sensor_readings.has_pt103 = true;
+                        sensor_readings.pt103 = curr_reading;
                         break;
                     }
                     // Vehicle LOx side
-                    case AnalogSensor_PT201: {
-                        sensor_readings.has_pt201 = true;
-                        sensor_readings.pt201 = curr_reading;
+                    case AnalogSensor_PT203: {
+                        sensor_readings.has_pt203 = true;
+                        sensor_readings.pt203 = curr_reading;
+                        break;
+                    }
+                    // Purge
+                    case AnalogSensor_PT301: {
+                        sensor_readings.has_pt301 = true;
+                        sensor_readings.pt301 = curr_reading;
                         break;
                     }
                     // Engine
-                    case AnalogSensor_PTF1: {
-                        sensor_readings.has_ptf1 = true;
-                        sensor_readings.ptf1 = curr_reading;
+                    case AnalogSensor_PTF401: {
+                        sensor_readings.has_ptf401 = true;
+                        sensor_readings.ptf401 = curr_reading;
                         break;
                     }
-                    case AnalogSensor_PTF2: {
-                        sensor_readings.has_ptf2 = true;
-                        sensor_readings.ptf2 = curr_reading;
+                    case AnalogSensor_PTO401: {
+                        sensor_readings.has_pto401 = true;
+                        sensor_readings.pto401 = curr_reading;
                         break;
                     }
-                    case AnalogSensor_PTO1: {
-                        sensor_readings.has_pto1 = true;
-                        sensor_readings.pto1 = curr_reading;
+                    case AnalogSensor_PTC401: {
+                        sensor_readings.has_ptc401 = true;
+                        sensor_readings.ptc401 = curr_reading;
                         break;
                     }
-                    case AnalogSensor_PTC1: {
-                        sensor_readings.has_ptc1 = true;
-                        sensor_readings.ptc1 = curr_reading;
-                        break;
-                    }
-                    case AnalogSensor_PTC2: {
-                        sensor_readings.has_ptc2 = true;
-                        sensor_readings.ptc2 = curr_reading;
+                    case AnalogSensor_PTC402: {
+                        sensor_readings.has_ptc402 = true;
+                        sensor_readings.ptc402 = curr_reading;
                         break;
                     }
                     // TCs
-                    case AnalogSensor_TC001: {
-                        sensor_readings.has_tc001 = true;
-                        sensor_readings.tc001 = curr_reading;
-                        break;
-                    }
-                    case AnalogSensor_TC101: {
-                        sensor_readings.has_tc101 = true;
-                        sensor_readings.tc101 = curr_reading;
+                    case AnalogSensor_TC002: {
+                        sensor_readings.has_tc002 = true;
+                        sensor_readings.tc002 = curr_reading;
                         break;
                     }
                     case AnalogSensor_TC102: {
@@ -334,14 +335,19 @@ static void sense()
                         sensor_readings.tc102 = curr_reading;
                         break;
                     }
-                    case AnalogSensor_TCF1: {
-                        sensor_readings.has_tcf1 = true;
-                        sensor_readings.tcf1 = curr_reading;
+                    case AnalogSensor_TC102_5: {
+                        sensor_readings.has_tc102_5 = true;
+                        sensor_readings.tc102_5 = curr_reading;
                         break;
                     }
-                    case AnalogSensor_TCO1: {
-                        sensor_readings.has_tco1 = true;
-                        sensor_readings.tco1 = curr_reading;
+                    case AnalogSensor_TCF401: {
+                        sensor_readings.has_tcf401 = true;
+                        sensor_readings.tcf401 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TCO401: {
+                        sensor_readings.has_tco401 = true;
+                        sensor_readings.tco401 = curr_reading;
                         break;
                     }
                     // GSE pressurant
