@@ -143,36 +143,39 @@ enum AnalogSensor {
   PT003 = 3;
   PT004 = 4;
   PT005 = 5;
+  PT006 = 6;
 
   // Vehicle fuel side
-  PT101 = 6;
+  PT103 = 7;
 
   // Vehicle LOx side
-  PT201 = 7;
+  PT203 = 8;
+
+  // Purge
+  PT301 = 9;
 
   // Engine
-  PTF1 = 8;
-  PTF2 = 9;
-  PTO1 = 10;
-  PTC1 = 11;
-  PTC2 = 12;
+  PTF401 = 10;
+  PTO401 = 11;
+  PTC401 = 12;
+  PTC402 = 13;
 
   // TCs
-  TC001 = 13;
-  TC101 = 14;
+  TC002 = 14;
   TC102 = 15;
-  TCF1 = 16;
-  TCO1 = 17;
+  TC102_5 = 16;
+  TCF401 = 17;
+  TCO401 = 18;
 
   // GSE pressurant
-  PTG001 = 18;
-  PTG002 = 19;
+  PTG001 = 19;
+  PTG002 = 20;
 
   // GSE LOx
-  PTG101 = 20;
+  PTG101 = 21;
 
   // Hornet
-  BATTERY_VOLTAGE = 21;
+  BATTERY_VOLTAGE = 22;
 }
 
 // Configure GPIOs as valves.
@@ -194,18 +197,29 @@ enum Valve {
   UNKNOWN_VALVE = 0;
 
   // Vehicle
+
+  // Pressurant
   SV001 = 1;
   SV002 = 2;
   SV003 = 3;
   SV004 = 4;
-  PBV002 = 5;
-  SV005 = 6;
-  // TODO -- add others when P&ID is more done.
+  SV005 = 5;
+  PBV006 = 6;
 
-  // GSE
-  SVG001 = 100;
-  SVG002 = 101;
-  SVG003 = 102;
+  // LOx
+  PBV101 = 7;
+
+  // Fuel
+  PBV201 = 8;
+
+  // Purge  
+  SV301 = 9;
+
+  // RCS
+  SVR001 = 10;
+  SVR002 = 11;
+  SVR003 = 12;
+  SVR004 = 13;
 }
 
 // Actuate a single valve.
@@ -587,36 +601,39 @@ message AnalogSensorReadings {
   optional float pt003 = 3;
   optional float pt004 = 4;
   optional float pt005 = 5;
+  optional float pt006 = 6;
 
   // Vehicle fuel side
-  optional float pt101 = 6;
+  optional float pt103 = 7;
 
   // Vehicle LOx side
-  optional float pt201 = 7;
+  optional float pt203 = 8;
+
+  // Purge
+  optional float pt203 = 9;
 
   // Engine
-  optional float ptf1 = 8;
-  optional float ptf2 = 9;
-  optional float pto1 = 10;
-  optional float ptc1 = 11;
-  optional float ptc2 = 12;
+  optional float ptf401 = 10;
+  optional float pto401 = 11;
+  optional float ptc401 = 12;
+  optional float ptc402 = 13;
 
   // TCs
-  optional float tc001 = 13;
-  optional float tc101 = 14;
+  optional float tc002 = 14;
   optional float tc102 = 15;
-  optional float tcf1 = 16;
-  optional float tco1 = 17;
+  optional float tc102_5 = 16;
+  optional float tcf401 = 17;
+  optional float tco401 = 18;
 
   // GSE pressurant
-  optional float ptg001 = 18;
-  optional float ptg002 = 19;
+  optional float ptg001 = 19;
+  optional float ptg002 = 20;
 
   // GSE LOx
-  optional float ptg101 = 20;
+  optional float ptg101 = 21;
 
   // Hornet
-  optional float battery_voltage = 21;
+  optional float battery_voltage = 22;
 }
 
 message Vector3D {
@@ -626,15 +643,30 @@ message Vector3D {
 }
 // Current valve states.
 message ValveStates {
-  optional ValveState sv001 = 1;
+  // Vehicle
+
+  // Pressurant
+  optional ValveState sv001 = 1; 
   optional ValveState sv002 = 2;
   optional ValveState sv003 = 3;
   optional ValveState sv004 = 4;
-  optional ValveState pbv002 = 5;
-  optional ValveState sv005 = 6;
-  optional ValveState svg001 = 100;
-  optional ValveState svg002 = 101;
-  optional ValveState svg003 = 102;
+  optional ValveState sv005 = 5;
+  optional ValveState pbv006 = 6;
+
+  // LOx
+  optional ValveState pbv101 = 7;
+
+  // Fuel
+  optional ValveState pbv201 = 8;
+
+  // Purge
+  optional ValveState sv301 = 9;
+
+  // RCS
+  optional ValveState svr001 = 10;
+  optional ValveState svr002 = 11;
+  optional ValveState svr003 = 12;
+  optional ValveState svr004 = 13;
 }
 
 message LidarReading {

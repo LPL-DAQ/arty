@@ -1981,20 +1981,20 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     // TODO: these were also battery voltage? That seems wrong
     // TODO: ARRE THESE THE CORRECT PTS? NEEDS TO BE UPDATED FOR RANGER
     // TODO: james, rupin says he doesnt know what to do - He cant find the P&ID 
-    float ptc401_val = analog_sensors.ptc1;                                    // Adjusted value
-    float pto401_val = analog_sensors.pto1 + LOX_ENGINE_INLET_LINE_LOSS_PSI;   // Adjusted value
-    float pt103_val = analog_sensors.pt101;                                      // Adjusted value
-    float ptf401_val = analog_sensors.ptf1 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
-    float pt203_val = analog_sensors.pt201;                                      // Adjusted value
-    float ptc402_val = analog_sensors.ptc2;                                    // Adjusted value
-    bool pt203_valid = (analog_sensors.pt201 >= MIN_threshold && analog_sensors.pt201 <= MAX_threshold_PT2k);
-    bool ptf401_valid = (analog_sensors.ptf1 >= MIN_threshold && analog_sensors.ptf1 <= MAX_threshold_PT2k);
-    bool pt103_valid = (analog_sensors.pt101 >= MIN_threshold && analog_sensors.pt101 <= MAX_threshold_PT2k);
-    bool pto401_valid = (analog_sensors.pto1 >= MIN_threshold && analog_sensors.pto1 <= MAX_threshold_PT2k);
-    bool ptc401_valid = (analog_sensors.ptc1 >= MIN_threshold && analog_sensors.ptc1 <= MAX_threshold_PT1k);
-    bool ptc402_valid = (analog_sensors.ptc2 >= MIN_threshold && analog_sensors.ptc2 <= MAX_threshold_PT1k);
-    float p_inj_fuel;
-    float p_inj_lox;
+    float ptc401_val = analog_sensors.ptc401;
+    float ptc402_val = analog_sensors.ptc402;
+    float pto401_val = analog_sensors.pto401 + LOX_ENGINE_INLET_LINE_LOSS_PSI;
+    float pt103_val = analog_sensors.pt103;
+    float ptf401_val = analog_sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+    float pt203_val = analog_sensors.pt203;
+
+    bool ptc401_valid = (analog_sensors.ptc401 >= MIN_threshold && analog_sensors.ptc401 <= MAX_threshold_PT2k) && analog_sensors.has_ptc401;
+    bool ptc402_valid = (analog_sensors.ptc402 >= MIN_threshold && analog_sensors.ptc402 <= MAX_threshold_PT2k) && analog_sensors.has_ptc402;
+    bool pto401_valid = (analog_sensors.pto401 >= MIN_threshold && analog_sensors.pto401 <= MAX_threshold_PT2k) && analog_sensors.has_pto401;
+    bool pt103_valid = (analog_sensors.pt103 >= MIN_threshold && analog_sensors.pt103 <= MAX_threshold_PT2k) && analog_sensors.has_pt103;
+    bool ptf401_valid = (analog_sensors.ptf401 >= MIN_threshold && analog_sensors.ptf401 <= MAX_threshold_PT2k) && analog_sensors.has_ptf401;
+    bool pt203_valid = (analog_sensors.pt203 >= MIN_threshold && analog_sensors.pt203 <= MAX_threshold_PT2k) && analog_sensors.has_pt203;
+
     float p_ch;
     if (ptc401_valid && ptc402_valid) {
         // Both are healthy: Take the average
@@ -2009,8 +2009,10 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
         p_ch = ptc402_val;
     }
     else {
-        return std::unexpected(Error::from_cause("NO PTC 401 / PTC402"));
+        return std::unexpected(Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", ptc401_val, ptc402_val));
     }
+
+    float p_inj_fuel;
     if (pt203_valid && ptf401_valid) {
         // Both are healthy: Take the average
         p_inj_fuel = (pt203_val + ptf401_val) / 2.0f;
@@ -2025,8 +2027,10 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     }
     else {
         // Both failed: Trigger Abort
-        return std::unexpected(Error::from_cause("NO PT 203 / PTF401"));
+        return std::unexpected(Error::from_cause("missing PT-203 / PTF-401 -- PT-203 has %f, PTF-401 has %f", pt203_val, ptf401_val));
     }
+
+    float p_inj_lox;
     if (pt103_valid && pto401_valid) {
         // Both are healthy: Take the average
         p_inj_lox = (pt103_val + pto401_val) / 2.0f;
@@ -2041,7 +2045,7 @@ std::expected<std::tuple<ThrottleValveCommand, ThrottleValveCommand, RangerThrot
     }
     else {
         // Both failed: Trigger Abort
-        return std::unexpected(Error::from_cause("NO PT 103 / PTO401"));
+        return std::unexpected(Error::from_cause("missing PT-103 / PTO-401 -- PT-103 has %f, PTO-401 has %f", pt103_val, pto401_val));
     }
 
     // 3. Calculate mass flows
