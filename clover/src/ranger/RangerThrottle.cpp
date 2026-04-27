@@ -6,6 +6,7 @@
 // #include "../lut/thrust_to_lox_1.5.h"
 #include "../lut/thrust_to_fuel.h"
 #include "../lut/thrust_to_lox.h"
+#include "../lut/cea_lut.h"
 #include <cmath>
 #include <zephyr/kernel.h>
 
@@ -481,13 +482,13 @@ void RangerThrottle::calibration_reset(ThrottleValveType valve, float valve_pos,
 
     // TODO: add lut for cea
     // 7. Predict Isp using chamber pressure and O/F
-    // float predicted_isp = interp2D(isp_pc_axis_internal, 29, isp_of_axis_internal, 34, isp_data_internal, p_ch, of_safe);
+    float predicted_isp = PcOfCea::sample(p_ch, predicted_of);
 
     // 8. Predict thrust (convert to lbf-equivalent)
-    // float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
+    float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
 
     metrics.predicted_thrust_lbf = 0;
-    // metrics.predicted_thrust_lbf = predicted_thrust_lbf;
+    metrics.predicted_thrust_lbf = predicted_thrust_lbf;
 
     metrics.predicted_of = predicted_of;
     metrics.mdot_fuel = mdot_f;
