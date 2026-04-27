@@ -88,22 +88,22 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
             break;
         }
         case Valve_PBV006: {
-            out.has_sv006 = true;
-            out.sv006 = valve_state;
+            out.has_pbv006 = true;
+            out.pbv006 = valve_state;
             break;
         }
 
         // LOx
         case Valve_PBV101: {
-            out.has_sv101 = true;
-            out.sv101 = valve_state;
+            out.has_pbv101 = true;
+            out.pbv101 = valve_state;
             break;
         }
 
         // Fuel
         case Valve_PBV201: {
-            out.has_sv201 = true;
-            out.sv201 = valve_state;
+            out.has_pbv201 = true;
+            out.pbv201 = valve_state;
             break;
         }
 
@@ -135,7 +135,7 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
             out.svr004 = valve_state;
             break;
         }
-        
+
         default:
             return std::unexpected(Error::from_cause("invalid valve assignment in supposedly sanitized configs: %d", valve_config->assignment));
         }

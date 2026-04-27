@@ -384,19 +384,6 @@ void RangerThrottle::calibration_reset(ThrottleValveType valve, float valve_pos,
 
     static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog_sensors, RangerThrottleMetrics& metrics)
 {
-    // Safety: abort if PTC401 is below threshold for too long.
-    uint32_t current_time = (uint32_t)k_uptime_get();
-    if (analog_sensors.ptc1 <= PTC401_ABORT_THRESHOLD) {
-        if (low_ptc_start_time_ms == 0) {
-            low_ptc_start_time_ms = current_time;
-        }
-        else if (current_time - low_ptc_start_time_ms > PTC401_ABORT_THRESHOLD_TIME_MS) {
-            return std::unexpected(Error::from_cause("PTC401 < %f for >%u ms in THRUST_SEQ, aborting.", (double)PTC401_ABORT_THRESHOLD, PTC401_ABORT_THRESHOLD_TIME_MS));
-        }
-    }
-    else {
-        low_ptc_start_time_ms = 0;
-    }
 
     // 2. Read pressures
     // TODO: these were also battery voltage? That seems wrong
