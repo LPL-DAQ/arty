@@ -59,6 +59,9 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
 
         // Populate output with valve assignment.
         switch (valve_config->assignment) {
+        // Vehicle
+
+        // Pressurant
         case Valve_SV001: {
             out.has_sv001 = true;
             out.sv001 = valve_state;
@@ -79,32 +82,60 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
             out.sv004 = valve_state;
             break;
         }
-        case Valve_PBV002: {
-            out.has_pbv002 = true;
-            out.pbv002 = valve_state;
-            break;
-        }
         case Valve_SV005: {
             out.has_sv005 = true;
             out.sv005 = valve_state;
             break;
         }
-        /* GSE */
-        case Valve_SVG001: {
-            out.has_svg001 = true;
-            out.svg001 = valve_state;
+        case Valve_PBV006: {
+            out.has_sv006 = true;
+            out.sv006 = valve_state;
             break;
         }
-        case Valve_SVG002: {
-            out.has_svg002 = true;
-            out.svg002 = valve_state;
+
+        // LOx
+        case Valve_PBV101: {
+            out.has_sv101 = true;
+            out.sv101 = valve_state;
             break;
         }
-        case Valve_SVG003: {
-            out.has_svg003 = true;
-            out.svg003 = valve_state;
+
+        // Fuel
+        case Valve_PBV201: {
+            out.has_sv201 = true;
+            out.sv201 = valve_state;
             break;
         }
+
+        // Purge
+        case Valve_SV301: {
+            out.has_sv301 = true;
+            out.sv301 = valve_state;
+            break;
+        }
+
+        // RCS
+        case Valve_SVR001: {
+            out.has_svr001 = true;
+            out.svr001 = valve_state;
+            break;
+        }
+        case Valve_SVR002: {
+            out.has_svr002 = true;
+            out.svr002 = valve_state;
+            break;
+        }
+        case Valve_SVR003: {
+            out.has_svr003 = true;
+            out.svr003 = valve_state;
+            break;
+        }
+        case Valve_SVR004: {
+            out.has_svr004 = true;
+            out.svr004 = valve_state;
+            break;
+        }
+        
         default:
             return std::unexpected(Error::from_cause("invalid valve assignment in supposedly sanitized configs: %d", valve_config->assignment));
         }
