@@ -13,20 +13,15 @@
 #include <zephyr/sys/errno_private.h>
 
 #include "Controller.h"
+#include "Error.h"
 #include "MutexGuard.h"
+#include "PwmActuator.h"
+#include "ThrottleValve.h"
+#include "Valves.h"
 #include "clover.pb.h"
 #include "flight/FlightController.h"
 #include "server.h"
-
-#ifdef CONFIG_HORNET
-#include "hornet/PwmActuator.h"
-#elif CONFIG_RANGER
-#include "ranger/ThrottleValve.h"
-#include "ranger/Valves.h"
-
-#else
-#error Either CONFIG_HORNET or CONFIG_RANGER must be set.
-#endif
+#include "util.h"
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -34,6 +29,7 @@ constexpr size_t MAX_MESSAGE_SIZE = 1024 * 8;
 static_assert(Request_size <= MAX_MESSAGE_SIZE);
 static_assert(Response_size <= MAX_MESSAGE_SIZE);
 
+/// Max number of connected clients.
 #define MAX_OPEN_CLIENTS 3
 
 /// Main server thread must acquire one of these before accepting a connection. It must then scan through the thread
@@ -210,28 +206,32 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         // Provided by AnalogSensors
         case Request_configure_analog_sensors_tag: {
             LOG_INF("Configure analog sensors");
+#ifdef CONFIG_ANALOG_SENSORS
             cmd_result = AnalogSensors::handle_configure_analog_sensors(request.payload.configure_analog_sensors);
+#else
+            cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_ANALOG_SENSORS));
+#endif  // CONFIG_ANALOG_SENSORS
             break;
         }
 
         // Provided by Valves
         case Request_configure_valves_request_tag: {
             LOG_INF("configure_valves_request");
-#ifdef CONFIG_RANGER
+#ifdef CONFIG_VALVES
             cmd_result = Valves::handle_configure_valves_request(request.payload.configure_valves_request);
 #else
-            cmd_result = std::unexpected(Error::from_cause("configure_valves_request is unsupported; CONFIG_RANGER must be set"));
-#endif
+            cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
+#endif  // CONFIG_VALVES
             break;
         }
 
         case Request_actuate_valve_request_tag: {
             LOG_INF("actuate_valve_request");
-#ifdef CONFIG_RANGER
+#ifdef CONFIG_VALVES
             cmd_result = Valves::handle_actuate_valve_request(request.payload.actuate_valve_request);
 #else
-            cmd_result = std::unexpected(Error::from_cause("actuate_valve_request is unsupported; CONFIG_RANGER must be set"));
-#endif
+            cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
+#endif  // CONFIG_VALVES
             break;
         }
 
@@ -351,7 +351,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         case Request_configure_flight_controller_gains_tag: {
             LOG_INF("configure_flight_controller_gains command");
+#ifdef CONFIG_FLIGHT
             cmd_result = FlightController::handle_configure_gains(request.payload.configure_flight_controller_gains);
+#else
+            cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_FLIGHT));
+#endif  // CONFIG_FLIGHT
             break;
         }
 

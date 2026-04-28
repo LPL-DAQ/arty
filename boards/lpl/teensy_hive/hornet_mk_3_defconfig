@@ -1,6 +1,7 @@
-# Use the hornet version of clover.
+# Clover settings
 CONFIG_HORNET=y
 
+# And other stuff
 CONFIG_BUILD_OUTPUT_HEX=y
 
 CONFIG_DEVICE_CONFIGURATION_DATA=n
