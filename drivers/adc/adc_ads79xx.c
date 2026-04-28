@@ -351,9 +351,7 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
 
     /* Prime the ads79xx */
     ret = ads79xx_spi_transfer(dev, ads79xx_manual_command(cfg, 0), &dummy);
-    if (ret) {
-        LOG_ERR("SPI transfer failed (err %d)", ret);
-    }
+    LOG_INF("ADS79xx prime: ret=%d miso=0x%04x", ret, dummy);
 
     while (true) {
         k_sem_take(&data->sem, K_FOREVER);
@@ -442,7 +440,7 @@ static DEVICE_API(adc, ads79xx_api) = {
 #endif
 };
 
-#define ADS79XX_SPI_OP (SPI_OP_MODE_MASTER | SPI_WORD_SET(16) | SPI_TRANSFER_MSB | SPI_MODE_CPHA)
+#define ADS79XX_SPI_OP (SPI_OP_MODE_MASTER | SPI_WORD_SET(16) | SPI_TRANSFER_MSB)
 
 #define DT_INST_ADS79XX(inst, t) DT_INST(inst, ti_ads##t)
 
