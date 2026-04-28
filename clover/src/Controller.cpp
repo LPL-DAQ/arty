@@ -39,8 +39,8 @@ static int recent_packets_dropped = 0;
 
 /// Store previous actuator command. Actuators in idle states simply repeat whatever their last command was.
 #ifdef CONFIG_RANGER
-auto prev_fuel_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = 0.0f};
-auto prev_lox_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = 0.0f};
+auto prev_fuel_valve_command = ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = 0.0f};
+auto prev_lox_valve_command = ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = 0.0f};
 auto prev_pitch_actuator_command = TvcActuatorCommand{};
 auto prev_yaw_actuator_command = TvcActuatorCommand{};
 #elif CONFIG_HORNET
@@ -134,7 +134,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
             if (!fuel_sample.has_value()) {
                 return std::unexpected(fuel_sample.error().context("failed to sample throttle fuel valve trace"));
             }
-            data.fuel_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = *fuel_sample};
+            data.fuel_valve_command = ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = *fuel_sample};
         }
 
         if (has_lox_valve_trace) {
@@ -142,7 +142,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
             if (!lox_sample.has_value()) {
                 return std::unexpected(lox_sample.error().context("failed to sample throttle lox valve trace"));
             }
-            data.lox_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = *lox_sample};
+            data.lox_valve_command = ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = *lox_sample};
         }
 
         return {};

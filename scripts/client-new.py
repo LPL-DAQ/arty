@@ -70,7 +70,7 @@ ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
 
-# ── ClickHouse config ────────────────────────────────────────────────────────
+# ── ClickHouse config ──────────────────────────────f──────────────────────────
 CH_HOST = '172.233.143.186'
 CH_USER = 'writer'
 CH_PASSWORD = 'ce8XpzhRGhsvBxCPHDTcvh6DMWhb3jyxgmQMNLrsKaCqtZvKf2'
@@ -1291,16 +1291,57 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
+    # cfg1 = clover_pb2.AnalogSensorConfig()
+    # cfg1.channel = 0
+    # cfg1.assignment = clover_pb2.TC102
+    # cfg1.tc_type = clover_pb2.K_TYPE
     cfg1 = clover_pb2.AnalogSensorConfig()
-    cfg1.channel = 0
-    cfg1.assignment = clover_pb2.TC102
-    cfg1.tc_type = clover_pb2.K_TYPE
+    cfg1.channel = 3
+    cfg1.assignment = clover_pb2.PT102
+    cfg1.pt_range_psig = 2000
+    cfg1.pt_bias_psig = 0
 
     cfg2 = clover_pb2.AnalogSensorConfig()
-    cfg2.channel = 1
+    cfg2.channel = 4
     cfg2.assignment = clover_pb2.PT103
-    cfg2.pt_range_psig = 1000
-    cfg2.pt_bias_psig = 100
+    cfg2.pt_range_psig = 2000
+    cfg2.pt_bias_psig = 0
+
+    cfg3 = clover_pb2.AnalogSensorConfig()
+    cfg3.channel = 2
+    cfg3.assignment = clover_pb2.PT202
+    cfg3.pt_range_psig = 2000
+    cfg3.pt_bias_psig = 0
+
+    cfg4 = clover_pb2.AnalogSensorConfig()
+    cfg4.channel = 6
+    cfg4.assignment = clover_pb2.PT203
+    cfg4.pt_range_psig = 2000
+    cfg4.pt_bias_psig = 0
+
+    cfg5 = clover_pb2.AnalogSensorConfig()
+    cfg5.channel = 5
+    cfg5.assignment = clover_pb2.PTF401
+    cfg5.pt_range_psig = 2000
+    cfg5.pt_bias_psig = 0
+
+    cfg6 = clover_pb2.AnalogSensorConfig()
+    cfg6.channel = 1
+    cfg6.assignment = clover_pb2.PTO401
+    cfg6.pt_range_psig = 2000
+    cfg6.pt_bias_psig = 0
+
+    cfg7 = clover_pb2.AnalogSensorConfig()
+    cfg7.channel = 0
+    cfg7.assignment = clover_pb2.PTC401
+    cfg7.pt_range_psig = 1000
+    cfg7.pt_bias_psig = 0
+
+    cfg8 = clover_pb2.AnalogSensorConfig()
+    cfg8.channel = 7
+    cfg8.assignment = clover_pb2.PTC402
+    cfg8.pt_range_psig = 1000
+    cfg8.pt_bias_psig = 0
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend([cfg1, cfg2])
