@@ -6,6 +6,8 @@
 #include <optional>
 #include <tuple>
 
+#ifdef CONFIG_ANALOG_SENSORS
+
 namespace AnalogSensors {
 
 std::expected<void, Error> init();
@@ -16,3 +18,5 @@ void start_sense();
 std::optional<std::pair<AnalogSensorReadings, float>> read();
 
 }  // namespace AnalogSensors
+
+#endif  // CONFIG_ANALOG_SENSORS

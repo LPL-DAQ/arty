@@ -1,6 +1,6 @@
-#ifndef ARTY_PWM_ACTUATOR_ZEPHYR_H
-#define ARTY_PWM_ACTUATOR_ZEPHYR_H
+#pragma once
 
+#include "Error.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -8,18 +8,10 @@
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include "Error.h"
 
-enum class PwmKind {
-    SERVO_X,
-    SERVO_Y,
-    BETA_TOP,
-    BETA_BOTTOM,
-    BETA_CW,
-    BETA_CCW,
-    MOTOR_TOP,
-    MOTOR_BOTTOM
-};
+#ifdef CONFIG_PWM_ACTUATORS
+
+enum class PwmKind { SERVO_X, SERVO_Y, BETA_TOP, BETA_BOTTOM, BETA_CW, BETA_CCW, MOTOR_TOP, MOTOR_BOTTOM };
 
 // -----------------------------------------------------------------------------
 // PwmActuator
@@ -28,39 +20,45 @@ enum class PwmKind {
 // init() verifies hardware and writes the low/min pulse.
 // tick() clamps and writes a pulse. Requires init() to have succeeded first.
 // -----------------------------------------------------------------------------
-template<
-    PwmKind Kind,
-    const pwm_dt_spec PwmDt,
-    int MinPulseUs = 1000,
-    int MaxPulseUs = 2000>
-class PwmActuator {
+template <PwmKind Kind, const pwm_dt_spec PwmDt, int MinPulseUs = 1000, int MaxPulseUs = 2000> class PwmActuator {
 protected:
     static constexpr float k_min_pulse_us = static_cast<float>(MinPulseUs);
     static constexpr float k_max_pulse_us = static_cast<float>(MaxPulseUs);
     static constexpr const pwm_dt_spec& pwm_gpio = PwmDt;
     inline static uint32_t last_pulse_us = static_cast<uint32_t>(MinPulseUs);
 
-    static consteval const char* kind_to_prefix(PwmKind k) {
+    static consteval const char* kind_to_prefix(PwmKind k)
+    {
         switch (k) {
-            case PwmKind::SERVO_X:      return "[servo_x]";
-            case PwmKind::SERVO_Y:      return "[servo_y]";
-            case PwmKind::BETA_TOP:     return "[beta_top]";
-            case PwmKind::BETA_BOTTOM:  return "[beta_bottom]";
-            case PwmKind::BETA_CW:      return "[beta_cw]";
-            case PwmKind::BETA_CCW:     return "[beta_ccw]";
-            case PwmKind::MOTOR_TOP:    return "[motor_top]";
-            case PwmKind::MOTOR_BOTTOM: return "[motor_bottom]";
+        case PwmKind::SERVO_X:
+            return "[servo_x]";
+        case PwmKind::SERVO_Y:
+            return "[servo_y]";
+        case PwmKind::BETA_TOP:
+            return "[beta_top]";
+        case PwmKind::BETA_BOTTOM:
+            return "[beta_bottom]";
+        case PwmKind::BETA_CW:
+            return "[beta_cw]";
+        case PwmKind::BETA_CCW:
+            return "[beta_ccw]";
+        case PwmKind::MOTOR_TOP:
+            return "[motor_top]";
+        case PwmKind::MOTOR_BOTTOM:
+            return "[motor_bottom]";
         }
         return "[pwm_actuator]";
     }
 
-    static uint32_t clamp_pulse_us(uint32_t pulse_us) {
+    static uint32_t clamp_pulse_us(uint32_t pulse_us)
+    {
         const uint32_t min = static_cast<uint32_t>(k_min_pulse_us);
         const uint32_t max = static_cast<uint32_t>(k_max_pulse_us);
         return pulse_us < min ? min : (pulse_us > max ? max : pulse_us);
     }
 
-    static std::expected<void, Error> write_pulse_us(uint32_t pulse_us) {
+    static std::expected<void, Error> write_pulse_us(uint32_t pulse_us)
+    {
         constexpr uint32_t period_ns = 20000u * 1000u;
         const int err = pwm_set_dt(&pwm_gpio, period_ns, pulse_us * 1000u);
         if (err) {
@@ -71,10 +69,10 @@ protected:
     }
 
 public:
-    static std::expected<void, Error> init() {
+    static std::expected<void, Error> init()
+    {
         LOG_MODULE_DECLARE(pwm_actuator);
-        LOG_INF("%s Initializing... pulse range [%d, %d] us",
-                kind_to_prefix(Kind), MinPulseUs, MaxPulseUs);
+        LOG_INF("%s Initializing... pulse range [%d, %d] us", kind_to_prefix(Kind), MinPulseUs, MaxPulseUs);
 
         if (!pwm_is_ready_dt(&pwm_gpio)) {
             LOG_ERR("%s PWM not ready", kind_to_prefix(Kind));
@@ -91,7 +89,8 @@ public:
         return {};
     }
 
-    static std::expected<void, Error> tick(uint32_t pulse_us) {
+    static std::expected<void, Error> tick(uint32_t pulse_us)
+    {
         LOG_MODULE_DECLARE(pwm_actuator);
 
         auto result = write_pulse_us(clamp_pulse_us(pulse_us));
@@ -101,49 +100,26 @@ public:
         return result;
     }
 
-    static uint32_t get_pulse_us() {
+    static uint32_t get_pulse_us()
+    {
         return last_pulse_us;
     }
 };
 
-typedef PwmActuator<
-    PwmKind::SERVO_X,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_x)>
-    ServoX;
+typedef PwmActuator<PwmKind::SERVO_X, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_x)> ServoX;
 
-typedef PwmActuator<
-    PwmKind::SERVO_Y,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_y)>
-    ServoY;
+typedef PwmActuator<PwmKind::SERVO_Y, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_y)> ServoY;
 
-typedef PwmActuator<
-    PwmKind::BETA_TOP,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_top)>
-    BetaTop;
+typedef PwmActuator<PwmKind::BETA_TOP, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_top)> BetaTop;
 
-typedef PwmActuator<
-    PwmKind::BETA_BOTTOM,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_bottom)>
-    BetaBottom;
+typedef PwmActuator<PwmKind::BETA_BOTTOM, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_bottom)> BetaBottom;
 
-typedef PwmActuator<
-    PwmKind::BETA_CW,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_cw)>
-    BetaCW;
+typedef PwmActuator<PwmKind::BETA_CW, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_cw)> BetaCW;
 
-typedef PwmActuator<
-    PwmKind::BETA_CCW,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_ccw)>
-    BetaCCW;
+typedef PwmActuator<PwmKind::BETA_CCW, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_ccw)> BetaCCW;
 
-typedef PwmActuator<
-    PwmKind::MOTOR_TOP,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top)>
-    MotorTop;
+typedef PwmActuator<PwmKind::MOTOR_TOP, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_top)> MotorTop;
 
-typedef PwmActuator<
-    PwmKind::MOTOR_BOTTOM,
-    PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom)>
-    MotorBottom;
+typedef PwmActuator<PwmKind::MOTOR_BOTTOM, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), motor_bottom)> MotorBottom;
 
-#endif
+#endif  // CONFIG_PWM_ACTUATORS

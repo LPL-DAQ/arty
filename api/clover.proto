@@ -468,7 +468,7 @@ enum SystemState {
   STATE_FLIGHT_PRIMED = 18;
 }
 
-// next tag: 24
+// next tag: 94
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -498,11 +498,15 @@ message DataPacket {
   optional LidarReading lidar_1 = 21;
   optional LidarReading lidar_2 = 22;
 
+  // Actuator statuses
+  optional ThrottleValveStatus fuel_valve_status = 92;
+  optional ThrottleValveStatus lox_valve_status = 93;
+
   //IMU
   optional ImuReading imu = 23;
 
   // state estimate
-  required EstimatedState estimated_state = 86;
+  optional EstimatedState estimated_state = 86;
 
   // State-specific inputs
 
@@ -577,8 +581,7 @@ message ControllerTiming {
 
 }
 
-message ValveStatus {
-  required float driver_setpoint_pos_deg = 2;
+message ThrottleValveStatus {
   required float encoder_pos_deg = 3;
   required bool is_on = 4;
 }
@@ -641,6 +644,7 @@ message Vector3D {
   required float y = 2;
   required float z = 3;
 }
+
 // Current valve states.
 message ValveStates {
   // Vehicle
@@ -750,16 +754,14 @@ message FlightControllerMetrics {
 }
 
 message RangerThrottleMetrics {
-  optional float predicted_thrust_lbf = 1;
-  optional float predicted_of = 2;
-  optional float mdot_fuel = 3;
-  optional float mdot_lox = 4;
-  optional float change_alpha_cmd = 7;
-  optional float clamped_change_alpha_cmd = 8;
-  optional float alpha = 9;
-  optional float thrust_from_alpha_lbf = 10;
-  optional ValveStatus fuel_valve = 11;
-  optional ValveStatus lox_valve = 12;
+  required float predicted_thrust_lbf = 1;
+  required float predicted_of = 2;
+  required float mdot_fuel = 3;
+  required float mdot_lox = 4;
+  required float change_alpha_cmd = 7;
+  required float clamped_change_alpha_cmd = 8;
+  required float alpha = 9;
+  required float thrust_from_alpha_lbf = 10;
 }
 
 message HornetThrottleMetrics {

@@ -10,6 +10,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
 
+#ifdef CONFIG_LIDAR
+
 enum class LidarKind { LIDAR_1, LIDAR_2 };
 
 consteval static const char* kind_to_prefix(LidarKind name)
@@ -63,7 +65,7 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> void
 {
     LOG_MODULE_DECLARE(Lidar);
     int err = uart_irq_update(uart_dev);
-    if (err<0) {
+    if (err < 0) {
         LOG_ERR("%s Failed to start processing UART interrupts: %s", kind_to_prefix(kind), Error::from_code(err).build_message().c_str());
         return;
     }
@@ -171,7 +173,7 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std:
 
     LOG_INF("%s Setting UART IRQ", kind_to_prefix(kind));
     int err = uart_irq_callback_user_data_set(uart_dev, uart_handler, nullptr);
-    if (err<0) {
+    if (err < 0) {
         LOG_INF("%s error", kind_to_prefix(kind));
         return std::unexpected(Error::from_code(err).context("%s Failed to attach UART interrupt handler", kind_to_prefix(kind)));
     }
@@ -183,15 +185,13 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std:
     return {};
 }
 
-template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-void Lidar<kind, uart_dt_init, ready_sem_ptr>::start_sense()
+template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> void Lidar<kind, uart_dt_init, ready_sem_ptr>::start_sense()
 {
     k_sem_give(ready_sem);
 }
 
 /// Returns a lidar reading and the time it took to acquire, if there's a reading.
-template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-std::optional<LidarReading> Lidar<kind, uart_dt_init, ready_sem_ptr>::read()
+template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std::optional<LidarReading> Lidar<kind, uart_dt_init, ready_sem_ptr>::read()
 {
     MutexGuard reading_guard{&reading_mutex};
 
@@ -211,3 +211,5 @@ typedef Lidar<LidarKind::LIDAR_1, DEVICE_DT_GET(DT_ALIAS(lidar_1_uart)), &lidar_
 
 extern k_sem lidar_2_ready_sem;
 typedef Lidar<LidarKind::LIDAR_2, DEVICE_DT_GET(DT_ALIAS(lidar_2_uart)), &lidar_2_ready_sem> Lidar2;
+
+#endif  // CONFIG_LIDAR

@@ -16,6 +16,131 @@ config HORNET
 
 endchoice
 
+
+choice LOGGING_BACKEND
+    prompt "UART or USB"
+    default USB_LOGGING
+
+config USB_LOGGING
+    bool "Log via USB. Does not capture crash logs, kinda flakey."
+
+config UART_LOGGING
+    bool "Log via UART. Captures crash logs and quite reliable."
+
+endchoice
+
+
+config ETHERNET
+    bool "Whether ethernet is available"
+    default y
+
+config RF
+    bool "Whether RF is available"
+    default y
+
+config LIDAR
+    bool "Whether LIDARs are available"
+    default y
+
+config IMU
+    bool "Whether IMU is available"
+    default y
+
+config GNSS
+    bool "Whether GNSS is available"
+    default y
+
+config ANALOG_SENSORS
+    bool "Whether analog sensors are available"
+    default y
+
+config VALVES
+    bool "Whether GPIO-controlled valves are available"
+    default y if RANGER
+
+config THROTTLE_VALVES
+    bool "Whether throttle valves are available"
+    default y if RANGER
+
+config TVC_ACTUATORS
+    bool "Whether TVC linear actuators are available"
+    default y if RANGER
+
+config PWM_ACTUATORS
+    bool "Whether PWM actuators are available"
+    default y if HORNET
+
+
+config RANGER_THROTTLE
+    bool "Whether ranger-variant throttle is available"
+    depends on RANGER
+    depends on ANALOG_SENSORS
+    depends on THROTTLE_VALVES
+    default y if RANGER
+    select THROTTLE
+
+config RANGER_TVC
+    bool "Whether ranger-variant TVC is available"
+    depends on RANGER
+    depends on TVC_ACTUATORS
+    default y if RANGER
+    select TVC
+
+config RANGER_RCS
+    bool "Whether ranger-variant TVC is available"
+    depends on RANGER
+    depends on ANALOG_SENSORS
+    depends on VALVES
+    default y if RANGER
+    select RCS
+
+
+config HORNET_THROTTLE
+    bool "Whether hornet-variant throttle is available"
+    depends on HORNET
+    depends on PWM_ACTUATORS
+    default y if HORNET
+    select THROTTLE
+
+config HORNET_TVC
+    bool "Whether hornet-variant TVC is available"
+    depends on HORNET
+    depends on PWM_ACTUATORS
+    default y if HORNET
+    select TVC
+
+config HORNET_RCS
+    bool "Whether hornet-variant TVC is available"
+    depends on HORNET
+    depends on PWM_ACTUATORS
+    default y if HORNET
+    select RCS
+
+
+config THROTTLE
+    bool "Whether any throttle implementation is available"
+
+config TVC
+    bool "Whether any TVC implementation is available"
+
+config RCS
+    bool "Whether any RCS implementation is available"
+
+
+config STATIC_FIRE
+    bool "Whether a static fire sequence is possible"
+    default y if THROTTLE && TVC
+
+
+config FLIGHT
+    bool "Whether full flight control is available"
+    depends on THROTTLE
+    depends on TVC
+    depends on RCS
+    depends on IMU
+    depends on LIDAR
+    depends on GNSS
+
 endmenu
 
 module = CLOVER
