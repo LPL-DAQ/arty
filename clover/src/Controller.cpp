@@ -1,35 +1,27 @@
 #include "Controller.h"
 #include "MutexGuard.h"
 #include "config.h"
+#include "flight/FlightController.h"
+#include "flight/StateEstimator.h"
 #include "sensors/AnalogSensors.h"
 #include "sensors/Gnss.h"
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
 #include "util.h"
-#include "flight/FlightController.h"
-#include "flight/StateEstimator.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 
-
-#if CONFIG_RANGER
-#include "ranger/RangerRcs.h"
-#include "ranger/RangerThrottle.h"
-#include "ranger/RangerTvc.h"
-#include "ranger/ThrottleValve.h"
-
-#elif CONFIG_HORNET
-#include "hornet/PwmActuator.h"
+#include "PwmActuator.h"
+#include "ThrottleValve.h"
 #include "hornet/HornetRcs.h"
 #include "hornet/HornetThrottle.h"
 #include "hornet/HornetTvc.h"
-
-#else
-#error "No configuration defined. Please define CONFIG_RANGER or CONFIG_HORNET in your build configuration."
-#endif
+#include "ranger/RangerRcs.h"
+#include "ranger/RangerThrottle.h"
+#include "ranger/RangerTvc.h"
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -128,8 +120,7 @@ static void control_loop_schedule(k_timer* timer)
 
 K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
-
-//TODO roll control. the module should not accept a position as that is active control
+// TODO roll control. the module should not accept a position as that is active control
 
 /// Transform actuator commands into actuator commands, modifying the data pcket in-place.
 /// If an abort is necessary, an Error is returned. This is called for all active control
@@ -212,9 +203,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         data.has_flight_yaw_accel_rad_s2 = true;
         data.has_flight_z_accel_m_s2 = true;
         data.has_flight_controller_metrics = true;
-        std::tie(
-            data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.flight_z_accel_m_s2, data.flight_controller_metrics) =
-            *flight_response;
+        std::tie(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.flight_z_accel_m_s2, data.flight_controller_metrics) = *flight_response;
     }
 
     // Sample throttle trace
@@ -349,7 +338,6 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     return {};
 }
 
-
 // TODO: from noah: i feel like something should be here, no?
 static void tick_abort(DataPacket& data)
 {
@@ -361,13 +349,28 @@ std::expected<void, Error> Controller::init()
 
     LOG_INF("Triggering initial sensor readings");
     k_sched_lock();
+
+#ifdef CONFIG_ANALOG_SENSORS
     AnalogSensors::start_sense();
+#endif  // CONFIG_ANALOG_SENSORS
+
+#ifdef CONFIG_LIDAR
     Lidar1::start_sense();
     Lidar2::start_sense();
+#endif  // CONFIG_LIDAR
+
+#ifdef CONFIG_IMU
     VectornavImu::start_sense();
+#endif  // CONFIG_IMU
+
+#ifdef CONFIG_GNSS
     Gnss::start_sense();
+#endif  // CONFIG_GNSS
+
+#ifdef CONFIG_FLIGHT
     StateEstimator::init();
-    // Other sensors here...
+#endif  // CONFIG_FLIGHT
+
     k_sched_unlock();
 
     LOG_INF("Pausing for initial sensor readings to complete");
@@ -392,9 +395,11 @@ static void step_control_loop(k_work*)
 
     uint64_t start_cycle = k_cycle_get_64();
     DataPacket data = DataPacket_init_default;
+    data.time_ns = k_cyc_to_ns_near64(start_cycle);
     data.state = current_state;
 
     // Read sensors
+#ifdef CONFIG_ANALOG_SENSORS
     auto analog_sensors_readings = AnalogSensors::read();
     if (analog_sensors_readings) {
         std::tie(data.analog_sensors, data.controller_timing.analog_sensors_sense_time_ns) = *analog_sensors_readings;
@@ -402,108 +407,157 @@ static void step_control_loop(k_work*)
     else {
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
+#endif  // CONFIG_ANALOG_SENSORS
 
+#ifdef CONFIG_GNSS
     if (auto gnss = Gnss::read()) {
-        data.has_gnss              = true;
-        data.gnss.north_m          = gnss->north_m;
-        data.gnss.east_m           = gnss->east_m;
-        data.gnss.up_m             = gnss->up_m;
-        data.gnss.pos_sigma_m      = gnss->pos_sigma_m;
-        data.gnss.vx_ms            = gnss->vx_ms;
-        data.gnss.vy_ms            = gnss->vy_ms;
-        data.gnss.vz_ms            = gnss->vz_ms;
-        data.gnss.vel_sigma_ms     = gnss->vel_sigma_ms;
-        data.gnss.hrms_m           = gnss->hrms_m;
-        data.gnss.vrms_m           = gnss->vrms_m;
-        data.gnss.hvel_rms_ms      = gnss->hvel_rms_ms;
-        data.gnss.vvel_rms_ms      = gnss->vvel_rms_ms;
+        data.has_gnss = true;
+        data.gnss.north_m = gnss->north_m;
+        data.gnss.east_m = gnss->east_m;
+        data.gnss.up_m = gnss->up_m;
+        data.gnss.pos_sigma_m = gnss->pos_sigma_m;
+        data.gnss.vx_ms = gnss->vx_ms;
+        data.gnss.vy_ms = gnss->vy_ms;
+        data.gnss.vz_ms = gnss->vz_ms;
+        data.gnss.vel_sigma_ms = gnss->vel_sigma_ms;
+        data.gnss.hrms_m = gnss->hrms_m;
+        data.gnss.vrms_m = gnss->vrms_m;
+        data.gnss.hvel_rms_ms = gnss->hvel_rms_ms;
+        data.gnss.vvel_rms_ms = gnss->vvel_rms_ms;
         data.gnss.solution_time_ms = gnss->solution_time_ms;
         data.gnss.receiver_time_ms = gnss->receiver_time_ms;
-        data.gnss.sol_type         = gnss->sol_type;
-        data.gnss.sense_time_ns    = gnss->sense_time_ns;
-        LOG_INF("[Gnss] sol_type=%u sol_time=%u ms rx_time=%u ms",
-            Gnss::current_reading.sol_type, Gnss::current_reading.solution_time_ms, Gnss::current_reading.receiver_time_ms);
-        LOG_INF("[Gnss] pos  N=%.3f E=%.3f U=%.3f sigma=%.3f m",
-            Gnss::current_reading.north_m, Gnss::current_reading.east_m, Gnss::current_reading.up_m, (double)Gnss::current_reading.pos_sigma_m);
-        LOG_INF("[Gnss] vel  vx=%.3f vy=%.3f vz=%.3f sigma=%.3f m/s",
-            (double)Gnss::current_reading.vx_ms, (double)Gnss::current_reading.vy_ms, (double)Gnss::current_reading.vz_ms, (double)Gnss::current_reading.vel_sigma_ms);
-        LOG_INF("[Gnss] rms  hpos=%.3f vpos=%.3f hvel=%.3f vvel=%.3f",
-            (double)Gnss::current_reading.hrms_m, (double)Gnss::current_reading.vrms_m, (double)Gnss::current_reading.hvel_rms_ms, (double)Gnss::current_reading.vvel_rms_ms);
+        data.gnss.sol_type = gnss->sol_type;
+        data.gnss.sense_time_ns = gnss->sense_time_ns;
+        LOG_INF(
+            "[Gnss] sol_type=%u sol_time=%u ms rx_time=%u ms",
+            Gnss::current_reading.sol_type,
+            Gnss::current_reading.solution_time_ms,
+            Gnss::current_reading.receiver_time_ms);
+        LOG_INF(
+            "[Gnss] pos  N=%.3f E=%.3f U=%.3f sigma=%.3f m",
+            Gnss::current_reading.north_m,
+            Gnss::current_reading.east_m,
+            Gnss::current_reading.up_m,
+            (double)Gnss::current_reading.pos_sigma_m);
+        LOG_INF(
+            "[Gnss] vel  vx=%.3f vy=%.3f vz=%.3f sigma=%.3f m/s",
+            (double)Gnss::current_reading.vx_ms,
+            (double)Gnss::current_reading.vy_ms,
+            (double)Gnss::current_reading.vz_ms,
+            (double)Gnss::current_reading.vel_sigma_ms);
+        LOG_INF(
+            "[Gnss] rms  hpos=%.3f vpos=%.3f hvel=%.3f vvel=%.3f",
+            (double)Gnss::current_reading.hrms_m,
+            (double)Gnss::current_reading.vrms_m,
+            (double)Gnss::current_reading.hvel_rms_ms,
+            (double)Gnss::current_reading.vvel_rms_ms);
     }
+#endif  // CONFIG_GNSS
 
-    // LiDAR read
+#ifdef CONFIG_LIDAR
     if (auto lidar1 = Lidar1::read()) {
         data.lidar_1 = *lidar1;
-        LOG_INF("LiDAR1 distance: %f m, signal: %f, sense time: %f ns", (double)data.lidar_1.distance_m, (double)data.lidar_1.strength, (double)data.lidar_1.sense_time_ns);
+        LOG_INF(
+            "LiDAR1 distance: %f m, signal: %f, sense time: %f ns",
+            (double)data.lidar_1.distance_m,
+            (double)data.lidar_1.strength,
+            (double)data.lidar_1.sense_time_ns);
     }
 
     if (auto lidar2 = Lidar2::read()) {
         data.lidar_2 = *lidar2;
-        LOG_INF("LiDAR2 distance: %f m, signal: %f, sense time: %f ns", (double)data.lidar_2.distance_m, (double)data.lidar_2.strength, (double)data.lidar_2.sense_time_ns);
+        LOG_INF(
+            "LiDAR2 distance: %f m, signal: %f, sense time: %f ns",
+            (double)data.lidar_2.distance_m,
+            (double)data.lidar_2.strength,
+            (double)data.lidar_2.sense_time_ns);
     }
+#endif  // CONFIG_LIDAR
 
-
-    // VectornavIMU read
+#ifdef CONFIG_IMU
     if (auto vectornav = VectornavImu::read()) {
         data.imu = *vectornav;
         data.has_imu = true;
-        LOG_INF("VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
-            (double)data.imu.quat_w, (double)data.imu.quat_x,
-            (double)data.imu.quat_y, (double)data.imu.quat_z,
+        LOG_INF(
+            "VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
+            (double)data.imu.quat_w,
+            (double)data.imu.quat_x,
+            (double)data.imu.quat_y,
+            (double)data.imu.quat_z,
             (double)data.imu.sense_time_ns);
-        LOG_INF("VectornavIMU: accel: [%f %f %f] gyro: [%f %f %f] mag: [%f %f %f]",
-            (double)data.imu.accel_x, (double)data.imu.accel_y, (double)data.imu.accel_z,
-            (double)data.imu.gyro_x, (double)data.imu.gyro_y, (double)data.imu.gyro_z,
-            (double)data.imu.mag_x, (double)data.imu.mag_y, (double)data.imu.mag_z);
+        LOG_INF(
+            "VectornavIMU: accel: [%f %f %f] gyro: [%f %f %f] mag: [%f %f %f]",
+            (double)data.imu.accel_x,
+            (double)data.imu.accel_y,
+            (double)data.imu.accel_z,
+            (double)data.imu.gyro_x,
+            (double)data.imu.gyro_y,
+            (double)data.imu.gyro_z,
+            (double)data.imu.mag_x,
+            (double)data.imu.mag_y,
+            (double)data.imu.mag_z);
     }
-    // else
-    //     LOG_INF("VectornavIMU no reading");
+#endif  // CONFIG_IMU
 
-    auto estimated_state = StateEstimator::estimate(
-        data.lidar_1,
-        data.lidar_2,
-        data.imu,
-        data.gnss
-    );
+    // Actuators statuses
+#if CONFIG_THROTTLE_VALVES
+    data.has_fuel_valve_status = true;
+    data.fuel_valve_status = FuelValve::status();
+
+    data.has_lox_valve_status = true;
+    data.lox_valve_status = LoxValve::status();
+#endif  // CONFIG_THROTTLE_VALVES
+
+    // TVC actuator statuses
+
+    // Valve actuator statuses
+
+#ifdef CONFIG_FLIGHT
+    auto estimated_state = StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.gnss);
     if (estimated_state) {
+        data.has_estimated_state = true;
         data.estimated_state = *estimated_state;
-    } else {
+    }
+    else {
         // TODO: handle estimate failure; leaving defaults for now
     }
+#endif  // CONFIG_FLIGHT
 
     daq_client_status daq_status = get_daq_client_status();
 
     // Populate default actuator commands -- essentially telling everybody to hold their current state.
-    {
-#ifdef CONFIG_RANGER
-        data.has_fuel_valve_command = true;
-        data.fuel_valve_command = prev_fuel_valve_command;
+#ifdef CONFIG_THROTTLE_VALVES
+    data.has_fuel_valve_command = true;
+    data.fuel_valve_command = prev_fuel_valve_command;
 
-        data.has_lox_valve_command = true;
-        data.lox_valve_command = prev_lox_valve_command;
+    data.has_lox_valve_command = true;
+    data.lox_valve_command = prev_lox_valve_command;
+#endif  // CONFIG_THROTTLE_VALVES
 
-        data.has_pitch_actuator_command = true;
-        data.pitch_actuator_command = prev_pitch_actuator_command;
+#ifdef CONFIG_TVC_ACTUATORS
+    data.has_pitch_actuator_command = true;
+    data.pitch_actuator_command = prev_pitch_actuator_command;
 
-        data.has_yaw_actuator_command = true;
-        data.yaw_actuator_command = prev_yaw_actuator_command;
-#elif CONFIG_HORNET
-        data.has_main_propeller_command = true;
-        data.main_propeller_command = prev_main_propeller_command;
+    data.has_yaw_actuator_command = true;
+    data.yaw_actuator_command = prev_yaw_actuator_command;
+#endif  // CONFIG_TVC_ACTUATORS
 
-        data.has_rcs_propeller_cw_command = true;
-        data.rcs_propeller_cw_command = prev_rcs_propeller_cw_command;
+#ifdef CONFIG_PWM_ACTUATORS
+    data.has_main_propeller_command = true;
+    data.main_propeller_command = prev_main_propeller_command;
 
-        data.has_rcs_propeller_ccw_command = true;
-        data.rcs_propeller_ccw_command = prev_rcs_propeller_ccw_command;
+    data.has_rcs_propeller_cw_command = true;
+    data.rcs_propeller_cw_command = prev_rcs_propeller_cw_command;
 
-        data.has_pitch_servo_command = true;
-        data.pitch_servo_command = prev_pitch_servo_command;
+    data.has_rcs_propeller_ccw_command = true;
+    data.rcs_propeller_ccw_command = prev_rcs_propeller_ccw_command;
 
-        data.has_yaw_servo_command = true;
-        data.yaw_servo_command = prev_yaw_servo_command;
-#endif
-    }
+    data.has_pitch_servo_command = true;
+    data.pitch_servo_command = prev_pitch_servo_command;
+
+    data.has_yaw_servo_command = true;
+    data.yaw_servo_command = prev_yaw_servo_command;
+#endif  // CONFIG_PWM_ACTUATORS
 
     // Transform sensor data into actuator commands. Different logic paths are applied via state machine.
     switch (current_state) {
@@ -534,17 +588,13 @@ static void step_control_loop(k_work*)
     }
 
     // Calibration of throttle valves.
+#ifdef CONFIG_THROTTLE_VALVES
     case SystemState_STATE_CALIBRATE_THROTTLE_VALVE: {
-#ifdef CONFIG_RANGER
-        const float valve_pos = (calibrating_valve == ThrottleValveType_FUEL)
-            ? FuelValve::get_pos_internal()
-            : LoxValve::get_pos_internal();
-        const float valve_pos_enc = (calibrating_valve == ThrottleValveType_FUEL)
-            ? FuelValve::get_pos_encoder()
-            : LoxValve::get_pos_encoder();
+        const float valve_pos = (calibrating_valve == ThrottleValveType_FUEL) ? data.fuel_valve_status.encoder_pos_deg : data.lox_valve_status.encoder_pos_deg;
+        const float valve_pos_enc =
+            (calibrating_valve == ThrottleValveType_FUEL) ? data.fuel_valve_status.encoder_pos_deg : data.lox_valve_status.encoder_pos_deg;
 
-        auto cal_result = RangerThrottle::calibration_tick(
-            calibrating_valve, (uint32_t)k_uptime_get(), valve_pos, valve_pos_enc);
+        auto cal_result = RangerThrottle::calibration_tick(calibrating_valve, (uint32_t)k_uptime_get(), valve_pos, valve_pos_enc);
 
         if (!cal_result.has_value()) {
             LOG_ERR("Throttle valve calibration error: %s", cal_result.error().build_message().c_str());
@@ -554,12 +604,14 @@ static void step_control_loop(k_work*)
 
         if (calibrating_valve == ThrottleValveType_FUEL) {
             data.fuel_valve_command = *cal_result;
-        } else {
+        }
+        else {
             data.lox_valve_command = *cal_result;
         }
-#endif
         break;
     }
+#endif  // CONFIG_THROTTLE_VALVES
+
     case SystemState_STATE_CALIBRATE_TVC:
         // TODO
         break;
@@ -596,31 +648,33 @@ static void step_control_loop(k_work*)
     }
 
     default: {
-        LOG_ERR("Invalid controller state: %d", current_state);
+        LOG_ERR("Invalid controller state (possible entered state without correct CONFIGs set): %d", current_state);
     }
     }
 
     // Dispatch commands to actuators
-#if CONFIG_RANGER
-    auto fuel_valve_status = FuelValve::tick(data.fuel_valve_command);
-    auto lox_valve_status = LoxValve::tick(data.lox_valve_command);
-
-    if (data.has_ranger_throttle_metrics) {
-        if (fuel_valve_status.has_value()) {
-            data.ranger_throttle_metrics.has_fuel_valve = true;
-            data.ranger_throttle_metrics.fuel_valve = *fuel_valve_status;
-        }
-        if (lox_valve_status.has_value()) {
-            data.ranger_throttle_metrics.has_lox_valve = true;
-            data.ranger_throttle_metrics.lox_valve = *lox_valve_status;
-        }
+#if CONFIG_THROTTLE_VALVES
+    auto fuel_valve_result = FuelValve::tick(data.fuel_valve_command);
+    if (!fuel_valve_result) {
+        LOG_ERR("Error while ticking fuel valve: %s", fuel_valve_result.error().build_message().c_str());
     }
-    // RCS valves, TVC actuators
-#elif CONFIG_HORNET
-    // TODO: do something if these return an error
-    // TVC
-    auto err = ServoX::tick(data.pitch_servo_command);
-    err = ServoY::tick(data.yaw_servo_command);
+
+    auto lox_valve_result = LoxValve::tick(data.lox_valve_command);
+    if (!lox_valve_result) {
+        LOG_ERR("Error while ticking lox valve: %s", lox_valve_result.error().build_message().c_str());
+    }
+#endif  // CONFIG_THROTTLE_VALVES
+
+#ifdef CONFIG_PWM_ACTUATORS
+    auto servo_x_status = ServoX::tick(data.pitch_servo_command);
+    if (!servo_x_status) {
+        LOG_ERR("Error while ticking servo x: %s", servo_x_status.error().build_message().c_str());
+    }
+
+    auto servo_y_status = ServoY::tick(data.yaw_servo_command);
+    if (!servo_y_status) {
+        LOG_ERR("Error while ticking servo y: %s", servo_y_status.error().build_message().c_str());
+    }
 
     // RCS
     // TODO: Check which actually corresponds to what
@@ -632,22 +686,26 @@ static void step_control_loop(k_work*)
     err = MotorTop::tick(data.main_propeller_command);
     err = MotorBottom::tick(data.main_propeller_command);
 
-
 #endif
 
     // Update last-executed actuator commands
-#ifdef CONFIG_RANGER
+#ifdef CONFIG_THROTTLE_VALVES
     prev_fuel_valve_command = data.fuel_valve_command;
     prev_lox_valve_command = data.lox_valve_command;
+#endif  // CONFIG_THROTTLE_VALVES
+
+#ifdef CONFIG_TVC_ACTUATORS
     prev_pitch_actuator_command = data.pitch_actuator_command;
     prev_yaw_actuator_command = data.yaw_actuator_command;
-#elif CONFIG_HORNET
+#endif  // CONFIG_TVC_ACTUATORS
+
+#ifdef CONFIG_PWM_ACTUATORS
     prev_main_propeller_command = data.main_propeller_command;
     prev_rcs_propeller_cw_command = data.rcs_propeller_cw_command;
     prev_rcs_propeller_ccw_command = data.rcs_propeller_ccw_command;
     prev_pitch_servo_command = data.pitch_servo_command;
     prev_yaw_servo_command = data.yaw_servo_command;
-#endif
+#endif  // CONFIG_PWM_ACTUATORS
 
     // Record how long controller tick calculations took.
     data.controller_timing.controller_tick_time_ns = nsec_since_cycle(start_cycle);
@@ -747,6 +805,8 @@ std::expected<void, Error> Controller::handle_unprime(const UnprimeRequest& req)
 /// Client-triggered transition from IDLE to CALIBRATE_THROTTLE_VALVE.
 std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const CalibrateThrottleValveRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
+
     MutexGuard guard{&controller_state_lock};
     if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("throttle calibration rejected unless system is idle"));
@@ -761,12 +821,8 @@ std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const Cal
     }
 
 #ifdef CONFIG_RANGER
-    const float valve_pos = (req.valve == ThrottleValveType_FUEL)
-        ? FuelValve::get_pos_internal()
-        : LoxValve::get_pos_internal();
-    const float valve_pos_enc = (req.valve == ThrottleValveType_FUEL)
-        ? FuelValve::get_pos_encoder()
-        : LoxValve::get_pos_encoder();
+    const float valve_pos = (req.valve == ThrottleValveType_FUEL) ? FuelValve::get_pos_internal() : LoxValve::get_pos_internal();
+    const float valve_pos_enc = (req.valve == ThrottleValveType_FUEL) ? FuelValve::get_pos_encoder() : LoxValve::get_pos_encoder();
 
     RangerThrottle::calibration_reset(req.valve, valve_pos, valve_pos_enc);
     calibrating_valve = req.valve;
@@ -780,15 +836,13 @@ std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const Cal
 /// Client-triggered transition from IDLE to THROTTLE_VALVE_PRIMED
 std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const LoadThrottleValveSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("throttle valve sequence load rejected unless system is idle"));
     }
-
-#if CONFIG_HORNET
-    return std::unexpected(Error::from_cause("must be ranger config for throttle valve sequences"));
-#endif
 
     // At least one trace must be specified
     if (!req.has_fuel_trace_deg && !req.has_lox_trace_deg) {
@@ -841,6 +895,8 @@ std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const
 /// Client-triggered transition from THROTTLE_VALVE_PRIMED to THROTTLE_VALVE
 std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(const StartThrottleValveSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_THROTTLE_VALVE_PRIMED) {
@@ -858,6 +914,8 @@ std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(cons
 /// Client-triggered transition from IDLE to THROTTLE_PRIMED
 std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadThrottleSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_THROTTLE);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
@@ -880,6 +938,8 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
 /// Client-triggered transition from THROTTLE_PRIMED to THROTTLE
 std::expected<void, Error> Controller::handle_start_throttle_sequence(const StartThrottleSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_THROTTLE);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_THROTTLE_PRIMED) {
@@ -897,6 +957,8 @@ std::expected<void, Error> Controller::handle_start_throttle_sequence(const Star
 // Client-triggered transition from IDLE to CALIRBATE_TVC
 std::expected<void, Error> Controller::handle_calibrate_tvc(const CalibrateTvcRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_TVC_ACTUATORS);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
@@ -913,6 +975,8 @@ std::expected<void, Error> Controller::handle_calibrate_tvc(const CalibrateTvcRe
 /// Client-triggered transition from IDLE to TVC_PRIMED
 std::expected<void, Error> Controller::handle_load_tvc_sequence(const LoadTvcSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_TVC);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
@@ -948,6 +1012,8 @@ std::expected<void, Error> Controller::handle_load_tvc_sequence(const LoadTvcSeq
 /// Client-triggered transition from TVC_PRIMED to TVC
 std::expected<void, Error> Controller::handle_start_tvc_sequence(const StartTvcSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_TVC);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_TVC_PRIMED) {
@@ -965,6 +1031,8 @@ std::expected<void, Error> Controller::handle_start_tvc_sequence(const StartTvcS
 /// Client-triggered transition from IDLE to RCS_VALVE_PRIMED
 std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const LoadRcsValveSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_RCS);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
@@ -1002,6 +1070,8 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const Load
 /// Client-triggered transition from RCS_VALVE_PRIMED to RCS_VALVE
 std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const StartRcsValveSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_RCS);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_RCS_VALVE_PRIMED) {
@@ -1019,6 +1089,8 @@ std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const Sta
 /// Client-triggered transition from IDLE to RCS_PRIMED
 std::expected<void, Error> Controller::handle_load_rcs_sequence(const LoadRcsSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_RCS);
+
     MutexGuard guard{&controller_state_lock};
     if (current_state != SystemState_STATE_IDLE) {
         return std::unexpected(Error::from_cause("rcs roll sequence load rejected unless system is idle"));
@@ -1039,6 +1111,8 @@ std::expected<void, Error> Controller::handle_load_rcs_sequence(const LoadRcsSeq
 /// Client-triggered transition from RCS_PRIMED to RCS
 std::expected<void, Error> Controller::handle_start_rcs_sequence(const StartRcsSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_RCS);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_RCS_PRIMED) {
@@ -1056,6 +1130,8 @@ std::expected<void, Error> Controller::handle_start_rcs_sequence(const StartRcsS
 /// Client-triggered transition from IDLE to STATIC_FIRE_PRIMED
 std::expected<void, Error> Controller::handle_load_static_fire_sequence(const LoadStaticFireSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_STATIC_FIRE);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
@@ -1098,6 +1174,8 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
 /// Client-triggered transition from STATIC_FIRE_PRIMED to STATIC_FIRE
 std::expected<void, Error> Controller::handle_start_static_fire_sequence(const StartStaticFireSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_STATIC_FIRE);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_STATIC_FIRE_PRIMED) {
@@ -1115,6 +1193,8 @@ std::expected<void, Error> Controller::handle_start_static_fire_sequence(const S
 /// Client-triggered transition from IDLE to FLIGHT_PRIMED
 std::expected<void, Error> Controller::handle_load_flight_sequence(const LoadFlightSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_FLIGHT);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
@@ -1164,6 +1244,8 @@ std::expected<void, Error> Controller::handle_load_flight_sequence(const LoadFli
 /// Client-triggered transition from FLIGHT_PRIMED to FLIGHT
 std::expected<void, Error> Controller::handle_start_flight_sequence(const StartFlightSequenceRequest& req)
 {
+    ENSURE_CONFIG(CONFIG_FLIGHT);
+
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_FLIGHT_PRIMED) {

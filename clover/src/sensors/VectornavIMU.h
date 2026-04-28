@@ -11,6 +11,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
 
+#ifdef CONFIG_IMU
+
 enum class VectornavKind { VECTORNAV };
 
 consteval static const char* kind_to_prefix(VectornavKind kind)
@@ -23,8 +25,7 @@ consteval static const char* kind_to_prefix(VectornavKind kind)
     }
 }
 
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-class Vectornav {
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> class Vectornav {
 private:
     constexpr static int RING_BUF_SIZE = 2048;
     constexpr static int MAX_LINE_SIZE = 256;
@@ -106,7 +107,6 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_handler(const device*, v
     k_sem_give(&data_ready_sem);
 }
 
-
 /// Send bytes over UART using poll mode. Only used during initialization for configuration commands.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
 void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_send(const uint8_t* data, size_t len)
@@ -117,15 +117,16 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::uart_send(const uint8_t* data
 }
 
 /// Send NMEA configuration commands to enable YPR, IMU, GPS, INS, and magnetometer outputs.
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-void Vectornav<kind, uart_dt_init, ready_sem_ptr>::configure_outputs()
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> void Vectornav<kind, uart_dt_init, ready_sem_ptr>::configure_outputs()
 {
     LOG_MODULE_DECLARE(VectornavIMU);
-    const char* type_cmd = "$VNWRG,06,08*XX\r\n"; // VNQMR: quat, mag, accel, gyro
-    const char* rate_cmd = "$VNWRG,07,40*XX\r\n"; // 40 Hz
+    const char* type_cmd = "$VNWRG,06,08*XX\r\n";  // VNQMR: quat, mag, accel, gyro
+    const char* rate_cmd = "$VNWRG,07,40*XX\r\n";  // 40 Hz
 
-    uart_send((const uint8_t*)type_cmd, strlen(type_cmd)); k_msleep(100);
-    uart_send((const uint8_t*)rate_cmd, strlen(rate_cmd)); k_msleep(100);
+    uart_send((const uint8_t*)type_cmd, strlen(type_cmd));
+    k_msleep(100);
+    uart_send((const uint8_t*)rate_cmd, strlen(rate_cmd));
+    k_msleep(100);
 
     LOG_INF("%s Outputs configured", kind_to_prefix(kind));
 }
@@ -148,8 +149,7 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_
 }
 
 /// Continuously accumulates sensor readings from the VN-300 over UART. Runs in dedicated thread.
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
 {
     LOG_MODULE_DECLARE(VectornavIMU);
 
@@ -165,8 +165,9 @@ void Vectornav<kind, uart_dt_init, ready_sem_ptr>::sense()
 
         uint8_t byte;
         while (ring_buf_get(&uart_ringbuf, &byte, 1) > 0) {
-            if (i == 0 && byte != '$'){
-                continue;}
+            if (i == 0 && byte != '$') {
+                continue;
+            }
             if (byte == '\r') {
                 continue;
             }
@@ -194,25 +195,63 @@ bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_vnqmr(const char* line,
         return false;
     char buf[MAX_LINE_SIZE];
     strncpy(buf, line + 7, sizeof(buf));
-    char* tok = strtok(buf, ",");  if (!tok) return false; out->quat_w  = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->quat_x  = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->quat_y  = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->quat_z  = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->mag_x   = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->mag_y   = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->mag_z   = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->accel_x = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->accel_y = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->accel_z = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->gyro_x  = strtof(tok, nullptr);
-    tok = strtok(nullptr, ",");    if (!tok) return false; out->gyro_y  = strtof(tok, nullptr);
-    tok = strtok(nullptr, "*");    if (!tok) return false; out->gyro_z  = strtof(tok, nullptr);
+    char* tok = strtok(buf, ",");
+    if (!tok)
+        return false;
+    out->quat_w = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->quat_x = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->quat_y = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->quat_z = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->mag_x = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->mag_y = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->mag_z = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->accel_x = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->accel_y = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->accel_z = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->gyro_x = strtof(tok, nullptr);
+    tok = strtok(nullptr, ",");
+    if (!tok)
+        return false;
+    out->gyro_y = strtof(tok, nullptr);
+    tok = strtok(nullptr, "*");
+    if (!tok)
+        return false;
+    out->gyro_z = strtof(tok, nullptr);
     return true;
 }
 
 /// Initialize VN-300: set up ring buffer, configure UART, attach IRQ, send output config commands.
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
 {
     LOG_MODULE_DECLARE(VectornavIMU);
 
@@ -228,8 +267,8 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
     }
 
     struct uart_config cfg = {
-        .baudrate  = UART_BAUD_RATE,
-        .parity    = UART_CFG_PARITY_NONE,
+        .baudrate = UART_BAUD_RATE,
+        .parity = UART_CFG_PARITY_NONE,
         .stop_bits = UART_CFG_STOP_BITS_1,
         .data_bits = UART_CFG_DATA_BITS_8,
         .flow_ctrl = UART_CFG_FLOW_CTRL_NONE,
@@ -257,15 +296,13 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
     return {};
 }
 
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-void Vectornav<kind, uart_dt_init, ready_sem_ptr>::start_sense()
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> void Vectornav<kind, uart_dt_init, ready_sem_ptr>::start_sense()
 {
     k_sem_give(ready_sem);
 }
 
 /// Returns the latest accumulated sensor reading and the YMR cycle time in nanoseconds, if available.
-template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
-std::optional<ImuReading> Vectornav<kind, uart_dt_init, ready_sem_ptr>::read()
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std::optional<ImuReading> Vectornav<kind, uart_dt_init, ready_sem_ptr>::read()
 {
     MutexGuard guard{&reading_mutex};
 
@@ -283,3 +320,5 @@ std::optional<ImuReading> Vectornav<kind, uart_dt_init, ready_sem_ptr>::read()
 extern k_sem vectornav_ready_sem;
 
 typedef Vectornav<VectornavKind::VECTORNAV, DEVICE_DT_GET(DT_ALIAS(imu_uart)), &vectornav_ready_sem> VectornavImu;
+
+#endif // CONFIG_IMU

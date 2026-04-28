@@ -18,6 +18,10 @@ For Ranger:
 west build ~/arty/clover --pristine auto --board ranger_1/mimxrt1062 --build-dir ~/arty/clover/build
 ```
 
+For the May '26 hotfire variant:
+```shell
+west build ~/arty/clover --pristine auto --board tvc_throttle_dev/mimxrt1062 --build-dir ~/arty/clover/build
+```
 
 ## Flash
 

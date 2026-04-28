@@ -11,7 +11,13 @@ target_sources(app PRIVATE
 add_subdirectory(sensors)
 add_subdirectory(flight)
 
+if(CONFIG_THROTTLE_VALVES)
+target_sources(app PRIVATE ThrottleValve.cpp)
+endif()
 
+if(CONFIG_VALVES)
+target_sources(app PRIVATE Valves.cpp)
+endif()
 
 if(CONFIG_HORNET)
     message(NOTICE "Building with Hornet sources")

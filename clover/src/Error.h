@@ -38,3 +38,6 @@ public:
 
     MaxLengthString<MAX_ERR_MESSAGE_SIZE> build_message();
 };
+
+/// Helper macro to create an error from a Kconfig not being set
+#define ERROR_FROM_KCONFIG(config) Error::from_cause("Kconfig " #config " is not set")

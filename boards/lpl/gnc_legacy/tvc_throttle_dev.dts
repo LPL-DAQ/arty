@@ -13,7 +13,6 @@ GNC throttle + TVC flows board.
     model = "TVC/Throttle Dev Board";
 
     aliases {
-        analog-sensors-adc = &adc1;
         fuel-valve-stepper-pulse-counter = &pit0_channel0;
         lox-valve-stepper-pulse-counter = &pit0_channel1;
     };
@@ -41,31 +40,24 @@ GNC throttle + TVC flows board.
         // PTO401 - PT7 - Pin 18 - A4 - adc1 6
         // PTC401 - PT8 - Pin 19 - A5 - adc1 5
         // PTC402 - PT9 - Pin 20 - A6 - adc1 15
-
         // ADC channels used by AnalogSensors.
-        io-channels = <&adc1 5>, <&adc1 6>, <&adc1 8>, <&adc1 9>, <&adc1 10>, <&adc1 11>, <&adc1 12>, <&adc1 15>;
-        analog-sensors-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
-        analog-sensors-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        analog-sensor-max-adc-channels = <16>;
+        io-channels = <&adc1 5>,
+                      <&adc1 6>,
+                      <&adc1 8>,
+                      <&adc1 9>,
+                      <&adc1 10>,
+                      <&adc1 11>,
+                      <&adc1 12>,
+                      <&adc1 15>;
+        analog-sensor-adcs = <&adc1>;
+        analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
+        analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
     };
 
     chosen {
-		zephyr,console = &lpuart7;
+		zephyr,console = &cdc_acm_uart0;
     };
-
-    example_sensor: example-sensor {
-        compatible = "zephyr,example-sensor";
-        input-gpios = <&gpio6 18 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-    };
-
-    blink_led: blink-led {
-        compatible = "blink-gpio-led";
-        led-gpios = <&gpio2 3 GPIO_ACTIVE_HIGH>;
-        blink-period-ms = <1000>;
-    };
-};
-&lpuart7 {
-	status = "okay";
-	current-speed = <115200>;
 };
 
 // Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
@@ -89,7 +81,7 @@ GNC throttle + TVC flows board.
 };
 
 // Docs: https://docs.zephyrproject.org/latest/build/dts/api/bindings/adc/nxp%2Cmcux-12b1msps-sar.html
-pt_adc: &adc1 {
+&adc1 {
     // She's broken, he's...
     status = "okay";
     pinctrl-0 = <&pinmux_adc1>;
@@ -192,11 +184,7 @@ pt_adc: &adc1 {
     };
 };
 
-&lpuart6 {
-    status = "disabled";
-};
-
-&lpuart4 {
+&lpuart7 {
     status = "okay";
     current-speed = <115200>;
 };

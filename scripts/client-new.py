@@ -759,6 +759,7 @@ STATE_COLORS = {
     'STATE_ABORT': 'bold red',
 }
 
+
 def _build_status_renderable():
     """Build a rich renderable for the current telemetry snapshot."""
     with packet_lock:
@@ -845,18 +846,6 @@ def _build_status_renderable():
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', 'us')
 
-    # Ranger-style throttle valve commands
-    if _has(pkt, 'fuel_valve_command'):
-        fvc = pkt.fuel_valve_command
-        cmd.add_row('Fuel cmd enabled', 'YES' if fvc.enable else 'NO', '')
-        cmd.add_row('Fuel cmd set_pos', 'YES' if fvc.set_pos else 'NO', '')
-        cmd.add_row('Fuel cmd target', f'{fvc.target_deg:.2f}', 'deg')
-    if _has(pkt, 'lox_valve_command'):
-        lvc = pkt.lox_valve_command
-        cmd.add_row('LOX cmd enabled', 'YES' if lvc.enable else 'NO', '')
-        cmd.add_row('LOX cmd set_pos', 'YES' if lvc.set_pos else 'NO', '')
-        cmd.add_row('LOX cmd target', f'{lvc.target_deg:.2f}', 'deg')
-
     for field, label, unit in [
         ('trace_time_msec', 'Trace time', 'ms'),
         ('throttle_thrust_command_lbf', 'Thrust cmd', 'lbf'),
@@ -893,8 +882,9 @@ def _build_status_renderable():
     _add_analog_row('PT-003', 'pt003', 'psi')
     _add_analog_row('PT-004', 'pt004', 'psi')
     _add_analog_row('PT-005', 'pt005', 'psi')
-    _add_analog_row('PT-101', 'pt101', 'psi')
-    _add_analog_row('PT-201', 'pt201', 'psi')
+    _add_analog_row('PT-005', 'pt006', 'psi')
+    _add_analog_row('PT-103', 'pt103', 'psi')
+    _add_analog_row('PT-203', 'pt203', 'psi')
     _add_analog_row('PTF-1', 'ptf1', 'psi')
     _add_analog_row('PTF-2', 'ptf2', 'psi')
     _add_analog_row('PTO-1', 'pto1', 'psi')
@@ -912,19 +902,27 @@ def _build_status_renderable():
 
     sensors.add_row(
         'Lidar 1',
-        f'{pkt.lidar_1.distance_m:.2f}' if _has(pkt, 'lidar_1') else f'[{t["muted"]}]—[/{t["muted"]}]',
+        f'{pkt.lidar_1.distance_m:.2f}'
+        if _has(pkt, 'lidar_1')
+        else f'[{t["muted"]}]—[/{t["muted"]}]',
         'm',
     )
     sensors.add_row(
         'Lidar 2',
-        f'{pkt.lidar_2.distance_m:.2f}' if _has(pkt, 'lidar_2') else f'[{t["muted"]}]—[/{t["muted"]}]',
+        f'{pkt.lidar_2.distance_m:.2f}'
+        if _has(pkt, 'lidar_2')
+        else f'[{t["muted"]}]—[/{t["muted"]}]',
         'm',
     )
 
     thrust_value = None
     if _has(pkt, 'hornet_throttle_metrics') and _has(pkt.hornet_throttle_metrics, 'thrust_N'):
         thrust_value = f'{pkt.hornet_throttle_metrics.thrust_N:.2f}'
-    sensors.add_row('Thrust', thrust_value if thrust_value is not None else f'[{t["muted"]}]—[/{t["muted"]}]', 'N')
+    sensors.add_row(
+        'Thrust',
+        thrust_value if thrust_value is not None else f'[{t["muted"]}]—[/{t["muted"]}]',
+        'N',
+    )
 
     # Shared valve state telemetry.
     if _has(pkt, 'valve_states'):
@@ -961,15 +959,25 @@ def _build_status_renderable():
     timing.add_column('Timing', style='bold white', no_wrap=True)
     timing.add_column('Value', style='white', justify='right', no_wrap=True)
     timing.add_column('Unit', style=t['muted'], no_wrap=True)
-    timing.add_row('Controller tick', f'{pkt.controller_timing.controller_tick_time_ns / 1000:.2f}', 'us')
+    timing.add_row(
+        'Controller tick', f'{pkt.controller_timing.controller_tick_time_ns / 1000:.2f}', 'us'
+    )
     if _has(pkt.controller_timing, 'analog_sensors_sense_time_ns'):
-        timing.add_row('Analog read', f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}', 'us')
+        timing.add_row(
+            'Analog read', f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}', 'us'
+        )
     if _has(pkt.controller_timing, 'lidar_sense_time_ns'):
-        timing.add_row('Lidar read', f'{pkt.controller_timing.lidar_sense_time_ns / 1000:.2f}', 'us')
+        timing.add_row(
+            'Lidar read', f'{pkt.controller_timing.lidar_sense_time_ns / 1000:.2f}', 'us'
+        )
     if _has(pkt.controller_timing, 'imu_sense_time_ns'):
         timing.add_row('IMU read', f'{pkt.controller_timing.imu_sense_time_ns / 1000:.2f}', 'us')
     if _has(pkt.controller_timing, 'state_estimator_update_time_ns'):
-        timing.add_row('State estimator', f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}', 'us')
+        timing.add_row(
+            'State estimator',
+            f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}',
+            'us',
+        )
 
     # controller metrics table
     fcm = Table(
@@ -1019,17 +1027,89 @@ def _build_status_renderable():
 
     top = Columns(
         [
-            Panel(pose, title=f'[{t["primary"]}]Vehicle State[/{t["primary"]}]', border_style=t['panel_border']),
-            Panel(cmd, title=f'[{t["primary"]}]Commands[/{t["primary"]}]', border_style=t['panel_border']),
+            Panel(
+                pose,
+                title=f'[{t["primary"]}]Vehicle State[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
+            Panel(
+                cmd,
+                title=f'[{t["primary"]}]Commands[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
         ]
     )
-    bottom = Columns(
-        [
-            Panel(sensors, title=f'[{t["primary"]}]Sensors[/{t["primary"]}]', border_style=t['panel_border']),
-            Panel(timing, title=f'[{t["primary"]}]Timing[/{t["primary"]}]', border_style=t['panel_border']),
-            Panel(fcm, title=f'[{t["primary"]}]Controller[/{t["primary"]}]', border_style=t['panel_border']),
-        ]
-    )
+    bottom_columns = [
+        Panel(
+            sensors,
+            title=f'[{t["primary"]}]Sensors[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        ),
+        Panel(
+            timing,
+            title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        ),
+        Panel(
+            fcm,
+            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        ),
+    ]
+
+    if _has(pkt, 'fuel_valve_command'):
+        table = Table(
+            box=box.SIMPLE_HEAD,
+            show_header=True,
+            header_style=t['primary'],
+            border_style=t['panel_border'],
+            padding=(0, 1),
+        )
+        table.add_column('Reading', style='bold white', no_wrap=True)
+        table.add_column('Value', style='white', justify='right', no_wrap=True)
+        table.add_column('Unit', style=t['muted'], no_wrap=True)
+
+        table.add_row('Commanded pos', f'{pkt.fuel_valve_command.target_deg:.3f}', '°')
+        table.add_row('Encoder pos', f'{pkt.fuel_valve_status.encoder_pos_deg:.3f}', '°')
+        table.add_row('Power', 'ON' if pkt.fuel_valve_status.is_on else 'OFF', '')
+        table.add_row('Enable?', 'YES' if pkt.fuel_valve_command.enable else 'NO', '')
+        table.add_row('Set pos?', 'YES' if pkt.fuel_valve_command.set_pos else 'NO', '')
+
+        bottom_columns.append(
+            Panel(
+                table,
+                title=f'[{t["primary"]}]Fuel Valve[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
+        )
+
+    if _has(pkt, 'lox_valve_command'):
+        table = Table(
+            box=box.SIMPLE_HEAD,
+            show_header=True,
+            header_style=t['primary'],
+            border_style=t['panel_border'],
+            padding=(0, 1),
+        )
+        table.add_column('Reading', style='bold white', no_wrap=True)
+        table.add_column('Value', style='white', justify='right', no_wrap=True)
+        table.add_column('Unit', style=t['muted'], no_wrap=True)
+
+        table.add_row('Commanded pos', f'{pkt.lox_valve_command.target_deg:.3f}', '°')
+        table.add_row('Encoder pos', f'{pkt.lox_valve_status.encoder_pos_deg:.3f}', '°')
+        table.add_row('Power', 'ON' if pkt.lox_valve_status.is_on else 'OFF', '')
+        table.add_row('Enable?', 'YES' if pkt.lox_valve_command.enable else 'NO', '')
+        table.add_row('Set pos?', 'YES' if pkt.lox_valve_command.set_pos else 'NO', '')
+
+        bottom_columns.append(
+            Panel(
+                table,
+                title=f'[{t["primary"]}]LOx Valve[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
+        )
+
+    bottom = Columns(bottom_columns)
 
     return Group(header_panel, top, bottom)
 
@@ -1069,6 +1149,7 @@ _TOOLBAR_STATE_TAGS = {
     'STATE_THRUST_SEQ': ('ansiyellow', 'THR_SEQ'),
     'STATE_ABORT': ('ansired', 'ABORT'),
 }
+
 
 def get_toolbar():
     """Compact live telemetry for the prompt_toolkit bottom toolbar."""
@@ -1212,12 +1293,12 @@ def cmd_configure_analog_sensors():
     """Configure analog sensors."""
     cfg1 = clover_pb2.AnalogSensorConfig()
     cfg1.channel = 0
-    cfg1.assignment = clover_pb2.TC101
+    cfg1.assignment = clover_pb2.TC102
     cfg1.tc_type = clover_pb2.K_TYPE
 
     cfg2 = clover_pb2.AnalogSensorConfig()
     cfg2.channel = 1
-    cfg2.assignment = clover_pb2.PT101
+    cfg2.assignment = clover_pb2.PT103
     cfg2.pt_range_psig = 1000
     cfg2.pt_bias_psig = 100
 
@@ -1347,7 +1428,9 @@ def cmd_unprime():
 def cmd_calibrate_throttle_valve():
     """Enter throttle valve calibration mode (IDLE → CALIBRATE_THROTTLE_VALVE)."""
     t = THEME
-    console.print(f'\n  {t["icon_valve"]} [{t["primary"]}]Calibrate Throttle Valve[/{t["primary"]}]')
+    console.print(
+        f'\n  {t["icon_valve"]} [{t["primary"]}]Calibrate Throttle Valve[/{t["primary"]}]'
+    )
     console.print('    [1] FUEL')
     console.print('    [2] LOX')
 
@@ -1497,7 +1580,9 @@ def _build_control_trace() -> clover_pb2.ControlTrace:
 def cmd_load_throttle_valve_sequence():
     """Load a throttle valve sequence (IDLE → THROTTLE_VALVE_PRIMED). At least one trace required."""
     t = THEME
-    console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Throttle Valve Sequence[/{t["primary"]}]')
+    console.print(
+        f'\n  {t["icon_seq"]} [{t["primary"]}]Load Throttle Valve Sequence[/{t["primary"]}]'
+    )
 
     saved = _list_saved_sequences(VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
@@ -1596,7 +1681,9 @@ def cmd_configure_flight_controller_gains():
     """Configure flight controller PID gains."""
     t = THEME
     console.print(f'\n  [{t["primary"]}]Configure Flight Controller Gains[/{t["primary"]}]')
-    console.print(f'  [{t["muted"]}]Leave blank to keep current value for any field.[/{t["muted"]}]')
+    console.print(
+        f'  [{t["muted"]}]Leave blank to keep current value for any field.[/{t["muted"]}]'
+    )
 
     # Mapping of user-friendly names to prefixes
     pid_map = {
@@ -1686,6 +1773,7 @@ def cmd_configure_flight_controller_gains():
     else:
         console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
 
+
 # TODO: is this all that's needed?
 def cmd_calibrate_tvc():
     """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
@@ -1700,6 +1788,7 @@ def cmd_calibrate_tvc():
     req = clover_pb2.Request()
     req.calibrate_tvc.SetInParent()
     send_request(req, 'CALIBRATE_TVC')
+
 
 # TODO: test if this works
 def cmd_load_tvc_sequence():
@@ -1743,6 +1832,7 @@ def cmd_start_tvc_sequence():
     req = clover_pb2.Request()
     req.start_tvc_sequence.SetInParent()
     send_request(req, 'START_TVC_SEQUENCE')
+
 
 # TODO: This is not a linear or sin trace
 def cmd_load_rcs_valve_sequence():
@@ -1825,6 +1915,7 @@ def cmd_start_rcs_sequence():
     req.start_rcs_sequence.SetInParent()
     send_request(req, 'START_RCS_SEQUENCE')
 
+
 # TODO: test if this works
 def cmd_load_static_fire_sequence():
     """Load a static fire sequence (IDLE → STATIC_FIRE_PRIMED)."""
@@ -1833,13 +1924,17 @@ def cmd_load_static_fire_sequence():
 
     saved = _list_saved_sequences(STATIC_FIRE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(STATIC_FIRE_SEQ_DIR, clover_pb2.LoadStaticFireSequenceRequest)
+        loaded = _pick_and_load_sequence(
+            STATIC_FIRE_SEQ_DIR, clover_pb2.LoadStaticFireSequenceRequest
+        )
         req = clover_pb2.Request()
         req.load_static_fire_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_STATIC_FIRE_SEQUENCE')
         return
 
-    console.print(f'  [{t["muted"]}]Define thrust (lbf), pitch (deg), and yaw (deg) traces.[/{t["muted"]}]')
+    console.print(
+        f'  [{t["muted"]}]Define thrust (lbf), pitch (deg), and yaw (deg) traces.[/{t["muted"]}]'
+    )
     req = clover_pb2.Request()
 
     console.print(f'\n  [{t["primary"]}]Thrust trace (lbf):[/{t["primary"]}]')
@@ -1871,6 +1966,7 @@ def cmd_start_static_fire_sequence():
     req.start_static_fire_sequence.SetInParent()
     send_request(req, 'START_STATIC_FIRE_SEQUENCE')
 
+
 # TODO: test if this works
 def cmd_load_flight_sequence():
     """Load a flight sequence (IDLE → FLIGHT_PRIMED)."""
@@ -1885,7 +1981,9 @@ def cmd_load_flight_sequence():
         send_request(req, 'LOAD_FLIGHT_SEQUENCE')
         return
 
-    console.print(f'  [{t["muted"]}]Define X (m), Y (m), Z (m), and roll (deg) traces.[/{t["muted"]}]')
+    console.print(
+        f'  [{t["muted"]}]Define X (m), Y (m), Z (m), and roll (deg) traces.[/{t["muted"]}]'
+    )
     req = clover_pb2.Request()
 
     console.print(f'\n  [{t["primary"]}]X position trace (m):[/{t["primary"]}]')
@@ -1927,27 +2025,82 @@ MENU_ITEMS = [
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
-    ('bias', 'bias', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
     ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),
     ('gains', 'gains', 'Configure flight controller gains', cmd_configure_flight_controller_gains),
-    ('cal', 'calibrate', 'Calibrate throttle valve  (IDLE → CALIBRATE_THROTTLE_VALVE)', cmd_calibrate_throttle_valve),
-    ('lvseq', 'loadvalve', 'Load throttle valve sequence  (IDLE → THROTTLE_VALVE_PRIMED)', cmd_load_throttle_valve_sequence),
-    ('svseq', 'startvalve', 'Start throttle valve sequence (THROTTLE_VALVE_PRIMED → THROTTLE_VALVE)', cmd_start_throttle_valve_sequence),
-    ('ltseq', 'loadthrust', 'Load throttle sequence  (IDLE → THROTTLE_PRIMED)', cmd_load_throttle_sequence),
-    ('stseq', 'startthrust', 'Start throttle sequence (THROTTLE_PRIMED → THROTTLE)', cmd_start_throttle_sequence),
+    (
+        'cal',
+        'calibrate',
+        'Calibrate throttle valve  (IDLE → CALIBRATE_THROTTLE_VALVE)',
+        cmd_calibrate_throttle_valve,
+    ),
+    (
+        'lvseq',
+        'loadvalve',
+        'Load throttle valve sequence  (IDLE → THROTTLE_VALVE_PRIMED)',
+        cmd_load_throttle_valve_sequence,
+    ),
+    (
+        'svseq',
+        'startvalve',
+        'Start throttle valve sequence (THROTTLE_VALVE_PRIMED → THROTTLE_VALVE)',
+        cmd_start_throttle_valve_sequence,
+    ),
+    (
+        'ltseq',
+        'loadthrust',
+        'Load throttle sequence  (IDLE → THROTTLE_PRIMED)',
+        cmd_load_throttle_sequence,
+    ),
+    (
+        'stseq',
+        'startthrust',
+        'Start throttle sequence (THROTTLE_PRIMED → THROTTLE)',
+        cmd_start_throttle_sequence,
+    ),
     ('caltvc', 'caltvc', 'Calibrate TVC  (IDLE → CALIBRATE_TVC)', cmd_calibrate_tvc),
     ('ltvcseq', 'loadtvc', 'Load TVC sequence  (IDLE → TVC_PRIMED)', cmd_load_tvc_sequence),
     ('stvcseq', 'starttvc', 'Start TVC sequence (TVC_PRIMED → TVC)', cmd_start_tvc_sequence),
-    ('lrvseq', 'loadrcsvalve', 'Load RCS valve sequence  (IDLE → RCS_VALVE_PRIMED)', cmd_load_rcs_valve_sequence),
-    ('srvseq', 'startrcsvalve', 'Start RCS valve sequence (RCS_VALVE_PRIMED → RCS_VALVE)', cmd_start_rcs_valve_sequence),
+    (
+        'lrvseq',
+        'loadrcsvalve',
+        'Load RCS valve sequence  (IDLE → RCS_VALVE_PRIMED)',
+        cmd_load_rcs_valve_sequence,
+    ),
+    (
+        'srvseq',
+        'startrcsvalve',
+        'Start RCS valve sequence (RCS_VALVE_PRIMED → RCS_VALVE)',
+        cmd_start_rcs_valve_sequence,
+    ),
     ('lrseq', 'loadrcs', 'Load RCS sequence  (IDLE → RCS_PRIMED)', cmd_load_rcs_sequence),
     ('srseq', 'startrcs', 'Start RCS sequence (RCS_PRIMED → RCS)', cmd_start_rcs_sequence),
-    ('lsfseq', 'loadstaticfire', 'Load static fire sequence  (IDLE → STATIC_FIRE_PRIMED)', cmd_load_static_fire_sequence),
-    ('ssfseq', 'startstaticfire', 'Start static fire sequence (STATIC_FIRE_PRIMED → STATIC_FIRE)', cmd_start_static_fire_sequence),
-    ('lfseq', 'loadflight', 'Load flight sequence  (IDLE → FLIGHT_PRIMED)', cmd_load_flight_sequence),
-    ('sfseq', 'startflight', 'Start flight sequence (FLIGHT_PRIMED → FLIGHT)', cmd_start_flight_sequence),
+    (
+        'lsfseq',
+        'loadstaticfire',
+        'Load static fire sequence  (IDLE → STATIC_FIRE_PRIMED)',
+        cmd_load_static_fire_sequence,
+    ),
+    (
+        'ssfseq',
+        'startstaticfire',
+        'Start static fire sequence (STATIC_FIRE_PRIMED → STATIC_FIRE)',
+        cmd_start_static_fire_sequence,
+    ),
+    (
+        'lfseq',
+        'loadflight',
+        'Load flight sequence  (IDLE → FLIGHT_PRIMED)',
+        cmd_load_flight_sequence,
+    ),
+    (
+        'sfseq',
+        'startflight',
+        'Start flight sequence (FLIGHT_PRIMED → FLIGHT)',
+        cmd_start_flight_sequence,
+    ),
     ('unprime', 'unprime', 'Unprime  (any PRIMED → IDLE)', cmd_unprime),
     ('halt', 'halt', 'HALT active sequence → IDLE', cmd_halt),
     ('abort', 'abort', 'ABORT → safe state', cmd_abort),

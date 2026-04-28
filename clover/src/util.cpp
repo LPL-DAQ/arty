@@ -3,5 +3,5 @@
 
 float nsec_since_cycle(uint64_t start_cycle)
 {
-    return (k_cycle_get_64() - start_cycle) * (1e9f / SystemCoreClock);
+    return k_cyc_to_ns_near64(k_cycle_get_64() - start_cycle);
 }
