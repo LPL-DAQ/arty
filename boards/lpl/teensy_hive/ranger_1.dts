@@ -125,6 +125,19 @@ TODO:
 
 // Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
 &pinctrl {
+    // Software CS GPIO pins for ADS7953.
+    // EMC pads default to EMC mux state — must be explicitly routed to GPIO3.
+    // Pin 36 = GPIO_EMC_38 = gpio3_io24 (U8 CS)
+    // Pin 37 = GPIO_EMC_39 = gpio3_io25 (U7 CS)
+    pinmux_lpspi3_cs_gpios: pinmux_lpspi3_cs_gpios {
+        group0 {
+            pinmux = <&iomuxc_gpio_emc_38_gpio3_io24>,
+                     <&iomuxc_gpio_emc_39_gpio3_io25>;
+            drive-strength = "r0-6";
+            slew-rate = "slow";
+        };
+    };
+
     pinmux_adc1: pinmux_adc1 {
         group0 {
             pinmux = <&iomuxc_gpio_ad_b1_04_gpio1_io20>,
@@ -347,7 +360,7 @@ TODO:
 // CS: pin37=gpio3_25 (U7/AIN0-15), pin36=gpio3_24 (U8/AIN16-31)
 &lpspi3 {
     status = "okay";
-    pinctrl-0 = <&pinmux_lpspi3>;
+    pinctrl-0 = <&pinmux_lpspi3 &pinmux_lpspi3_cs_gpios>;
     pinctrl-names = "default";
 
     cs-gpios = <&gpio3 25 GPIO_ACTIVE_LOW>,   // Pin 37 → U7 (AIN0–15)
