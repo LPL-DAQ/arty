@@ -212,7 +212,7 @@ enum Valve {
   // Fuel
   PBV201 = 8;
 
-  // Purge  
+  // Purge
   SV301 = 9;
 
   // RCS
@@ -610,7 +610,7 @@ message AnalogSensorReadings {
   optional float pt203 = 8;
 
   // Purge
-  optional float pt203 = 9;
+  optional float pt301 = 9;
 
   // Engine
   optional float ptf401 = 10;
@@ -646,7 +646,7 @@ message ValveStates {
   // Vehicle
 
   // Pressurant
-  optional ValveState sv001 = 1; 
+  optional ValveState sv001 = 1;
   optional ValveState sv002 = 2;
   optional ValveState sv003 = 3;
   optional ValveState sv004 = 4;

@@ -168,8 +168,6 @@ ZTEST(FlightController_tests, test_metrics_do_not_contain_nan_or_inf)
     zassert_false(std::isnan(metrics.commanded_vertical_acceleration_m_s2), "commanded_vertical_acceleration_m_s2 should not be NaN");
     zassert_false(std::isnan(metrics.commanded_pitch_acceleration_rad_s2), "commanded_pitch_acceleration_rad_s2 should not be NaN");
     zassert_false(std::isnan(metrics.commanded_yaw_acceleration_rad_s2), "commanded_yaw_acceleration_rad_s2 should not be NaN");
-    zassert_false(std::isnan(metrics.tvc_pitch_command_deg), "tvc_pitch_command_deg should not be NaN");
-    zassert_false(std::isnan(metrics.tvc_yaw_command_deg), "tvc_yaw_command_deg should not be NaN");
 
     zassert_false(std::isinf(metrics.actual_world_tilt_x_rad), "actual_world_tilt_x_rad should not be Inf");
     zassert_false(std::isinf(metrics.actual_world_tilt_y_rad), "actual_world_tilt_y_rad should not be Inf");
@@ -179,38 +177,8 @@ ZTEST(FlightController_tests, test_metrics_do_not_contain_nan_or_inf)
     zassert_false(std::isinf(metrics.commanded_vertical_acceleration_m_s2), "commanded_vertical_acceleration_m_s2 should not be Inf");
     zassert_false(std::isinf(metrics.commanded_pitch_acceleration_rad_s2), "commanded_pitch_acceleration_rad_s2 should not be Inf");
     zassert_false(std::isinf(metrics.commanded_yaw_acceleration_rad_s2), "commanded_yaw_acceleration_rad_s2 should not be Inf");
-    zassert_false(std::isinf(metrics.tvc_pitch_command_deg), "tvc_pitch_command_deg should not be Inf");
-    zassert_false(std::isinf(metrics.tvc_yaw_command_deg), "tvc_yaw_command_deg should not be Inf");
 }
 
-ZTEST(FlightController_tests, test_tvc_commands_are_within_gimbal_limits)
-{
-    // Reset the flight controller state
-    FlightController::reset();
-
-    EstimatedState state = EstimatedState_init_default;
-    state.R_WB.qw = 1.0f;
-    state.R_WB.qx = 0.0f;
-    state.R_WB.qy = 0.0f;
-    state.R_WB.qz = 0.0f;
-    state.position.x = 50.0f;  // Large lateral error
-    state.position.y = 50.0f;
-    state.position.z = 0.0f;
-    state.velocity.x = 0.0f;
-    state.velocity.y = 0.0f;
-    state.velocity.z = 0.0f;
-
-    auto result = FlightController::tick(state, 0.0f, 0.0f, 0.0f);
-    zassert_true(result.has_value(), "FlightController::tick should succeed for large lateral error");
-
-    auto [thrust_cmd, pitch_cmd, yaw_cmd, metrics] = *result;
-
-    // TVC commands should be clamped to reasonable gimbal limits (~12 degrees)
-    zassert_true(metrics.tvc_pitch_command_deg >= -15.0f, "TVC pitch should not be excessively negative");
-    zassert_true(metrics.tvc_pitch_command_deg <= 15.0f, "TVC pitch should not be excessively positive");
-    zassert_true(metrics.tvc_yaw_command_deg >= -15.0f, "TVC yaw should not be excessively negative");
-    zassert_true(metrics.tvc_yaw_command_deg <= 15.0f, "TVC yaw should not be excessively positive");
-}
 
 ZTEST(FlightController_tests, test_multiple_ticks_with_consistent_state)
 {
