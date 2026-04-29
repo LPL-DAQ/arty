@@ -74,8 +74,8 @@ STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
-# ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP   = "192.168.0.150"  # daq box router
+ZEPHYR_IP = '169.254.99.99'  # real board
+# ZEPHYR_IP   = "192.168.0.150"  # daq box router
 # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
@@ -366,6 +366,9 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     #         }
     #     )
 
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
     return row
 
 
@@ -461,6 +464,7 @@ _USEFUL_SENSORS: dict[str, str] = {
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
+    'predicted_thrust': 'Predicted Thrust',
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
