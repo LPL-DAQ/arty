@@ -485,6 +485,8 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         }
     }
 
+    LOG_INF("Configuring %d analog sensors", req.configs_count);
+
     {
         MutexGuard config_guard{&config_mutex};
 
