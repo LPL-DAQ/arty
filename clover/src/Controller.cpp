@@ -388,6 +388,9 @@ std::expected<void, Error> Controller::init()
     return {};
 }
 
+// Only read/written to by tick workqueue.
+static uint64_t packet_number = 0;
+
 /// Execute one tick of the top-level controller.
 static void step_control_loop(k_work*)
 {
@@ -397,6 +400,14 @@ static void step_control_loop(k_work*)
     DataPacket data = DataPacket_init_default;
     data.time_ns = k_cyc_to_ns_near64(start_cycle);
     data.state = current_state;
+
+    data.sequence_number = packet_number;
+    packet_number++;
+
+    // Populate daq connected status
+    auto daq_status = get_daq_client_status();
+    data.daq_connected = daq_status.connected;
+    data.daq_last_pinged_ns = daq_status.last_pinged_ms * 1e6f;
 
     // Read sensors
 #ifdef CONFIG_ANALOG_SENSORS
@@ -522,8 +533,6 @@ static void step_control_loop(k_work*)
         // TODO: handle estimate failure; leaving defaults for now
     }
 #endif  // CONFIG_FLIGHT
-
-    daq_client_status daq_status = get_daq_client_status();
 
     // Populate default actuator commands -- essentially telling everybody to hold their current state.
 #ifdef CONFIG_THROTTLE_VALVES

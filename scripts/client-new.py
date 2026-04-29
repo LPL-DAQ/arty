@@ -75,7 +75,7 @@ FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 # ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP   = "192.168.0.150"  # daq box router
+ZEPHYR_IP = '192.168.0.150'  # daq box router
 # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
@@ -456,6 +456,7 @@ def _reconnect_and_resubscribe():
     except Exception as e:
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
+
 _USEFUL_SENSORS: dict[str, str] = {
     'pt004': 'PT-004',
     'pt005': 'PT-005',
@@ -467,7 +468,6 @@ _USEFUL_SENSORS: dict[str, str] = {
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
     'predicted_thrust': 'Predicted Thrust',
-
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
@@ -528,6 +528,7 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
     try:
         from plotly.subplots import make_subplots
         import plotly.graph_objects as go
+
         series, times = _read_plot_series(csv_path)
         if not series:
             return
@@ -536,7 +537,8 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
         time_units_per_second = _time_units_per_second(times)
 
         fig = make_subplots(
-            rows=2, cols=1,
+            rows=2,
+            cols=1,
             subplot_titles=('All Sensors', 'Motor Traces — Desired vs Actual'),
             shared_xaxes=True,
             vertical_spacing=0.1,
@@ -547,24 +549,32 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
             if not points:
                 continue
             points.sort(key=lambda point: point[0])
-            fig.add_trace(go.Scatter(
-                x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
-                y=[value for _, value in points],
-                mode='lines',
-                name=label,
-            ), row=1, col=1)
+            fig.add_trace(
+                go.Scatter(
+                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                    y=[value for _, value in points],
+                    mode='lines',
+                    name=label,
+                ),
+                row=1,
+                col=1,
+            )
 
         for sensor, label in _MOTOR_SENSORS.items():
             points = series.get(sensor, [])
             if not points:
                 continue
             points.sort(key=lambda point: point[0])
-            fig.add_trace(go.Scatter(
-                x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
-                y=[value for _, value in points],
-                mode='lines',
-                name=label,
-            ), row=2, col=1)
+            fig.add_trace(
+                go.Scatter(
+                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                    y=[value for _, value in points],
+                    mode='lines',
+                    name=label,
+                ),
+                row=2,
+                col=1,
+            )
 
         fig.update_xaxes(title_text='Time (s)', row=2, col=1)
         fig.update_yaxes(title_text='Value', row=1, col=1)
@@ -812,10 +822,18 @@ def _build_lox_graph() -> Panel:
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
     plt.plot(
-        times, [p.analog_sensors.pt006 for p in history], label='PT-006', color=(255, 220, 0), marker='braille'
+        times,
+        [p.analog_sensors.pt006 for p in history],
+        label='PT-006',
+        color=(255, 220, 0),
+        marker='braille',
     )
     plt.plot(
-        times, [p.analog_sensors.pt103 for p in history], label='PT-103', color=(50, 200, 50), marker='braille'
+        times,
+        [p.analog_sensors.pt103 for p in history],
+        label='PT-103',
+        color=(50, 200, 50),
+        marker='braille',
     )
     plt.plot(
         times,
@@ -1061,7 +1079,7 @@ def _build_status_renderable():
             if _has(vs, field):
                 sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
 
-    # Timing table
+    # Controller table
     timing = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
@@ -1091,52 +1109,7 @@ def _build_status_renderable():
             f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}',
             'us',
         )
-
-    # controller metrics table
-    fcm = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    fcm.add_column('Flight Controller Metric', style='bold white', no_wrap=True)
-    fcm.add_column('Value', style='white', justify='right', no_wrap=True)
-    fcm.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    if _has(pkt, 'flight_controller_metrics'):
-        m = pkt.flight_controller_metrics
-        fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
-        fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
-        fcm.add_row('Actual tilt X', f'{m.actual_world_tilt_x_rad:.3f}', 'rad')
-        fcm.add_row('Actual tilt Y', f'{m.actual_world_tilt_y_rad:.3f}', 'rad')
-        fcm.add_row('Desired vz', f'{m.desired_vertical_velocity_m_s:.3f}', 'm/s')
-        fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
-        fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
-        fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
-
-    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
-    if _has(pkt, 'ranger_throttle_metrics'):
-        rtm = pkt.ranger_throttle_metrics
-        if _has(rtm, 'predicted_thrust_lbf'):
-            fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
-        if _has(rtm, 'predicted_of'):
-            fcm.add_row('Pred O/F', f'{rtm.predicted_of:.3f}', '')
-        if _has(rtm, 'mdot_fuel'):
-            fcm.add_row('m_dot fuel', f'{rtm.mdot_fuel:.3f}', '')
-        if _has(rtm, 'mdot_lox'):
-            fcm.add_row('m_dot lox', f'{rtm.mdot_lox:.3f}', '')
-        if _has(rtm, 'change_alpha_cmd'):
-            fcm.add_row('d_alpha cmd', f'{rtm.change_alpha_cmd:.3f}', '')
-        if _has(rtm, 'clamped_change_alpha_cmd'):
-            fcm.add_row('d_alpha clamped', f'{rtm.clamped_change_alpha_cmd:.3f}', '')
-        if _has(rtm, 'alpha'):
-            fcm.add_row('alpha', f'{rtm.alpha:.3f}', '')
-        if _has(rtm, 'thrust_from_alpha_lbf'):
-            fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
-
-    if fcm.row_count == 0:
-        fcm.add_row(f'[{t["muted"]}]No controller metrics available[/{t["muted"]}]', '', '')
+    timing.add_row('DAQ connected?', 'YES' if pkt.daq_connected else 'NO', '')
 
     top = Columns(
         [
@@ -1221,6 +1194,55 @@ def _build_status_renderable():
                 border_style=t['panel_border'],
             ),
         )
+    # controller metrics table
+    fcm = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    fcm.add_column('Flight Controller Metric', style='bold white', no_wrap=True)
+    fcm.add_column('Value', style='white', justify='right', no_wrap=True)
+    fcm.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    if _has(pkt, 'flight_controller_metrics'):
+        m = pkt.flight_controller_metrics
+        fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt X', f'{m.actual_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt Y', f'{m.actual_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Desired vz', f'{m.desired_vertical_velocity_m_s:.3f}', 'm/s')
+        fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
+        fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
+        fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
+
+    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        if _has(rtm, 'predicted_thrust_lbf'):
+            fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
+        if _has(rtm, 'predicted_of'):
+            fcm.add_row('Pred O/F', f'{rtm.predicted_of:.3f}', '')
+        if _has(rtm, 'mdot_fuel'):
+            fcm.add_row('m_dot fuel', f'{rtm.mdot_fuel:.3f}', '')
+        if _has(rtm, 'mdot_lox'):
+            fcm.add_row('m_dot lox', f'{rtm.mdot_lox:.3f}', '')
+        if _has(rtm, 'change_alpha_cmd'):
+            fcm.add_row('d_alpha cmd', f'{rtm.change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'clamped_change_alpha_cmd'):
+            fcm.add_row('d_alpha clamped', f'{rtm.clamped_change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'alpha'):
+            fcm.add_row('alpha', f'{rtm.alpha:.3f}', '')
+        if _has(rtm, 'thrust_from_alpha_lbf'):
+            fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
+
+    if fcm.row_count != 0:
+        bottom_columns.append(Panel(
+            fcm,
+            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        ),)
 
     bottom = Columns(bottom_columns)
 
@@ -1417,7 +1439,7 @@ def cmd_configure_analog_sensors():
     cfg2 = clover_pb2.AnalogSensorConfig()
     cfg2.channel = 4
     cfg2.assignment = clover_pb2.PT103
-    cfg2.pt_range_psig = 2000
+    cfg2.pt_range_psig = 1000
     cfg2.pt_bias_psig = 0
 
     cfg3 = clover_pb2.AnalogSensorConfig()
@@ -1429,19 +1451,19 @@ def cmd_configure_analog_sensors():
     cfg4 = clover_pb2.AnalogSensorConfig()
     cfg4.channel = 6
     cfg4.assignment = clover_pb2.PT203
-    cfg4.pt_range_psig = 2000
+    cfg4.pt_range_psig = 3000
     cfg4.pt_bias_psig = 0
 
     cfg5 = clover_pb2.AnalogSensorConfig()
     cfg5.channel = 5
     cfg5.assignment = clover_pb2.PTF401
-    cfg5.pt_range_psig = 2000
+    cfg5.pt_range_psig = 1000
     cfg5.pt_bias_psig = 0
 
     cfg6 = clover_pb2.AnalogSensorConfig()
     cfg6.channel = 1
     cfg6.assignment = clover_pb2.PTO401
-    cfg6.pt_range_psig = 2000
+    cfg6.pt_range_psig = 1000
     cfg6.pt_bias_psig = 0
 
     cfg7 = clover_pb2.AnalogSensorConfig()
@@ -2389,7 +2411,6 @@ def main():
         data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         data_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         data_sock.bind((DATA_IP, DATA_PORT))
-        data_sock.settimeout(1.0)
         console.print(f'\n  [{t["info"]}]Auto-subscribing to data stream...[/{t["info"]}]')
         cmd_subscribe_data_stream()
         threading.Thread(target=listen_for_telemetry, daemon=True).start()
