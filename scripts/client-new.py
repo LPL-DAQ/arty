@@ -4,8 +4,8 @@
 #     "protobuf",
 #     "rich",
 #     "prompt-toolkit",
-#     "polars",
 #     "plotext",
+#     "plotly",
 # ]
 # ///
 
@@ -37,7 +37,6 @@ from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-import polars as pl
 from collections import deque
 import plotext as plt
 
@@ -206,13 +205,18 @@ def _opt(msg, field: str):
     return float(getattr(msg, field)) if _has(msg, field) else None
 
 
+def _recv_time_ns(recv_time: float) -> int:
+    """Return the host receive timestamp in epoch nanoseconds."""
+    return int(recv_time * 1_000_000_000)
+
+
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
     only emits values for fields present.
     """
     row = {
-        'time': recv_time,
+        'time': _recv_time_ns(recv_time),
         #'state': float(pkt.state),
         #'data_queue_size': float(pkt.data_queue_size),
         #'sequence_number': float(pkt.sequence_number),
@@ -396,7 +400,7 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
 
 def _write_csv_on_exit():
     """Flush any remaining buffered packets to the CSV file and close it."""
-    global _csv_fh, _csv_writer, _csv_path
+    global _csv_fh, _csv_writer, _csv_path, _csv_rows_written
 
     with _csv_store_lock:
         remaining = list(_csv_store)
@@ -446,20 +450,137 @@ def _reconnect_and_resubscribe():
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
 
+_MOTOR_SENSORS: dict[str, str] = {
+    'gnc_fuel_target_deg': 'Fuel Desired',
+    'fuel_encoder_pos_deg': 'Fuel Actual',
+    'gnc_lox_target_deg': 'LOX Desired',
+    'lox_encoder_pos_deg': 'LOX Actual',
+}
+
+
+def _parse_plot_time(raw_time: str):
+    try:
+        return int(raw_time)
+    except ValueError:
+        return float(raw_time)
+
+
+def _read_plot_series(csv_path: pathlib.Path) -> tuple[dict[str, list[tuple[float, float]]], list]:
+    series = {}
+    times = []
+
+    with csv_path.open(newline='') as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                timestamp = _parse_plot_time(row['time'])
+                value = float(row['value'])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            sensor = row.get('sensor', '')
+            if not sensor:
+                continue
+
+            times.append(timestamp)
+            series.setdefault(sensor, []).append((timestamp, value))
+
+    return series, times
+
+
+def _time_units_per_second(time_values: list) -> float:
+    """Support old seconds CSVs, epoch ns CSVs, and real-board boot ns CSVs."""
+    if not time_values:
+        return 1.0
+
+    time_min = min(time_values)
+    time_max = max(time_values)
+    max_abs_time = max(abs(t) for t in time_values)
+    span = time_max - time_min
+    if max_abs_time >= 1_000_000_000_000 or span >= 1_000_000:
+        return 1_000_000_000.0
+    return 1.0
+
+
+def _generate_plots(csv_path: pathlib.Path) -> None:
+    try:
+        import plotly.graph_objects as go
+        series, times = _read_plot_series(csv_path)
+        if not series:
+            return
+
+        t0 = min(times)
+        time_units_per_second = _time_units_per_second(times)
+
+        # Plot 1 — all sensors
+        fig_all = go.Figure()
+        for sensor, points in series.items():
+            points.sort(key=lambda point: point[0])
+            fig_all.add_trace(go.Scatter(
+                x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                y=[value for _, value in points],
+                mode='lines',
+                name=sensor,
+            ))
+        fig_all.update_layout(
+            title='All Sensors',
+            xaxis_title='Time (s)',
+            yaxis_title='Value',
+            hovermode='x unified',
+        )
+
+        # Plot 2 — desired vs actual motor position
+        fig_motor = go.Figure()
+        for sensor, label in _MOTOR_SENSORS.items():
+            points = series.get(sensor, [])
+            if not points:
+                continue
+            points.sort(key=lambda point: point[0])
+            fig_motor.add_trace(go.Scatter(
+                x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                y=[value for _, value in points],
+                mode='lines',
+                name=label,
+            ))
+        fig_motor.update_layout(
+            title='Motor Traces — Desired vs Actual',
+            xaxis_title='Time (s)',
+            yaxis_title='Position (°)',
+            hovermode='x unified',
+        )
+
+        plots_dir = csv_path.parent / 'plots'
+        plots_dir.mkdir(exist_ok=True)
+        stem = csv_path.stem
+        all_html = plots_dir / (stem + '_all.html')
+        motor_html = plots_dir / (stem + '_motor.html')
+        fig_all.write_html(str(all_html))
+        fig_motor.write_html(str(motor_html))
+        console.print(
+            f'  {THEME["icon_ok"]} [bold green]Plots saved →[/bold green]\n'
+            f'  [dim]{all_html.resolve()}[/dim]\n'
+            f'  [dim]{motor_html.resolve()}[/dim]'
+        )
+    except Exception as e:
+        console.print(f'  [bold red]Plot generation failed:[/bold red] {e}')
+
+
 def _close_csv():
     global _csv_fh, _csv_path, _csv_writer, _csv_rows_written
     if _csv_fh is None:
         return
     _csv_fh.close()
     _csv_fh = None
+    path = _csv_path
     console.print(
         f'\n  {THEME["icon_ok"]} [bold green]CSV saved →[/bold green] '
-        f'[dim]{_csv_path.resolve()}[/dim]\n'
+        f'[dim]{path.resolve()}[/dim]\n'
         f'  [{THEME["muted"]}]{_csv_rows_written:,} rows written[/{THEME["muted"]}]'
     )
     _csv_path = None
     _csv_writer = None
     _csv_rows_written = 0
+    _generate_plots(path)
 
 
 def _flush_loop():
@@ -545,14 +666,14 @@ def _build_fuel_valve_graph() -> Panel:
     plt.theme('dark')
     plt.plot(
         times,
-        [p.fuel_valve.driver_setpoint_pos_deg for p in history],
-        label='Driver',
+        [p.fuel_valve_command.target_deg for p in history],
+        label='Target',
         color=(50, 100, 220),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.fuel_valve.encoder_pos_deg for p in history],
+        [p.fuel_valve_status.encoder_pos_deg for p in history],
         label='Encoder',
         color=(255, 220, 0),
         marker='braille',
@@ -578,14 +699,14 @@ def _build_lox_valve_graph() -> Panel:
     plt.theme('dark')
     plt.plot(
         times,
-        [p.lox_valve.driver_setpoint_pos_deg for p in history],
-        label='Driver',
+        [p.lox_valve_command.target_deg for p in history],
+        label='Target',
         color=(0, 200, 220),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.lox_valve.encoder_pos_deg for p in history],
+        [p.lox_valve_status.encoder_pos_deg for p in history],
         label='Encoder',
         color=(220, 50, 50),
         marker='braille',
@@ -612,7 +733,7 @@ def _build_fuel_graph() -> Panel:
     plt.plot(
         times,
         [p.analog_sensors.pt006 for p in history],
-        label='PT-202',
+        label='PT-006',
         color=(255, 220, 0),
         marker='braille',
     )
@@ -671,38 +792,38 @@ def _build_lox_graph() -> Panel:
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
     plt.plot(
-        times, [p.pts.pt006 for p in history], label='PT-102', color=(255, 220, 0), marker='braille'
+        times, [p.analog_sensors.pt006 for p in history], label='PT-006', color=(255, 220, 0), marker='braille'
     )
     plt.plot(
-        times, [p.pts.pt103 for p in history], label='PT-103', color=(50, 200, 50), marker='braille'
+        times, [p.analog_sensors.pt103 for p in history], label='PT-103', color=(50, 200, 50), marker='braille'
     )
     plt.plot(
         times,
-        [p.pts.pto401 for p in history],
+        [p.analog_sensors.pto401 for p in history],
         label='PTO-401',
         color=(255, 140, 0),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.pts.ptc401 for p in history],
+        [p.analog_sensors.ptc401 for p in history],
         label='PTC-401',
         color=(0, 200, 220),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.pts.ptc402 for p in history],
+        [p.analog_sensors.ptc402 for p in history],
         label='PTC-402',
         color=(200, 50, 200),
         marker='braille',
     )
     lox_vals = (
-        [p.pts.pt006 for p in history]
-        + [p.pts.pt103 for p in history]
-        + [p.pts.pto401 for p in history]
-        + [p.pts.ptc401 for p in history]
-        + [p.pts.ptc402 for p in history]
+        [p.analog_sensors.pt006 for p in history]
+        + [p.analog_sensors.pt103 for p in history]
+        + [p.analog_sensors.pto401 for p in history]
+        + [p.analog_sensors.ptc401 for p in history]
+        + [p.analog_sensors.ptc402 for p in history]
     )
     plt.ylim(30, max(lox_vals) * 1.05 if max(lox_vals) > 30 else 60)
     plt.xlabel('t (s)')
