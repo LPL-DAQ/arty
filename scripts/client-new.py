@@ -484,13 +484,6 @@ def _flush_loop():
     while True:
         time.sleep(1)
 
-        # ── Detect sequence end (only IDLE — capture ABORT/UNKNOWN data) ─────
-        pkt = latest_packet
-        if _seq_recording and pkt is not None:
-            if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
-                _seq_recording = False
-                _close_csv()
-
         # ── CSV incremental flush ────────────────────────────────────────────
         with _csv_store_lock:
             if _csv_store:
@@ -501,7 +494,7 @@ def _flush_loop():
 
         if csv_batch:
             global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
-            if _csv_fh is None:
+            if _csv_fh is None and _seq_recording:
                 _csv_path = (
                     pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
                 )
@@ -509,14 +502,22 @@ def _flush_loop():
                 _csv_fh = open(_csv_path, 'w', newline='')
                 _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
                 _csv_writer.writeheader()
-            try:
-                for recv_time, pkt in csv_batch:
-                    for row in _packet_to_csv_rows(recv_time, pkt):
-                        _csv_writer.writerow(row)
-                        _csv_rows_written += 1
-                _csv_fh.flush()
-            except Exception as e:
-                console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+            if _csv_fh is not None:
+                try:
+                    for recv_time, pkt in csv_batch:
+                        for row in _packet_to_csv_rows(recv_time, pkt):
+                            _csv_writer.writerow(row)
+                            _csv_rows_written += 1
+                    _csv_fh.flush()
+                except Exception as e:
+                    console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+
+        # ── Detect sequence end (after flush so last data lands in current file)
+        pkt = latest_packet
+        if _seq_recording and pkt is not None:
+            if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
+                _seq_recording = False
+                _close_csv()
 
 
 # ── Live status display ──────────────────────────────────────────────────────
