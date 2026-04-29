@@ -365,6 +365,11 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     #             'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
     #         }
     #     )
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
+        row['alpha'] = _opt(rtm, 'alpha')
+        row['clamped_change_alpha_cmd'] = _opt(rtm, 'clamped_change_alpha_cmd')
 
     return row
 
@@ -461,6 +466,8 @@ _USEFUL_SENSORS: dict[str, str] = {
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
+    'predicted_thrust': 'Predicted Thrust',
+
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
@@ -468,6 +475,8 @@ _MOTOR_SENSORS: dict[str, str] = {
     'fuel_encoder_pos_deg': 'Fuel Actual',
     'gnc_lox_target_deg': 'LOX Desired',
     'lox_encoder_pos_deg': 'LOX Actual',
+    'alpha': 'Alpha',
+    'clamped_change_alpha_cmd': 'dAlpha Clamped',
 }
 
 
