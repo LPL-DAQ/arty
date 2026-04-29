@@ -103,13 +103,11 @@ static void calibration_seek_hardstop(ThrottleValveCommand& command, float valve
 
     if (!refs.found_stop && std::abs(valve_pos - (refs.starting_error + valve_pos_enc)) <= cal_pos_error_limit) {
         refs.target_position += cal_step_size / (cal_rep_counter + 1);
-        command.set_pos = true;
         command.target_deg = refs.target_position;
     }
     else {
         refs.found_stop = true;
         refs.hardstop_position = valve_pos_enc;
-        command.set_pos = true;
         command.target_deg = valve_pos_enc;
     }
 
@@ -150,7 +148,6 @@ static void calibration_repower(ThrottleValveCommand& command, uint32_t timestam
 static void calibration_complete(ThrottleValveCommand& command, uint32_t timestamp, CalibrationValveRefs refs)
 {
     command.enable = true;
-    command.set_pos = true;
     command.target_deg = 95.0f;
 
     refs.found_stop = false;
@@ -177,18 +174,15 @@ static void calibration_measure(ThrottleValveCommand& command, float valve_pos, 
 
     if (valve_pos_enc > 10.0f) {
         refs.target_position -= cal_step_size * 3;
-        command.set_pos = true;
         command.target_deg = refs.target_position;
     }
     else if (!refs.found_stop && std::abs(valve_pos - (refs.starting_error + valve_pos_enc)) <= cal_pos_error_limit) {
         refs.target_position -= cal_step_size;
-        command.set_pos = true;
         command.target_deg = refs.target_position;
     }
     else {
         refs.found_stop = true;
         refs.hardstop_position = valve_pos_enc;
-        command.set_pos = true;
         command.target_deg = valve_pos_enc;
     }
 
@@ -449,8 +443,8 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
 
     return {
-        ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = fuel_valve_command_deg},
-        ThrottleValveCommand{.enable = true, .set_pos = true, .target_deg = lox_valve_command_deg}};
+        ThrottleValveCommand{.enable = true, .target_deg = fuel_valve_command_deg},
+        ThrottleValveCommand{.enable = true, .target_deg = lox_valve_command_deg}};
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.

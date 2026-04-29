@@ -37,7 +37,6 @@ template <
 class ThrottleValve {
 private:
     enum class ValveState {
-        STOPPED,
         RUNNING,
         OFF,
     };
@@ -52,8 +51,8 @@ private:
     static consteval const char* kind_to_prefix(ValveKind valve_kind);
 
     inline static k_mutex motor_lock = {};
-    inline static ValveState state = ValveState::STOPPED;
-    inline static ValveState prevState = ValveState::STOPPED;
+    inline static ValveState state = ValveState::RUNNING;
+    inline static ValveState prevState = ValveState::RUNNING;
 
     inline static float velocity = 0;
     inline static float acceleration = 0;
@@ -82,7 +81,6 @@ public:
     static std::expected<void, Error> tick(const ThrottleValveCommand& command);
 
     static void move(float target_deg);
-    static void stop();
     static void reset_pos(float new_pos);
     static void power_on(bool on);
 
@@ -322,7 +320,6 @@ std::expected<void, Error>
 ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::tick(const ThrottleValveCommand& command)
 {
     const auto& on = command.enable;
-    const auto& set_pos = command.set_pos;
     const auto& target_deg = command.target_deg;
 
     previous_encoder_position = current_encoder_position;
@@ -333,19 +330,13 @@ ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_
     if (!on) {
         state = ValveState::OFF;
     }
-    else if (set_pos) {
-        state = ValveState::RUNNING;
-    }
     else {
-        state = ValveState::STOPPED;
+        state = ValveState::RUNNING;
     }
 
     switch (state) {
     case ValveState::OFF:
         power_on(false);
-        break;
-    case ValveState::STOPPED:
-        stop();
         break;
     case ValveState::RUNNING:
         move(target_deg);
@@ -401,25 +392,6 @@ void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, e
     if (err) [[unlikely]] {
         LOG_ERR("%s Failed to start pulse counter: err %d", kind_to_prefix(kind), err);
     }
-}
-
-template <
-    ValveKind kind,
-    gpio_dt_spec pul_dt_init,
-    gpio_dt_spec dir_dt_init,
-    gpio_dt_spec ena_dt_init,
-    gpio_dt_spec enc_a_dt_init,
-    gpio_dt_spec enc_b_dt_init,
-    const device* control_counter_dt_init>
-void ThrottleValve<kind, pul_dt_init, dir_dt_init, ena_dt_init, enc_a_dt_init, enc_b_dt_init, control_counter_dt_init>::stop()
-{
-    power_on(true);
-
-    MutexGuard motor_guard{&motor_lock};
-    counter_stop(control_counter);
-    acceleration = 0;
-    velocity = 0;
-    state = ValveState::STOPPED;
 }
 
 /// Reset internal and encoder positions to a new value without moving the motor. The current physical valve position
@@ -592,4 +564,6 @@ typedef ThrottleValve<
     DEVICE_DT_GET(DT_ALIAS(lox_valve_stepper_pulse_counter))>
     LoxValve;
 
-#endif  // CONFIG_THROTTLE_VALVEs
+std::expected<void, Error> handle_throttle_reset_valve_position(const ThrottleResetValvePositionRequest& req);
+
+#endif  // CONFIG_THROTTLE_VALVES
