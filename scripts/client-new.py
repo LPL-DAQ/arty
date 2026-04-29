@@ -450,6 +450,17 @@ def _reconnect_and_resubscribe():
     except Exception as e:
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
+_USEFUL_SENSORS: dict[str, str] = {
+    'pt004': 'PT-004',
+    'pt005': 'PT-005',
+    'pt006': 'PT-006',
+    'pt103': 'PT-103',
+    'pt203': 'PT-203',
+    'ptf401': 'PTF-401',
+    'pto401': 'PTO-401',
+    'ptc401': 'PTC-401',
+    'ptc402': 'PTC-402',
+}
 
 _MOTOR_SENSORS: dict[str, str] = {
     'gnc_fuel_target_deg': 'Fuel Desired',
@@ -505,6 +516,7 @@ def _time_units_per_second(time_values: list) -> float:
 
 def _generate_plots(csv_path: pathlib.Path) -> None:
     try:
+        from plotly.subplots import make_subplots
         import plotly.graph_objects as go
         series, times = _read_plot_series(csv_path)
         if not series:
@@ -513,56 +525,51 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
         t0 = min(times)
         time_units_per_second = _time_units_per_second(times)
 
-        # Plot 1 — all sensors
-        fig_all = go.Figure()
-        for sensor, points in series.items():
+        fig = make_subplots(
+            rows=2, cols=1,
+            subplot_titles=('All Sensors', 'Motor Traces — Desired vs Actual'),
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+        )
+
+        for sensor, label in _USEFUL_SENSORS.items():
+            points = series.get(sensor, [])
+            if not points:
+                continue
             points.sort(key=lambda point: point[0])
-            fig_all.add_trace(go.Scatter(
+            fig.add_trace(go.Scatter(
                 x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
                 y=[value for _, value in points],
                 mode='lines',
-                name=sensor,
-            ))
-        fig_all.update_layout(
-            title='All Sensors',
-            xaxis_title='Time (s)',
-            yaxis_title='Value',
-            hovermode='x unified',
-        )
+                name=label,
+            ), row=1, col=1)
 
-        # Plot 2 — desired vs actual motor position
-        fig_motor = go.Figure()
         for sensor, label in _MOTOR_SENSORS.items():
             points = series.get(sensor, [])
             if not points:
                 continue
             points.sort(key=lambda point: point[0])
-            fig_motor.add_trace(go.Scatter(
+            fig.add_trace(go.Scatter(
                 x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
                 y=[value for _, value in points],
                 mode='lines',
                 name=label,
-            ))
-        fig_motor.update_layout(
-            title='Motor Traces — Desired vs Actual',
-            xaxis_title='Time (s)',
-            yaxis_title='Position (°)',
-            hovermode='x unified',
-        )
+            ), row=2, col=1)
+
+        fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+        fig.update_yaxes(title_text='Value', row=1, col=1)
+        fig.update_yaxes(title_text='Position (°)', row=2, col=1)
+        fig.update_layout(hovermode='x unified', height=800)
 
         plots_dir = csv_path.parent / 'plots'
         plots_dir.mkdir(exist_ok=True)
         stem = csv_path.stem
-        all_html = plots_dir / (stem + '_all.html')
-        motor_html = plots_dir / (stem + '_motor.html')
-        fig_all.write_html(str(all_html))
-        fig_motor.write_html(str(motor_html))
-        webbrowser.open(all_html.resolve().as_uri())
-        webbrowser.open(motor_html.resolve().as_uri())
+        out_html = plots_dir / (stem + '.html')
+        fig.write_html(str(out_html))
+        fig.show(renderer='browser')
         console.print(
-            f'  {THEME["icon_ok"]} [bold green]Plots saved →[/bold green]\n'
-            f'  [dim]{all_html.resolve()}[/dim]\n'
-            f'  [dim]{motor_html.resolve()}[/dim]'
+            f'  {THEME["icon_ok"]} [bold green]Plot saved →[/bold green]\n'
+            f'  [dim]{out_html.resolve()}[/dim]'
         )
     except Exception as e:
         console.print(f'  [bold red]Plot generation failed:[/bold red] {e}')
