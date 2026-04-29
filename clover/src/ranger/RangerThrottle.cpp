@@ -18,9 +18,9 @@ K_MUTEX_DEFINE(ranger_throttle_lock);
 static constexpr float DEFAULT_FUEL_POS = 81.0f;
 static constexpr float DEFAULT_LOX_POS = 74.0f;
 
-static bool halt = false;
-static ThrottleValveCommand previous_fuel_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_FUEL_POS};
-static ThrottleValveCommand previous_lox_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_LOX_POS};
+// static bool halt = false;
+// static ThrottleValveCommand previous_fuel_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_FUEL_POS};
+// static ThrottleValveCommand previous_lox_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_LOX_POS};
 
 
 static constexpr float FUEL_ENGINE_INLET_LINE_LOSS_PSI = 21.0f;
@@ -244,9 +244,9 @@ void RangerThrottle::reset()
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     low_ptc_start_time_ms = 0;
     alpha = -1.0f;
-    halt = false;
-    previous_fuel_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_FUEL_POS};
-    previous_lox_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_LOX_POS};
+    // halt = false;
+    // previous_fuel_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_FUEL_POS};
+    // previous_lox_command = ThrottleValveCommand{.enable = true, .target_deg = DEFAULT_LOX_POS};
 }
 
 // TODO: test the re-done single valve calibration. Also, make it not super slow
@@ -335,7 +335,7 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     bool pt203_valid = (analog_sensors.pt203 >= MIN_threshold && analog_sensors.pt203 <= MAX_threshold_PT2k) && analog_sensors.has_pt203;
 
     float p_ch = 0.0f;
-    halt = false;
+    // halt = false;
     if (ptc401_valid && ptc402_valid) {
         // Both are healthy: Take the average
         p_ch = (ptc401_val + ptc402_val) / 2.0f;
@@ -349,7 +349,7 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_ch = ptc402_val;
     }
     else {
-        halt = true;
+        // halt = true;
         LOG_INF("PTC-401 and PTC-402 both invalid -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val), static_cast<double>(ptc402_val));
         // return std::unexpected(
         //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val), static_cast<double>(ptc402_val)));
@@ -370,7 +370,7 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     }
     else {
         // Both failed: Trigger Abort
-        halt = true;
+        // halt = true;
         LOG_INF("PT-203 and PTF-401 both invalid -- PT-203 has %f, PTF-401 has %f", static_cast<double>(pt203_val), static_cast<double>(ptf401_val));
         // return std::unexpected(
         //     Error::from_cause("missing PT-203 / PTF-401 -- PT-203 has %f, PTF-401 has %f", static_cast<double>(pt203_val), static_cast<double>(ptf401_val)));
@@ -390,7 +390,7 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_inj_lox = pto401_val;
     }
     else {
-        halt = true;
+        // halt = true;
         LOG_INF("PT-103 and PTO-401 both invalid -- PT-103 has %f, PTO-401 has %f", static_cast<double>(pt103_val), static_cast<double>(pto401_val));
         // return std::unexpected(
         //     Error::from_cause("missing PT-103 / PTO-401 -- PT-103 has %f, PTO-401 has %f", static_cast<double>(pt103_val), static_cast<double>(pto401_val)));
@@ -429,9 +429,9 @@ static std::tuple<ThrottleValveCommand, ThrottleValveCommand>
 active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics)
 {
     // if we are halted, control goes on pause
-    if (halt) {
-        return {previous_fuel_command, previous_lox_command};
-    }
+    // if (halt) {
+    //     return {previous_fuel_command, previous_lox_command};
+    // }
     float dt = Controller::SEC_PER_CONTROL_TICK;
     float thrust_error = thrust_command_lbf - predicted_thrust_lbf;
     float change_alpha_cmd = THRUST_KP * thrust_error;
@@ -461,11 +461,11 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     metrics.alpha = alpha_state;
     metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
 
-    auto fuel_command = ThrottleValveCommand{.enable = true, .target_deg = fuel_valve_command_deg};
+    auto fuel_command = ThrottleValveCommand{.enable = true,  .target_deg = fuel_valve_command_deg};
     auto lox_command = ThrottleValveCommand{.enable = true, .target_deg = lox_valve_command_deg};
 
-    previous_fuel_command = fuel_command;
-    previous_lox_command = lox_command;
+    // previous_fuel_command = fuel_command;
+    // previous_lox_command = lox_command;
 
     return {
         fuel_command,
