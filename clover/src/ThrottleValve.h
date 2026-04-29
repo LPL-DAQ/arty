@@ -564,6 +564,4 @@ typedef ThrottleValve<
     DEVICE_DT_GET(DT_ALIAS(lox_valve_stepper_pulse_counter))>
     LoxValve;
 
-std::expected<void, Error> handle_throttle_reset_valve_position(const ThrottleResetValvePositionRequest& req);
-
 #endif  // CONFIG_THROTTLE_VALVES
