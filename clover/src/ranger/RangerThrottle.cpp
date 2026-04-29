@@ -9,6 +9,9 @@
 #include "../lut/thrust_to_lox.h"
 #include <cmath>
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(RangerThrottle, CONFIG_LOG_DEFAULT_LEVEL);
 
 K_MUTEX_DEFINE(ranger_throttle_lock);
 
@@ -338,8 +341,8 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_ch = ptc402_val;
     }
     else {
-        return std::unexpected(
-            Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val), static_cast<double>(ptc402_val)));
+        // return std::unexpected(
+        //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val), static_cast<double>(ptc402_val)));
     }
 
     float p_inj_fuel;
@@ -357,8 +360,8 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     }
     else {
         // Both failed: Trigger Abort
-        return std::unexpected(
-            Error::from_cause("missing PT-203 / PTF-401 -- PT-203 has %f, PTF-401 has %f", static_cast<double>(pt203_val), static_cast<double>(ptf401_val)));
+        // return std::unexpected(
+        //     Error::from_cause("missing PT-203 / PTF-401 -- PT-203 has %f, PTF-401 has %f", static_cast<double>(pt203_val), static_cast<double>(ptf401_val)));
     }
 
     float p_inj_lox;
@@ -376,8 +379,8 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     }
     else {
         // Both failed: Trigger Abort
-        return std::unexpected(
-            Error::from_cause("missing PT-103 / PTO-401 -- PT-103 has %f, PTO-401 has %f", static_cast<double>(pt103_val), static_cast<double>(pto401_val)));
+        // return std::unexpected(
+        //     Error::from_cause("missing PT-103 / PTO-401 -- PT-103 has %f, PTO-401 has %f", static_cast<double>(pt103_val), static_cast<double>(pto401_val)));
     }
 
     // 3. Calculate mass flows
@@ -407,8 +410,8 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     metrics.mdot_fuel = mdot_f;
     metrics.mdot_lox = mdot_lox;
 
-    // return predicted_thrust_lbf;
-    return 0.0f;
+    return predicted_thrust_lbf;
+    // return 0.0f;
 }
 
 static std::tuple<ThrottleValveCommand, ThrottleValveCommand>
@@ -423,7 +426,8 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     // 10. Integrate PID to get alpha
     if (alpha_state == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
-        alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+        alpha_state = 0.5f;
+        // alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
     }
     alpha_state += clamped_change_alpha_cmd;
     alpha_state = std::clamp(alpha_state, MIN_ALPHA, MAX_ALPHA);
@@ -456,6 +460,7 @@ RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_
 
     auto predicted_thrust = thrust_predictor(analog_sensors, metrics);
     if (!predicted_thrust) {
+        LOG_INF("Thrust predictor failed");
         return std::unexpected(predicted_thrust.error());
     }
 
