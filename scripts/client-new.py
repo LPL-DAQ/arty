@@ -26,7 +26,6 @@ from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-import clickhouse_connect
 import polars as pl
 from collections import deque
 import plotext as plt
@@ -70,12 +69,6 @@ ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
 
-# ── ClickHouse config ──────────────────────────────f──────────────────────────
-CH_HOST = '172.233.143.186'
-CH_USER = 'writer'
-CH_PASSWORD = 'ce8XpzhRGhsvBxCPHDTcvh6DMWhb3jyxgmQMNLrsKaCqtZvKf2'
-CH_DATABASE = 'lpl'
-
 # CSV columns mirror the unpivoted ClickHouse raw_sensors schema exactly:
 #   time   — nanosecond-epoch Int64  (ClickHouse 'time')
 #   sensor — field name string       (ClickHouse 'sensor')
@@ -95,9 +88,6 @@ latest_packet: clover_pb2.DataPacket | None = None
 packet_lock = threading.Lock()
 
 data_sock = None
-
-_packet_buffer: list = []
-_buffer_lock = threading.Lock()
 
 _csv_store: list = []  # list of (recv_time: float, pkt: DataPacket); drained each second
 _csv_store_lock = threading.Lock()
@@ -452,56 +442,6 @@ def _reconnect_and_resubscribe():
 
 
 def _flush_loop():
-    """Background thread — drains the packet buffer into ClickHouse every second."""
-    global _last_packet_time
-    ch = None
-    while True:
-        time.sleep(1222222222.0)
-
-        if ch is None:
-            try:
-                ch = clickhouse_connect.get_client(
-                    host=CH_HOST,
-                    username=CH_USER,
-                    password=CH_PASSWORD,
-                    database=CH_DATABASE,
-                )
-            except Exception as e:
-                console.print(f'  [bold red]ClickHouse connect error:[/bold red] {e}')
-                continue
-
-        with _buffer_lock:
-            if not _packet_buffer:
-                continue
-            batch = list(_packet_buffer)
-            _packet_buffer.clear()
-
-        try:
-            rows = [_packet_to_row(t, p) for t, p in batch]
-            df = (
-                pl.DataFrame(rows)
-                .unpivot(index=['time'], variable_name='sensor', value_name='value')
-                .drop_nulls('value')
-                .with_columns(
-                    pl.from_epoch(pl.col('time') * 1e6, time_unit='us').alias('time'),
-                    pl.col('value').cast(pl.Float64),
-                    pl.when(pl.col('sensor') == 'gnc_state')
-                    .then(
-                        pl.col('value').map_elements(
-                            lambda v: _STATE_NAMES.get(v, ''), return_dtype=pl.String
-                        )
-                    )
-                    .otherwise(pl.lit(''))
-                    .alias('event'),
-                    pl.lit('atlas').alias('system'),
-                    pl.lit('gnc').alias('source'),
-                )
-            )
-            ch.insert_df_arrow('raw_sensors', df)
-        except Exception as e:
-            console.print(f'  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}')
-            ch = None
-
         # ── CSV incremental flush ────────────────────────────────────────────
         with _csv_store_lock:
             if _csv_store:
