@@ -21,6 +21,7 @@ import sys
 import time
 import csv
 import pathlib
+import webbrowser
 from google.protobuf import text_format
 from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
@@ -556,6 +557,8 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
         motor_html = plots_dir / (stem + '_motor.html')
         fig_all.write_html(str(all_html))
         fig_motor.write_html(str(motor_html))
+        webbrowser.open(all_html.resolve().as_uri())
+        webbrowser.open(motor_html.resolve().as_uri())
         console.print(
             f'  {THEME["icon_ok"]} [bold green]Plots saved →[/bold green]\n'
             f'  [dim]{all_html.resolve()}[/dim]\n'
