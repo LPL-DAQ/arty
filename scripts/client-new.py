@@ -1,3 +1,14 @@
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#     "protobuf",
+#     "rich",
+#     "prompt-toolkit",
+#     "polars",
+#     "plotext",
+# ]
+# ///
+
 # improved CLI
 # changes made AFTER .proto file updates
 
@@ -64,7 +75,7 @@ FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 # ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP   = "192.168.0.150"      # fake_telemetry.py
+ZEPHYR_IP   = "127.0.0.1"          # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -95,6 +106,7 @@ _csv_path: pathlib.Path | None = None  # set on first write
 _csv_fh = None  # open file handle
 _csv_writer = None  # csv.DictWriter bound to _csv_fh
 _csv_rows_written: int = 0
+_seq_recording: bool = False
 
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
@@ -131,7 +143,6 @@ def listen_for_telemetry():
             for lock, name in (
                 (packet_lock, 'packet_lock'),
                 (_last_packet_lock, '_last_packet_lock'),
-                (_buffer_lock, '_buffer_lock'),
                 (_csv_store_lock, '_csv_store_lock'),
                 (_graph_lock, '_graph_lock'),
             ):
@@ -147,10 +158,9 @@ def listen_for_telemetry():
                         latest_packet = packet
                     elif lock is _last_packet_lock:
                         _last_packet_time = recv_time
-                    elif lock is _buffer_lock:
-                        _packet_buffer.append((recv_time, packet))
                     elif lock is _csv_store_lock:
-                        _csv_store.append((recv_time, packet))
+                        if _seq_recording:
+                            _csv_store.append((recv_time, packet))
                     else:
                         _graph_history.append(packet)
                 finally:
@@ -382,14 +392,14 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
 
 def _write_csv_on_exit():
     """Flush any remaining buffered packets to the CSV file and close it."""
-    global _csv_fh, _csv_writer, _csv_rows_written, _csv_path
+    global _csv_fh, _csv_writer, _csv_path
 
     with _csv_store_lock:
         remaining = list(_csv_store)
         _csv_store.clear()
 
+    # Sequence started but flush_loop never ran — create the file now
     if remaining and _csv_fh is None:
-        # Client exited before the first flush_loop drain (ran very briefly)
         _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
         _csv_path.parent.mkdir(exist_ok=True)
         _csv_fh = open(_csv_path, 'w', newline='')
@@ -397,9 +407,6 @@ def _write_csv_on_exit():
         _csv_writer.writeheader()
 
     if _csv_fh is None:
-        console.print(
-            f'  [{THEME["muted"]}]No telemetry received — CSV not written.[/{THEME["muted"]}]'
-        )
         return
 
     for recv_time, pkt in remaining:
@@ -410,13 +417,7 @@ def _write_csv_on_exit():
         except Exception as e:
             console.print(f'  [bold red]CSV row error:[/bold red] {e}')
 
-    _csv_fh.close()
-    _csv_fh = None
-    console.print(
-        f'\n  {THEME["icon_ok"]} [bold green]CSV saved →[/bold green] '
-        f'[dim]{_csv_path.resolve()}[/dim]\n'
-        f'  [{THEME["muted"]}]{_csv_rows_written:,} rows written[/{THEME["muted"]}]'
-    )
+    _close_csv()
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
@@ -441,7 +442,34 @@ def _reconnect_and_resubscribe():
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
 
+def _close_csv():
+    global _csv_fh, _csv_path, _csv_writer, _csv_rows_written
+    if _csv_fh is None:
+        return
+    _csv_fh.close()
+    _csv_fh = None
+    console.print(
+        f'\n  {THEME["icon_ok"]} [bold green]CSV saved →[/bold green] '
+        f'[dim]{_csv_path.resolve()}[/dim]\n'
+        f'  [{THEME["muted"]}]{_csv_rows_written:,} rows written[/{THEME["muted"]}]'
+    )
+    _csv_path = None
+    _csv_writer = None
+    _csv_rows_written = 0
+
+
 def _flush_loop():
+    global _seq_recording
+    while True:
+        time.sleep(1)
+
+        # ── Detect sequence end (only IDLE — capture ABORT/UNKNOWN data) ─────
+        pkt = latest_packet
+        if _seq_recording and pkt is not None:
+            if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
+                _seq_recording = False
+                _close_csv()
+
         # ── CSV incremental flush ────────────────────────────────────────────
         with _csv_store_lock:
             if _csv_store:
@@ -1614,7 +1642,9 @@ def cmd_start_throttle_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_valve_sequence.SetInParent()
-    send_request(req, 'START_THROTTLE_VALVE_SEQUENCE')
+    if send_request(req, 'START_THROTTLE_VALVE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 def cmd_load_throttle_sequence():
@@ -1654,7 +1684,9 @@ def cmd_start_throttle_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_sequence.SetInParent()
-    send_request(req, 'START_THROTTLE_SEQUENCE')
+    if send_request(req, 'START_THROTTLE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 def cmd_configure_flight_controller_gains():
@@ -1811,7 +1843,9 @@ def cmd_start_tvc_sequence():
         return
     req = clover_pb2.Request()
     req.start_tvc_sequence.SetInParent()
-    send_request(req, 'START_TVC_SEQUENCE')
+    if send_request(req, 'START_TVC_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # TODO: This is not a linear or sin trace
@@ -1855,7 +1889,9 @@ def cmd_start_rcs_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_valve_sequence.SetInParent()
-    send_request(req, 'START_RCS_VALVE_SEQUENCE')
+    if send_request(req, 'START_RCS_VALVE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 def cmd_load_rcs_sequence():
@@ -1893,7 +1929,9 @@ def cmd_start_rcs_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_sequence.SetInParent()
-    send_request(req, 'START_RCS_SEQUENCE')
+    if send_request(req, 'START_RCS_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # TODO: test if this works
@@ -1944,7 +1982,9 @@ def cmd_start_static_fire_sequence():
         return
     req = clover_pb2.Request()
     req.start_static_fire_sequence.SetInParent()
-    send_request(req, 'START_STATIC_FIRE_SEQUENCE')
+    if send_request(req, 'START_STATIC_FIRE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # TODO: test if this works
@@ -1996,7 +2036,9 @@ def cmd_start_flight_sequence():
         return
     req = clover_pb2.Request()
     req.start_flight_sequence.SetInParent()
-    send_request(req, 'START_FLIGHT_SEQUENCE')
+    if send_request(req, 'START_FLIGHT_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
