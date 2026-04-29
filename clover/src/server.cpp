@@ -233,11 +233,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
 
         case Request_throttle_reset_valve_position_tag: {
-#ifdef CONFIG_THROTTLE_VALVES
-            cmd_result = handle_throttle_reset_valve_position(request.payload.throttle_reset_valve_position);
-#else
-            cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_THROTTLE_VALVES));
-#endif  // CONFIG_THROTTLE_VALVES
+            cmd_result = Controller::handle_throttle_reset_valve_position(request.payload.throttle_reset_valve_position);
             break;
         }
 

@@ -25,7 +25,7 @@
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 20, 1);
+K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
 
 // Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
@@ -745,6 +745,36 @@ DataPacket Controller::get_next_data_packet()
 }
 
 // Request handlers.
+
+/// Reset valve position
+std::expected<void, Error> Controller::handle_throttle_reset_valve_position(const ThrottleResetValvePositionRequest& req)
+{
+    ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
+
+    MutexGuard guard{&controller_state_lock};
+
+    if (req.valve == ThrottleValveType_FUEL) {
+        LOG_INF("Resetting fuel valve to %f", static_cast<double>(req.new_pos_deg));
+        prev_fuel_valve_command = ThrottleValveCommand{
+            .enable = true,
+            .target_deg = req.new_pos_deg,
+        };
+        FuelValve::reset_pos(req.new_pos_deg);
+    }
+    else if (req.valve == ThrottleValveType_LOX) {
+        LOG_INF("Resetting LOx valve to %f", static_cast<double>(req.new_pos_deg));
+        prev_lox_valve_command = ThrottleValveCommand{
+            .enable = true,
+            .target_deg = req.new_pos_deg,
+        };
+        LoxValve::reset_pos(req.new_pos_deg);
+    }
+    else {
+        return std::unexpected(Error::from_cause("Unknown valve type: %d", req.valve));
+    }
+
+    return {};
+}
 
 /// Abort, returning the system to a safe state.
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
