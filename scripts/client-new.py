@@ -212,127 +212,112 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     only emits values for fields present.
     """
     row = {
-        'time': recv_time,  # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
-        'state': float(pkt.state),
-        'data_queue_size': float(pkt.data_queue_size),
-        'sequence_number': float(pkt.sequence_number),
-        'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
-        'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
-        'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
-        'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
-        'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
-        'gnc_connected': float(pkt.gnc_connected),
-        'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
-        'daq_connected': float(pkt.daq_connected),
-        'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
+        'time': recv_time,
+        #'state': float(pkt.state),
+        #'data_queue_size': float(pkt.data_queue_size),
+        #'sequence_number': float(pkt.sequence_number),
+        #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
+        #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
+        #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        #'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
+        #'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
+        #'gnc_connected': float(pkt.gnc_connected),
+        #'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
+        #'daq_connected': float(pkt.daq_connected),
+        #'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
     }
 
     # Common analog/estimate data.
     row.update(
         {
-            'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
-            'pt001': _opt(pkt.analog_sensors, 'pt001'),
-            'pt002': _opt(pkt.analog_sensors, 'pt002'),
-            'pt003': _opt(pkt.analog_sensors, 'pt003'),
+            #'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
+            #'pt001': _opt(pkt.analog_sensors, 'pt001'),
+            #'pt002': _opt(pkt.analog_sensors, 'pt002'),
+            #'pt003': _opt(pkt.analog_sensors, 'pt003'),
             'pt004': _opt(pkt.analog_sensors, 'pt004'),
             'pt005': _opt(pkt.analog_sensors, 'pt005'),
             'pt006': _opt(pkt.analog_sensors, 'pt006'),
             'pt103': _opt(pkt.analog_sensors, 'pt103'),
             'pt203': _opt(pkt.analog_sensors, 'pt203'),
-            'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            #'pt301': _opt(pkt.analog_sensors, 'pt301'),
             'ptf401': _opt(pkt.analog_sensors, 'ptf401'),
             'pto401': _opt(pkt.analog_sensors, 'pto401'),
             'ptc401': _opt(pkt.analog_sensors, 'ptc401'),
             'ptc402': _opt(pkt.analog_sensors, 'ptc402'),
-            'tc002': _opt(pkt.analog_sensors, 'tc002'),
-            'tc102': _opt(pkt.analog_sensors, 'tc102'),
-            'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
-            'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
-            'tco401': _opt(pkt.analog_sensors, 'tco401'),
-            'ptg001': _opt(pkt.analog_sensors, 'ptg001'),
-            'ptg002': _opt(pkt.analog_sensors, 'ptg002'),
-            'ptg101': _opt(pkt.analog_sensors, 'ptg101'),
-            'est_pos_x_m': float(pkt.estimated_state.position.x),
-            'est_pos_y_m': float(pkt.estimated_state.position.y),
-            'est_pos_z_m': float(pkt.estimated_state.position.z),
-            'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
-            'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
-            'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
-            'est_yaw_deg': float(pkt.estimated_state.euler.x),
-            'est_pitch_deg': float(pkt.estimated_state.euler.y),
-            'est_roll_deg': float(pkt.estimated_state.euler.z),
-            'trace_time_msec': _opt(pkt, 'trace_time_msec'),
-            'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
-            'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
-            'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
-            'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
-            'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
-            'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
-            'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
-            'flight_pitch_accel_rad_s2': _opt(pkt, 'flight_pitch_accel_rad_s2'),
-            'flight_yaw_accel_rad_s2': _opt(pkt, 'flight_yaw_accel_rad_s2'),
-            'flight_z_accel_m_s2': _opt(pkt, 'flight_z_accel_m_s2'),
-            'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
-            'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
-            'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
-            'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
-            'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
+            #'tc002': _opt(pkt.analog_sensors, 'tc002'),
+            #'tc102': _opt(pkt.analog_sensors, 'tc102'),
+            #'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
+            #'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
+            #'tco401': _opt(pkt.analog_sensors, 'tco401'),
+            #'ptg001': _opt(pkt.analog_sensors, 'ptg001'),
+            #'ptg002': _opt(pkt.analog_sensors, 'ptg002'),
+            #'ptg101': _opt(pkt.analog_sensors, 'ptg101'),
+            #'est_pos_x_m': float(pkt.estimated_state.position.x),
+            #'est_pos_y_m': float(pkt.estimated_state.position.y),
+            #'est_pos_z_m': float(pkt.estimated_state.position.z),
+            #'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
+            #'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
+            #'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
+            #'est_yaw_deg': float(pkt.estimated_state.euler.x),
+            #'est_pitch_deg': float(pkt.estimated_state.euler.y),
+            #'est_roll_deg': float(pkt.estimated_state.euler.z),
+            #'trace_time_msec': _opt(pkt, 'trace_time_msec'),
+            #'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
+            #'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
+            #'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
+            #'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
+            #'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
+            #'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
+            #'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
+            #'flight_pitch_accel_rad_s2': _opt(pkt, 'flight_pitch_accel_rad_s2'),
+            #'flight_yaw_accel_rad_s2': _opt(pkt, 'flight_yaw_accel_rad_s2'),
+            #'flight_z_accel_m_s2': _opt(pkt, 'flight_z_accel_m_s2'),
+            #'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
+            #'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
+            #'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
+            #'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
+            #'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
         }
     )
 
-    # Optional GNSS data.
-    if _has(pkt, 'gnss'):
-        row.update(
-            {
-                'gnss_north_m': float(pkt.gnss.north_m),
-                'gnss_east_m': float(pkt.gnss.east_m),
-                'gnss_up_m': float(pkt.gnss.up_m),
-                'gnss_vx_ms': float(pkt.gnss.vx_ms),
-                'gnss_vy_ms': float(pkt.gnss.vy_ms),
-                'gnss_vz_ms': float(pkt.gnss.vz_ms),
-                'gnss_sol_type': float(pkt.gnss.sol_type),
-            }
-        )
+    # # Optional GNSS data.
+    # if _has(pkt, 'gnss'):
+    #     row.update(
+    #         {
+    #             'gnss_north_m': float(pkt.gnss.north_m),
+    #             'gnss_east_m': float(pkt.gnss.east_m),
+    #             'gnss_up_m': float(pkt.gnss.up_m),
+    #             'gnss_vx_ms': float(pkt.gnss.vx_ms),
+    #             'gnss_vy_ms': float(pkt.gnss.vy_ms),
+    #             'gnss_vz_ms': float(pkt.gnss.vz_ms),
+    #             'gnss_sol_type': float(pkt.gnss.sol_type),
+    #         }
+    #     )
 
-    # Optional lidar data.
-    if _has(pkt, 'lidar_1'):
-        row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
-    if _has(pkt, 'lidar_2'):
-        row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
+    # # Optional lidar data.
+    # if _has(pkt, 'lidar_1'):
+    #     row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
+    # if _has(pkt, 'lidar_2'):
+    #     row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
 
-    # Optional Hornet metrics.
-    if _has(pkt, 'hornet_throttle_metrics'):
-        row['hornet_thrust_N'] = _opt(pkt.hornet_throttle_metrics, 'thrust_N')
-    else:
-        row['hornet_thrust_N'] = None
+    # # Optional Hornet metrics.
+    # if _has(pkt, 'hornet_throttle_metrics'):
+    #     row['hornet_thrust_N'] = _opt(pkt.hornet_throttle_metrics, 'thrust_N')
 
-    if _has(pkt, 'flight_controller_metrics'):
-        fcm = pkt.flight_controller_metrics
-        row.update(
-            {
-                'fcm_des_world_tilt_x_rad': float(fcm.desired_world_tilt_x_rad),
-                'fcm_des_world_tilt_y_rad': float(fcm.desired_world_tilt_y_rad),
-                'fcm_act_world_tilt_x_rad': float(fcm.actual_world_tilt_x_rad),
-                'fcm_act_world_tilt_y_rad': float(fcm.actual_world_tilt_y_rad),
-                'fcm_des_vz_m_s': float(fcm.desired_vertical_velocity_m_s),
-                'fcm_cmd_vacc_m_s2': float(fcm.commanded_vertical_acceleration_m_s2),
-                'fcm_cmd_pitch_accel_rad_s2': float(fcm.commanded_pitch_acceleration_rad_s2),
-                'fcm_cmd_yaw_accel_rad_s2': float(fcm.commanded_yaw_acceleration_rad_s2),
-            }
-        )
-    else:
-        row.update(
-            {
-                'fcm_des_world_tilt_x_rad': None,
-                'fcm_des_world_tilt_y_rad': None,
-                'fcm_act_world_tilt_x_rad': None,
-                'fcm_act_world_tilt_y_rad': None,
-                'fcm_des_vz_m_s': None,
-                'fcm_cmd_vacc_m_s2': None,
-                'fcm_cmd_pitch_accel_rad_s2': None,
-                'fcm_cmd_yaw_accel_rad_s2': None,
-            }
-        )
+    # if _has(pkt, 'flight_controller_metrics'):
+    #     fcm = pkt.flight_controller_metrics
+    #     row.update(
+    #         {
+    #             'fcm_des_world_tilt_x_rad': float(fcm.desired_world_tilt_x_rad),
+    #             'fcm_des_world_tilt_y_rad': float(fcm.desired_world_tilt_y_rad),
+    #             'fcm_act_world_tilt_x_rad': float(fcm.actual_world_tilt_x_rad),
+    #             'fcm_act_world_tilt_y_rad': float(fcm.actual_world_tilt_y_rad),
+    #             'fcm_des_vz_m_s': float(fcm.desired_vertical_velocity_m_s),
+    #             'fcm_cmd_vacc_m_s2': float(fcm.commanded_vertical_acceleration_m_s2),
+    #             'fcm_cmd_pitch_accel_rad_s2': float(fcm.commanded_pitch_acceleration_rad_s2),
+    #             'fcm_cmd_yaw_accel_rad_s2': float(fcm.commanded_yaw_acceleration_rad_s2),
+    #         }
+    #     )
 
     # Throttle valve commands and motor feedback.
     if _has(pkt, 'fuel_valve_command'):
@@ -344,38 +329,36 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         row['gnc_lox_set_pos'] = _opt(pkt.lox_valve_command, 'set_pos')
         row['gnc_lox_target_deg'] = _opt(pkt.lox_valve_command, 'target_deg')
 
-    # Motor position feedback (ValveStatus: target / driver setpoint / encoder).
-    if _has(pkt, 'fuel_valve'):
+    # Motor position feedback (ValveStatus: encoder position, on/off).
+    if _has(pkt, 'fuel_valve_status'):
         row.update(
             {
-                'fuel_driver_setpoint_pos_deg': float(pkt.fuel_valve.driver_setpoint_pos_deg),
-                'fuel_encoder_pos_deg': float(pkt.fuel_valve.encoder_pos_deg),
-                'fuel_is_on': float(pkt.fuel_valve.is_on),
+                'fuel_encoder_pos_deg': float(pkt.fuel_valve_status.encoder_pos_deg),
+                'fuel_is_on': float(pkt.fuel_valve_status.is_on),
             }
         )
-    if _has(pkt, 'lox_valve'):
+    if _has(pkt, 'lox_valve_status'):
         row.update(
             {
-                'lox_driver_setpoint_pos_deg': float(pkt.lox_valve.driver_setpoint_pos_deg),
-                'lox_encoder_pos_deg': float(pkt.lox_valve.encoder_pos_deg),
-                'lox_is_on': float(pkt.lox_valve.is_on),
+                'lox_encoder_pos_deg': float(pkt.lox_valve_status.encoder_pos_deg),
+                'lox_is_on': float(pkt.lox_valve_status.is_on),
             }
         )
 
-    if _has(pkt, 'ranger_throttle_metrics'):
-        rtm = pkt.ranger_throttle_metrics
-        row.update(
-            {
-                'predicted_thrust': _opt(rtm, 'predicted_thrust_lbf'),
-                'predicted_of': _opt(rtm, 'predicted_of'),
-                'mdot_fuel': _opt(rtm, 'mdot_fuel'),
-                'mdot_lox': _opt(rtm, 'mdot_lox'),
-                'change_alpha_cmd': _opt(rtm, 'change_alpha_cmd'),
-                'clamped_change_alpha_cmd': _opt(rtm, 'clamped_change_alpha_cmd'),
-                'alpha': _opt(rtm, 'alpha'),
-                'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
-            }
-        )
+    # if _has(pkt, 'ranger_throttle_metrics'):
+    #     rtm = pkt.ranger_throttle_metrics
+    #     row.update(
+    #         {
+    #             'predicted_thrust': _opt(rtm, 'predicted_thrust_lbf'),
+    #             'predicted_of': _opt(rtm, 'predicted_of'),
+    #             'mdot_fuel': _opt(rtm, 'mdot_fuel'),
+    #             'mdot_lox': _opt(rtm, 'mdot_lox'),
+    #             'change_alpha_cmd': _opt(rtm, 'change_alpha_cmd'),
+    #             'clamped_change_alpha_cmd': _opt(rtm, 'clamped_change_alpha_cmd'),
+    #             'alpha': _opt(rtm, 'alpha'),
+    #             'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
+    #         }
+    #     )
 
     return row
 
