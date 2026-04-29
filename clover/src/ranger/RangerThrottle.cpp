@@ -407,8 +407,7 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     metrics.mdot_fuel = mdot_f;
     metrics.mdot_lox = mdot_lox;
 
-    // return predicted_thrust_lbf;
-    return 0.0f;
+    return predicted_thrust_lbf;
 }
 
 static std::tuple<ThrottleValveCommand, ThrottleValveCommand>
