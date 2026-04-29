@@ -602,9 +602,9 @@ message AnalogSensorReadings {
   optional float pt001 = 1;
   optional float pt002 = 2;
   optional float pt003 = 3;
-  optional float pt004 = 4;
+  optional float pt004 = 4; // pt 202
   optional float pt005 = 5;
-  optional float pt006 = 6;
+  optional float pt006 = 6; // 102
 
   // Vehicle fuel side
   optional float pt103 = 7;

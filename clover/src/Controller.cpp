@@ -725,6 +725,11 @@ static void step_control_loop(k_work*)
         recent_packets_attempted = 0;
         recent_packets_dropped = 0;
     }
+
+    // Allow another sensor read
+#ifdef CONFIG_ANALOG_SENSORS
+    AnalogSensors::start_sense();
+#endif  // CONFIG_ANALOG_SENSORS
 }
 
 /// Retrieves a data packet from the telemetry message queue.
