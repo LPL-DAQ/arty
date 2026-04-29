@@ -74,8 +74,8 @@ STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
-# ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP   = "127.0.0.1"          # fake_telemetry.py
+ZEPHYR_IP = '169.254.99.99'  # real board
+# ZEPHYR_IP   = "127.0.0.1"          # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
