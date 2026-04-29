@@ -588,7 +588,6 @@ message ThrottleValveStatus {
 
 message ThrottleValveCommand {
   required bool enable = 1;
-  required bool set_pos = 2;
   required float target_deg = 3;
 }
 

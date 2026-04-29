@@ -44,7 +44,7 @@ int main(void)
 #elifdef CONFIG_UART_LOGGING
     const device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
     if (!device_is_ready(uart)) {
-        log_err("Failed to check uart log device readiness: %s", Error::from_device_not_ready(uart).build_message().c_str());
+        LOG_ERR("Failed to check uart log device readiness: %s", Error::from_device_not_ready(uart).build_message().c_str());
     }
 #else
 #warning "No logging backend set -- should use either CONFIG_USB_LOGGING or CONFIG_UART_LOGGING"
