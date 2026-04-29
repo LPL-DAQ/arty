@@ -64,8 +64,8 @@ STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
-ZEPHYR_IP = '169.254.99.99'  # real board
-# ZEPHYR_IP   = "192.168.0.150"      # fake_telemetry.py
+# ZEPHYR_IP = '169.254.99.99'  # real board
+ZEPHYR_IP   = "192.168.0.150"      # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -638,7 +638,7 @@ def _build_fuel_graph() -> Panel:
     plt.theme('dark')
     plt.plot(
         times,
-        [p.analog_sensors.pt202 for p in history],
+        [p.analog_sensors.pt006 for p in history],
         label='PT-202',
         color=(255, 220, 0),
         marker='braille',
@@ -672,7 +672,7 @@ def _build_fuel_graph() -> Panel:
         marker='braille',
     )
     fuel_vals = (
-        [p.analog_sensors.pt202 for p in history]
+        [p.analog_sensors.pt006 for p in history]
         + [p.analog_sensors.pt203 for p in history]
         + [p.analog_sensors.ptf401 for p in history]
         + [p.analog_sensors.ptc401 for p in history]
@@ -698,7 +698,7 @@ def _build_lox_graph() -> Panel:
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
     plt.plot(
-        times, [p.pts.pt102 for p in history], label='PT-102', color=(255, 220, 0), marker='braille'
+        times, [p.pts.pt006 for p in history], label='PT-102', color=(255, 220, 0), marker='braille'
     )
     plt.plot(
         times, [p.pts.pt103 for p in history], label='PT-103', color=(50, 200, 50), marker='braille'
@@ -725,7 +725,7 @@ def _build_lox_graph() -> Panel:
         marker='braille',
     )
     lox_vals = (
-        [p.pts.pt102 for p in history]
+        [p.pts.pt006 for p in history]
         + [p.pts.pt103 for p in history]
         + [p.pts.pto401 for p in history]
         + [p.pts.ptc401 for p in history]
@@ -885,11 +885,10 @@ def _build_status_renderable():
     _add_analog_row('PT-005', 'pt006', 'psi')
     _add_analog_row('PT-103', 'pt103', 'psi')
     _add_analog_row('PT-203', 'pt203', 'psi')
-    _add_analog_row('PTF-1', 'ptf1', 'psi')
-    _add_analog_row('PTF-2', 'ptf2', 'psi')
-    _add_analog_row('PTO-1', 'pto1', 'psi')
-    _add_analog_row('PTC-1', 'ptc1', 'psi')
-    _add_analog_row('PTC-2', 'ptc2', 'psi')
+    _add_analog_row('PTF-401', 'ptf401', 'psi')
+    _add_analog_row('PT0-401', 'pto401', 'psi')
+    _add_analog_row('PTC-401', 'ptc401', 'psi')
+    _add_analog_row('PTC-402', 'ptc402', 'psi')
     _add_analog_row('TC-001', 'tc001', 'C')
     _add_analog_row('TC-101', 'tc101', 'C')
     _add_analog_row('TC-102', 'tc102', 'C')
@@ -1297,7 +1296,7 @@ def cmd_configure_analog_sensors():
     # cfg1.tc_type = clover_pb2.K_TYPE
     cfg1 = clover_pb2.AnalogSensorConfig()
     cfg1.channel = 3
-    cfg1.assignment = clover_pb2.PT102
+    cfg1.assignment = clover_pb2.PT006
     cfg1.pt_range_psig = 2000
     cfg1.pt_bias_psig = 0
 
@@ -1309,7 +1308,7 @@ def cmd_configure_analog_sensors():
 
     cfg3 = clover_pb2.AnalogSensorConfig()
     cfg3.channel = 2
-    cfg3.assignment = clover_pb2.PT202
+    cfg3.assignment = clover_pb2.PT004
     cfg3.pt_range_psig = 2000
     cfg3.pt_bias_psig = 0
 
@@ -1344,7 +1343,7 @@ def cmd_configure_analog_sensors():
     cfg8.pt_bias_psig = 0
 
     req = clover_pb2.Request()
-    req.configure_analog_sensors.configs.extend([cfg1, cfg2])
+    req.configure_analog_sensors.configs.extend([cfg1, cfg2, cfg3, cfg4, cfg5, cfg6, cfg7, cfg8])
     send_request(req, 'CONFIGURE_ANALOG_SENSORS')
 
 
