@@ -52,11 +52,13 @@ GNC throttle + TVC flows board.
         analog-sensor-adcs = <&adc1>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+
+        blink-gpios = <&gpio2 3 GPIO_ACTIVE_HIGH>;
     };
 
     chosen {
-		// zephyr,console = &lpuart7;
-        zephyr,console = &cdc_acm_uart0;
+		zephyr,console = &lpuart7;
+        // zephyr,console = &cdc_acm_uart0;
     };
 };
 

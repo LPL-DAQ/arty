@@ -11,6 +11,10 @@ target_sources(app PRIVATE
 add_subdirectory(sensors)
 add_subdirectory(flight)
 
+if(CONFIG_BLINK_LED)
+target_sources(app PRIVATE BlinkLed.cpp)
+endif()
+
 if(CONFIG_THROTTLE_VALVES)
 target_sources(app PRIVATE ThrottleValve.cpp)
 endif()
