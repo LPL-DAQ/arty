@@ -1,9 +1,9 @@
 #include "AnalogSensors.h"
 #include "../MutexGuard.h"
-#include "clover.pb.h"
 #include "../config.h"
 #include "../lut/tc_k_type_v_to_deg_c_lut.h"
 #include "../lut/tc_t_type_v_to_deg_c_lut.h"
+#include "clover.pb.h"
 #include <array>
 #include <optional>
 #include <tuple>
@@ -47,25 +47,26 @@ static consteval uint32_t channels_bitmask(const device* adc_dev)
 static std::array<std::array<uint16_t, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> raw_readings;
 
 /// Maps ADC and ADC channel into overall channel index
-static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> adc_channel_to_input_channel = []() consteval {
-    std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> out;
-    for (int i = 0; i < NUM_ADCS; ++i) {
-        const device* adc_dev = adc_devices[i];
-        int reading_index = 0;
+static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> adc_reading_index_to_input_channel =
+    []() consteval {
+        std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> out;
+        for (int i = 0; i < NUM_ADCS; ++i) {
+            const device* adc_dev = adc_devices[i];
+            int reading_index = 0;
 
-        for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
-            const auto& channel = adc_channels[j];
-            if (channel.dev == adc_dev) {
-                out[i][reading_index] = j;
-                ++reading_index;
-            }
-            else {
-                out[i][reading_index] = -1;
+            for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
+                const auto& channel = adc_channels[j];
+                if (channel.dev == adc_dev) {
+                    out[i][reading_index] = j;
+                    ++reading_index;
+                }
+                else {
+                    out[i][reading_index] = -1;
+                }
             }
         }
-    }
-    return out;
-}();
+        return out;
+    }();
 
 /// Sequence read options
 static adc_sequence_options adc_read_options = {
@@ -101,27 +102,23 @@ static std::array<adc_sequence, NUM_ADCS> adc_read_seqs = []() consteval {
     return out;
 }();
 
-/// Signals upon which ADCs will notify when their read is complete
-std::array<k_poll_signal, NUM_ADCS> read_signals;
-std::array<k_poll_event, NUM_ADCS> read_events;
-#undef LAMBDA
-
 /// Signals readiness
 K_SEM_DEFINE(ready_sem, 0, 1);
 
 /// Taken every sensor read to coordinate read times with controller ticks.
 K_SEM_DEFINE(allow_sense_sem, 0, 1);
 
+/// Protects all AnalogSensors state.
+K_MUTEX_DEFINE(analog_sensors_mutex);
+
 /// Sensor configs. Each AnalogSensorConfig is validated, and corresponds to the channel of the corresponding index.
 constexpr int MAX_SENSOR_CONFIG_LEN = sizeof(static_cast<ConfigureAnalogSensorsRequest*>(nullptr)->configs);
 static std::array<std::optional<AnalogSensorConfig>, NUM_ANALOG_CHANNELS> sensor_configs;
-K_MUTEX_DEFINE(config_mutex);
 
 /// Sensor outputs
 static bool has_reading = false;
 static AnalogSensorReadings sensor_readings = AnalogSensorReadings_init_default;
 static float sense_time_ns = 0.0f;
-K_MUTEX_DEFINE(reading_mutex);
 
 LOG_MODULE_REGISTER(AnalogSensors, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -139,56 +136,24 @@ static void sense()
         // Read from all ADCs concurrently
         uint64_t start_read_cycle = k_cycle_get_64();
         for (int i = 0; i < NUM_ADCS; ++i) {
-            k_poll_signal_init(&read_signals[i]);
-            int err = adc_read_async(adc_devices[i], &adc_read_seqs[i], &read_signals[i]);
+            int err = adc_read(adc_devices[i], &adc_read_seqs[i]);
             if (err) {
                 LOG_ERR("Error initiating async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
         }
 
-        int num_complete = 0;
-        while (true) {
-            // Wait for an ADC to finish their read.
-            k_poll(read_events.data(), NUM_ADCS, K_FOREVER);
-
-            // Check for which ADCs have finished a read.
-            for (int i = 0; i < NUM_ADCS; ++i) {
-                uint32_t signaled;
-                int result;
-                k_poll_signal_check(&read_signals[i], &signaled, &result);
-                if (signaled == 0) {
-                    continue;
-                }
-
-                // Reset signal to prevent it from re-triggering poll.
-                read_events[i].state = K_POLL_STATE_NOT_READY;
-                k_poll_signal_reset(&read_signals[i]);
-                num_complete++;
-
-                // Inspect result of read call.
-                if (result != 0) {
-                    LOG_ERR("Error during async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(result).build_message().c_str());
-                }
-            }
-
-            // Check if everybody has signaled completion.
-            if (num_complete == NUM_ADCS) {
-                break;
-            }
-        }
-
         // Write output reading
         {
-            MutexGuard reading_guard{&reading_mutex};
-            MutexGuard config_guard{&config_mutex};
+            MutexGuard analog_sensors_guard{&analog_sensors_mutex};
 
             sense_time_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
 
             has_reading = true;
 
             for (int i = 0; i < NUM_ADCS; ++i) {
-                for (int j = 0; j < static_cast<int>(adc_read_seqs[i].buffer_size); ++j) {
-                    int input_channel = adc_channel_to_input_channel[i][j];
+                // Iter through each ADC sequence reading
+                for (int j = 0; j < static_cast<int>(adc_read_seqs[i].buffer_size / sizeof(uint16_t)); ++j) {
+                    int input_channel = adc_reading_index_to_input_channel[i][j];
 
                     if (input_channel == -1) {
                         // No more reading left for this ADC
@@ -408,11 +373,6 @@ std::expected<void, Error> AnalogSensors::init()
         }
     }
 
-    // Initialize read_events
-    for (int i = 0; i < NUM_ADCS; ++i) {
-        k_poll_event_init(&read_events[i], K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &read_signals[i]);
-    }
-
     LOG_INF("Initiating sense loop");
     k_sem_give(&ready_sem);
 
@@ -488,7 +448,7 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
     LOG_INF("Configuring %d analog sensors", req.configs_count);
 
     {
-        MutexGuard config_guard{&config_mutex};
+        MutexGuard analog_sensors_guard{&analog_sensors_mutex};
 
         // Reset config assignments
         sensor_configs.fill(std::nullopt);
@@ -516,7 +476,7 @@ void AnalogSensors::start_sense()
 /// Returns the last read PTs, TCs, and sense time, if it is ready.
 std::optional<std::pair<AnalogSensorReadings, float>> AnalogSensors::read()
 {
-    MutexGuard reading_guard{&reading_mutex};
+    MutexGuard analog_sensors_guard{&analog_sensors_mutex};
 
     if (!has_reading) {
         return std::nullopt;

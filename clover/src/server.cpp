@@ -161,8 +161,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
-        // ADDED: We use cmd_result to capture any domain logic errors returned by the Controller.
-        // If a command (like loading a trace) fails, we bubble this error directly to the response.
         std::expected<void, Error> cmd_result = {};
 
         // Handle request
@@ -187,7 +185,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
                 // Set client port
                 reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
 
-                // ADDED: Break out of loop once a slot is found so we don't accidentally overwrite multiple slots
                 break;
             }
 
@@ -232,6 +229,15 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 #else
             cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
 #endif  // CONFIG_VALVES
+            break;
+        }
+
+        case Request_throttle_reset_valve_position_tag: {
+#ifdef CONFIG_THROTTLE_VALVES
+            cmd_result = handle_throttle_reset_valve_position(request.payload.throttle_reset_valve_position);
+#else
+            cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_THROTTLE_VALVES));
+#endif  // CONFIG_THROTTLE_VALVES
             break;
         }
 
@@ -518,6 +524,11 @@ void serve_command_connections()
             k_sem_give(&num_open_connections);
             continue;
         }
+
+        // Set TCP keepalive to detect connection break.
+        int optval = 1;  // non-zero to enable this the flag
+        zsock_setsockopt(client_socket, SOL_SOCKET, SO_KEEPALIVE, (void*)&optval, sizeof(optval));
+
         LOG_INF("Spawning thread in slot %d to serve socket %d", connection_index, client_socket);
         k_thread_create(
             &client_threads[connection_index],
@@ -586,7 +597,6 @@ void serve_data_connections()
 
             const int bytes_sent = zsock_sendto(server_socket, buf, data_packet_ostream.bytes_written, 0, &data_client_addrs[i], data_client_addr_lens[i]);
 
-            // ADDED: static_cast to size_t to safely compare signed zsock_sendto return with unsigned bytes_written
             if (static_cast<size_t>(bytes_sent) != data_packet_ostream.bytes_written) {
                 LOG_ERR("sendto failed: bytes_sent=%d errno=%d", bytes_sent, errno);
             }
