@@ -38,10 +38,9 @@ static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
 // Controller constants (NOTE: Currently using OF = 1.4)
 static inline float alpha = -1.0f;
-static inline uint32_t low_ptc_start_time_ms = 0;
 // 0.008283 this is for OF 1.5
 static constexpr float THRUST_KP = 0.0094f;
-static constexpr float MAX_CHANGE_ALPHA = 1.1881f; //rupin: is this change in alpha or change in alpha per second
+static constexpr float MAX_CHANGE_ALPHA = 1.1881f;  // rupin: is this change in alpha or change in alpha per second
 static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
 static constexpr float MIN_ALPHA = 0.0f;
 static constexpr float MAX_ALPHA = 0.96f;
@@ -212,28 +211,10 @@ static inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
     return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
-// TODO: james pls turn into lookup table using rupin's csv
-
-// ISP lookup axes: chamber pressure (pc) vs O/F.
-static constexpr int ISP_PC_LEN = 30;
-static constexpr int ISP_OF_LEN = 30;
-
-// MPrime lookup axes: target thrust (lbf) vs O/F.
-static constexpr int THRUST_AXIS_LEN = 50;
-// static constexpr int OF_AXIS_LEN = 100;
-
-static constexpr float thrust_axis_internal[] = { 
-    400.0000f, 405.6122f, 411.2245f, 416.8367f, 422.4490f, 428.0612f, 433.6735f, 439.2857f, 444.8980f, 450.5102f, 456.1224f, 461.7347f, 467.3469f, 472.9592f, 
-    478.5714f, 484.1837f, 489.7959f, 495.4082f, 501.0204f, 506.6327f, 512.2449f, 517.8571f, 523.4694f, 529.0816f, 534.6939f, 540.3061f, 545.9184f, 551.5306f, 
-    557.1429f, 562.7551f, 568.3673f, 573.9796f, 579.5918f, 585.2041f, 590.8163f, 596.4286f, 602.0408f, 607.6531f, 613.2653f, 618.8776f, 624.4898f, 630.1020f, 
-    635.7143f, 641.3265f, 646.9388f, 652.5510f, 658.1633f, 663.7755f, 669.3878f, 675.0000f
-}
-
 /// Reset internal state before an active control trace
 void RangerThrottle::reset()
 {
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
-    low_ptc_start_time_ms = 0;
     alpha = -1.0f;
 }
 
@@ -338,7 +319,8 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
     }
     else {
         // return std::unexpected(
-        //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val), static_cast<double>(ptc402_val)));
+        //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val),
+        //     static_cast<double>(ptc402_val)));
     }
 
     float p_inj_fuel;
@@ -443,8 +425,7 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
 
     return {
-        ThrottleValveCommand{.enable = true, .target_deg = fuel_valve_command_deg},
-        ThrottleValveCommand{.enable = true, .target_deg = lox_valve_command_deg}};
+        ThrottleValveCommand{.enable = true, .target_deg = fuel_valve_command_deg}, ThrottleValveCommand{.enable = true, .target_deg = lox_valve_command_deg}};
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.
