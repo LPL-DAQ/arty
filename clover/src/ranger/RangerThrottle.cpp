@@ -24,9 +24,9 @@ static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 // Physics constants
 static constexpr float EFFICIENCY = 0.93f;
 static constexpr float LBF_CONVERSION = 0.224809f;
-static constexpr float K_SLOPE = -1.132744863732548e-04f;
-static constexpr float K_OFFSET = 0.123605503801193f;
-static constexpr float ALPHA = 307.6704337316606f;
+static constexpr float K_SLOPE = --2.438665784714502e-04f;
+static constexpr float K_OFFSET = 0.233994229898658f;
+static constexpr float ALPHA = 1.183054065574921e+02f;
 static constexpr float LOX_AREA_SI = 1.39154e-5f;
 static constexpr float PSI_TO_PA = 6894.76f;
 static constexpr float FUEL_CV_INJ = 0.5f;
@@ -40,11 +40,11 @@ static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 static inline float alpha = -1.0f;
 static inline uint32_t low_ptc_start_time_ms = 0;
 // 0.008283 this is for OF 1.5
-static constexpr float THRUST_KP = 0.0076f;
-static constexpr float MAX_CHANGE_ALPHA = 20.0f;
+static constexpr float THRUST_KP = 0.0094f;
+static constexpr float MAX_CHANGE_ALPHA = 1.1881f; //rupin: is this change in alpha or change in alpha per second
 static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
 static constexpr float MIN_ALPHA = 0.0f;
-static constexpr float MAX_ALPHA = 0.84f;
+static constexpr float MAX_ALPHA = 0.96f;
 static constexpr float MIN_VALVE_POS = 25.0f;
 static constexpr float MAX_VALVE_POS = 90.0f;
 
@@ -215,23 +215,19 @@ static inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
 // TODO: james pls turn into lookup table using rupin's csv
 
 // ISP lookup axes: chamber pressure (pc) vs O/F.
-static constexpr int ISP_PC_LEN = 29;
-static constexpr int ISP_OF_LEN = 34;
+static constexpr int ISP_PC_LEN = 30;
+static constexpr int ISP_OF_LEN = 30;
 
 // MPrime lookup axes: target thrust (lbf) vs O/F.
-static constexpr int THRUST_AXIS_LEN = 100;
-static constexpr int OF_AXIS_LEN = 100;
+static constexpr int THRUST_AXIS_LEN = 50;
+// static constexpr int OF_AXIS_LEN = 100;
 
-static constexpr float thrust_axis_internal[] = {
-    350.000000f, 354.040404f, 358.080808f, 362.121212f, 366.161616f, 370.202020f, 374.242424f, 378.282828f, 382.323232f, 386.363636f, 390.404040f, 394.444444f,
-    398.484848f, 402.525253f, 406.565657f, 410.606061f, 414.646465f, 418.686869f, 422.727273f, 426.767677f, 430.808081f, 434.848485f, 438.888889f, 442.929293f,
-    446.969697f, 451.010101f, 455.050505f, 459.090909f, 463.131313f, 467.171717f, 471.212121f, 475.252525f, 479.292929f, 483.333333f, 487.373737f, 491.414141f,
-    495.454545f, 499.494949f, 503.535354f, 507.575758f, 511.616162f, 515.656566f, 519.696970f, 523.737374f, 527.777778f, 531.818182f, 535.858586f, 539.898990f,
-    543.939394f, 547.979798f, 552.020202f, 556.060606f, 560.101010f, 564.141414f, 568.181818f, 572.222222f, 576.262626f, 580.303030f, 584.343434f, 588.383838f,
-    592.424242f, 596.464646f, 600.505051f, 604.545455f, 608.585859f, 612.626263f, 616.666667f, 620.707071f, 624.747475f, 628.787879f, 632.828283f, 636.868687f,
-    640.909091f, 644.949495f, 648.989899f, 653.030303f, 657.070707f, 661.111111f, 665.151515f, 669.191919f, 673.232323f, 677.272727f, 681.313131f, 685.353535f,
-    689.393939f, 693.434343f, 697.474747f, 701.515152f, 705.555556f, 709.595960f, 713.636364f, 717.676768f, 721.717172f, 725.757576f, 729.797980f, 733.838384f,
-    737.878788f, 741.919192f, 745.959596f, 750.000000f};
+static constexpr float thrust_axis_internal[] = { 
+    400.0000f, 405.6122f, 411.2245f, 416.8367f, 422.4490f, 428.0612f, 433.6735f, 439.2857f, 444.8980f, 450.5102f, 456.1224f, 461.7347f, 467.3469f, 472.9592f, 
+    478.5714f, 484.1837f, 489.7959f, 495.4082f, 501.0204f, 506.6327f, 512.2449f, 517.8571f, 523.4694f, 529.0816f, 534.6939f, 540.3061f, 545.9184f, 551.5306f, 
+    557.1429f, 562.7551f, 568.3673f, 573.9796f, 579.5918f, 585.2041f, 590.8163f, 596.4286f, 602.0408f, 607.6531f, 613.2653f, 618.8776f, 624.4898f, 630.1020f, 
+    635.7143f, 641.3265f, 646.9388f, 652.5510f, 658.1633f, 663.7755f, 669.3878f, 675.0000f
+}
 
 /// Reset internal state before an active control trace
 void RangerThrottle::reset()
