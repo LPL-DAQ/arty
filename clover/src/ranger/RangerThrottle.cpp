@@ -24,7 +24,7 @@ static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 // Physics constants
 static constexpr float EFFICIENCY = 0.93f;
 static constexpr float LBF_CONVERSION = 0.224809f;
-static constexpr float K_SLOPE = --2.438665784714502e-04f;
+static constexpr float K_SLOPE = -2.438665784714502e-04f;
 static constexpr float K_OFFSET = 0.233994229898658f;
 static constexpr float ALPHA = 1.183054065574921e+02f;
 static constexpr float LOX_AREA_SI = 1.39154e-5f;
