@@ -40,7 +40,7 @@ static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 static inline float alpha = -1.0f;
 // 0.008283 this is for OF 1.5
 static constexpr float THRUST_KP = 0.0094f;
-static constexpr float MAX_CHANGE_ALPHA_PER_SEC = 1.1881f;
+static constexpr float MAX_CHANGE_ALPHA_PER_SEC = 6.141f;
 static constexpr float MAX_CHANGE_ALPHA_PER_TICK =
     MAX_CHANGE_ALPHA_PER_SEC * Controller::SEC_PER_CONTROL_TICK;
 static constexpr float MIN_ALPHA = 0.0f;
@@ -412,7 +412,7 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     alpha_state = std::clamp(alpha_state, MIN_ALPHA, MAX_ALPHA);
 
     // 11. Plug alpha into Mprime contour
-    float thrust_from_alpha_lbf = alpha_state * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
+    float thrust_from_alpha_lbf = alpha_state * (thrust_axis_internal[50 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
     float fuel_valve_command_deg = ThrustToFuelAxis::sample(thrust_from_alpha_lbf);
     float lox_valve_command_deg = ThrustToLoxAxis::sample(thrust_from_alpha_lbf);
 
