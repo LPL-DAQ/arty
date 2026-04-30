@@ -40,8 +40,9 @@ static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 static inline float alpha = -1.0f;
 // 0.008283 this is for OF 1.5
 static constexpr float THRUST_KP = 0.0094f;
-static constexpr float MAX_CHANGE_ALPHA = 1.1881f;  // rupin: is this change in alpha or change in alpha per second
-static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
+static constexpr float MAX_CHANGE_ALPHA_PER_SEC = 1.1881f;
+static constexpr float MAX_CHANGE_ALPHA_PER_TICK =
+    MAX_CHANGE_ALPHA_PER_SEC * Controller::SEC_PER_CONTROL_TICK;
 static constexpr float MIN_ALPHA = 0.0f;
 static constexpr float MAX_ALPHA = 0.96f;
 static constexpr float MIN_VALVE_POS = 25.0f;
@@ -399,7 +400,7 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     float thrust_error = thrust_command_lbf - predicted_thrust_lbf;
     float change_alpha_cmd = THRUST_KP * thrust_error;
     change_alpha_cmd *= dt;
-    float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
+    float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, -MAX_CHANGE_ALPHA_PER_TICK, MAX_CHANGE_ALPHA_PER_TICK);
 
     // 10. Integrate PID to get alpha
     if (alpha_state == -1.0f) {
