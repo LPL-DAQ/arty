@@ -39,8 +39,8 @@ static int recent_packets_dropped = 0;
 
 /// Store previous actuator command. Actuators in idle states simply repeat whatever their last command was.
 #ifdef CONFIG_RANGER
-auto prev_fuel_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = 0.0f};
-auto prev_lox_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = 0.0f};
+auto prev_fuel_valve_command = ThrottleValveCommand{.enable = true, .target_deg = 0.0f};
+auto prev_lox_valve_command = ThrottleValveCommand{.enable = true, .target_deg = 0.0f};
 auto prev_pitch_actuator_command = TvcActuatorCommand{};
 auto prev_yaw_actuator_command = TvcActuatorCommand{};
 #elif CONFIG_HORNET
@@ -134,7 +134,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
             if (!fuel_sample.has_value()) {
                 return std::unexpected(fuel_sample.error().context("failed to sample throttle fuel valve trace"));
             }
-            data.fuel_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = *fuel_sample};
+            data.fuel_valve_command = ThrottleValveCommand{.enable = true, .target_deg = *fuel_sample};
         }
 
         if (has_lox_valve_trace) {
@@ -142,7 +142,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
             if (!lox_sample.has_value()) {
                 return std::unexpected(lox_sample.error().context("failed to sample throttle lox valve trace"));
             }
-            data.lox_valve_command = ThrottleValveCommand{.enable = true, .set_pos = false, .target_deg = *lox_sample};
+            data.lox_valve_command = ThrottleValveCommand{.enable = true, .target_deg = *lox_sample};
         }
 
         return {};
@@ -388,6 +388,9 @@ std::expected<void, Error> Controller::init()
     return {};
 }
 
+// Only read/written to by tick workqueue.
+static uint64_t packet_number = 0;
+
 /// Execute one tick of the top-level controller.
 static void step_control_loop(k_work*)
 {
@@ -397,6 +400,14 @@ static void step_control_loop(k_work*)
     DataPacket data = DataPacket_init_default;
     data.time_ns = k_cyc_to_ns_near64(start_cycle);
     data.state = current_state;
+
+    data.sequence_number = packet_number;
+    packet_number++;
+
+    // Populate daq connected status
+    auto daq_status = get_daq_client_status();
+    data.daq_connected = daq_status.connected;
+    data.daq_last_pinged_ns = daq_status.last_pinged_ms * 1e6f;
 
     // Read sensors
 #ifdef CONFIG_ANALOG_SENSORS
@@ -522,8 +533,6 @@ static void step_control_loop(k_work*)
         // TODO: handle estimate failure; leaving defaults for now
     }
 #endif  // CONFIG_FLIGHT
-
-    daq_client_status daq_status = get_daq_client_status();
 
     // Populate default actuator commands -- essentially telling everybody to hold their current state.
 #ifdef CONFIG_THROTTLE_VALVES
@@ -725,6 +734,11 @@ static void step_control_loop(k_work*)
         recent_packets_attempted = 0;
         recent_packets_dropped = 0;
     }
+
+    // Allow another sensor read
+#ifdef CONFIG_ANALOG_SENSORS
+    AnalogSensors::start_sense();
+#endif  // CONFIG_ANALOG_SENSORS
 }
 
 /// Retrieves a data packet from the telemetry message queue.
@@ -740,6 +754,36 @@ DataPacket Controller::get_next_data_packet()
 }
 
 // Request handlers.
+
+/// Reset valve position
+std::expected<void, Error> Controller::handle_throttle_reset_valve_position(const ThrottleResetValvePositionRequest& req)
+{
+    ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
+
+    MutexGuard guard{&controller_state_lock};
+
+    if (req.valve == ThrottleValveType_FUEL) {
+        LOG_INF("Resetting fuel valve to %f", static_cast<double>(req.new_pos_deg));
+        prev_fuel_valve_command = ThrottleValveCommand{
+            .enable = true,
+            .target_deg = req.new_pos_deg,
+        };
+        FuelValve::reset_pos(req.new_pos_deg);
+    }
+    else if (req.valve == ThrottleValveType_LOX) {
+        LOG_INF("Resetting LOx valve to %f", static_cast<double>(req.new_pos_deg));
+        prev_lox_valve_command = ThrottleValveCommand{
+            .enable = true,
+            .target_deg = req.new_pos_deg,
+        };
+        LoxValve::reset_pos(req.new_pos_deg);
+    }
+    else {
+        return std::unexpected(Error::from_cause("Unknown valve type: %d", req.valve));
+    }
+
+    return {};
+}
 
 /// Abort, returning the system to a safe state.
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)

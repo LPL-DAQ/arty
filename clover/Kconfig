@@ -30,6 +30,11 @@ config UART_LOGGING
 endchoice
 
 
+config BLINK_LED
+    bool "Whether a blinky LED is available"
+    default n
+
+
 config ETHERNET
     bool "Whether ethernet is available"
     default y

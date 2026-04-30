@@ -7,8 +7,8 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
+#include "BlinkLed.h"
 #include "Controller.h"
-
 #include "ThrottleValve.h"
 #include "Valves.h"
 #include "sensors/AnalogSensors.h"
@@ -44,15 +44,18 @@ int main(void)
 #elifdef CONFIG_UART_LOGGING
     const device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
     if (!device_is_ready(uart)) {
-        log_err("Failed to check uart log device readiness: %s", Error::from_device_not_ready(uart).build_message().c_str());
+        LOG_ERR("Failed to check uart log device readiness: %s", Error::from_device_not_ready(uart).build_message().c_str());
     }
 #else
 #warning "No logging backend set -- should use either CONFIG_USB_LOGGING or CONFIG_UART_LOGGING"
 #endif
-    // const struct device* uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-    // if (!device_is_ready(uart)) {
-    //     return 0;
-    // }
+
+#ifdef CONFIG_BLINK_LED
+    if (auto result = BlinkLed::init(); !result) {
+        LOG_ERR("Failed to initialize blink LED: %s", result.error().build_message().c_str());
+        return 1;
+    }
+#endif
 
 #ifdef CONFIG_LIDAR
     LOG_INF("Initializing Lidar 1");

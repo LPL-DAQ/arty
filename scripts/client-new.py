@@ -1,3 +1,14 @@
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#     "protobuf",
+#     "rich",
+#     "prompt-toolkit",
+#     "plotext",
+#     "plotly",
+# ]
+# ///
+
 # improved CLI
 # changes made AFTER .proto file updates
 
@@ -10,6 +21,7 @@ import sys
 import time
 import csv
 import pathlib
+import webbrowser
 from google.protobuf import text_format
 from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
@@ -26,8 +38,6 @@ from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-import clickhouse_connect
-import polars as pl
 from collections import deque
 import plotext as plt
 
@@ -64,17 +74,12 @@ STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
-ZEPHYR_IP = '169.254.99.99'  # real board
-# ZEPHYR_IP   = "192.168.0.150"      # fake_telemetry.py
+# ZEPHYR_IP = '169.254.99.99'  # real board
+ZEPHYR_IP = '192.168.0.150'  # daq box router
+# fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
-
-# ── ClickHouse config ────────────────────────────────────────────────────────
-CH_HOST = '172.233.143.186'
-CH_USER = 'writer'
-CH_PASSWORD = 'ce8XpzhRGhsvBxCPHDTcvh6DMWhb3jyxgmQMNLrsKaCqtZvKf2'
-CH_DATABASE = 'lpl'
 
 # CSV columns mirror the unpivoted ClickHouse raw_sensors schema exactly:
 #   time   — nanosecond-epoch Int64  (ClickHouse 'time')
@@ -96,15 +101,13 @@ packet_lock = threading.Lock()
 
 data_sock = None
 
-_packet_buffer: list = []
-_buffer_lock = threading.Lock()
-
 _csv_store: list = []  # list of (recv_time: float, pkt: DataPacket); drained each second
 _csv_store_lock = threading.Lock()
 _csv_path: pathlib.Path | None = None  # set on first write
 _csv_fh = None  # open file handle
 _csv_writer = None  # csv.DictWriter bound to _csv_fh
 _csv_rows_written: int = 0
+_seq_recording: bool = False
 
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
@@ -141,7 +144,6 @@ def listen_for_telemetry():
             for lock, name in (
                 (packet_lock, 'packet_lock'),
                 (_last_packet_lock, '_last_packet_lock'),
-                (_buffer_lock, '_buffer_lock'),
                 (_csv_store_lock, '_csv_store_lock'),
                 (_graph_lock, '_graph_lock'),
             ):
@@ -157,10 +159,9 @@ def listen_for_telemetry():
                         latest_packet = packet
                     elif lock is _last_packet_lock:
                         _last_packet_time = recv_time
-                    elif lock is _buffer_lock:
-                        _packet_buffer.append((recv_time, packet))
                     elif lock is _csv_store_lock:
-                        _csv_store.append((recv_time, packet))
+                        if _seq_recording:
+                            _csv_store.append((recv_time, packet))
                     else:
                         _graph_history.append(packet)
                 finally:
@@ -206,112 +207,123 @@ def _opt(msg, field: str):
     return float(getattr(msg, field)) if _has(msg, field) else None
 
 
+def _recv_time_ns(recv_time: float) -> int:
+    """Return the host receive timestamp in epoch nanoseconds."""
+    return int(recv_time * 1_000_000_000)
+
+
 def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
     only emits values for fields present.
     """
     row = {
-        'time': recv_time,  # PROTO CHANGE: was pkt.time (seconds), now pkt.time_ns (nanoseconds)
-        'state': float(pkt.state),
-        'data_queue_size': float(pkt.data_queue_size),
-        'sequence_number': float(pkt.sequence_number),
-        'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
-        'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
-        'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
-        'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
-        'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
-        'gnc_connected': float(pkt.gnc_connected),
-        'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
-        'daq_connected': float(pkt.daq_connected),
-        'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
+        'time': _recv_time_ns(recv_time),
+        #'state': float(pkt.state),
+        #'data_queue_size': float(pkt.data_queue_size),
+        #'sequence_number': float(pkt.sequence_number),
+        #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
+        #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
+        #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        #'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
+        #'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
+        #'gnc_connected': float(pkt.gnc_connected),
+        #'gnc_last_pinged_ns': float(pkt.gnc_last_pinged_ns),
+        #'daq_connected': float(pkt.daq_connected),
+        #'daq_last_pinged_ns': float(pkt.daq_last_pinged_ns),
     }
 
     # Common analog/estimate data.
     row.update(
         {
-            'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
-            'est_pos_x_m': float(pkt.estimated_state.position.x),
-            'est_pos_y_m': float(pkt.estimated_state.position.y),
-            'est_pos_z_m': float(pkt.estimated_state.position.z),
-            'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
-            'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
-            'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
-            'est_yaw_deg': float(pkt.estimated_state.euler.x),
-            'est_pitch_deg': float(pkt.estimated_state.euler.y),
-            'est_roll_deg': float(pkt.estimated_state.euler.z),
-            'trace_time_msec': _opt(pkt, 'trace_time_msec'),
-            'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
-            'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
-            'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
-            'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
-            'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
-            'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
-            'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
-            'flight_pitch_accel_rad_s2': _opt(pkt, 'flight_pitch_accel_rad_s2'),
-            'flight_yaw_accel_rad_s2': _opt(pkt, 'flight_yaw_accel_rad_s2'),
-            'flight_z_accel_m_s2': _opt(pkt, 'flight_z_accel_m_s2'),
-            'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
-            'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
-            'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
-            'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
-            'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
+            #'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
+            #'pt001': _opt(pkt.analog_sensors, 'pt001'),
+            #'pt002': _opt(pkt.analog_sensors, 'pt002'),
+            #'pt003': _opt(pkt.analog_sensors, 'pt003'),
+            'pt004': _opt(pkt.analog_sensors, 'pt004'),
+            'pt005': _opt(pkt.analog_sensors, 'pt005'),
+            'pt006': _opt(pkt.analog_sensors, 'pt006'),
+            'pt103': _opt(pkt.analog_sensors, 'pt103'),
+            'pt203': _opt(pkt.analog_sensors, 'pt203'),
+            #'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            'ptf401': _opt(pkt.analog_sensors, 'ptf401'),
+            'pto401': _opt(pkt.analog_sensors, 'pto401'),
+            'ptc401': _opt(pkt.analog_sensors, 'ptc401'),
+            'ptc402': _opt(pkt.analog_sensors, 'ptc402'),
+            #'tc002': _opt(pkt.analog_sensors, 'tc002'),
+            #'tc102': _opt(pkt.analog_sensors, 'tc102'),
+            #'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
+            #'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
+            #'tco401': _opt(pkt.analog_sensors, 'tco401'),
+            #'ptg001': _opt(pkt.analog_sensors, 'ptg001'),
+            #'ptg002': _opt(pkt.analog_sensors, 'ptg002'),
+            #'ptg101': _opt(pkt.analog_sensors, 'ptg101'),
+            #'est_pos_x_m': float(pkt.estimated_state.position.x),
+            #'est_pos_y_m': float(pkt.estimated_state.position.y),
+            #'est_pos_z_m': float(pkt.estimated_state.position.z),
+            #'est_vel_x_m_s': float(pkt.estimated_state.velocity.x),
+            #'est_vel_y_m_s': float(pkt.estimated_state.velocity.y),
+            #'est_vel_z_m_s': float(pkt.estimated_state.velocity.z),
+            #'est_yaw_deg': float(pkt.estimated_state.euler.x),
+            #'est_pitch_deg': float(pkt.estimated_state.euler.y),
+            #'est_roll_deg': float(pkt.estimated_state.euler.z),
+            #'trace_time_msec': _opt(pkt, 'trace_time_msec'),
+            #'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
+            #'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
+            #'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
+            #'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
+            #'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
+            #'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
+            #'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
+            #'flight_pitch_accel_rad_s2': _opt(pkt, 'flight_pitch_accel_rad_s2'),
+            #'flight_yaw_accel_rad_s2': _opt(pkt, 'flight_yaw_accel_rad_s2'),
+            #'flight_z_accel_m_s2': _opt(pkt, 'flight_z_accel_m_s2'),
+            #'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
+            #'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
+            #'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
+            #'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
+            #'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
         }
     )
 
-    # Optional GNSS data.
-    if _has(pkt, 'gnss'):
-        row.update(
-            {
-                'gnss_north_m': float(pkt.gnss.north_m),
-                'gnss_east_m': float(pkt.gnss.east_m),
-                'gnss_up_m': float(pkt.gnss.up_m),
-                'gnss_vx_ms': float(pkt.gnss.vx_ms),
-                'gnss_vy_ms': float(pkt.gnss.vy_ms),
-                'gnss_vz_ms': float(pkt.gnss.vz_ms),
-                'gnss_sol_type': float(pkt.gnss.sol_type),
-            }
-        )
+    # # Optional GNSS data.
+    # if _has(pkt, 'gnss'):
+    #     row.update(
+    #         {
+    #             'gnss_north_m': float(pkt.gnss.north_m),
+    #             'gnss_east_m': float(pkt.gnss.east_m),
+    #             'gnss_up_m': float(pkt.gnss.up_m),
+    #             'gnss_vx_ms': float(pkt.gnss.vx_ms),
+    #             'gnss_vy_ms': float(pkt.gnss.vy_ms),
+    #             'gnss_vz_ms': float(pkt.gnss.vz_ms),
+    #             'gnss_sol_type': float(pkt.gnss.sol_type),
+    #         }
+    #     )
 
-    # Optional lidar data.
-    if _has(pkt, 'lidar_1'):
-        row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
-    if _has(pkt, 'lidar_2'):
-        row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
+    # # Optional lidar data.
+    # if _has(pkt, 'lidar_1'):
+    #     row['lidar_1_distance_m'] = float(pkt.lidar_1.distance_m)
+    # if _has(pkt, 'lidar_2'):
+    #     row['lidar_2_distance_m'] = float(pkt.lidar_2.distance_m)
 
-    # Optional Hornet metrics.
-    if _has(pkt, 'hornet_throttle_metrics'):
-        row['hornet_thrust_N'] = _opt(pkt.hornet_throttle_metrics, 'thrust_N')
-    else:
-        row['hornet_thrust_N'] = None
+    # # Optional Hornet metrics.
+    # if _has(pkt, 'hornet_throttle_metrics'):
+    #     row['hornet_thrust_N'] = _opt(pkt.hornet_throttle_metrics, 'thrust_N')
 
-    if _has(pkt, 'flight_controller_metrics'):
-        fcm = pkt.flight_controller_metrics
-        row.update(
-            {
-                'fcm_des_world_tilt_x_rad': float(fcm.desired_world_tilt_x_rad),
-                'fcm_des_world_tilt_y_rad': float(fcm.desired_world_tilt_y_rad),
-                'fcm_act_world_tilt_x_rad': float(fcm.actual_world_tilt_x_rad),
-                'fcm_act_world_tilt_y_rad': float(fcm.actual_world_tilt_y_rad),
-                'fcm_des_vz_m_s': float(fcm.desired_vertical_velocity_m_s),
-                'fcm_cmd_vacc_m_s2': float(fcm.commanded_vertical_acceleration_m_s2),
-                'fcm_cmd_pitch_accel_rad_s2': float(fcm.commanded_pitch_acceleration_rad_s2),
-                'fcm_cmd_yaw_accel_rad_s2': float(fcm.commanded_yaw_acceleration_rad_s2),
-            }
-        )
-    else:
-        row.update(
-            {
-                'fcm_des_world_tilt_x_rad': None,
-                'fcm_des_world_tilt_y_rad': None,
-                'fcm_act_world_tilt_x_rad': None,
-                'fcm_act_world_tilt_y_rad': None,
-                'fcm_des_vz_m_s': None,
-                'fcm_cmd_vacc_m_s2': None,
-                'fcm_cmd_pitch_accel_rad_s2': None,
-                'fcm_cmd_yaw_accel_rad_s2': None,
-            }
-        )
+    # if _has(pkt, 'flight_controller_metrics'):
+    #     fcm = pkt.flight_controller_metrics
+    #     row.update(
+    #         {
+    #             'fcm_des_world_tilt_x_rad': float(fcm.desired_world_tilt_x_rad),
+    #             'fcm_des_world_tilt_y_rad': float(fcm.desired_world_tilt_y_rad),
+    #             'fcm_act_world_tilt_x_rad': float(fcm.actual_world_tilt_x_rad),
+    #             'fcm_act_world_tilt_y_rad': float(fcm.actual_world_tilt_y_rad),
+    #             'fcm_des_vz_m_s': float(fcm.desired_vertical_velocity_m_s),
+    #             'fcm_cmd_vacc_m_s2': float(fcm.commanded_vertical_acceleration_m_s2),
+    #             'fcm_cmd_pitch_accel_rad_s2': float(fcm.commanded_pitch_acceleration_rad_s2),
+    #             'fcm_cmd_yaw_accel_rad_s2': float(fcm.commanded_yaw_acceleration_rad_s2),
+    #         }
+    #     )
 
     # Throttle valve commands and motor feedback.
     if _has(pkt, 'fuel_valve_command'):
@@ -323,38 +335,41 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         row['gnc_lox_set_pos'] = _opt(pkt.lox_valve_command, 'set_pos')
         row['gnc_lox_target_deg'] = _opt(pkt.lox_valve_command, 'target_deg')
 
-    # Motor position feedback (ValveStatus: target / driver setpoint / encoder).
-    if _has(pkt, 'fuel_valve'):
+    # Motor position feedback (ValveStatus: encoder position, on/off).
+    if _has(pkt, 'fuel_valve_status'):
         row.update(
             {
-                'fuel_driver_setpoint_pos_deg': float(pkt.fuel_valve.driver_setpoint_pos_deg),
-                'fuel_encoder_pos_deg': float(pkt.fuel_valve.encoder_pos_deg),
-                'fuel_is_on': float(pkt.fuel_valve.is_on),
+                'fuel_encoder_pos_deg': float(pkt.fuel_valve_status.encoder_pos_deg),
+                'fuel_is_on': float(pkt.fuel_valve_status.is_on),
             }
         )
-    if _has(pkt, 'lox_valve'):
+    if _has(pkt, 'lox_valve_status'):
         row.update(
             {
-                'lox_driver_setpoint_pos_deg': float(pkt.lox_valve.driver_setpoint_pos_deg),
-                'lox_encoder_pos_deg': float(pkt.lox_valve.encoder_pos_deg),
-                'lox_is_on': float(pkt.lox_valve.is_on),
+                'lox_encoder_pos_deg': float(pkt.lox_valve_status.encoder_pos_deg),
+                'lox_is_on': float(pkt.lox_valve_status.is_on),
             }
         )
 
+    # if _has(pkt, 'ranger_throttle_metrics'):
+    #     rtm = pkt.ranger_throttle_metrics
+    #     row.update(
+    #         {
+    #             'predicted_thrust': _opt(rtm, 'predicted_thrust_lbf'),
+    #             'predicted_of': _opt(rtm, 'predicted_of'),
+    #             'mdot_fuel': _opt(rtm, 'mdot_fuel'),
+    #             'mdot_lox': _opt(rtm, 'mdot_lox'),
+    #             'change_alpha_cmd': _opt(rtm, 'change_alpha_cmd'),
+    #             'clamped_change_alpha_cmd': _opt(rtm, 'clamped_change_alpha_cmd'),
+    #             'alpha': _opt(rtm, 'alpha'),
+    #             'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
+    #         }
+    #     )
     if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
-        row.update(
-            {
-                'predicted_thrust': _opt(rtm, 'predicted_thrust_lbf'),
-                'predicted_of': _opt(rtm, 'predicted_of'),
-                'mdot_fuel': _opt(rtm, 'mdot_fuel'),
-                'mdot_lox': _opt(rtm, 'mdot_lox'),
-                'change_alpha_cmd': _opt(rtm, 'change_alpha_cmd'),
-                'clamped_change_alpha_cmd': _opt(rtm, 'clamped_change_alpha_cmd'),
-                'alpha': _opt(rtm, 'alpha'),
-                'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
-            }
-        )
+        row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
+        row['alpha'] = _opt(rtm, 'alpha')
+        row['clamped_change_alpha_cmd'] = _opt(rtm, 'clamped_change_alpha_cmd')
 
     return row
 
@@ -392,14 +407,14 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
 
 def _write_csv_on_exit():
     """Flush any remaining buffered packets to the CSV file and close it."""
-    global _csv_fh, _csv_writer, _csv_rows_written, _csv_path
+    global _csv_fh, _csv_writer, _csv_path, _csv_rows_written
 
     with _csv_store_lock:
         remaining = list(_csv_store)
         _csv_store.clear()
 
+    # Sequence started but flush_loop never ran — create the file now
     if remaining and _csv_fh is None:
-        # Client exited before the first flush_loop drain (ran very briefly)
         _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
         _csv_path.parent.mkdir(exist_ok=True)
         _csv_fh = open(_csv_path, 'w', newline='')
@@ -407,9 +422,6 @@ def _write_csv_on_exit():
         _csv_writer.writeheader()
 
     if _csv_fh is None:
-        console.print(
-            f'  [{THEME["muted"]}]No telemetry received — CSV not written.[/{THEME["muted"]}]'
-        )
         return
 
     for recv_time, pkt in remaining:
@@ -420,13 +432,7 @@ def _write_csv_on_exit():
         except Exception as e:
             console.print(f'  [bold red]CSV row error:[/bold red] {e}')
 
-    _csv_fh.close()
-    _csv_fh = None
-    console.print(
-        f'\n  {THEME["icon_ok"]} [bold green]CSV saved →[/bold green] '
-        f'[dim]{_csv_path.resolve()}[/dim]\n'
-        f'  [{THEME["muted"]}]{_csv_rows_written:,} rows written[/{THEME["muted"]}]'
-    )
+    _close_csv()
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
@@ -451,56 +457,166 @@ def _reconnect_and_resubscribe():
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
 
-def _flush_loop():
-    """Background thread — drains the packet buffer into ClickHouse every second."""
-    global _last_packet_time
-    ch = None
-    while True:
-        time.sleep(1222222222.0)
+_USEFUL_SENSORS: dict[str, str] = {
+    'pt004': 'PT-004',
+    'pt005': 'PT-005',
+    'pt006': 'PT-006',
+    'pt103': 'PT-103',
+    'pt203': 'PT-203',
+    'ptf401': 'PTF-401',
+    'pto401': 'PTO-401',
+    'ptc401': 'PTC-401',
+    'ptc402': 'PTC-402',
+    'predicted_thrust': 'Predicted Thrust',
+}
 
-        if ch is None:
+_MOTOR_SENSORS: dict[str, str] = {
+    'gnc_fuel_target_deg': 'Fuel Desired',
+    'fuel_encoder_pos_deg': 'Fuel Actual',
+    'gnc_lox_target_deg': 'LOX Desired',
+    'lox_encoder_pos_deg': 'LOX Actual',
+    'alpha': 'Alpha',
+    'clamped_change_alpha_cmd': 'dAlpha Clamped',
+}
+
+
+def _parse_plot_time(raw_time: str):
+    try:
+        return int(raw_time)
+    except ValueError:
+        return float(raw_time)
+
+
+def _read_plot_series(csv_path: pathlib.Path) -> tuple[dict[str, list[tuple[float, float]]], list]:
+    series = {}
+    times = []
+
+    with csv_path.open(newline='') as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
             try:
-                ch = clickhouse_connect.get_client(
-                    host=CH_HOST,
-                    username=CH_USER,
-                    password=CH_PASSWORD,
-                    database=CH_DATABASE,
-                )
-            except Exception as e:
-                console.print(f'  [bold red]ClickHouse connect error:[/bold red] {e}')
+                timestamp = _parse_plot_time(row['time'])
+                value = float(row['value'])
+            except (KeyError, TypeError, ValueError):
                 continue
 
-        with _buffer_lock:
-            if not _packet_buffer:
+            sensor = row.get('sensor', '')
+            if not sensor:
                 continue
-            batch = list(_packet_buffer)
-            _packet_buffer.clear()
 
-        try:
-            rows = [_packet_to_row(t, p) for t, p in batch]
-            df = (
-                pl.DataFrame(rows)
-                .unpivot(index=['time'], variable_name='sensor', value_name='value')
-                .drop_nulls('value')
-                .with_columns(
-                    pl.from_epoch(pl.col('time') * 1e6, time_unit='us').alias('time'),
-                    pl.col('value').cast(pl.Float64),
-                    pl.when(pl.col('sensor') == 'gnc_state')
-                    .then(
-                        pl.col('value').map_elements(
-                            lambda v: _STATE_NAMES.get(v, ''), return_dtype=pl.String
-                        )
-                    )
-                    .otherwise(pl.lit(''))
-                    .alias('event'),
-                    pl.lit('atlas').alias('system'),
-                    pl.lit('gnc').alias('source'),
-                )
+            times.append(timestamp)
+            series.setdefault(sensor, []).append((timestamp, value))
+
+    return series, times
+
+
+def _time_units_per_second(time_values: list) -> float:
+    """Support old seconds CSVs, epoch ns CSVs, and real-board boot ns CSVs."""
+    if not time_values:
+        return 1.0
+
+    time_min = min(time_values)
+    time_max = max(time_values)
+    max_abs_time = max(abs(t) for t in time_values)
+    span = time_max - time_min
+    if max_abs_time >= 1_000_000_000_000 or span >= 1_000_000:
+        return 1_000_000_000.0
+    return 1.0
+
+
+def _generate_plots(csv_path: pathlib.Path) -> None:
+    try:
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+
+        series, times = _read_plot_series(csv_path)
+        if not series:
+            return
+
+        t0 = min(times)
+        time_units_per_second = _time_units_per_second(times)
+
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            subplot_titles=('All Sensors', 'Motor Traces — Desired vs Actual'),
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+        )
+
+        for sensor, label in _USEFUL_SENSORS.items():
+            points = series.get(sensor, [])
+            if not points:
+                continue
+            points.sort(key=lambda point: point[0])
+            fig.add_trace(
+                go.Scatter(
+                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                    y=[value for _, value in points],
+                    mode='lines',
+                    name=label,
+                ),
+                row=1,
+                col=1,
             )
-            ch.insert_df_arrow('raw_sensors', df)
-        except Exception as e:
-            console.print(f'  [bold red]ClickHouse insert error (will reconnect):[/bold red] {e}')
-            ch = None
+
+        for sensor, label in _MOTOR_SENSORS.items():
+            points = series.get(sensor, [])
+            if not points:
+                continue
+            points.sort(key=lambda point: point[0])
+            fig.add_trace(
+                go.Scatter(
+                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                    y=[value for _, value in points],
+                    mode='lines',
+                    name=label,
+                ),
+                row=2,
+                col=1,
+            )
+
+        fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+        fig.update_yaxes(title_text='Value', row=1, col=1)
+        fig.update_yaxes(title_text='Position (°)', row=2, col=1)
+        fig.update_layout(hovermode='x unified', height=800)
+
+        plots_dir = csv_path.parent / 'plots'
+        plots_dir.mkdir(exist_ok=True)
+        stem = csv_path.stem
+        out_html = plots_dir / (stem + '.html')
+        fig.write_html(str(out_html))
+        fig.show(renderer='browser')
+        console.print(
+            f'  {THEME["icon_ok"]} [bold green]Plot saved →[/bold green]\n'
+            f'  [dim]{out_html.resolve()}[/dim]'
+        )
+    except Exception as e:
+        console.print(f'  [bold red]Plot generation failed:[/bold red] {e}')
+
+
+def _close_csv():
+    global _csv_fh, _csv_path, _csv_writer, _csv_rows_written
+    if _csv_fh is None:
+        return
+    _csv_fh.close()
+    _csv_fh = None
+    path = _csv_path
+    console.print(
+        f'\n  {THEME["icon_ok"]} [bold green]CSV saved →[/bold green] '
+        f'[dim]{path.resolve()}[/dim]\n'
+        f'  [{THEME["muted"]}]{_csv_rows_written:,} rows written[/{THEME["muted"]}]'
+    )
+    _csv_path = None
+    _csv_writer = None
+    _csv_rows_written = 0
+    _generate_plots(path)
+
+
+def _flush_loop():
+    global _seq_recording
+    while True:
+        time.sleep(1)
 
         # ── CSV incremental flush ────────────────────────────────────────────
         with _csv_store_lock:
@@ -512,7 +628,7 @@ def _flush_loop():
 
         if csv_batch:
             global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
-            if _csv_fh is None:
+            if _csv_fh is None and _seq_recording:
                 _csv_path = (
                     pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
                 )
@@ -520,14 +636,22 @@ def _flush_loop():
                 _csv_fh = open(_csv_path, 'w', newline='')
                 _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
                 _csv_writer.writeheader()
-            try:
-                for recv_time, pkt in csv_batch:
-                    for row in _packet_to_csv_rows(recv_time, pkt):
-                        _csv_writer.writerow(row)
-                        _csv_rows_written += 1
-                _csv_fh.flush()
-            except Exception as e:
-                console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+            if _csv_fh is not None:
+                try:
+                    for recv_time, pkt in csv_batch:
+                        for row in _packet_to_csv_rows(recv_time, pkt):
+                            _csv_writer.writerow(row)
+                            _csv_rows_written += 1
+                    _csv_fh.flush()
+                except Exception as e:
+                    console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+
+        # ── Detect sequence end (after flush so last data lands in current file)
+        pkt = latest_packet
+        if _seq_recording and pkt is not None:
+            if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
+                _seq_recording = False
+                _close_csv()
 
 
 # ── Live status display ──────────────────────────────────────────────────────
@@ -572,14 +696,14 @@ def _build_fuel_valve_graph() -> Panel:
     plt.theme('dark')
     plt.plot(
         times,
-        [p.fuel_valve.driver_setpoint_pos_deg for p in history],
-        label='Driver',
+        [p.fuel_valve_command.target_deg for p in history],
+        label='Target',
         color=(50, 100, 220),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.fuel_valve.encoder_pos_deg for p in history],
+        [p.fuel_valve_status.encoder_pos_deg for p in history],
         label='Encoder',
         color=(255, 220, 0),
         marker='braille',
@@ -605,14 +729,14 @@ def _build_lox_valve_graph() -> Panel:
     plt.theme('dark')
     plt.plot(
         times,
-        [p.lox_valve.driver_setpoint_pos_deg for p in history],
-        label='Driver',
+        [p.lox_valve_command.target_deg for p in history],
+        label='Target',
         color=(0, 200, 220),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.lox_valve.encoder_pos_deg for p in history],
+        [p.lox_valve_status.encoder_pos_deg for p in history],
         label='Encoder',
         color=(220, 50, 50),
         marker='braille',
@@ -638,8 +762,8 @@ def _build_fuel_graph() -> Panel:
     plt.theme('dark')
     plt.plot(
         times,
-        [p.analog_sensors.pt202 for p in history],
-        label='PT-202',
+        [p.analog_sensors.pt006 for p in history],
+        label='PT-006',
         color=(255, 220, 0),
         marker='braille',
     )
@@ -672,7 +796,7 @@ def _build_fuel_graph() -> Panel:
         marker='braille',
     )
     fuel_vals = (
-        [p.analog_sensors.pt202 for p in history]
+        [p.analog_sensors.pt006 for p in history]
         + [p.analog_sensors.pt203 for p in history]
         + [p.analog_sensors.ptf401 for p in history]
         + [p.analog_sensors.ptc401 for p in history]
@@ -698,38 +822,46 @@ def _build_lox_graph() -> Panel:
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
     plt.plot(
-        times, [p.pts.pt102 for p in history], label='PT-102', color=(255, 220, 0), marker='braille'
-    )
-    plt.plot(
-        times, [p.pts.pt103 for p in history], label='PT-103', color=(50, 200, 50), marker='braille'
+        times,
+        [p.analog_sensors.pt006 for p in history],
+        label='PT-006',
+        color=(255, 220, 0),
+        marker='braille',
     )
     plt.plot(
         times,
-        [p.pts.pto401 for p in history],
+        [p.analog_sensors.pt103 for p in history],
+        label='PT-103',
+        color=(50, 200, 50),
+        marker='braille',
+    )
+    plt.plot(
+        times,
+        [p.analog_sensors.pto401 for p in history],
         label='PTO-401',
         color=(255, 140, 0),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.pts.ptc401 for p in history],
+        [p.analog_sensors.ptc401 for p in history],
         label='PTC-401',
         color=(0, 200, 220),
         marker='braille',
     )
     plt.plot(
         times,
-        [p.pts.ptc402 for p in history],
+        [p.analog_sensors.ptc402 for p in history],
         label='PTC-402',
         color=(200, 50, 200),
         marker='braille',
     )
     lox_vals = (
-        [p.pts.pt102 for p in history]
-        + [p.pts.pt103 for p in history]
-        + [p.pts.pto401 for p in history]
-        + [p.pts.ptc401 for p in history]
-        + [p.pts.ptc402 for p in history]
+        [p.analog_sensors.pt006 for p in history]
+        + [p.analog_sensors.pt103 for p in history]
+        + [p.analog_sensors.pto401 for p in history]
+        + [p.analog_sensors.ptc401 for p in history]
+        + [p.analog_sensors.ptc402 for p in history]
     )
     plt.ylim(30, max(lox_vals) * 1.05 if max(lox_vals) > 30 else 60)
     plt.xlabel('t (s)')
@@ -885,11 +1017,10 @@ def _build_status_renderable():
     _add_analog_row('PT-005', 'pt006', 'psi')
     _add_analog_row('PT-103', 'pt103', 'psi')
     _add_analog_row('PT-203', 'pt203', 'psi')
-    _add_analog_row('PTF-1', 'ptf1', 'psi')
-    _add_analog_row('PTF-2', 'ptf2', 'psi')
-    _add_analog_row('PTO-1', 'pto1', 'psi')
-    _add_analog_row('PTC-1', 'ptc1', 'psi')
-    _add_analog_row('PTC-2', 'ptc2', 'psi')
+    _add_analog_row('PTF-401', 'ptf401', 'psi')
+    _add_analog_row('PT0-401', 'pto401', 'psi')
+    _add_analog_row('PTC-401', 'ptc401', 'psi')
+    _add_analog_row('PTC-402', 'ptc402', 'psi')
     _add_analog_row('TC-001', 'tc001', 'C')
     _add_analog_row('TC-101', 'tc101', 'C')
     _add_analog_row('TC-102', 'tc102', 'C')
@@ -948,7 +1079,7 @@ def _build_status_renderable():
             if _has(vs, field):
                 sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
 
-    # Timing table
+    # Controller table
     timing = Table(
         box=box.SIMPLE_HEAD,
         show_header=True,
@@ -978,52 +1109,7 @@ def _build_status_renderable():
             f'{pkt.controller_timing.state_estimator_update_time_ns / 1000:.2f}',
             'us',
         )
-
-    # controller metrics table
-    fcm = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    fcm.add_column('Flight Controller Metric', style='bold white', no_wrap=True)
-    fcm.add_column('Value', style='white', justify='right', no_wrap=True)
-    fcm.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    if _has(pkt, 'flight_controller_metrics'):
-        m = pkt.flight_controller_metrics
-        fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
-        fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
-        fcm.add_row('Actual tilt X', f'{m.actual_world_tilt_x_rad:.3f}', 'rad')
-        fcm.add_row('Actual tilt Y', f'{m.actual_world_tilt_y_rad:.3f}', 'rad')
-        fcm.add_row('Desired vz', f'{m.desired_vertical_velocity_m_s:.3f}', 'm/s')
-        fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
-        fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
-        fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
-
-    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
-    if _has(pkt, 'ranger_throttle_metrics'):
-        rtm = pkt.ranger_throttle_metrics
-        if _has(rtm, 'predicted_thrust_lbf'):
-            fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
-        if _has(rtm, 'predicted_of'):
-            fcm.add_row('Pred O/F', f'{rtm.predicted_of:.3f}', '')
-        if _has(rtm, 'mdot_fuel'):
-            fcm.add_row('m_dot fuel', f'{rtm.mdot_fuel:.3f}', '')
-        if _has(rtm, 'mdot_lox'):
-            fcm.add_row('m_dot lox', f'{rtm.mdot_lox:.3f}', '')
-        if _has(rtm, 'change_alpha_cmd'):
-            fcm.add_row('d_alpha cmd', f'{rtm.change_alpha_cmd:.3f}', '')
-        if _has(rtm, 'clamped_change_alpha_cmd'):
-            fcm.add_row('d_alpha clamped', f'{rtm.clamped_change_alpha_cmd:.3f}', '')
-        if _has(rtm, 'alpha'):
-            fcm.add_row('alpha', f'{rtm.alpha:.3f}', '')
-        if _has(rtm, 'thrust_from_alpha_lbf'):
-            fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
-
-    if fcm.row_count == 0:
-        fcm.add_row(f'[{t["muted"]}]No controller metrics available[/{t["muted"]}]', '', '')
+    timing.add_row('DAQ connected?', 'YES' if pkt.daq_connected else 'NO', '')
 
     top = Columns(
         [
@@ -1108,6 +1194,55 @@ def _build_status_renderable():
                 border_style=t['panel_border'],
             ),
         )
+    # controller metrics table
+    fcm = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    fcm.add_column('Flight Controller Metric', style='bold white', no_wrap=True)
+    fcm.add_column('Value', style='white', justify='right', no_wrap=True)
+    fcm.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    if _has(pkt, 'flight_controller_metrics'):
+        m = pkt.flight_controller_metrics
+        fcm.add_row('Desired tilt X', f'{m.desired_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Desired tilt Y', f'{m.desired_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt X', f'{m.actual_world_tilt_x_rad:.3f}', 'rad')
+        fcm.add_row('Actual tilt Y', f'{m.actual_world_tilt_y_rad:.3f}', 'rad')
+        fcm.add_row('Desired vz', f'{m.desired_vertical_velocity_m_s:.3f}', 'm/s')
+        fcm.add_row('Cmd vz accel', f'{m.commanded_vertical_acceleration_m_s2:.3f}', 'm/s^2')
+        fcm.add_row('Cmd pitch accel', f'{m.commanded_pitch_acceleration_rad_s2:.3f}', 'rad/s^2')
+        fcm.add_row('Cmd yaw accel', f'{m.commanded_yaw_acceleration_rad_s2:.3f}', 'rad/s^2')
+
+    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    if _has(pkt, 'ranger_throttle_metrics'):
+        rtm = pkt.ranger_throttle_metrics
+        if _has(rtm, 'predicted_thrust_lbf'):
+            fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
+        if _has(rtm, 'predicted_of'):
+            fcm.add_row('Pred O/F', f'{rtm.predicted_of:.3f}', '')
+        if _has(rtm, 'mdot_fuel'):
+            fcm.add_row('m_dot fuel', f'{rtm.mdot_fuel:.3f}', '')
+        if _has(rtm, 'mdot_lox'):
+            fcm.add_row('m_dot lox', f'{rtm.mdot_lox:.3f}', '')
+        if _has(rtm, 'change_alpha_cmd'):
+            fcm.add_row('d_alpha cmd', f'{rtm.change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'clamped_change_alpha_cmd'):
+            fcm.add_row('d_alpha clamped', f'{rtm.clamped_change_alpha_cmd:.3f}', '')
+        if _has(rtm, 'alpha'):
+            fcm.add_row('alpha', f'{rtm.alpha:.3f}', '')
+        if _has(rtm, 'thrust_from_alpha_lbf'):
+            fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
+
+    if fcm.row_count != 0:
+        bottom_columns.append(Panel(
+            fcm,
+            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        ),)
 
     bottom = Columns(bottom_columns)
 
@@ -1291,19 +1426,60 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
+    # cfg1 = clover_pb2.AnalogSensorConfig()
+    # cfg1.channel = 0
+    # cfg1.assignment = clover_pb2.TC102
+    # cfg1.tc_type = clover_pb2.K_TYPE
     cfg1 = clover_pb2.AnalogSensorConfig()
-    cfg1.channel = 0
-    cfg1.assignment = clover_pb2.TC102
-    cfg1.tc_type = clover_pb2.K_TYPE
+    cfg1.channel = 3
+    cfg1.assignment = clover_pb2.PT006
+    cfg1.pt_range_psig = 2000
+    cfg1.pt_bias_psig = 0
 
     cfg2 = clover_pb2.AnalogSensorConfig()
-    cfg2.channel = 1
+    cfg2.channel = 4
     cfg2.assignment = clover_pb2.PT103
     cfg2.pt_range_psig = 1000
-    cfg2.pt_bias_psig = 100
+    cfg2.pt_bias_psig = 0
+
+    cfg3 = clover_pb2.AnalogSensorConfig()
+    cfg3.channel = 2
+    cfg3.assignment = clover_pb2.PT004
+    cfg3.pt_range_psig = 2000
+    cfg3.pt_bias_psig = 0
+
+    cfg4 = clover_pb2.AnalogSensorConfig()
+    cfg4.channel = 6
+    cfg4.assignment = clover_pb2.PT203
+    cfg4.pt_range_psig = 3000
+    cfg4.pt_bias_psig = 0
+
+    cfg5 = clover_pb2.AnalogSensorConfig()
+    cfg5.channel = 5
+    cfg5.assignment = clover_pb2.PTF401
+    cfg5.pt_range_psig = 1000
+    cfg5.pt_bias_psig = 0
+
+    cfg6 = clover_pb2.AnalogSensorConfig()
+    cfg6.channel = 1
+    cfg6.assignment = clover_pb2.PTO401
+    cfg6.pt_range_psig = 1000
+    cfg6.pt_bias_psig = 0
+
+    cfg7 = clover_pb2.AnalogSensorConfig()
+    cfg7.channel = 0
+    cfg7.assignment = clover_pb2.PTC401
+    cfg7.pt_range_psig = 1000
+    cfg7.pt_bias_psig = 0
+
+    cfg8 = clover_pb2.AnalogSensorConfig()
+    cfg8.channel = 7
+    cfg8.assignment = clover_pb2.PTC402
+    cfg8.pt_range_psig = 1000
+    cfg8.pt_bias_psig = 0
 
     req = clover_pb2.Request()
-    req.configure_analog_sensors.configs.extend([cfg1, cfg2])
+    req.configure_analog_sensors.configs.extend([cfg1, cfg2, cfg3, cfg4, cfg5, cfg6, cfg7, cfg8])
     send_request(req, 'CONFIGURE_ANALOG_SENSORS')
 
 
@@ -1634,7 +1810,9 @@ def cmd_start_throttle_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_valve_sequence.SetInParent()
-    send_request(req, 'START_THROTTLE_VALVE_SEQUENCE')
+    if send_request(req, 'START_THROTTLE_VALVE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 def cmd_load_throttle_sequence():
@@ -1674,7 +1852,9 @@ def cmd_start_throttle_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_sequence.SetInParent()
-    send_request(req, 'START_THROTTLE_SEQUENCE')
+    if send_request(req, 'START_THROTTLE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 def cmd_configure_flight_controller_gains():
@@ -1831,7 +2011,9 @@ def cmd_start_tvc_sequence():
         return
     req = clover_pb2.Request()
     req.start_tvc_sequence.SetInParent()
-    send_request(req, 'START_TVC_SEQUENCE')
+    if send_request(req, 'START_TVC_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # TODO: This is not a linear or sin trace
@@ -1875,7 +2057,9 @@ def cmd_start_rcs_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_valve_sequence.SetInParent()
-    send_request(req, 'START_RCS_VALVE_SEQUENCE')
+    if send_request(req, 'START_RCS_VALVE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 def cmd_load_rcs_sequence():
@@ -1913,7 +2097,9 @@ def cmd_start_rcs_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_sequence.SetInParent()
-    send_request(req, 'START_RCS_SEQUENCE')
+    if send_request(req, 'START_RCS_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # TODO: test if this works
@@ -1964,7 +2150,9 @@ def cmd_start_static_fire_sequence():
         return
     req = clover_pb2.Request()
     req.start_static_fire_sequence.SetInParent()
-    send_request(req, 'START_STATIC_FIRE_SEQUENCE')
+    if send_request(req, 'START_STATIC_FIRE_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # TODO: test if this works
@@ -2016,7 +2204,9 @@ def cmd_start_flight_sequence():
         return
     req = clover_pb2.Request()
     req.start_flight_sequence.SetInParent()
-    send_request(req, 'START_FLIGHT_SEQUENCE')
+    if send_request(req, 'START_FLIGHT_SEQUENCE'):
+        global _seq_recording
+        _seq_recording = True
 
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
@@ -2221,7 +2411,6 @@ def main():
         data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         data_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         data_sock.bind((DATA_IP, DATA_PORT))
-        data_sock.settimeout(1.0)
         console.print(f'\n  [{t["info"]}]Auto-subscribing to data stream...[/{t["info"]}]')
         cmd_subscribe_data_stream()
         threading.Thread(target=listen_for_telemetry, daemon=True).start()

@@ -15,6 +15,9 @@ constexpr float SEC_PER_CONTROL_TICK = NSEC_PER_CONTROL_TICK * 1e-9f;
 std::expected<void, Error> init();
 DataPacket get_next_data_packet();
 
+// Reset valve position
+std::expected<void, Error> handle_throttle_reset_valve_position(const ThrottleResetValvePositionRequest& req);
+
 // Request handlers
 std::expected<void, Error> handle_abort(const AbortRequest& req);
 std::expected<void, Error> handle_halt(const HaltRequest& req);
