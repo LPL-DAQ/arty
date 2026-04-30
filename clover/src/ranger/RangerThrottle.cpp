@@ -41,25 +41,23 @@ static inline float alpha = -1.0f;
 // 0.008283 this is for OF 1.5
 static constexpr float THRUST_KP = 0.0094f;
 static constexpr float MAX_CHANGE_ALPHA_PER_SEC = 6.141f;
-static constexpr float MAX_CHANGE_ALPHA_PER_TICK =
-    MAX_CHANGE_ALPHA_PER_SEC * Controller::SEC_PER_CONTROL_TICK;
+static constexpr float MAX_CHANGE_ALPHA_PER_TICK = MAX_CHANGE_ALPHA_PER_SEC * Controller::SEC_PER_CONTROL_TICK;
 static constexpr float MIN_ALPHA = 0.0f;
 static constexpr float MAX_ALPHA = 0.96f;
 static constexpr float MIN_VALVE_POS = 25.0f;
 static constexpr float MAX_VALVE_POS = 90.0f;
-static constexpr float thrust_axis_internal[] = {
-    400.0000f, 405.6122f, 411.2245f, 416.8367f, 422.4490f, 428.0612f, 433.6735f, 439.2857f, 444.8980f, 450.5102f, 456.1224f, 461.7347f, 
-    467.3469f, 472.9592f, 478.5714f, 484.1837f, 489.7959f, 495.4082f, 501.0204f, 506.6327f, 512.2449f, 517.8571f, 523.4694f, 529.0816f, 
-    534.6939f, 540.3061f, 545.9184f, 551.5306f, 557.1429f, 562.7551f, 568.3673f, 573.9796f, 579.5918f, 585.2041f, 590.8163f, 596.4286f, 
-    602.0408f, 607.6531f, 613.2653f, 618.8776f, 624.4898f, 630.1020f, 635.7143f, 641.3265f, 646.9388f, 652.5510f, 658.1633f, 663.7755f, 
-    669.3878f, 675.0000f
-};
+static constexpr float thrust_axis_internal[] = {400.0000f, 405.6122f, 411.2245f, 416.8367f, 422.4490f, 428.0612f, 433.6735f, 439.2857f, 444.8980f, 450.5102f,
+                                                 456.1224f, 461.7347f, 467.3469f, 472.9592f, 478.5714f, 484.1837f, 489.7959f, 495.4082f, 501.0204f, 506.6327f,
+                                                 512.2449f, 517.8571f, 523.4694f, 529.0816f, 534.6939f, 540.3061f, 545.9184f, 551.5306f, 557.1429f, 562.7551f,
+                                                 568.3673f, 573.9796f, 579.5918f, 585.2041f, 590.8163f, 596.4286f, 602.0408f, 607.6531f, 613.2653f, 618.8776f,
+                                                 624.4898f, 630.1020f, 635.7143f, 641.3265f, 646.9388f, 652.5510f, 658.1633f, 663.7755f, 669.3878f, 675.0000f};
 
-// Controller state variables
-// TODO: James pls check
-static constexpr float MAX_threshold_PT2k = 1900.0f;  // Define a maximum value for sensor validation
-static constexpr float MAX_threshold_PT1k = 950.0f;   // Define a maximum value for sensor validation
-static constexpr float MIN_threshold = 50.0f;         // Define a maximum value for sensor validation
+static constexpr float MIN_PT_THRESHOLD = 50.0f;
+static constexpr float MAX_PT_THRESHOLD = 950.0f;
+
+static float prev_p_ch = 0.0f;
+static float prev_p_inj_fuel = 0.0f;
+static float prev_p_inj_lox = 0.0f;
 
 enum class CalPhase {
     SEEK_HARDSTOP,
@@ -224,6 +222,9 @@ void RangerThrottle::reset()
 {
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     alpha = -1.0f;
+    prev_p_ch = 0.0f;
+    prev_p_inj_fuel = 0.0f;
+    prev_p_inj_lox = 0.0f;
 }
 
 // TODO: test the re-done single valve calibration. Also, make it not super slow
@@ -295,22 +296,19 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
 {
 
     // 2. Read pressures
-    // TODO: these were also battery voltage? That seems wrong
-    // TODO: ARRE THESE THE CORRECT PTS? NEEDS TO BE UPDATED FOR RANGER
-    // TODO: james, rupin says he doesnt know what to do - He cant find the P&ID
     float ptc401_val = analog_sensors.ptc401;
     float ptc402_val = analog_sensors.ptc402;
     float pto401_val = analog_sensors.pto401 + LOX_ENGINE_INLET_LINE_LOSS_PSI;
     float pt103_val = analog_sensors.pt103;
-    float ptf401_val = analog_sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
+    float ptf401_val = analog_sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;
     float pt203_val = analog_sensors.pt203;
 
-    bool ptc401_valid = (analog_sensors.ptc401 >= MIN_threshold && analog_sensors.ptc401 <= MAX_threshold_PT2k) && analog_sensors.has_ptc401;
-    bool ptc402_valid = (analog_sensors.ptc402 >= MIN_threshold && analog_sensors.ptc402 <= MAX_threshold_PT2k) && analog_sensors.has_ptc402;
-    bool pto401_valid = (analog_sensors.pto401 >= MIN_threshold && analog_sensors.pto401 <= MAX_threshold_PT2k) && analog_sensors.has_pto401;
-    bool pt103_valid = (analog_sensors.pt103 >= MIN_threshold && analog_sensors.pt103 <= MAX_threshold_PT2k) && analog_sensors.has_pt103;
-    bool ptf401_valid = (analog_sensors.ptf401 >= MIN_threshold && analog_sensors.ptf401 <= MAX_threshold_PT2k) && analog_sensors.has_ptf401;
-    bool pt203_valid = (analog_sensors.pt203 >= MIN_threshold && analog_sensors.pt203 <= MAX_threshold_PT2k) && analog_sensors.has_pt203;
+    bool ptc401_valid = (analog_sensors.ptc401 >= MIN_PT_THRESHOLD && analog_sensors.ptc401 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptc401;
+    bool ptc402_valid = (analog_sensors.ptc402 >= MIN_PT_THRESHOLD && analog_sensors.ptc402 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptc402;
+    bool pto401_valid = (analog_sensors.pto401 >= MIN_PT_THRESHOLD && analog_sensors.pto401 <= MAX_PT_THRESHOLD) && analog_sensors.has_pto401;
+    bool pt103_valid = (analog_sensors.pt103 >= MIN_PT_THRESHOLD && analog_sensors.pt103 <= MAX_PT_THRESHOLD) && analog_sensors.has_pt103;
+    bool ptf401_valid = (analog_sensors.ptf401 >= MIN_PT_THRESHOLD && analog_sensors.ptf401 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptf401;
+    bool pt203_valid = (analog_sensors.pt203 >= MIN_PT_THRESHOLD && analog_sensors.pt203 <= MAX_PT_THRESHOLD) && analog_sensors.has_pt203;
 
     float p_ch;
     if (ptc401_valid && ptc402_valid) {
@@ -326,10 +324,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_ch = ptc402_val;
     }
     else {
+        p_ch = prev_p_ch;
         // return std::unexpected(
         //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val),
         //     static_cast<double>(ptc402_val)));
     }
+    prev_p_ch = p_ch;
 
     float p_inj_fuel;
     if (pt203_valid && ptf401_valid) {
@@ -345,10 +345,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_inj_fuel = ptf401_val;
     }
     else {
+        p_inj_fuel = prev_p_inj_fuel;
         // Both failed: Trigger Abort
         // return std::unexpected(
         //     Error::from_cause("missing PT-203 / PTF-401 -- PT-203 has %f, PTF-401 has %f", static_cast<double>(pt203_val), static_cast<double>(ptf401_val)));
     }
+    prev_p_inj_fuel = p_inj_fuel;
 
     float p_inj_lox;
     if (pt103_valid && pto401_valid) {
@@ -364,10 +366,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_inj_lox = pto401_val;
     }
     else {
+        p_inj_lox = prev_p_inj_lox;
         // Both failed: Trigger Abort
         // return std::unexpected(
         //     Error::from_cause("missing PT-103 / PTO-401 -- PT-103 has %f, PTO-401 has %f", static_cast<double>(pt103_val), static_cast<double>(pto401_val)));
     }
+    prev_p_inj_lox = p_inj_lox;
 
     // 3. Calculate mass flows
     float mdot_f = calculate_fuel_mass_flow(p_inj_fuel, p_ch);
