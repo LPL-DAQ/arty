@@ -1136,11 +1136,6 @@ def _build_status_renderable():
             title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
             border_style=t['panel_border'],
         ),
-        Panel(
-            fcm,
-            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
     ]
 
     if _has(pkt, 'fuel_valve_command'):
