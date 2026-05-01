@@ -119,7 +119,6 @@ _graph_lock = threading.Lock()
 
 def _make_tcp_socket() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(2.0)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
@@ -218,10 +217,11 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     only emits values for fields present.
     """
     row = {
-        'time': _recv_time_ns(recv_time),
+        # 'time': _recv_time_ns(recv_time),
+        'time': pkt.time_ns,
         #'state': float(pkt.state),
         #'data_queue_size': float(pkt.data_queue_size),
-        #'sequence_number': float(pkt.sequence_number),
+        'sequence_number': float(pkt.sequence_number),
         #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
         #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
         #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
