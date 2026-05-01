@@ -1,10 +1,10 @@
 /*
 >>> GENERATED FILE <<<
 
-Re-create this whenever /home/lpl/arty/scripts/lut_data/target_thrust.csv changes by running from the arty directory:
+Re-create this whenever lut_data/target_thrust.csv changes by running from the arty directory:
 
 ```
-uv --project ~/arty/scripts run ~/arty/scripts/gen_lookup_table_1d.py time_target_thrust 9001 0.0 9.0 0.001 /home/lpl/arty/scripts/lut_data/target_thrust.csv /home/lpl/arty/tests/clover/src/ranger_modules/target_thrust.h
+uv --project ~/arty/scripts run ~/arty/scripts/gen_lookup_table_1d.py time_target_thrust 9001 0.0 9.0 0.001 lut_data/target_thrust.csv ../tests/clover/src/ranger_modules/target_thrust.h
 ```
 */
 
