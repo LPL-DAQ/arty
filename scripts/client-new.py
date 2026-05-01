@@ -101,7 +101,7 @@ packet_lock = threading.Lock()
 
 data_sock = None
 
-_csv_store: list = []  # list of (recv_time: float, pkt: DataPacket); drained each second
+_csv_store: list = []  # list of (recv_time, pkt, dropped_now, dropped_total); drained each second
 _csv_store_lock = threading.Lock()
 _csv_path: pathlib.Path | None = None  # set on first write
 _csv_fh = None  # open file handle
@@ -152,6 +152,7 @@ def listen_for_telemetry():
             recv_time = time.time()
 
             dropped_now = 0
+            dropped_total = 0
             with _packet_stats_lock:
                 _total_packets_received += 1
                 if _last_sequence_number is not None and packet.sequence_number > _last_sequence_number:
@@ -162,6 +163,7 @@ def listen_for_telemetry():
                         _last_drop_recv_time = recv_time
                         _last_drop_count = dropped_now
                 _last_sequence_number = int(packet.sequence_number)
+                dropped_total = _total_packets_dropped
 
             if dropped_now > 0:
                 console.print(
@@ -189,7 +191,7 @@ def listen_for_telemetry():
                         _last_packet_time = recv_time
                     elif lock is _csv_store_lock:
                         if _seq_recording:
-                            _csv_store.append((recv_time, packet))
+                            _csv_store.append((recv_time, packet, dropped_now, dropped_total))
                     else:
                         _graph_history.append(packet)
                 finally:
@@ -254,13 +256,20 @@ def _recv_time_ns(recv_time: float) -> int:
     return int(recv_time * 1_000_000_000)
 
 
-def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
+def _packet_to_row(
+    recv_time: float,
+    pkt: clover_pb2.DataPacket,
+    dropped_now: int = 0,
+    dropped_total: int = 0,
+) -> dict:
     """
     Flatten one DataPacket into a wide dict of numeric sensors for ClickHouse.
     only emits values for fields present.
     """
     row = {
         'time': _recv_time_ns(recv_time),
+        'packet_drops_now': float(dropped_now),
+        'packet_drops_total': float(dropped_total),
         #'state': float(pkt.state),
         #'data_queue_size': float(pkt.data_queue_size),
         #'sequence_number': float(pkt.sequence_number),
@@ -417,12 +426,22 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     return row
 
 
-def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[dict]:
+def _packet_to_csv_rows(
+    recv_time: float,
+    pkt: clover_pb2.DataPacket,
+    dropped_now: int = 0,
+    dropped_total: int = 0,
+) -> list[dict]:
     """
     Expand one DataPacket into multiple CSV rows (one per sensor/field),
     matching the unpivoted schema written to ClickHouse raw_sensors.
     """
-    wide = _packet_to_row(recv_time, pkt)
+    wide = _packet_to_row(
+        recv_time,
+        pkt,
+        dropped_now=dropped_now,
+        dropped_total=dropped_total,
+    )
     ts = wide['time']
     rows = []
 
@@ -469,9 +488,14 @@ def _write_csv_on_exit():
     if _csv_fh is None:
         return
 
-    for recv_time, pkt in remaining:
+    for recv_time, pkt, dropped_now, dropped_total in remaining:
         try:
-            for row in _packet_to_csv_rows(recv_time, pkt):
+            for row in _packet_to_csv_rows(
+                recv_time,
+                pkt,
+                dropped_now=dropped_now,
+                dropped_total=dropped_total,
+            ):
                 _csv_writer.writerow(row)
                 _csv_rows_written += 1
         except Exception as e:
@@ -515,6 +539,11 @@ _USEFUL_SENSORS: dict[str, str] = {
     'controller_tick_time_ns': 'Controller Tick Time (ns)',
     'predicted_thrust': 'Predicted Thrust',
 
+}
+
+_DROP_SENSORS: dict[str, str] = {
+    'packet_drops_now': 'Dropped This Packet',
+    'packet_drops_total': 'Dropped Total',
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
@@ -583,10 +612,15 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
         time_units_per_second = _time_units_per_second(times)
 
         fig = make_subplots(
-            rows=2, cols=1,
-            subplot_titles=('All Sensors', 'Motor Traces — Desired vs Actual'),
+            rows=3,
+            cols=1,
+            subplot_titles=(
+                'All Sensors',
+                'Motor Traces — Desired vs Actual',
+                'Packet Drops',
+            ),
             shared_xaxes=True,
-            vertical_spacing=0.1,
+            vertical_spacing=0.08,
         )
 
         for sensor, label in _USEFUL_SENSORS.items():
@@ -613,10 +647,23 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
                 name=label,
             ), row=2, col=1)
 
-        fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+        for sensor, label in _DROP_SENSORS.items():
+            points = series.get(sensor, [])
+            if not points:
+                continue
+            points.sort(key=lambda point: point[0])
+            fig.add_trace(go.Scatter(
+                x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
+                y=[value for _, value in points],
+                mode='lines+markers',
+                name=label,
+            ), row=3, col=1)
+
+        fig.update_xaxes(title_text='Time (s)', row=3, col=1)
         fig.update_yaxes(title_text='Value', row=1, col=1)
         fig.update_yaxes(title_text='Position (°)', row=2, col=1)
-        fig.update_layout(hovermode='x unified', height=800)
+        fig.update_yaxes(title_text='Packets', row=3, col=1)
+        fig.update_layout(hovermode='x unified', height=1000)
 
         plots_dir = csv_path.parent / 'plots'
         plots_dir.mkdir(exist_ok=True)
@@ -675,8 +722,13 @@ def _flush_loop():
                 _csv_writer.writeheader()
             if _csv_fh is not None:
                 try:
-                    for recv_time, pkt in csv_batch:
-                        for row in _packet_to_csv_rows(recv_time, pkt):
+                    for recv_time, pkt, dropped_now, dropped_total in csv_batch:
+                        for row in _packet_to_csv_rows(
+                            recv_time,
+                            pkt,
+                            dropped_now=dropped_now,
+                            dropped_total=dropped_total,
+                        ):
                             _csv_writer.writerow(row)
                             _csv_rows_written += 1
                     _csv_fh.flush()
