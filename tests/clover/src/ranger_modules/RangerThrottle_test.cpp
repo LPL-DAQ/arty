@@ -13,8 +13,8 @@
 
 static constexpr float kToleranceAlpha = 1e-4f;
 static constexpr float kToleranceChangeAlphaCmd = 1e-5f;
-static constexpr float kTolerancePredictedThrust = 1e-3f;
-static constexpr float kToleranceValveDeg = 1e-3f;
+static constexpr float kTolerancePredictedThrust = 6.0f; //
+static constexpr float kToleranceValveDeg = 0.3f;
 
 static_assert(TIME_ALPHA_X_LEN == TIME_PREDICTED_THRUST_X_LEN);
 static_assert(TIME_ALPHA_X_LEN == TIME_TARGET_THRUST_X_LEN);

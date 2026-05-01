@@ -46,11 +46,8 @@ static constexpr float MIN_ALPHA = 0.0f;
 static constexpr float MAX_ALPHA = 0.96f;
 static constexpr float MIN_VALVE_POS = 25.0f;
 static constexpr float MAX_VALVE_POS = 90.0f;
-static constexpr float thrust_axis_internal[] = {400.0000f, 405.6122f, 411.2245f, 416.8367f, 422.4490f, 428.0612f, 433.6735f, 439.2857f, 444.8980f, 450.5102f,
-                                                 456.1224f, 461.7347f, 467.3469f, 472.9592f, 478.5714f, 484.1837f, 489.7959f, 495.4082f, 501.0204f, 506.6327f,
-                                                 512.2449f, 517.8571f, 523.4694f, 529.0816f, 534.6939f, 540.3061f, 545.9184f, 551.5306f, 557.1429f, 562.7551f,
-                                                 568.3673f, 573.9796f, 579.5918f, 585.2041f, 590.8163f, 596.4286f, 602.0408f, 607.6531f, 613.2653f, 618.8776f,
-                                                 624.4898f, 630.1020f, 635.7143f, 641.3265f, 646.9388f, 652.5510f, 658.1633f, 663.7755f, 669.3878f, 675.0000f};
+static constexpr float MIN_THRUST_LBF = 400.0f;
+static constexpr float MAX_THRUST_LBF = 675.0f;
 
 static constexpr float MIN_PT_THRESHOLD = 50.0f;
 static constexpr float MAX_PT_THRESHOLD = 950.0f;
@@ -417,13 +414,13 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     if (alpha_state == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
         // alpha_state = 0.5f;
-        alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+        alpha_state = (thrust_command_lbf - MIN_THRUST_LBF) / (MAX_THRUST_LBF - MIN_THRUST_LBF);
     }
     alpha_state += clamped_change_alpha_cmd;
     alpha_state = std::clamp(alpha_state, MIN_ALPHA, MAX_ALPHA);
 
     // 11. Plug alpha into Mprime contour
-    float thrust_from_alpha_lbf = alpha_state * (thrust_axis_internal[50 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
+    float thrust_from_alpha_lbf = alpha_state * (MAX_THRUST_LBF - MIN_THRUST_LBF) + MIN_THRUST_LBF;
     float fuel_valve_command_deg = ThrustToFuelAxis::sample(thrust_from_alpha_lbf);
     float lox_valve_command_deg = ThrustToLoxAxis::sample(thrust_from_alpha_lbf);
 
