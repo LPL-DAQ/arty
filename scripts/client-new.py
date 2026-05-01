@@ -368,8 +368,13 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
         row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
-        row['alpha'] = _opt(rtm, 'alpha')
+        row['thrust_from_alpha'] = _opt(rtm, 'thrust_from_alpha_lbf')
+        row['predicted_of'] = _opt(rtm, 'predicted_of')
+        row['mdot_fuel'] = _opt(rtm, 'mdot_fuel')
+        row['mdot_lox'] = _opt(rtm, 'mdot_lox')
+        row['change_alpha_cmd'] = _opt(rtm, 'change_alpha_cmd')
         row['clamped_change_alpha_cmd'] = _opt(rtm, 'clamped_change_alpha_cmd')
+        row['alpha'] = _opt(rtm, 'alpha')
 
     return row
 
