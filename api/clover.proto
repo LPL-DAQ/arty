@@ -472,7 +472,6 @@ enum SystemState {
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
-  required uint64 between_tick_time_ns = 94;
 
   // Controller metrics
 
@@ -576,6 +575,8 @@ message DataPacket {
 
 // Stats on controller and sensor execution times.
 message ControllerTiming {
+  required uint64 between_tick_time_ns = 4;
+
   required float controller_tick_time_ns = 1;
   required float analog_sensors_sense_time_ns = 2;
   required float state_estimator_update_time_ns = 3;
