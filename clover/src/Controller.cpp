@@ -55,6 +55,8 @@ float prev_yaw_servo_command = 0.0f;
 
 // Valid in THROTTLE, TVC, RCS, and FLIGHT.
 static uint64_t trace_start_cycle = 0;
+static uint64_t end_cycle = k_cycle_get_64();
+
 static float trace_total_time_msec = 0;
 
 // Valid in ABORT.
@@ -394,6 +396,7 @@ static void step_control_loop(k_work*)
     MutexGuard current_state_guard{&controller_state_lock};
 
     uint64_t start_cycle = k_cycle_get_64();
+    uint64_t time_between_ticks_ns = k_cyc_to_ns_near64(start_cycle - end_cycle);
     DataPacket data = DataPacket_init_default;
     data.time_ns = k_cyc_to_ns_near64(start_cycle);
     data.state = current_state;
@@ -730,6 +733,8 @@ static void step_control_loop(k_work*)
 #ifdef CONFIG_ANALOG_SENSORS
     AnalogSensors::start_sense();
 #endif  // CONFIG_ANALOG_SENSORS
+
+    end_cycle = k_cycle_get_64();
 }
 
 /// Retrieves a data packet from the telemetry message queue.

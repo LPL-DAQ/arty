@@ -74,8 +74,8 @@ STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
-# ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP   = "192.168.0.150"  # daq box router
+ZEPHYR_IP = '169.254.99.99'  # real board
+# ZEPHYR_IP   = "192.168.0.150"  # daq box router
 # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
@@ -222,7 +222,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         #'state': float(pkt.state),
         #'data_queue_size': float(pkt.data_queue_size),
         #'sequence_number': float(pkt.sequence_number),
-        #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
+        'controller_tick_time_ns': float(pkt.controller_timing.controller_tick_time_ns),
         #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
         #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
         #'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
@@ -466,6 +466,7 @@ _USEFUL_SENSORS: dict[str, str] = {
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
+    'controller_tick_time_ns': 'Controller Tick Time (ns)',
     'predicted_thrust': 'Predicted Thrust',
 
 }
@@ -849,6 +850,32 @@ def _build_lox_graph() -> Panel:
     plt.xlabel('t (s)')
     plt.ylabel('psi')
     return _plotext_panel('🔴 LOX Sensors (100s + PTC)')
+
+
+def _build_controller_tick_time_graph() -> Panel:
+    """Controller tick time over time."""
+    with _graph_lock:
+        history = list(_graph_history)
+    if len(history) < 2:
+        return _waiting_panel('⏱ Controller Tick Time')
+
+    t0 = history[0].time_ns / 1e9
+    times = [p.time_ns / 1e9 - t0 for p in history]
+    tick_us = [p.controller_timing.controller_tick_time_ns / 1000 for p in history]
+
+    plt.clf()
+    plt.plotsize(_half_width(), 15)
+    plt.theme('dark')
+    plt.plot(
+        times,
+        tick_us,
+        label='Tick time',
+        color=(100, 220, 255),
+        marker='braille',
+    )
+    plt.xlabel('t (s)')
+    plt.ylabel('us')
+    return _plotext_panel('⏱ Controller Tick Time')
 
 
 STATE_COLORS = {

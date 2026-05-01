@@ -472,6 +472,7 @@ enum SystemState {
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
+  requried u_int64 between_tick_time_ns = 94;
 
   // Controller metrics
 
