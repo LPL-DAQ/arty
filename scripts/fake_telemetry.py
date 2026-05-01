@@ -87,6 +87,13 @@ _RUNNING_STATES = {
     clover_pb2.STATE_FLIGHT,
 }
 
+# States where RangerThrottleMetrics should be emitted
+_THROTTLE_METRIC_STATES = {
+    clover_pb2.STATE_THROTTLE,
+    clover_pb2.STATE_STATIC_FIRE,
+    clover_pb2.STATE_FLIGHT,
+}
+
 
 # ── Trace evaluation ──────────────────────────────────────────────────────────
 def eval_trace(trace: clover_pb2.ControlTrace, t_ms: float) -> float | None:
@@ -252,6 +259,30 @@ def simulation_loop():
             pkt.analog_sensors.ptg002         = sv["ptg002"]
             pkt.analog_sensors.ptg101         = sv["ptg101"]
             pkt.analog_sensors.battery_voltage = sv["battery_voltage"]
+
+            if system_state in _THROTTLE_METRIC_STATES:
+                f_open = max(0.0, min(1.0, fuel.encoder / 90.0))
+                l_open = max(0.0, min(1.0, lox.encoder  / 90.0))
+                alpha         = (f_open + l_open) / 2.0
+                mdot_fuel     = 0.12 * f_open + random.gauss(0, 0.001)
+                mdot_lox      = 0.28 * l_open + random.gauss(0, 0.002)
+                predicted_of  = (mdot_lox / mdot_fuel) if mdot_fuel > 1e-4 else 0.0
+                predicted_thr = 500.0 * f_open * l_open + random.gauss(0, 2.0)
+                thrust_alpha  = predicted_thr * (0.97 + random.gauss(0, 0.01))
+                d_alpha       = (alpha - getattr(simulation_loop, '_prev_alpha', alpha)) * 10.0
+                simulation_loop._prev_alpha = alpha
+                c_d_alpha     = max(-0.05, min(0.05, d_alpha))
+
+                rtm = pkt.ranger_throttle_metrics
+                rtm.predicted_thrust_lbf      = predicted_thr
+                rtm.thrust_from_alpha_lbf     = thrust_alpha
+                rtm.predicted_of              = predicted_of
+                rtm.mdot_fuel                 = mdot_fuel
+                rtm.mdot_lox                  = mdot_lox
+                rtm.change_alpha_cmd          = d_alpha
+                rtm.clamped_change_alpha_cmd  = c_d_alpha
+                rtm.alpha                     = alpha
+
 
             seq_num += 1
             data = pkt.SerializeToString()
