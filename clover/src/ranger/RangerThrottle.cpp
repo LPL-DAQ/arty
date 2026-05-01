@@ -416,8 +416,8 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     // 10. Integrate PID to get alpha
     if (alpha_state == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
-        alpha_state = 0.5f;
-        // alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+        // alpha_state = 0.5f;
+        alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
     }
     alpha_state += clamped_change_alpha_cmd;
     alpha_state = std::clamp(alpha_state, MIN_ALPHA, MAX_ALPHA);
