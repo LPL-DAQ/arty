@@ -116,6 +116,13 @@ _GRAPH_MAXLEN = 300  # ~60 s at 5 Hz
 _graph_history: deque = deque(maxlen=_GRAPH_MAXLEN)
 _graph_lock = threading.Lock()
 
+_packet_stats_lock = threading.Lock()
+_last_sequence_number: int | None = None
+_total_packets_received: int = 0
+_total_packets_dropped: int = 0
+_last_drop_recv_time: float | None = None
+_last_drop_count: int = 0
+
 
 def _make_tcp_socket() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -135,12 +142,33 @@ sock = _make_tcp_socket()
 def listen_for_telemetry():
     """Background thread — receives UDP DataPackets and stores latest."""
     global latest_packet, _last_packet_time
+    global _last_sequence_number, _total_packets_received, _total_packets_dropped
+    global _last_drop_recv_time, _last_drop_count
     while True:
         try:
             data, _ = data_sock.recvfrom(4096)
             packet = clover_pb2.DataPacket()
             packet.ParseFromString(data)
             recv_time = time.time()
+
+            dropped_now = 0
+            with _packet_stats_lock:
+                _total_packets_received += 1
+                if _last_sequence_number is not None and packet.sequence_number > _last_sequence_number:
+                    gap = packet.sequence_number - _last_sequence_number - 1
+                    if gap > 0:
+                        dropped_now = int(gap)
+                        _total_packets_dropped += dropped_now
+                        _last_drop_recv_time = recv_time
+                        _last_drop_count = dropped_now
+                _last_sequence_number = int(packet.sequence_number)
+
+            if dropped_now > 0:
+                console.print(
+                    f'  [bold yellow]Dropped {dropped_now} packet(s) near t={packet.time_ns / 1e9:.3f}s '
+                    f'(seq {packet.sequence_number - dropped_now - 1} -> {packet.sequence_number})[/bold yellow]'
+                )
+
             for lock, name in (
                 (packet_lock, 'packet_lock'),
                 (_last_packet_lock, '_last_packet_lock'),
@@ -933,6 +961,12 @@ def _build_status_renderable():
             border_style=t['panel_border'],
         )
 
+    with _packet_stats_lock:
+        total_received = _total_packets_received
+        total_dropped = _total_packets_dropped
+        last_drop_recv_time = _last_drop_recv_time
+        last_drop_count = _last_drop_count
+
     state_name = clover_pb2.SystemState.Name(pkt.state)
     state_color = STATE_COLORS.get(state_name, 'white')
     is_abort = state_name == 'STATE_ABORT'
@@ -951,6 +985,15 @@ def _build_status_renderable():
         Text(f'queue: {pkt.data_queue_size}', style=t['muted']),
     )
     header_panel = Panel(hdr, border_style=t['panel_border'], padding=(0, 1), subtitle=abort_str)
+
+    if total_received > 0:
+        drop_pct = (100.0 * total_dropped) / total_received
+    else:
+        drop_pct = 0.0
+    if last_drop_recv_time is None:
+        last_drop_str = 'never'
+    else:
+        last_drop_str = f'{last_drop_count} pkt at {last_drop_recv_time:.3f}'
 
     # Pose table
     pose = Table(
@@ -984,6 +1027,10 @@ def _build_status_renderable():
     cmd.add_column('Command', style='bold white', no_wrap=True)
     cmd.add_column('Value', style='white', justify='right', no_wrap=True)
     cmd.add_column('Unit', style=t['muted'], no_wrap=True)
+
+    cmd.add_row('Pkts recv', f'{total_received}', '')
+    cmd.add_row('Pkts dropped', f'{total_dropped} ({drop_pct:.2f}%)', '')
+    cmd.add_row('Last drop', last_drop_str, '')
 
     if _has(pkt, 'main_propeller_command'):
         pwm = max(1000, min(2000, pkt.main_propeller_command))

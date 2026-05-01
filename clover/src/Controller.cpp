@@ -396,9 +396,10 @@ static void step_control_loop(k_work*)
     MutexGuard current_state_guard{&controller_state_lock};
 
     uint64_t start_cycle = k_cycle_get_64();
-    uint64_t time_between_ticks_ns = k_cyc_to_ns_near64(start_cycle - end_cycle);
     DataPacket data = DataPacket_init_default;
+    uint64_t time_between_ticks_ns = k_cyc_to_ns_near64(start_cycle - end_cycle);
     data.time_ns = k_cyc_to_ns_near64(start_cycle);
+    data.controller_timing.between_tick_time_ns = time_between_ticks_ns;
     data.state = current_state;
 
     // Read sensors
