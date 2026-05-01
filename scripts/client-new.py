@@ -207,6 +207,20 @@ def _opt(msg, field: str):
     return float(getattr(msg, field)) if _has(msg, field) else None
 
 
+def _coerce_float(value):
+    """Return float(value) when value is numeric; otherwise None."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _recv_time_ns(recv_time: float) -> int:
     """Return the host receive timestamp in epoch nanoseconds."""
     return int(recv_time * 1_000_000_000)
@@ -222,6 +236,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         #'state': float(pkt.state),
         #'data_queue_size': float(pkt.data_queue_size),
         #'sequence_number': float(pkt.sequence_number),
+        'between_tick_time_ns': _opt(pkt.controller_timing, 'between_tick_time_ns'),
         'controller_tick_time_ns': float(pkt.controller_timing.controller_tick_time_ns),
         #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
         #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
@@ -387,7 +402,9 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
         if sensor == 'time' or raw_value is None:
             continue
 
-        value = float(raw_value)
+        value = _coerce_float(raw_value)
+        if value is None:
+            continue
         # event column: state label for gnc_state rows, empty string otherwise
         event = _STATE_NAMES.get(raw_value, '') if sensor == 'gnc_state' else ''
 
@@ -466,6 +483,7 @@ _USEFUL_SENSORS: dict[str, str] = {
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
+    'between_tick_time_ns': 'Between Tick Time (ns)',
     'controller_tick_time_ns': 'Controller Tick Time (ns)',
     'predicted_thrust': 'Predicted Thrust',
 
@@ -1102,6 +1120,10 @@ def _build_status_renderable():
     timing.add_row(
         'Controller tick', f'{pkt.controller_timing.controller_tick_time_ns / 1000:.2f}', 'us'
     )
+    if _has(pkt.controller_timing, 'between_tick_time_ns'):
+        timing.add_row(
+            'Between ticks', f'{pkt.controller_timing.between_tick_time_ns / 1000:.2f}', 'us'
+        )
     if _has(pkt.controller_timing, 'analog_sensors_sense_time_ns'):
         timing.add_row(
             'Analog read', f'{pkt.controller_timing.analog_sensors_sense_time_ns / 1000:.2f}', 'us'
