@@ -293,12 +293,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
 {
 
     // 2. Read pressures
+    float pt103_val = analog_sensors.pt103;
+    float pt203_val = analog_sensors.pt203;
     float ptc401_val = analog_sensors.ptc401;
     float ptc402_val = analog_sensors.ptc402;
     float pto401_val = analog_sensors.pto401 + LOX_ENGINE_INLET_LINE_LOSS_PSI;
-    float pt103_val = analog_sensors.pt103;
     float ptf401_val = analog_sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;
-    float pt203_val = analog_sensors.pt203;
 
     bool ptc401_valid = (analog_sensors.ptc401 >= MIN_PT_THRESHOLD && analog_sensors.ptc401 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptc401;
     bool ptc402_valid = (analog_sensors.ptc402 >= MIN_PT_THRESHOLD && analog_sensors.ptc402 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptc402;
@@ -444,7 +444,7 @@ RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
 
-    auto predicted_thrust = thrust_predictor(analog_sensors, metrics);
+    auto predicted_thrust = ::thrust_predictor(analog_sensors, metrics);
     if (!predicted_thrust) {
         LOG_INF("Thrust predictor failed");
         return std::unexpected(predicted_thrust.error());
@@ -460,5 +460,10 @@ std::tuple<ThrottleValveCommand, ThrottleValveCommand>
 RangerThrottle::active_control_test(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics)
 {
     return ::active_control(alpha_state, predicted_thrust_lbf, thrust_command_lbf, metrics);
+}
+
+std::expected<float, Error> RangerThrottle::thrust_predictor(AnalogSensorReadings& analog_sensors, RangerThrottleMetrics& metrics)
+{
+    return ::thrust_predictor(analog_sensors, metrics);
 }
 #endif
