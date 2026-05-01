@@ -122,6 +122,64 @@ static float sense_time_ns = 0.0f;
 
 LOG_MODULE_REGISTER(AnalogSensors, CONFIG_LOG_DEFAULT_LEVEL);
 
+#if CONFIG_ANALOG_SENSORS_LOG_RAW_READINGS
+static uint32_t raw_reading_log_sample_count = 0;
+
+static void log_raw_adc_readings()
+{
+    raw_reading_log_sample_count++;
+    if (raw_reading_log_sample_count != 1
+        && (raw_reading_log_sample_count % CONFIG_ANALOG_SENSORS_RAW_LOG_EVERY_N_SAMPLES) != 0) {
+        return;
+    }
+
+    for (int adc_idx = 0; adc_idx < NUM_ADCS; ++adc_idx) {
+        const int num_readings = static_cast<int>(adc_read_seqs[adc_idx].buffer_size / sizeof(uint16_t));
+        uint16_t min_reading = raw_readings[adc_idx][0];
+        uint16_t max_reading = raw_readings[adc_idx][0];
+        int nonzero_readings = 0;
+
+        for (int reading_idx = 0; reading_idx < num_readings; ++reading_idx) {
+            uint16_t reading = raw_readings[adc_idx][reading_idx];
+            if (reading < min_reading) {
+                min_reading = reading;
+            }
+            if (reading > max_reading) {
+                max_reading = reading;
+            }
+            if (reading != 0) {
+                nonzero_readings++;
+            }
+        }
+
+        LOG_INF(
+            "ADC bank %d (%s) raw sample %u: channels=%d min=%u max=%u nonzero=%d",
+            adc_idx,
+            adc_devices[adc_idx]->name,
+            static_cast<unsigned int>(raw_reading_log_sample_count),
+            num_readings,
+            static_cast<unsigned int>(min_reading),
+            static_cast<unsigned int>(max_reading),
+            nonzero_readings);
+
+        for (int reading_idx = 0; reading_idx < num_readings; ++reading_idx) {
+            const int input_channel = adc_reading_index_to_input_channel[adc_idx][reading_idx];
+            if (input_channel == -1) {
+                break;
+            }
+
+            LOG_INF(
+                "ADC bank %d (%s) input %d AIN%d raw %u",
+                adc_idx,
+                adc_devices[adc_idx]->name,
+                input_channel,
+                adc_channels[input_channel].channel_id,
+                static_cast<unsigned int>(raw_readings[adc_idx][reading_idx]));
+        }
+    }
+}
+#endif  // CONFIG_ANALOG_SENSORS_LOG_RAW_READINGS
+
 /// Continuously sense, coordinating with control ticks so the reading is ready at the start of each one.
 static void sense()
 {
@@ -138,7 +196,7 @@ static void sense()
         for (int i = 0; i < NUM_ADCS; ++i) {
             int err = adc_read(adc_devices[i], &adc_read_seqs[i]);
             if (err) {
-                LOG_ERR("Error initiating async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
+                LOG_ERR("Error reading ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
         }
 
@@ -348,6 +406,10 @@ static void sense()
                 }
             }
         }
+
+#if CONFIG_ANALOG_SENSORS_LOG_RAW_READINGS
+        log_raw_adc_readings();
+#endif  // CONFIG_ANALOG_SENSORS_LOG_RAW_READINGS
     }
 }
 
@@ -357,16 +419,24 @@ K_THREAD_DEFINE(analog_sensors, 2048, sense, nullptr, nullptr, nullptr, ANALOG_S
 std::expected<void, Error> AnalogSensors::init()
 {
     LOG_INF("Checking ADC readiness");
-    for (const device* dev : adc_devices) {
+    for (int i = 0; i < NUM_ADCS; ++i) {
+        const device* dev = adc_devices[i];
         if (!device_is_ready(dev)) {
             return std::unexpected(Error::from_device_not_ready(dev).context("AnalogSensors ADC is not ready"));
         }
+
+        LOG_INF(
+            "ADC bank %d device %s ready, mask 0x%08x, %u readings",
+            i,
+            dev->name,
+            static_cast<unsigned int>(adc_read_seqs[i].channels),
+            static_cast<unsigned int>(adc_read_seqs[i].buffer_size / sizeof(uint16_t)));
     }
 
     // Configure ADC channels.
+    LOG_INF("Initializing %d analog input channels", NUM_ANALOG_CHANNELS);
     for (int i = 0; i < NUM_ANALOG_CHANNELS; ++i) {
         const auto& channel = adc_channels[i];
-        LOG_INF("Initializing channel %d (ADC channel %d) on device %s", i, channel.channel_id, channel.dev->name);
 
         if (int err = adc_channel_setup_dt(&channel)) {
             return std::unexpected(Error::from_code(err).context("failed to set up ADC channel %d", channel.channel_id));

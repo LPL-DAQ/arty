@@ -126,13 +126,14 @@ TODO:
 // Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
 &pinctrl {
     // Software CS GPIO pins for ADS7953.
-    // EMC pads default to EMC mux state — must be explicitly routed to GPIO3.
-    // Pin 36 = GPIO_EMC_38 = gpio3_io24 (U8 CS)
-    // Pin 37 = GPIO_EMC_39 = gpio3_io25 (U7 CS)
+    // These pads can also mux as LPSPI4_PCS2/PCS1, but the ADC data bus is on LPSPI3,
+    // so drive them as GPIO chip-selects.
+    // Pin 36 = GPIO_B1_02 = gpio2_io18 = LPSPI4_PCS2 (U8 CS)
+    // Pin 37 = GPIO_B1_03 = gpio2_io19 = LPSPI4_PCS1 (U7 CS)
     pinmux_lpspi3_cs_gpios: pinmux_lpspi3_cs_gpios {
         group0 {
-            pinmux = <&iomuxc_gpio_emc_38_gpio3_io24>,
-                     <&iomuxc_gpio_emc_39_gpio3_io25>;
+            pinmux = <&iomuxc_gpio_b1_02_gpio2_io18>,
+                     <&iomuxc_gpio_b1_03_gpio2_io19>;
             drive-strength = "r0-6";
             slew-rate = "slow";
         };
@@ -357,14 +358,14 @@ TODO:
 
 // ADS7953 dual SPI ADC (U7 + U8)
 // MOSI=pin26, MISO=pin39, SCK=pin27 → lpspi3 (pinmux defined upstream)
-// CS: pin37=gpio3_25 (U7/AIN0-15), pin36=gpio3_24 (U8/AIN16-31)
+// CS: pin37=gpio2_19 (U7/AIN0-15), pin36=gpio2_18 (U8/AIN16-31)
 &lpspi3 {
     status = "okay";
     pinctrl-0 = <&pinmux_lpspi3 &pinmux_lpspi3_cs_gpios>;
     pinctrl-names = "default";
 
-    cs-gpios = <&gpio3 25 GPIO_ACTIVE_LOW>,   // Pin 37 → U7 (AIN0–15)
-               <&gpio3 24 GPIO_ACTIVE_LOW>;   // Pin 36 → U8 (AIN16–31)
+    cs-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>,   // Pin 37 → U7 (AIN0–15)
+               <&gpio2 18 GPIO_ACTIVE_LOW>;   // Pin 36 → U8 (AIN16–31)
 
     ads7953_1: adc@0 {
         compatible = "ti,ads7953";

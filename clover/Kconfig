@@ -59,6 +59,21 @@ config ANALOG_SENSORS
     bool "Whether analog sensors are available"
     default y
 
+config ANALOG_SENSORS_LOG_RAW_READINGS
+    bool "Log raw analog sensor ADC readings"
+    depends on ANALOG_SENSORS
+    default n
+    help
+      Enable raw per-bank ADC logging for board bring-up.
+
+config ANALOG_SENSORS_RAW_LOG_EVERY_N_SAMPLES
+    int "Raw analog sensor ADC log interval"
+    depends on ANALOG_SENSORS_LOG_RAW_READINGS
+    range 1 1000000
+    default 1000
+    help
+      Log raw ADC bank readings every N analog sensor samples.
+
 config VALVES
     bool "Whether GPIO-controlled valves are available"
     default y if RANGER

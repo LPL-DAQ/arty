@@ -54,6 +54,7 @@ struct ads79xx_data {
     uint16_t* repeat_buffer;
     uint16_t channels;
     uint16_t auto1_mask;
+    bool has_run_manual_probe;
 
     struct k_thread thread;
     struct k_sem sem;
@@ -108,6 +109,7 @@ static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint
 
     ret = spi_transceive_dt(&cfg->spi, &txs, &rxs);
     if (ret) {
+        LOG_ERR("%s SPI transfer failed tx=0x%04x err=%d", dev->name, tx_word, ret);
         return ret;
     }
 
@@ -119,8 +121,9 @@ static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint
         uint16_t w = tx_word;
 
         LOG_DBG(
-            "SDI=0x%04x mode=%x prog=%u next_ch=%u range=%u pd=%u sdo_gpio=%u "
+            "%s SDI=0x%04x mode=%x prog=%u next_ch=%u range=%u pd=%u sdo_gpio=%u "
             "gpio=0x%x",
+            dev->name,
             w,
             (w >> 12) & 0xF,
             (w >> 11) & 1,
@@ -129,7 +132,7 @@ static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint
             (w >> 5) & 1,
             (w >> 4) & 1,
             w & 0xF);
-        LOG_DBG("SDO=0x%04x addr=%x val=%u", r, (r >> 12), r & 0x0FFF);
+        LOG_DBG("%s SDO=0x%04x addr=%x val=%u", dev->name, r, (r >> 12), r & 0x0FFF);
     }
 
     return ret;
@@ -205,6 +208,8 @@ static int ads79xx_prog_auto1_mask(const struct device* dev, uint16_t mask)
     uint16_t rx;
     int ret;
 
+    LOG_INF("%s programming AUTO1 mask 0x%04x", dev->name, mask);
+
     ret = ads79xx_spi_transfer(dev, ads79xx_ctrl_auto1_prog_entry(), &rx);
     if (ret) {
         return ret;
@@ -220,8 +225,43 @@ static int ads79xx_set_mode_auto1(const struct device* dev, bool reset_counter)
     uint16_t rx;
 
     w = ads79xx_ctrl_auto1(reset_counter, false, (cfg->range == 2), false, 0);
+    LOG_INF("%s entering AUTO1 reset_counter=%u range=%u cmd=0x%04x", dev->name, reset_counter, cfg->range, w);
 
     return ads79xx_spi_transfer(dev, w, &rx);
+}
+
+static void ads79xx_manual_probe(const struct device* dev)
+{
+    const struct ads79xx_config* cfg = dev->config;
+    uint16_t rx = 0;
+
+    LOG_INF("%s manual probe begin", dev->name);
+
+    for (int ch = 0; ch < MIN(cfg->channels, 4); ++ch) {
+        uint16_t cmd = ads79xx_manual_command(cfg, ch);
+        int ret = ads79xx_spi_transfer(dev, cmd, &rx);
+        LOG_INF(
+            "%s manual probe set ch=%d cmd=0x%04x ret=%d rx=0x%04x rx_addr=%u sample=%u",
+            dev->name,
+            ch,
+            cmd,
+            ret,
+            rx,
+            ads79xx_rx_addr(cfg, rx),
+            ads79xx_sample(cfg, rx));
+
+        ret = ads79xx_spi_transfer(dev, ads79xx_ctrl_continue(), &rx);
+        LOG_INF(
+            "%s manual probe read ch=%d ret=%d rx=0x%04x rx_addr=%u sample=%u",
+            dev->name,
+            ch,
+            ret,
+            rx,
+            ads79xx_rx_addr(cfg, rx),
+            ads79xx_sample(cfg, rx));
+    }
+
+    LOG_INF("%s manual probe end", dev->name);
 }
 
 static int ads79xx_continue(const struct device* dev, uint16_t* rx)
@@ -266,7 +306,6 @@ static void adc_context_start_sampling(struct adc_context* ctx)
     data->channels = ctx->sequence.channels;
     data->repeat_buffer = data->buffer;
     k_sem_give(&data->sem);
-    LOG_DBG("start_sampling");
 }
 
 static int ads79xx_start_read(const struct device* dev, const struct adc_sequence* sequence)
@@ -351,13 +390,17 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
 
     /* Prime the ads79xx */
     ret = ads79xx_spi_transfer(dev, ads79xx_manual_command(cfg, 0), &dummy);
-    LOG_INF("ADS79xx prime: ret=%d miso=0x%04x", ret, dummy);
+    LOG_INF("%s ADS79xx prime: ret=%d miso=0x%04x", dev->name, ret, dummy);
 
     while (true) {
         k_sem_take(&data->sem, K_FOREVER);
 
+        if (!data->has_run_manual_probe) {
+            ads79xx_manual_probe(dev);
+            data->has_run_manual_probe = true;
+        }
+
         if (data->auto1_mask != data->channels) {
-            LOG_DBG("programming auto-1 channel mask");
             ret = ads79xx_prog_auto1_mask(dev, data->channels);
             if (ret) {
                 LOG_ERR("failed to configure acquisition (err %d)", ret);
@@ -391,7 +434,6 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
                 goto acquisition_failed;
             }
             *data->buffer++ = ads79xx_sample(cfg, rx);
-            LOG_DBG("rx_addr: %d, sample: %d", ads79xx_rx_addr(cfg, rx), ads79xx_sample(cfg, rx));
         }
         adc_context_on_sampling_done(&data->ctx, data->dev);
     acquisition_failed:;
@@ -412,6 +454,17 @@ int ads79xx_init(const struct device* dev)
         LOG_ERR("SPI bus %s not ready", config->spi.bus->name);
         return -ENODEV;
     }
+
+    LOG_INF(
+        "%s init bus=%s freq=%u operation=0x%04x slave=%u channels=%u resolution=%u range=%u",
+        dev->name,
+        config->spi.bus->name,
+        config->spi.config.frequency,
+        config->spi.config.operation,
+        config->spi.config.slave,
+        config->channels,
+        config->resolution,
+        config->range);
 
     k_thread_create(
         &data->thread,
