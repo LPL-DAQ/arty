@@ -1450,13 +1450,13 @@ def cmd_configure_analog_sensors():
     cfg1.channel = 3
     cfg1.assignment = clover_pb2.PT006
     cfg1.pt_range_psig = 2000
-    cfg1.pt_bias_psig = -35
+    cfg1.pt_bias_psig = -33
 
     cfg2 = clover_pb2.AnalogSensorConfig()
     cfg2.channel = 4
     cfg2.assignment = clover_pb2.PT103
     cfg2.pt_range_psig = 2000
-    cfg2.pt_bias_psig = -20
+    cfg2.pt_bias_psig = -35
 
     cfg3 = clover_pb2.AnalogSensorConfig()
     cfg3.channel = 2
