@@ -159,7 +159,7 @@ def listen_for_telemetry():
                     elif lock is _last_packet_lock:
                         _last_packet_time = recv_time
                     elif lock is _csv_store_lock:
-                        if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE':
+                        if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE' and 'PRIMED' not in clover_pb2.SystemState.Name(packet.state):
                             _seq_recording = True
                         if _seq_recording:
                             _csv_store.append((recv_time, packet))
