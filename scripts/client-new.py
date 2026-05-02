@@ -133,7 +133,7 @@ sock = _make_tcp_socket()
 
 def listen_for_telemetry():
     """Background thread — receives UDP DataPackets and stores latest."""
-    global latest_packet, _last_packet_time
+    global latest_packet, _last_packet_time, _seq_recording
     while True:
         try:
             data, _ = data_sock.recvfrom(4096)
@@ -159,6 +159,8 @@ def listen_for_telemetry():
                     elif lock is _last_packet_lock:
                         _last_packet_time = recv_time
                     elif lock is _csv_store_lock:
+                        if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE':
+                            _seq_recording = True
                         if _seq_recording:
                             _csv_store.append((recv_time, packet))
                     else:
@@ -1448,49 +1450,49 @@ def cmd_configure_analog_sensors():
     cfg1.channel = 3
     cfg1.assignment = clover_pb2.PT006
     cfg1.pt_range_psig = 2000
-    cfg1.pt_bias_psig = 0
+    cfg1.pt_bias_psig = -35
 
     cfg2 = clover_pb2.AnalogSensorConfig()
     cfg2.channel = 4
     cfg2.assignment = clover_pb2.PT103
     cfg2.pt_range_psig = 1000
-    cfg2.pt_bias_psig = 0
+    cfg2.pt_bias_psig = -20
 
     cfg3 = clover_pb2.AnalogSensorConfig()
     cfg3.channel = 2
     cfg3.assignment = clover_pb2.PT004
     cfg3.pt_range_psig = 2000
-    cfg3.pt_bias_psig = 0
+    cfg3.pt_bias_psig = -40
 
     cfg4 = clover_pb2.AnalogSensorConfig()
     cfg4.channel = 6
     cfg4.assignment = clover_pb2.PT203
     cfg4.pt_range_psig = 3000
-    cfg4.pt_bias_psig = 0
+    cfg4.pt_bias_psig = -43
 
     cfg5 = clover_pb2.AnalogSensorConfig()
     cfg5.channel = 5
     cfg5.assignment = clover_pb2.PTF401
     cfg5.pt_range_psig = 1000
-    cfg5.pt_bias_psig = 0
+    cfg5.pt_bias_psig = -18
 
     cfg6 = clover_pb2.AnalogSensorConfig()
     cfg6.channel = 1
     cfg6.assignment = clover_pb2.PTO401
     cfg6.pt_range_psig = 1000
-    cfg6.pt_bias_psig = 0
+    cfg6.pt_bias_psig = -15
 
     cfg7 = clover_pb2.AnalogSensorConfig()
     cfg7.channel = 0
     cfg7.assignment = clover_pb2.PTC401
     cfg7.pt_range_psig = 1000
-    cfg7.pt_bias_psig = 0
+    cfg7.pt_bias_psig = -15
 
     cfg8 = clover_pb2.AnalogSensorConfig()
     cfg8.channel = 7
     cfg8.assignment = clover_pb2.PTC402
     cfg8.pt_range_psig = 1000
-    cfg8.pt_bias_psig = 0
+    cfg8.pt_bias_psig = -13.8
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend([cfg1, cfg2, cfg3, cfg4, cfg5, cfg6, cfg7, cfg8])
@@ -1824,9 +1826,7 @@ def cmd_start_throttle_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_valve_sequence.SetInParent()
-    if send_request(req, 'START_THROTTLE_VALVE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_THROTTLE_VALVE_SEQUENCE')
 
 
 def cmd_load_throttle_sequence():
@@ -1866,9 +1866,7 @@ def cmd_start_throttle_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_sequence.SetInParent()
-    if send_request(req, 'START_THROTTLE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_THROTTLE_SEQUENCE')
 
 
 def cmd_configure_flight_controller_gains():
@@ -2025,9 +2023,7 @@ def cmd_start_tvc_sequence():
         return
     req = clover_pb2.Request()
     req.start_tvc_sequence.SetInParent()
-    if send_request(req, 'START_TVC_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_TVC_SEQUENCE')
 
 
 # TODO: This is not a linear or sin trace
@@ -2071,9 +2067,7 @@ def cmd_start_rcs_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_valve_sequence.SetInParent()
-    if send_request(req, 'START_RCS_VALVE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_RCS_VALVE_SEQUENCE')
 
 
 def cmd_load_rcs_sequence():
@@ -2111,9 +2105,7 @@ def cmd_start_rcs_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_sequence.SetInParent()
-    if send_request(req, 'START_RCS_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_RCS_SEQUENCE')
 
 
 # TODO: test if this works
@@ -2164,9 +2156,7 @@ def cmd_start_static_fire_sequence():
         return
     req = clover_pb2.Request()
     req.start_static_fire_sequence.SetInParent()
-    if send_request(req, 'START_STATIC_FIRE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_STATIC_FIRE_SEQUENCE')
 
 
 # TODO: test if this works
@@ -2218,9 +2208,7 @@ def cmd_start_flight_sequence():
         return
     req = clover_pb2.Request()
     req.start_flight_sequence.SetInParent()
-    if send_request(req, 'START_FLIGHT_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_FLIGHT_SEQUENCE')
 
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
