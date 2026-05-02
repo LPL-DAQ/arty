@@ -922,11 +922,10 @@ std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const
     // All traces must be the same length
     if (req.has_fuel_trace_deg && req.has_lox_trace_deg) {
         if (throttle_fuel_valve_trace_deg.get_total_time_ms() != throttle_lox_valve_trace_deg.get_total_time_ms()) {
-            return std::unexpected(
-                Error::from_cause(
-                    "both traces must be the same length, fuel was %f while lox was %f",
-                    static_cast<double>(throttle_fuel_valve_trace_deg.get_total_time_ms()),
-                    static_cast<double>(throttle_lox_valve_trace_deg.get_total_time_ms())));
+            return std::unexpected(Error::from_cause(
+                "both traces must be the same length, fuel was %f while lox was %f",
+                static_cast<double>(throttle_fuel_valve_trace_deg.get_total_time_ms()),
+                static_cast<double>(throttle_lox_valve_trace_deg.get_total_time_ms())));
         }
     }
 
@@ -990,6 +989,7 @@ std::expected<void, Error> Controller::handle_start_throttle_sequence(const Star
         return std::unexpected(Error::from_cause("State must be THROTTLE_PRIMED to enter THROTTLE"));
     }
 
+    RangerThrottle::reset();
     trace_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_THROTTLE;
 
@@ -1039,11 +1039,10 @@ std::expected<void, Error> Controller::handle_load_tvc_sequence(const LoadTvcSeq
 
     // Both traces must be the same length
     if (tvc_pitch_trace_deg.get_total_time_ms() != tvc_yaw_trace_deg.get_total_time_ms()) {
-        return std::unexpected(
-            Error::from_cause(
-                "tvc traces must have the same length, pitch was %f while yaw was %f",
-                static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
-                static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
+        return std::unexpected(Error::from_cause(
+            "tvc traces must have the same length, pitch was %f while yaw was %f",
+            static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
+            static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }
     trace_total_time_msec = tvc_pitch_trace_deg.get_total_time_ms();
 
@@ -1095,11 +1094,10 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const Load
 
     // Both traces must be the same length
     if (rcs_cw_valve_trace.get_total_time_ms() != rcs_ccw_valve_trace.get_total_time_ms()) {
-        return std::unexpected(
-            Error::from_cause(
-                "rcs valve traces must have the same length, cw was %f while ccw was %f",
-                static_cast<double>(rcs_cw_valve_trace.get_total_time_ms()),
-                static_cast<double>(rcs_ccw_valve_trace.get_total_time_ms())));
+        return std::unexpected(Error::from_cause(
+            "rcs valve traces must have the same length, cw was %f while ccw was %f",
+            static_cast<double>(rcs_cw_valve_trace.get_total_time_ms()),
+            static_cast<double>(rcs_ccw_valve_trace.get_total_time_ms())));
     }
     trace_total_time_msec = rcs_cw_valve_trace.get_total_time_ms();
 
@@ -1200,12 +1198,11 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     // All traces must be the same length
     if (!(throttle_thrust_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
           tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
-        return std::unexpected(
-            Error::from_cause(
-                "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
-                static_cast<double>(throttle_thrust_lbf.get_total_time_ms()),
-                static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
-                static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
+        return std::unexpected(Error::from_cause(
+            "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
+            static_cast<double>(throttle_thrust_lbf.get_total_time_ms()),
+            static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
+            static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }
     trace_total_time_msec = flight_x_trace_m.get_total_time_ms();
 
@@ -1269,13 +1266,12 @@ std::expected<void, Error> Controller::handle_load_flight_sequence(const LoadFli
     if (!(flight_x_trace_m.get_total_time_ms() == flight_y_trace_m.get_total_time_ms() &&
           flight_y_trace_m.get_total_time_ms() == flight_z_trace_m.get_total_time_ms() &&
           flight_z_trace_m.get_total_time_ms() == flight_roll_trace_deg.get_total_time_ms())) {
-        return std::unexpected(
-            Error::from_cause(
-                "flight traces must have the same length, x was %f, y was %f, z was %f, roll was %f",
-                static_cast<double>(flight_x_trace_m.get_total_time_ms()),
-                static_cast<double>(flight_y_trace_m.get_total_time_ms()),
-                static_cast<double>(flight_z_trace_m.get_total_time_ms()),
-                static_cast<double>(flight_roll_trace_deg.get_total_time_ms())));
+        return std::unexpected(Error::from_cause(
+            "flight traces must have the same length, x was %f, y was %f, z was %f, roll was %f",
+            static_cast<double>(flight_x_trace_m.get_total_time_ms()),
+            static_cast<double>(flight_y_trace_m.get_total_time_ms()),
+            static_cast<double>(flight_z_trace_m.get_total_time_ms()),
+            static_cast<double>(flight_roll_trace_deg.get_total_time_ms())));
     }
     trace_total_time_msec = flight_x_trace_m.get_total_time_ms();
 
