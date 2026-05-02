@@ -1035,7 +1035,7 @@ def _build_status_renderable():
     _add_analog_row('PT-003', 'pt003', 'psi')
     _add_analog_row('PT-004', 'pt004', 'psi')
     _add_analog_row('PT-005', 'pt005', 'psi')
-    _add_analog_row('PT-005', 'pt006', 'psi')
+    _add_analog_row('PT-006', 'pt006', 'psi')
     _add_analog_row('PT-103', 'pt103', 'psi')
     _add_analog_row('PT-203', 'pt203', 'psi')
     _add_analog_row('PTF-401', 'ptf401', 'psi')
