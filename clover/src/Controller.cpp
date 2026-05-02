@@ -989,7 +989,7 @@ std::expected<void, Error> Controller::handle_start_throttle_sequence(const Star
     if (current_state != SystemState_STATE_THROTTLE_PRIMED) {
         return std::unexpected(Error::from_cause("State must be THROTTLE_PRIMED to enter THROTTLE"));
     }
-
+    RangerThrottle::reset();
     trace_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_THROTTLE;
 
