@@ -75,8 +75,8 @@ FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 # ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP = '192.168.0.150'  # daq box router
-# fake_telemetry.py
+# ZEPHYR_IP = '192.168.0.150'  # daq box router
+ZEPHYR_IP = '127.0.0.1'  # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -119,7 +119,6 @@ _graph_lock = threading.Lock()
 
 def _make_tcp_socket() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(2.0)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
@@ -134,7 +133,7 @@ sock = _make_tcp_socket()
 
 def listen_for_telemetry():
     """Background thread — receives UDP DataPackets and stores latest."""
-    global latest_packet, _last_packet_time
+    global latest_packet, _last_packet_time, _seq_recording
     while True:
         try:
             data, _ = data_sock.recvfrom(4096)
@@ -160,6 +159,8 @@ def listen_for_telemetry():
                     elif lock is _last_packet_lock:
                         _last_packet_time = recv_time
                     elif lock is _csv_store_lock:
+                        if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE':
+                            _seq_recording = True
                         if _seq_recording:
                             _csv_store.append((recv_time, packet))
                     else:
@@ -218,10 +219,11 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     only emits values for fields present.
     """
     row = {
-        'time': _recv_time_ns(recv_time),
+        # 'time': _recv_time_ns(recv_time),
+        'time': pkt.time_ns,
         #'state': float(pkt.state),
         #'data_queue_size': float(pkt.data_queue_size),
-        #'sequence_number': float(pkt.sequence_number),
+        'sequence_number': float(pkt.sequence_number),
         #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
         #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
         #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
@@ -368,8 +370,13 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
         row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
-        row['alpha'] = _opt(rtm, 'alpha')
+        row['thrust_from_alpha'] = _opt(rtm, 'thrust_from_alpha_lbf')
+        row['predicted_of'] = _opt(rtm, 'predicted_of')
+        row['mdot_fuel'] = _opt(rtm, 'mdot_fuel')
+        row['mdot_lox'] = _opt(rtm, 'mdot_lox')
+        row['change_alpha_cmd'] = _opt(rtm, 'change_alpha_cmd')
         row['clamped_change_alpha_cmd'] = _opt(rtm, 'clamped_change_alpha_cmd')
+        row['alpha'] = _opt(rtm, 'alpha')
 
     return row
 
@@ -467,7 +474,6 @@ _USEFUL_SENSORS: dict[str, str] = {
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
-    'predicted_thrust': 'Predicted Thrust',
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
@@ -475,9 +481,16 @@ _MOTOR_SENSORS: dict[str, str] = {
     'fuel_encoder_pos_deg': 'Fuel Actual',
     'gnc_lox_target_deg': 'LOX Desired',
     'lox_encoder_pos_deg': 'LOX Actual',
-    'alpha': 'Alpha',
-    'clamped_change_alpha_cmd': 'dAlpha Clamped',
 }
+
+
+_THROTTLE_METRIC_PLOTS: list[tuple[str, list[tuple[str, str]]]] = [
+    ('Thrust (lbf)',         [('predicted_thrust', 'Predicted Thrust'), ('thrust_from_alpha', 'Thrust from Alpha')]),
+    ('Change Alpha Command',        [('change_alpha_cmd', 'Change Alpha'), ('clamped_change_alpha_cmd', 'Clamped Change Alpha')]),
+    ('Alpha',                [('alpha', 'Alpha')]),
+    ('Mass Flow (kg/s)',     [('mdot_fuel', 'M dot fuel'), ('mdot_lox', 'M dot lox')]),
+    ('Predicted O/F',       [('predicted_of', 'Predicted OF')]),
+]
 
 
 def _parse_plot_time(raw_time: str):
@@ -524,6 +537,24 @@ def _time_units_per_second(time_values: list) -> float:
     return 1.0
 
 
+def _add_traces(fig, series, sensor_label_pairs, t0, tups, row, go):
+    for sensor, label in sensor_label_pairs:
+        points = series.get(sensor, [])
+        if not points:
+            continue
+        points.sort(key=lambda p: p[0])
+        fig.add_trace(
+            go.Scatter(
+                x=[(ts - t0) / tups for ts, _ in points],
+                y=[v for _, v in points],
+                mode='lines',
+                name=label,
+            ),
+            row=row,
+            col=1,
+        )
+
+
 def _generate_plots(csv_path: pathlib.Path) -> None:
     try:
         from plotly.subplots import make_subplots
@@ -534,52 +565,42 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
             return
 
         t0 = min(times)
-        time_units_per_second = _time_units_per_second(times)
+        tups = _time_units_per_second(times)
 
-        fig = make_subplots(
-            rows=2,
-            cols=1,
-            subplot_titles=('All Sensors', 'Motor Traces — Desired vs Actual'),
-            shared_xaxes=True,
-            vertical_spacing=0.1,
+        has_throttle_metrics = any(
+            series.get(sensor) for sensor, _ in _THROTTLE_METRIC_PLOTS[0][1]
         )
 
-        for sensor, label in _USEFUL_SENSORS.items():
-            points = series.get(sensor, [])
-            if not points:
-                continue
-            points.sort(key=lambda point: point[0])
-            fig.add_trace(
-                go.Scatter(
-                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
-                    y=[value for _, value in points],
-                    mode='lines',
-                    name=label,
-                ),
-                row=1,
-                col=1,
+        if has_throttle_metrics:
+            n_rows = 2 + len(_THROTTLE_METRIC_PLOTS)
+            subplot_titles = (
+                'All Sensors',
+                'Motor Traces — Desired vs Actual',
+                *(title for title, _ in _THROTTLE_METRIC_PLOTS),
             )
+        else:
+            n_rows = 2
+            subplot_titles = ('All Sensors', 'Motor Traces — Desired vs Actual')
 
-        for sensor, label in _MOTOR_SENSORS.items():
-            points = series.get(sensor, [])
-            if not points:
-                continue
-            points.sort(key=lambda point: point[0])
-            fig.add_trace(
-                go.Scatter(
-                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
-                    y=[value for _, value in points],
-                    mode='lines',
-                    name=label,
-                ),
-                row=2,
-                col=1,
-            )
+        fig = make_subplots(
+            rows=n_rows,
+            cols=1,
+            subplot_titles=subplot_titles,
+            shared_xaxes=True,
+            vertical_spacing=0.06,
+        )
 
-        fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+        _add_traces(fig, series, _USEFUL_SENSORS.items(), t0, tups, row=1, go=go)
+        _add_traces(fig, series, _MOTOR_SENSORS.items(), t0, tups, row=2, go=go)
+
+        if has_throttle_metrics:
+            for i, (_, sensor_label_pairs) in enumerate(_THROTTLE_METRIC_PLOTS):
+                _add_traces(fig, series, sensor_label_pairs, t0, tups, row=3 + i, go=go)
+
+        fig.update_xaxes(title_text='Time (s)', row=n_rows, col=1)
         fig.update_yaxes(title_text='Value', row=1, col=1)
         fig.update_yaxes(title_text='Position (°)', row=2, col=1)
-        fig.update_layout(hovermode='x unified', height=800)
+        fig.update_layout(hovermode='x unified', height=400 * n_rows)
 
         plots_dir = csv_path.parent / 'plots'
         plots_dir.mkdir(exist_ok=True)
@@ -1136,11 +1157,6 @@ def _build_status_renderable():
             title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
             border_style=t['panel_border'],
         ),
-        Panel(
-            fcm,
-            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
     ]
 
     if _has(pkt, 'fuel_valve_command'):
@@ -1434,49 +1450,49 @@ def cmd_configure_analog_sensors():
     cfg1.channel = 3
     cfg1.assignment = clover_pb2.PT006
     cfg1.pt_range_psig = 2000
-    cfg1.pt_bias_psig = 0
+    cfg1.pt_bias_psig = -35
 
     cfg2 = clover_pb2.AnalogSensorConfig()
     cfg2.channel = 4
     cfg2.assignment = clover_pb2.PT103
     cfg2.pt_range_psig = 1000
-    cfg2.pt_bias_psig = 0
+    cfg2.pt_bias_psig = -20
 
     cfg3 = clover_pb2.AnalogSensorConfig()
     cfg3.channel = 2
     cfg3.assignment = clover_pb2.PT004
     cfg3.pt_range_psig = 2000
-    cfg3.pt_bias_psig = 0
+    cfg3.pt_bias_psig = -40
 
     cfg4 = clover_pb2.AnalogSensorConfig()
     cfg4.channel = 6
     cfg4.assignment = clover_pb2.PT203
     cfg4.pt_range_psig = 3000
-    cfg4.pt_bias_psig = 0
+    cfg4.pt_bias_psig = -43
 
     cfg5 = clover_pb2.AnalogSensorConfig()
     cfg5.channel = 5
     cfg5.assignment = clover_pb2.PTF401
     cfg5.pt_range_psig = 1000
-    cfg5.pt_bias_psig = 0
+    cfg5.pt_bias_psig = -18
 
     cfg6 = clover_pb2.AnalogSensorConfig()
     cfg6.channel = 1
     cfg6.assignment = clover_pb2.PTO401
     cfg6.pt_range_psig = 1000
-    cfg6.pt_bias_psig = 0
+    cfg6.pt_bias_psig = -15
 
     cfg7 = clover_pb2.AnalogSensorConfig()
     cfg7.channel = 0
     cfg7.assignment = clover_pb2.PTC401
     cfg7.pt_range_psig = 1000
-    cfg7.pt_bias_psig = 0
+    cfg7.pt_bias_psig = -15
 
     cfg8 = clover_pb2.AnalogSensorConfig()
     cfg8.channel = 7
     cfg8.assignment = clover_pb2.PTC402
     cfg8.pt_range_psig = 1000
-    cfg8.pt_bias_psig = 0
+    cfg8.pt_bias_psig = -13.8
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend([cfg1, cfg2, cfg3, cfg4, cfg5, cfg6, cfg7, cfg8])
@@ -1810,9 +1826,7 @@ def cmd_start_throttle_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_valve_sequence.SetInParent()
-    if send_request(req, 'START_THROTTLE_VALVE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_THROTTLE_VALVE_SEQUENCE')
 
 
 def cmd_load_throttle_sequence():
@@ -1852,9 +1866,7 @@ def cmd_start_throttle_sequence():
         return
     req = clover_pb2.Request()
     req.start_throttle_sequence.SetInParent()
-    if send_request(req, 'START_THROTTLE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_THROTTLE_SEQUENCE')
 
 
 def cmd_configure_flight_controller_gains():
@@ -2011,9 +2023,7 @@ def cmd_start_tvc_sequence():
         return
     req = clover_pb2.Request()
     req.start_tvc_sequence.SetInParent()
-    if send_request(req, 'START_TVC_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_TVC_SEQUENCE')
 
 
 # TODO: This is not a linear or sin trace
@@ -2057,9 +2067,7 @@ def cmd_start_rcs_valve_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_valve_sequence.SetInParent()
-    if send_request(req, 'START_RCS_VALVE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_RCS_VALVE_SEQUENCE')
 
 
 def cmd_load_rcs_sequence():
@@ -2097,9 +2105,7 @@ def cmd_start_rcs_sequence():
         return
     req = clover_pb2.Request()
     req.start_rcs_sequence.SetInParent()
-    if send_request(req, 'START_RCS_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_RCS_SEQUENCE')
 
 
 # TODO: test if this works
@@ -2150,9 +2156,7 @@ def cmd_start_static_fire_sequence():
         return
     req = clover_pb2.Request()
     req.start_static_fire_sequence.SetInParent()
-    if send_request(req, 'START_STATIC_FIRE_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_STATIC_FIRE_SEQUENCE')
 
 
 # TODO: test if this works
@@ -2204,9 +2208,7 @@ def cmd_start_flight_sequence():
         return
     req = clover_pb2.Request()
     req.start_flight_sequence.SetInParent()
-    if send_request(req, 'START_FLIGHT_SEQUENCE'):
-        global _seq_recording
-        _seq_recording = True
+    send_request(req, 'START_FLIGHT_SEQUENCE')
 
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
