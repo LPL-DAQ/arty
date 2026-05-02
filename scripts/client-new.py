@@ -75,8 +75,8 @@ FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 # ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP = '192.168.0.150'  # daq box router
-# fake_telemetry.py
+# ZEPHYR_IP = '192.168.0.150'  # daq box router
+ZEPHYR_IP = '127.0.0.1'  # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -370,8 +370,13 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
         row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
-        row['alpha'] = _opt(rtm, 'alpha')
+        row['thrust_from_alpha'] = _opt(rtm, 'thrust_from_alpha_lbf')
+        row['predicted_of'] = _opt(rtm, 'predicted_of')
+        row['mdot_fuel'] = _opt(rtm, 'mdot_fuel')
+        row['mdot_lox'] = _opt(rtm, 'mdot_lox')
+        row['change_alpha_cmd'] = _opt(rtm, 'change_alpha_cmd')
         row['clamped_change_alpha_cmd'] = _opt(rtm, 'clamped_change_alpha_cmd')
+        row['alpha'] = _opt(rtm, 'alpha')
 
     return row
 
@@ -469,7 +474,6 @@ _USEFUL_SENSORS: dict[str, str] = {
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
-    'predicted_thrust': 'Predicted Thrust',
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
@@ -477,9 +481,16 @@ _MOTOR_SENSORS: dict[str, str] = {
     'fuel_encoder_pos_deg': 'Fuel Actual',
     'gnc_lox_target_deg': 'LOX Desired',
     'lox_encoder_pos_deg': 'LOX Actual',
-    'alpha': 'Alpha',
-    'clamped_change_alpha_cmd': 'dAlpha Clamped',
 }
+
+
+_THROTTLE_METRIC_PLOTS: list[tuple[str, list[tuple[str, str]]]] = [
+    ('Thrust (lbf)',         [('predicted_thrust', 'Predicted Thrust'), ('thrust_from_alpha', 'Thrust from Alpha')]),
+    ('Change Alpha Command',        [('change_alpha_cmd', 'Change Alpha'), ('clamped_change_alpha_cmd', 'Clamped Change Alpha')]),
+    ('Alpha',                [('alpha', 'Alpha')]),
+    ('Mass Flow (kg/s)',     [('mdot_fuel', 'M dot fuel'), ('mdot_lox', 'M dot lox')]),
+    ('Predicted O/F',       [('predicted_of', 'Predicted OF')]),
+]
 
 
 def _parse_plot_time(raw_time: str):
@@ -526,6 +537,24 @@ def _time_units_per_second(time_values: list) -> float:
     return 1.0
 
 
+def _add_traces(fig, series, sensor_label_pairs, t0, tups, row, go):
+    for sensor, label in sensor_label_pairs:
+        points = series.get(sensor, [])
+        if not points:
+            continue
+        points.sort(key=lambda p: p[0])
+        fig.add_trace(
+            go.Scatter(
+                x=[(ts - t0) / tups for ts, _ in points],
+                y=[v for _, v in points],
+                mode='lines',
+                name=label,
+            ),
+            row=row,
+            col=1,
+        )
+
+
 def _generate_plots(csv_path: pathlib.Path) -> None:
     try:
         from plotly.subplots import make_subplots
@@ -536,52 +565,42 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
             return
 
         t0 = min(times)
-        time_units_per_second = _time_units_per_second(times)
+        tups = _time_units_per_second(times)
 
-        fig = make_subplots(
-            rows=2,
-            cols=1,
-            subplot_titles=('All Sensors', 'Motor Traces — Desired vs Actual'),
-            shared_xaxes=True,
-            vertical_spacing=0.1,
+        has_throttle_metrics = any(
+            series.get(sensor) for sensor, _ in _THROTTLE_METRIC_PLOTS[0][1]
         )
 
-        for sensor, label in _USEFUL_SENSORS.items():
-            points = series.get(sensor, [])
-            if not points:
-                continue
-            points.sort(key=lambda point: point[0])
-            fig.add_trace(
-                go.Scatter(
-                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
-                    y=[value for _, value in points],
-                    mode='lines',
-                    name=label,
-                ),
-                row=1,
-                col=1,
+        if has_throttle_metrics:
+            n_rows = 2 + len(_THROTTLE_METRIC_PLOTS)
+            subplot_titles = (
+                'All Sensors',
+                'Motor Traces — Desired vs Actual',
+                *(title for title, _ in _THROTTLE_METRIC_PLOTS),
             )
+        else:
+            n_rows = 2
+            subplot_titles = ('All Sensors', 'Motor Traces — Desired vs Actual')
 
-        for sensor, label in _MOTOR_SENSORS.items():
-            points = series.get(sensor, [])
-            if not points:
-                continue
-            points.sort(key=lambda point: point[0])
-            fig.add_trace(
-                go.Scatter(
-                    x=[(timestamp - t0) / time_units_per_second for timestamp, _ in points],
-                    y=[value for _, value in points],
-                    mode='lines',
-                    name=label,
-                ),
-                row=2,
-                col=1,
-            )
+        fig = make_subplots(
+            rows=n_rows,
+            cols=1,
+            subplot_titles=subplot_titles,
+            shared_xaxes=True,
+            vertical_spacing=0.06,
+        )
 
-        fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+        _add_traces(fig, series, _USEFUL_SENSORS.items(), t0, tups, row=1, go=go)
+        _add_traces(fig, series, _MOTOR_SENSORS.items(), t0, tups, row=2, go=go)
+
+        if has_throttle_metrics:
+            for i, (_, sensor_label_pairs) in enumerate(_THROTTLE_METRIC_PLOTS):
+                _add_traces(fig, series, sensor_label_pairs, t0, tups, row=3 + i, go=go)
+
+        fig.update_xaxes(title_text='Time (s)', row=n_rows, col=1)
         fig.update_yaxes(title_text='Value', row=1, col=1)
         fig.update_yaxes(title_text='Position (°)', row=2, col=1)
-        fig.update_layout(hovermode='x unified', height=800)
+        fig.update_layout(hovermode='x unified', height=400 * n_rows)
 
         plots_dir = csv_path.parent / 'plots'
         plots_dir.mkdir(exist_ok=True)
