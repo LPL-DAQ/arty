@@ -50,6 +50,9 @@ static std::array<std::array<uint16_t, DT_PROP(DT_PATH(zephyr_user), analog_sens
 static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> adc_reading_index_to_input_channel =
     []() consteval {
         std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> out;
+        for (auto& row : out) {
+            row.fill(-1);
+        }
         for (int i = 0; i < NUM_ADCS; ++i) {
             const device* adc_dev = adc_devices[i];
             int reading_index = 0;
@@ -59,9 +62,6 @@ static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_ma
                 if (channel.dev == adc_dev) {
                     out[i][reading_index] = j;
                     ++reading_index;
-                }
-                else {
-                    out[i][reading_index] = -1;
                 }
             }
         }

@@ -1,4 +1,7 @@
-description: TI ADS7953-Q1 16-channel 12-bit SPI ADC
+# Copyright (c) 2026 James Walmsley <james@fullfat-fs.co.uk>
+# SPDX-License-Identifier: Apache-2.0
+
+description: TI ADS7953-Q1 SPI ADC
 
 compatible: "ti,ads7953"
 
