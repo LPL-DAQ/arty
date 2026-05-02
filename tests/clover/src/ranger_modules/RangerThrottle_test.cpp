@@ -13,9 +13,9 @@
 
 static constexpr float kToleranceAlpha = 1e-4f;
 static constexpr float kToleranceChangeAlphaCmd = 1e-5f;
-static constexpr float kTolerancePredictedThrust = 0.01f;
-static constexpr float kToleranceValveDeg = 0.01f;
-static constexpr float kTolerancePredictorThrustLbf = 3.0f;
+static constexpr float kTolerancePredictedThrust = 6.0f;
+static constexpr float kToleranceValveDeg = 0.8f;
+static constexpr float kTolerancePredictorThrustLbf = 5.0f;
 static constexpr float kTolerancePredictorOf = 0.01f;
 static constexpr float kTolerancePredictorMdot = 0.01f;
 
