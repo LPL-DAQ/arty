@@ -75,8 +75,8 @@ FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
 # ZEPHYR_IP = '169.254.99.99'  # real board
-# ZEPHYR_IP = '192.168.0.150'  # daq box router
-ZEPHYR_IP = '127.0.0.1'  # fake_telemetry.py
+ZEPHYR_IP = '192.168.0.150'  # daq box router
+# ZEPHYR_IP = '127.0.0.1'  # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
@@ -159,7 +159,7 @@ def listen_for_telemetry():
                     elif lock is _last_packet_lock:
                         _last_packet_time = recv_time
                     elif lock is _csv_store_lock:
-                        if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE':
+                        if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE' and 'PRIMED' not in clover_pb2.SystemState.Name(packet.state):
                             _seq_recording = True
                         if _seq_recording:
                             _csv_store.append((recv_time, packet))
@@ -369,6 +369,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     #     )
     if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
+        row['throttle_thrust_command_lbf'] = _opt(pkt, 'throttle_thrust_command_lbf')
         row['predicted_thrust'] = _opt(rtm, 'predicted_thrust_lbf')
         row['thrust_from_alpha'] = _opt(rtm, 'thrust_from_alpha_lbf')
         row['predicted_of'] = _opt(rtm, 'predicted_of')
@@ -485,7 +486,7 @@ _MOTOR_SENSORS: dict[str, str] = {
 
 
 _THROTTLE_METRIC_PLOTS: list[tuple[str, list[tuple[str, str]]]] = [
-    ('Thrust (lbf)',         [('predicted_thrust', 'Predicted Thrust'), ('thrust_from_alpha', 'Thrust from Alpha')]),
+    ('Thrust (lbf)',         [('throttle_thrust_command_lbf', 'Desired thrust (lbf)'), ('predicted_thrust', 'Predicted Thrust'), ('thrust_from_alpha', 'Thrust from Alpha')]),
     ('Change Alpha Command',        [('change_alpha_cmd', 'Change Alpha'), ('clamped_change_alpha_cmd', 'Clamped Change Alpha')]),
     ('Alpha',                [('alpha', 'Alpha')]),
     ('Mass Flow (kg/s)',     [('mdot_fuel', 'M dot fuel'), ('mdot_lox', 'M dot lox')]),
@@ -1235,6 +1236,7 @@ def _build_status_renderable():
 
     # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
     if _has(pkt, 'ranger_throttle_metrics'):
+        fcm.add_row('Desired thrust', f'{pkt.throttle_thrust_command_lbf:.3f}', 'lbf')
         rtm = pkt.ranger_throttle_metrics
         if _has(rtm, 'predicted_thrust_lbf'):
             fcm.add_row('Pred thrust', f'{rtm.predicted_thrust_lbf:.3f}', 'lbf')
