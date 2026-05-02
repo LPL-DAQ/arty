@@ -24,9 +24,9 @@ static constexpr float LOX_ENGINE_INLET_LINE_LOSS_PSI = 41.0f;
 // Physics constants
 static constexpr float EFFICIENCY = 0.93f;
 static constexpr float LBF_CONVERSION = 0.224809f;
-static constexpr float K_SLOPE = -1.132744863732548e-04f;
-static constexpr float K_OFFSET = 0.123605503801193f;
-static constexpr float ALPHA = 307.6704337316606f;
+static constexpr float K_SLOPE = -2.438665784714502e-04f;
+static constexpr float K_OFFSET = 0.233994229898658f;
+static constexpr float ALPHA = 1.183054065574921e+02f;
 static constexpr float LOX_AREA_SI = 1.39154e-5f;
 static constexpr float PSI_TO_PA = 6894.76f;
 static constexpr float FUEL_CV_INJ = 0.5f;
@@ -38,21 +38,23 @@ static constexpr uint32_t PTC401_ABORT_THRESHOLD_TIME_MS = 500U;
 
 // Controller constants (NOTE: Currently using OF = 1.4)
 static inline float alpha = -1.0f;
-static inline uint32_t low_ptc_start_time_ms = 0;
 // 0.008283 this is for OF 1.5
-static constexpr float THRUST_KP = 0.0076f;
-static constexpr float MAX_CHANGE_ALPHA = 20.0f;
-static constexpr float MIN_CHANGE_ALPHA = -MAX_CHANGE_ALPHA;
+static constexpr float THRUST_KP = 0.0094f;
+static constexpr float MAX_CHANGE_ALPHA_PER_SEC = 6.141f;
+static constexpr float MAX_CHANGE_ALPHA_PER_TICK = MAX_CHANGE_ALPHA_PER_SEC * Controller::SEC_PER_CONTROL_TICK;
 static constexpr float MIN_ALPHA = 0.0f;
-static constexpr float MAX_ALPHA = 0.84f;
+static constexpr float MAX_ALPHA = 0.96f;
 static constexpr float MIN_VALVE_POS = 25.0f;
 static constexpr float MAX_VALVE_POS = 90.0f;
+static constexpr float MIN_THRUST_LBF = 400.0f;
+static constexpr float MAX_THRUST_LBF = 675.0f;
 
-// Controller state variables
-// TODO: James pls check
-static constexpr float MAX_threshold_PT2k = 1900.0f;  // Define a maximum value for sensor validation
-static constexpr float MAX_threshold_PT1k = 950.0f;   // Define a maximum value for sensor validation
-static constexpr float MIN_threshold = 50.0f;         // Define a maximum value for sensor validation
+static constexpr float MIN_PT_THRESHOLD = 50.0f;
+static constexpr float MAX_PT_THRESHOLD = 950.0f;
+
+static float prev_p_ch = 0.0f;
+static float prev_p_inj_fuel = 0.0f;
+static float prev_p_inj_lox = 0.0f;
 
 enum class CalPhase {
     SEEK_HARDSTOP,
@@ -212,33 +214,14 @@ static inline float calculate_lox_mass_flow(float p_inj_lox, float p_ch)
     return K_var * LOX_AREA_SI * std::sqrt(2.0f * rho_syn * dP_Pa);
 }
 
-// TODO: james pls turn into lookup table using rupin's csv
-
-// ISP lookup axes: chamber pressure (pc) vs O/F.
-static constexpr int ISP_PC_LEN = 29;
-static constexpr int ISP_OF_LEN = 34;
-
-// MPrime lookup axes: target thrust (lbf) vs O/F.
-static constexpr int THRUST_AXIS_LEN = 100;
-static constexpr int OF_AXIS_LEN = 100;
-
-static constexpr float thrust_axis_internal[] = {
-    350.000000f, 354.040404f, 358.080808f, 362.121212f, 366.161616f, 370.202020f, 374.242424f, 378.282828f, 382.323232f, 386.363636f, 390.404040f, 394.444444f,
-    398.484848f, 402.525253f, 406.565657f, 410.606061f, 414.646465f, 418.686869f, 422.727273f, 426.767677f, 430.808081f, 434.848485f, 438.888889f, 442.929293f,
-    446.969697f, 451.010101f, 455.050505f, 459.090909f, 463.131313f, 467.171717f, 471.212121f, 475.252525f, 479.292929f, 483.333333f, 487.373737f, 491.414141f,
-    495.454545f, 499.494949f, 503.535354f, 507.575758f, 511.616162f, 515.656566f, 519.696970f, 523.737374f, 527.777778f, 531.818182f, 535.858586f, 539.898990f,
-    543.939394f, 547.979798f, 552.020202f, 556.060606f, 560.101010f, 564.141414f, 568.181818f, 572.222222f, 576.262626f, 580.303030f, 584.343434f, 588.383838f,
-    592.424242f, 596.464646f, 600.505051f, 604.545455f, 608.585859f, 612.626263f, 616.666667f, 620.707071f, 624.747475f, 628.787879f, 632.828283f, 636.868687f,
-    640.909091f, 644.949495f, 648.989899f, 653.030303f, 657.070707f, 661.111111f, 665.151515f, 669.191919f, 673.232323f, 677.272727f, 681.313131f, 685.353535f,
-    689.393939f, 693.434343f, 697.474747f, 701.515152f, 705.555556f, 709.595960f, 713.636364f, 717.676768f, 721.717172f, 725.757576f, 729.797980f, 733.838384f,
-    737.878788f, 741.919192f, 745.959596f, 750.000000f};
-
 /// Reset internal state before an active control trace
 void RangerThrottle::reset()
 {
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
-    low_ptc_start_time_ms = 0;
     alpha = -1.0f;
+    prev_p_ch = 0.0f;
+    prev_p_inj_fuel = 0.0f;
+    prev_p_inj_lox = 0.0f;
 }
 
 // TODO: test the re-done single valve calibration. Also, make it not super slow
@@ -310,22 +293,19 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
 {
 
     // 2. Read pressures
-    // TODO: these were also battery voltage? That seems wrong
-    // TODO: ARRE THESE THE CORRECT PTS? NEEDS TO BE UPDATED FOR RANGER
-    // TODO: james, rupin says he doesnt know what to do - He cant find the P&ID
+    float pt103_val = analog_sensors.pt103;
+    float pt203_val = analog_sensors.pt203;
     float ptc401_val = analog_sensors.ptc401;
     float ptc402_val = analog_sensors.ptc402;
     float pto401_val = analog_sensors.pto401 + LOX_ENGINE_INLET_LINE_LOSS_PSI;
-    float pt103_val = analog_sensors.pt103;
-    float ptf401_val = analog_sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;  // Adjusted value
-    float pt203_val = analog_sensors.pt203;
+    float ptf401_val = analog_sensors.ptf401 + FUEL_ENGINE_INLET_LINE_LOSS_PSI;
 
-    bool ptc401_valid = (analog_sensors.ptc401 >= MIN_threshold && analog_sensors.ptc401 <= MAX_threshold_PT2k) && analog_sensors.has_ptc401;
-    bool ptc402_valid = (analog_sensors.ptc402 >= MIN_threshold && analog_sensors.ptc402 <= MAX_threshold_PT2k) && analog_sensors.has_ptc402;
-    bool pto401_valid = (analog_sensors.pto401 >= MIN_threshold && analog_sensors.pto401 <= MAX_threshold_PT2k) && analog_sensors.has_pto401;
-    bool pt103_valid = (analog_sensors.pt103 >= MIN_threshold && analog_sensors.pt103 <= MAX_threshold_PT2k) && analog_sensors.has_pt103;
-    bool ptf401_valid = (analog_sensors.ptf401 >= MIN_threshold && analog_sensors.ptf401 <= MAX_threshold_PT2k) && analog_sensors.has_ptf401;
-    bool pt203_valid = (analog_sensors.pt203 >= MIN_threshold && analog_sensors.pt203 <= MAX_threshold_PT2k) && analog_sensors.has_pt203;
+    bool ptc401_valid = (analog_sensors.ptc401 >= MIN_PT_THRESHOLD && analog_sensors.ptc401 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptc401;
+    bool ptc402_valid = (analog_sensors.ptc402 >= MIN_PT_THRESHOLD && analog_sensors.ptc402 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptc402;
+    bool pto401_valid = (analog_sensors.pto401 >= MIN_PT_THRESHOLD && analog_sensors.pto401 <= MAX_PT_THRESHOLD) && analog_sensors.has_pto401;
+    bool pt103_valid = (analog_sensors.pt103 >= MIN_PT_THRESHOLD && analog_sensors.pt103 <= MAX_PT_THRESHOLD) && analog_sensors.has_pt103;
+    bool ptf401_valid = (analog_sensors.ptf401 >= MIN_PT_THRESHOLD && analog_sensors.ptf401 <= MAX_PT_THRESHOLD) && analog_sensors.has_ptf401;
+    bool pt203_valid = (analog_sensors.pt203 >= MIN_PT_THRESHOLD && analog_sensors.pt203 <= MAX_PT_THRESHOLD) && analog_sensors.has_pt203;
 
     float p_ch;
     if (ptc401_valid && ptc402_valid) {
@@ -341,9 +321,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_ch = ptc402_val;
     }
     else {
+        p_ch = prev_p_ch;
         // return std::unexpected(
-        //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val), static_cast<double>(ptc402_val)));
+        //     Error::from_cause("missing PTC-401 / PTC-402 -- PTC-401 has %f, PTC-402 has %f", static_cast<double>(ptc401_val),
+        //     static_cast<double>(ptc402_val)));
     }
+    prev_p_ch = p_ch;
 
     float p_inj_fuel;
     if (pt203_valid && ptf401_valid) {
@@ -359,10 +342,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_inj_fuel = ptf401_val;
     }
     else {
+        p_inj_fuel = prev_p_inj_fuel;
         // Both failed: Trigger Abort
         // return std::unexpected(
         //     Error::from_cause("missing PT-203 / PTF-401 -- PT-203 has %f, PTF-401 has %f", static_cast<double>(pt203_val), static_cast<double>(ptf401_val)));
     }
+    prev_p_inj_fuel = p_inj_fuel;
 
     float p_inj_lox;
     if (pt103_valid && pto401_valid) {
@@ -378,10 +363,12 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
         p_inj_lox = pto401_val;
     }
     else {
+        p_inj_lox = prev_p_inj_lox;
         // Both failed: Trigger Abort
         // return std::unexpected(
         //     Error::from_cause("missing PT-103 / PTO-401 -- PT-103 has %f, PTO-401 has %f", static_cast<double>(pt103_val), static_cast<double>(pto401_val)));
     }
+    prev_p_inj_lox = p_inj_lox;
 
     // 3. Calculate mass flows
     float mdot_f = calculate_fuel_mass_flow(p_inj_fuel, p_ch);
@@ -421,19 +408,19 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     float thrust_error = thrust_command_lbf - predicted_thrust_lbf;
     float change_alpha_cmd = THRUST_KP * thrust_error;
     change_alpha_cmd *= dt;
-    float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, MIN_CHANGE_ALPHA, MAX_CHANGE_ALPHA);
+    float clamped_change_alpha_cmd = std::clamp(change_alpha_cmd, -MAX_CHANGE_ALPHA_PER_TICK, MAX_CHANGE_ALPHA_PER_TICK);
 
     // 10. Integrate PID to get alpha
     if (alpha_state == -1.0f) {
         // Initialize alpha to starting guess based on Mprime
-        alpha_state = 0.5f;
-        // alpha_state = (thrust_command_lbf - thrust_axis_internal[0]) / (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]);
+        // alpha_state = 0.5f;
+        alpha_state = (thrust_command_lbf - MIN_THRUST_LBF) / (MAX_THRUST_LBF - MIN_THRUST_LBF);
     }
     alpha_state += clamped_change_alpha_cmd;
     alpha_state = std::clamp(alpha_state, MIN_ALPHA, MAX_ALPHA);
 
     // 11. Plug alpha into Mprime contour
-    float thrust_from_alpha_lbf = alpha_state * (thrust_axis_internal[100 - 1] - thrust_axis_internal[0]) + thrust_axis_internal[0];
+    float thrust_from_alpha_lbf = alpha_state * (MAX_THRUST_LBF - MIN_THRUST_LBF) + MIN_THRUST_LBF;
     float fuel_valve_command_deg = ThrustToFuelAxis::sample(thrust_from_alpha_lbf);
     float lox_valve_command_deg = ThrustToLoxAxis::sample(thrust_from_alpha_lbf);
 
@@ -447,8 +434,7 @@ active_control(float& alpha_state, float predicted_thrust_lbf, float thrust_comm
     metrics.thrust_from_alpha_lbf = thrust_from_alpha_lbf;
 
     return {
-        ThrottleValveCommand{.enable = true, .target_deg = fuel_valve_command_deg},
-        ThrottleValveCommand{.enable = true, .target_deg = lox_valve_command_deg}};
+        ThrottleValveCommand{.enable = true, .target_deg = fuel_valve_command_deg}, ThrottleValveCommand{.enable = true, .target_deg = lox_valve_command_deg}};
 }
 
 /// Generate a comomand for the fuel and lox valve positions in degrees.
@@ -458,7 +444,7 @@ RangerThrottle::tick(AnalogSensorReadings& analog_sensors, float thrust_command_
     MutexGuard ranger_throttle_guard{&ranger_throttle_lock};
     RangerThrottleMetrics metrics = RangerThrottleMetrics_init_default;
 
-    auto predicted_thrust = thrust_predictor(analog_sensors, metrics);
+    auto predicted_thrust = ::thrust_predictor(analog_sensors, metrics);
     if (!predicted_thrust) {
         LOG_INF("Thrust predictor failed");
         return std::unexpected(predicted_thrust.error());
@@ -474,5 +460,10 @@ std::tuple<ThrottleValveCommand, ThrottleValveCommand>
 RangerThrottle::active_control_test(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics)
 {
     return ::active_control(alpha_state, predicted_thrust_lbf, thrust_command_lbf, metrics);
+}
+
+std::expected<float, Error> RangerThrottle::thrust_predictor(AnalogSensorReadings& analog_sensors, RangerThrottleMetrics& metrics)
+{
+    return ::thrust_predictor(analog_sensors, metrics);
 }
 #endif

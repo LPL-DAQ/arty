@@ -15,5 +15,6 @@ void calibration_reset(ThrottleValveType valve, float valve_pos, float valve_pos
 
 #if CONFIG_TEST
 std::tuple<ThrottleValveCommand, ThrottleValveCommand> active_control_test(float& alpha_state, float predicted_thrust_lbf, float thrust_command_lbf, RangerThrottleMetrics& metrics);
+std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog_sensors, RangerThrottleMetrics& metrics);
 #endif
 }  // namespace RangerThrottle
