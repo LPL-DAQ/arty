@@ -1475,8 +1475,8 @@ def cmd_configure_analog_sensors():
     cfg5 = clover_pb2.AnalogSensorConfig()
     cfg5.channel = 5
     cfg5.assignment = clover_pb2.PTF401
-    cfg5.pt_range_psig = 1000
-    cfg5.pt_bias_psig = -18
+    cfg5.pt_range_psig = 2000
+    cfg5.pt_bias_psig = -39
 
     cfg6 = clover_pb2.AnalogSensorConfig()
     cfg6.channel = 1
