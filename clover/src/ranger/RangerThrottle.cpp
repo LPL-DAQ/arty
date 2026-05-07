@@ -379,13 +379,14 @@ static std::expected<float, Error> thrust_predictor(AnalogSensorReadings& analog
 
     // 5. Calculate O/F
     float predicted_of = mdot_lox / mdot_f_safe;
+    float constant_of = 1.4f;
 
     // 6. Clamp O/F for lookup
     [[maybe_unused]] float of_safe = std::clamp(predicted_of, MIN_SAFE_OF, MAX_SAFE_OF);
 
     // TODO: add lut for cea
     // 7. Predict Isp using chamber pressure and O/F
-    float predicted_isp = PcOfCea::sample(p_ch, predicted_of);
+    float predicted_isp = PcOfCea::sample(p_ch, constant_of);
 
     // 8. Predict thrust (convert to lbf-equivalent)
     float predicted_thrust_lbf = (mdot_f + mdot_lox) * predicted_isp * EFFICIENCY * LBF_CONVERSION;
