@@ -7,7 +7,7 @@ Ranger 1 board.
 #include <../boards/pjrc/teensy4/teensy41.dts>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
-#define ANALOG_SENSORS_ADC_OVERSAMPLING 1
+#define ANALOG_SENSORS_ADC_OVERSAMPLING 0
 
 /*
 TODO:
@@ -31,8 +31,8 @@ TODO:
         // JAVAD TR-2S GNSS
         gnss-uart = &lpuart3; // TX: Pin 14, RX: Pin 13
 
-        // RFM95W LoRa tranceiver
-        lora-tranceiver = &sx1276;
+        // // RFM95W LoRa tranceiver
+        // lora-tranceiver = &sx1276;
 
         // Throttle motor driver hardware timers, controls PUL/DIR signals.
         fuel-valve-stepper-pulse-counter = &pit0_channel0;
@@ -55,15 +55,43 @@ TODO:
 
         // ADC channels used by AnalogSensors.
         analog-sensor-max-adc-channels = <16>;
-        io-channels = <&adc1 5>,
-                      <&adc1 6>,
-                      <&adc1 8>,
-                      <&adc1 9>,
-                      <&adc1 10>,
-                      <&adc1 11>,
-                      <&adc1 12>,
-                      <&adc1 15>;
-        analog-sensor-adcs = <&adc1>;
+        io-channels =
+            <&ads7953_1 0>;
+            // <&ads7953_1 1>,
+            // <&ads7953_1 2>,
+            // <&ads7953_1 3>,
+            // <&ads7953_1 4>,
+            // <&ads7953_1 5>,
+            // <&ads7953_1 6>,
+            // <&ads7953_1 7>,
+            // <&ads7953_1 8>,
+            // <&ads7953_1 9>,
+            // <&ads7953_1 10>,
+            // <&ads7953_1 11>,
+            // <&ads7953_1 12>,
+            // <&ads7953_1 13>,
+            // <&ads7953_1 14>,
+            // <&ads7953_1 15>;
+            // <&ads7953_2 0>,
+            // <&ads7953_2 1>,
+            // <&ads7953_2 2>,
+            // <&ads7953_2 3>,
+            // <&ads7953_2 4>,
+            // <&ads7953_2 5>,
+            // <&ads7953_2 6>,
+            // <&ads7953_2 7>,
+            // <&ads7953_2 8>,
+            // <&ads7953_2 9>,
+            // <&ads7953_2 10>,
+            // <&ads7953_2 11>,
+            // <&ads7953_2 12>,
+            // <&ads7953_2 13>,
+            // <&ads7953_2 14>,
+            // <&ads7953_2 15>;
+        // io-channel-names = "adc1_0", "adc1_1", "adc1_2", "adc1_3", "adc1_4", "adc1_5", "adc1_6", "adc1_7", "adc1_8", "adc1_9", "adc1_10", "adc1_11", "adc1_12", "adc1_13", "adc1_14", "adc1_15",
+        // "adc2_0", "adc2_1", "adc2_2", "adc2_3", "adc2_4", "adc2_5", "adc2_6", "adc2_7", "adc2_8", "adc2_9", "adc2_10", "adc2_11", "adc2_12", "adc2_13", "adc2_14", "adc2_15";
+        // analog-sensor-adcs = <&ads7953_1 &ads7953_2>;
+        analog-sensor-adcs = <&ads7953_1>;
         analog-sensor-adc-oversampling = <ANALOG_SENSORS_ADC_OVERSAMPLING>;
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
@@ -100,24 +128,293 @@ TODO:
 };
 
 // TODO: RFM95W RF CHIP, validate this? Duped on hornet/vehicle boards.
-&lpspi4 {
+&lpspi3 {
     status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinmux_lpspi3>;
 
-    // TODO: Are the miso/mosi correct? this driver has a mio/sdo and I'm pretty sure there's an option to set which is miso/mosi.
 
-    // Hardware CS0: Pin 10
-    // MOSI: Pin 11
-    // MISO: Pin 12
-    // SCK: Pin 13
+    cs-gpios = <&gpio3 12 GPIO_ACTIVE_LOW>, // Pin 37
+               <&gpio3 13 GPIO_ACTIVE_LOW>; // Pin 36
 
-    // Is this right?
-    // RFM95W: https: //www.adafruit.com/product/3072
-    sx1276: sx1276@0 {
-        compatible = "semtech,sx1276";
-        reg = <0x0>;
-        reset-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 4
-        dio-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>; // Pin 6
-        spi-max-frequency = <DT_FREQ_M(67)>; // THIS IS 100% WRONG!!!! FIX ME!!!!!
+    ads7953_1: adc@0 {
+        status = "okay";
+        compatible = "ti,ads7953";
+        reg = <0>;
+        spi-max-frequency = <5000000>;
+        #io-channel-cells = <1>;
+        ti,range = <2>; // 2x V_REF of 2.5V
+
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        channel@0 {
+            reg = <0>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@1 {
+            reg = <1>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@2 {
+            reg = <2>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@3 {
+            reg = <3>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@4 {
+            reg = <4>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@5 {
+            reg = <5>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@6 {
+            reg = <6>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@7 {
+            reg = <7>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@8 {
+            reg = <8>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@9 {
+            reg = <9>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@a {
+            reg = <10>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@b {
+            reg = <11>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@c {
+            reg = <12>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@d {
+            reg = <13>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@e {
+            reg = <14>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@f {
+            reg = <15>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+    };
+
+    ads7953_2: adc@1 {
+        status = "okay";
+        compatible = "ti,ads7953";
+        reg = <1>;
+        spi-max-frequency = <5000000>;
+        #io-channel-cells = <1>;
+        ti,range = <2>;
+
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        channel@0 {
+            reg = <0>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@1 {
+            reg = <1>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@2 {
+            reg = <2>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@3 {
+            reg = <3>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@4 {
+            reg = <4>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@5 {
+            reg = <5>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@6 {
+            reg = <6>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@7 {
+            reg = <7>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@8 {
+            reg = <8>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@9 {
+            reg = <9>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@a {
+            reg = <10>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@b {
+            reg = <11>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@c {
+            reg = <12>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@d {
+            reg = <13>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@e {
+            reg = <14>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
+
+        channel@f {
+            reg = <15>;
+            zephyr,gain = "ADC_GAIN_1";
+            zephyr,reference = "ADC_REF_VDD_1";
+            zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+            zephyr,resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
+        };
     };
 };
 

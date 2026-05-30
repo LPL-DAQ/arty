@@ -136,10 +136,12 @@ static void sense()
         // Read from all ADCs concurrently
         uint64_t start_read_cycle = k_cycle_get_64();
         for (int i = 0; i < NUM_ADCS; ++i) {
+            // LOG_INF("Starting read of adc num %d", i);
             int err = adc_read(adc_devices[i], &adc_read_seqs[i]);
             if (err) {
-                LOG_ERR("Error initiating async read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
+                LOG_ERR("Error initiating read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
+            // LOG_INF("Read adc num %d", i);
         }
 
         // Write output reading
@@ -147,6 +149,7 @@ static void sense()
             MutexGuard analog_sensors_guard{&analog_sensors_mutex};
 
             sense_time_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
+            LOG_INF("Sense time: %f, sense val: %d", sense_time_ns, raw_readings[0][0]);
 
             has_reading = true;
 
