@@ -40,6 +40,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from collections import deque
 import plotext as plt
+from google.protobuf.json_format import MessageToDict
 
 
 THEME = {
@@ -74,8 +75,8 @@ STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
 
 # Network
-# ZEPHYR_IP = '169.254.99.99'  # real board
-ZEPHYR_IP = '192.168.0.150'  # daq box router
+ZEPHYR_IP = '169.254.99.99'  # real board
+# ZEPHYR_IP = '192.168.0.150'  # daq box router
 # ZEPHYR_IP = '127.0.0.1'  # fake_telemetry.py
 ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
@@ -1176,7 +1177,6 @@ def _build_status_renderable():
         table.add_row('Encoder pos', f'{pkt.fuel_valve_status.encoder_pos_deg:.3f}', '°')
         table.add_row('Power', 'ON' if pkt.fuel_valve_status.is_on else 'OFF', '')
         table.add_row('Enable?', 'YES' if pkt.fuel_valve_command.enable else 'NO', '')
-        table.add_row('Set pos?', 'YES' if pkt.fuel_valve_command.set_pos else 'NO', '')
 
         bottom_columns.append(
             Panel(
@@ -1202,7 +1202,6 @@ def _build_status_renderable():
         table.add_row('Encoder pos', f'{pkt.lox_valve_status.encoder_pos_deg:.3f}', '°')
         table.add_row('Power', 'ON' if pkt.lox_valve_status.is_on else 'OFF', '')
         table.add_row('Enable?', 'YES' if pkt.lox_valve_command.enable else 'NO', '')
-        table.add_row('Set pos?', 'YES' if pkt.lox_valve_command.set_pos else 'NO', '')
 
         bottom_columns.append(
             Panel(
@@ -1255,6 +1254,36 @@ def _build_status_renderable():
         if _has(rtm, 'thrust_from_alpha_lbf'):
             fcm.add_row('Thrust(alpha)', f'{rtm.thrust_from_alpha_lbf:.3f}', 'lbf')
 
+    if fcm.row_count != 0:
+        bottom_columns.append(Panel(
+            fcm,
+            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
+            border_style=t['panel_border'],
+        ),)
+
+    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    if _has(pkt, 'valve_states'):
+        table = Table(
+            box=box.SIMPLE_HEAD,
+            show_header=True,
+            header_style=t['primary'],
+            border_style=t['panel_border'],
+            padding=(0, 1),
+        )
+        table.add_column('Valve', style='bold white', no_wrap=True)
+        table.add_column('State', style='white', justify='right', no_wrap=True)
+        
+        for valve, state in MessageToDict(pkt.valve_states).items():
+            table.add_row(valve, state)
+
+        bottom_columns.append(
+            Panel(
+                table,
+                title=f'[{t["primary"]}]Valve States[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
+        )
+        
     if fcm.row_count != 0:
         bottom_columns.append(Panel(
             fcm,
@@ -1501,6 +1530,30 @@ def cmd_configure_analog_sensors():
     send_request(req, 'CONFIGURE_ANALOG_SENSORS')
 
 
+def cmd_configure_valves():
+    """Configure valves."""
+    # cfg1 = clover_pb2.AnalogSensorConfig()
+    # cfg1.channel = 0
+    # cfg1.assignment = clover_pb2.TC102
+    # cfg1.tc_type = clover_pb2.K_TYPE
+    cfg1 = clover_pb2.ValveConfig()
+    cfg1.channel = 0
+    cfg1.assignment = clover_pb2.SV001
+
+    cfg2 = clover_pb2.ValveConfig()
+    cfg2.channel = 1
+    cfg2.assignment = clover_pb2.SV002
+
+    cfg3 = clover_pb2.ValveConfig()
+    cfg3.channel = 2
+    cfg3.assignment = clover_pb2.SV003
+    cfg3.normally_closed = True
+
+    req = clover_pb2.Request()
+    req.configure_valves.configs.extend([cfg1, cfg2, cfg3])
+    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
+
+
 def cmd_subscribe_data_stream():
     """Subscribe to telemetry data stream."""
     req = clover_pb2.Request()
@@ -1540,6 +1593,27 @@ def cmd_reset_valve_position():
     req.throttle_reset_valve_position.valve = valve
     req.throttle_reset_valve_position.new_pos_deg = pos
     send_request(req, f'RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)')
+
+
+def cmd_actuate_valve():
+    t = THEME
+    console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
+    console.print('    [1] SV001')
+    console.print('    [2] SV002')
+    console.print('    [3] SV003')
+    choice = Prompt.ask('  Select valve', choices=['1', '2', '3'])
+    valve = clover_pb2.SV001 if choice == '1' else clover_pb2.SV002 if choice == '2' else clover_pb2.SV003
+    
+    console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
+    console.print('    [1] Open')
+    console.print('    [2] Closed')
+    choice = Prompt.ask('  Select state', choices=['1', '2'])
+    state = clover_pb2.OPEN if choice == '1' else clover_pb2.CLOSED
+    
+    req = clover_pb2.Request()
+    req.actuate_valve.valve = valve
+    req.actuate_valve.state = state
+    send_request(req, 'ACTUATE_VALVE')
 
 
 def cmd_power_on_valve():
@@ -2220,6 +2294,8 @@ MENU_ITEMS = [
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
     ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('cfgv', 'cfgv', 'Configure regular valves', cmd_configure_valves),
+    ('v', 'v', 'Actuate valve', cmd_actuate_valve),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
     ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),

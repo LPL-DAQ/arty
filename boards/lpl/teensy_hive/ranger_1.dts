@@ -7,7 +7,7 @@ Ranger 1 board.
 #include <../boards/pjrc/teensy4/teensy41.dts>
 
 #define ANALOG_SENSORS_ADC_RESOLUTION 12
-#define ANALOG_SENSORS_ADC_OVERSAMPLING 1
+#define ANALOG_SENSORS_ADC_OVERSAMPLING 5
 
 /*
 TODO:
@@ -68,7 +68,8 @@ TODO:
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
         // GPIOs connected to valves. Valve channel numbers are indexed by their position in this list.
-        valve-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>, <&gpio2 17 GPIO_ACTIVE_HIGH>, <&gpio2 16 GPIO_ACTIVE_HIGH>;
+        valve-gpios = <&mcp23017_2 0 GPIO_ACTIVE_HIGH>, <&mcp23017_2 1 GPIO_ACTIVE_HIGH>, <&mcp23017_2 15 GPIO_ACTIVE_HIGH>;
+        // valve-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>, <&gpio2 17 GPIO_ACTIVE_HIGH>, <&gpio2 16 GPIO_ACTIVE_HIGH>;
     };
 
     chosen {
@@ -118,6 +119,38 @@ TODO:
         reset-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 4
         dio-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>; // Pin 6
         spi-max-frequency = <DT_FREQ_M(67)>; // THIS IS 100% WRONG!!!! FIX ME!!!!!
+    };
+};
+
+// GPIO expander 1
+&lpi2c3 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpi2c3>;
+    pinctrl-names = "default";
+    clock-frequency = <400000>;
+
+    mcp23017_1: gpio@20 {
+        compatible = "microchip,mcp23017";
+        reg = <0x20>;
+        gpio-controller;
+        #gpio-cells = <2>;
+		ngpios = <16>;
+    };
+};
+
+// GPIO expander 2
+&lpi2c1 {
+    status = "okay";
+    pinctrl-0 = <&pinmux_lpi2c1>;
+    pinctrl-names = "default";
+    clock-frequency = <400000>;
+
+    mcp23017_2: gpio@20 {
+        compatible = "microchip,mcp23017";
+        reg = <0x20>;
+        gpio-controller;
+        #gpio-cells = <2>;
+		ngpios = <16>;
     };
 };
 
