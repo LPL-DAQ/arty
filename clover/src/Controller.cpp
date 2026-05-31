@@ -14,6 +14,7 @@
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 
+#include "Valves.h"
 #include "PwmActuator.h"
 #include "ThrottleValve.h"
 #include "hornet/HornetRcs.h"
@@ -25,7 +26,7 @@
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 50, 1);
+K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 10, 1);
 
 // Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
@@ -419,6 +420,16 @@ static void step_control_loop(k_work*)
         // LOG_WRN("Analog sensor data is not yet ready, leaving defaults.");
     }
 #endif  // CONFIG_ANALOG_SENSORS
+
+#ifdef CONFIG_VALVES
+    auto valve_readings = Valves::get_valve_states();
+    if(valve_readings) {
+        data.valve_states = *valve_readings;
+    }
+    else {
+        LOG_WRN("Failed to get all valve readings: %s", valve_readings.error().build_message().c_str());
+    }
+#endif  // CONFIG_VALVES
 
 #ifdef CONFIG_GNSS
     if (auto gnss = Gnss::read()) {
