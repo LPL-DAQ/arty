@@ -42,4 +42,18 @@ In the list that pops up, select the `arty` repo.
 The dev container will now begin downloading. You may view the progress of this by select "Show container logs" in the
 bottom-right popup.
 
+### Run the Python CLI tools
+
+The Python utilities under [scripts/pyproject.toml](scripts/pyproject.toml) are managed by the separate `scripts` project environment. If you run a script from the repository root, invoke it through that project explicitly:
+
+```bash
+uv run --project scripts python scripts/client-new.py
+```
+
+If you are already inside the [scripts](scripts) directory, this shorter form also works:
+
+```bash
+uv run python client-new.py
+```
+
 
