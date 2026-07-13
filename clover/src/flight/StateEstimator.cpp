@@ -1,7 +1,9 @@
 #include "StateEstimator.h"
 #include "Error.h"
+#include "ZAxisEkf.h"
 #include "../config.h"
 #include "../math_util.h"
+#include <algorithm>
 #include <cmath>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -50,6 +52,44 @@ static float backup_imu_1_update_timestamp_ns = 0;
 static float gnss_update_timestamp_ns = 0;
 static float lidar_1_altitude_m = 0;
 static float lidar_2_altitude_m = 0;
+
+// The Z-axis EKF IS the fusion policy for vertical state (position.z/velocity.z) -- see the
+// "VEHICLE ALTITUDE SOURCE CHANGE" comment in estimate() below. Tracks its own dt internally from
+// consecutive VN300 arrival times, separate from vn300_last_arrival_time_ns (which serves the
+// staleness check's own purpose) to avoid coupling the two unrelated concerns together.
+static ZAxisEkf z_axis_ekf;
+static uint64_t z_axis_ekf_last_predict_time_ns = 0;
+
+// Ground-testing escape hatch: flip to false to fall back to raw, unfiltered GNSS altitude/
+// vertical-velocity passthrough (bypassing the Z-axis EKF entirely), e.g. to compare the EKF's
+// output against raw GNSS during ground testing. Should be true for real flight. A `constexpr
+// bool` gating `if constexpr` below rather than a Kconfig option: this is a one-line flip-and-
+// rebuild switch, not something that needs its own build variant.
+static constexpr bool USE_ZAXIS_EKF_FOR_ALTITUDE = true;
+
+// Placeholder -- needs real analysis before flight. "Large" initial covariance for bootstrapping
+// the Z-axis EKF from the first healthy GNSS reading: z0/vz0 are a first guess from a single
+// measurement, not a confident known-exact state, so the filter should start out knowing it
+// doesn't know much yet. Bias starts less uncertain than z/vz since accelerometer biases are
+// typically small, but still nonzero -- it shouldn't be treated as known-exact either.
+static constexpr float EKF_INITIAL_Z_VARIANCE_M2 = 100.0f;
+static constexpr float EKF_INITIAL_VZ_VARIANCE_M2_S2 = 25.0f;
+static constexpr float EKF_INITIAL_BIAS_VARIANCE_M2_S4 = 1.0f;
+
+// Placeholder -- needs real LiDAR noise specs before flight. r_variance for feeding each LiDAR's
+// computed altitude into the Z-axis EKF via update_altitude().
+static constexpr float LIDAR_1_ALTITUDE_R_VARIANCE_M2 = 0.01f;
+static constexpr float LIDAR_2_ALTITUDE_R_VARIANCE_M2 = 0.01f;
+
+// Placeholder -- needs real GNSS receiver noise-floor analysis before flight. Floors for Javad's
+// own reported per-epoch uncertainty (vrms_m/vvel_rms_ms), guarding against a zero or
+// implausibly tiny reported value making the filter overconfident in a single GNSS epoch.
+static constexpr float JAVAD_ALTITUDE_R_VARIANCE_FLOOR_M2 = 1e-4f;
+static constexpr float JAVAD_VELOCITY_R_VARIANCE_FLOOR_M2_S2 = 1e-4f;
+
+// Placeholder -- needs real VN300 INS velocity noise specs before flight. r_variance for the
+// VN300 vel_d fallback velocity measurement, used only while Javad is faulty.
+static constexpr float VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2 = 0.25f;
 
 // VN300 updates at ~400Hz (2.5ms period). If this long passes without a new reading arriving,
 // mark it stale and stop trusting its attitude output -- 50ms is ~20 missed readings.
@@ -211,6 +251,8 @@ void StateEstimator::reset()
     gnss_update_timestamp_ns = 0;
     lidar_1_altitude_m = 0;
     lidar_2_altitude_m = 0;
+    z_axis_ekf.reset();
+    z_axis_ekf_last_predict_time_ns = 0;
     vn300_health = SensorHealth::STALE;
     vn300_last_arrival_time_ns = 0;
     vn300_recovery_start_time_ns = 0;
@@ -263,6 +305,33 @@ std::optional<EstimatedState> StateEstimator::estimate(
                 vn300_recovering = false;
             }
         }
+
+        // Z-axis EKF predict step, on every fresh VN300 reading (reusing the freshness gate
+        // above rather than re-checking it). Rotates body-frame acceleration into world frame
+        // using the current fused attitude -- same conjugateQuaternion pattern as
+        // calculateVerticalAltitude() below, and the same reasoning: current_estimate.R_WB is
+        // already health-gated (VN300/backup-IMU fallback, frozen under a critical fault), so
+        // this automatically inherits that instead of trusting a possibly-faulty VN300
+        // quaternion directly. Nothing besides the rotation happens here -- no gravity or bias
+        // subtraction -- predict() does that internally (see ZAxisEkf.cpp).
+        //
+        // dt comes from consecutive VN300 arrival_time_ns deltas, not a fixed nominal period, so
+        // it stays correct even if VN300's actual rate drifts from ~400Hz. Skip entirely on the
+        // very first ever reading (z_axis_ekf_last_predict_time_ns == 0) -- there's no prior
+        // timestamp to form a real dt from yet (time-since-boot isn't a "dt" at all). predict()
+        // would also reject that huge bogus dt internally via MAX_PREDICT_DT_S, but skipping here
+        // avoids the wasted rotation math and states the real reason explicitly (no prior sample),
+        // not "some dt happened to be too big."
+        if (z_axis_ekf_last_predict_time_ns != 0) {
+            float dt_s = static_cast<float>(imu.arrival_time_ns - z_axis_ekf_last_predict_time_ns) / 1e9f;
+
+            Quaternion attitude_bw = math_util::conjugateQuaternion(current_estimate.R_WB);
+            Vector3D accel_body = math_util::createVector3D(imu.accel_x, imu.accel_y, imu.accel_z);
+            Vector3D accel_world = math_util::multiplyQuaternionVector(attitude_bw, accel_body);
+
+            z_axis_ekf.predict(accel_world.z, dt_s);
+        }
+        z_axis_ekf_last_predict_time_ns = imu.arrival_time_ns;
     }
 
 #if CONFIG_TEST
@@ -413,19 +482,66 @@ std::optional<EstimatedState> StateEstimator::estimate(
         }
     }
 
-    // GNSS: update x/y position and x/y/z velocity if timestamp changed, unless Javad is flagged
-    // faulty (freeze last known-good position/velocity instead). javad_health == FAULTY already
-    // implies !critical_fault doesn't matter here: if Javad is faulty this block is skipped either
-    // way, whether or not VN300 is also faulty.
+    // GNSS: update x/y position and x/y velocity if timestamp changed, unless Javad is flagged
+    // faulty (freeze last known-good lateral position/velocity instead). javad_health == FAULTY
+    // already implies !critical_fault doesn't matter here: if Javad is faulty this block is
+    // skipped either way, whether or not VN300 is also faulty.
+    //
+    // Lateral (x/y) handling below is UNCHANGED. position.z/velocity.z are NOT set here anymore
+    // -- see the "VEHICLE ALTITUDE SOURCE CHANGE" comment near the end of this function.
     if (javad_health != SensorHealth::FAULTY && gnss.sense_time_ns > gnss_update_timestamp_ns) {
         gnss_update_timestamp_ns = gnss.sense_time_ns;
         gnss_updated = true;
         current_estimate.position.x = gnss.north_m;
         current_estimate.position.y = gnss.east_m;
-        current_estimate.position.z = gnss.up_m; // will remove after adding filter
         current_estimate.velocity.x = gnss.vx_ms;
         current_estimate.velocity.y = gnss.vy_ms;
-        current_estimate.velocity.z = gnss.vz_ms;
+
+        // Z-axis EKF: bootstrap from the first healthy GNSS reading if not yet initialized,
+        // otherwise feed this reading as a measurement update.
+        if (!z_axis_ekf.is_valid()) {
+            // Large initial covariance: z0/vz0 are a first guess from a single measurement, not a
+            // confident known-exact state (see EKF_INITIAL_*_VARIANCE_* above).
+            z_axis_ekf.init(
+                gnss.up_m, gnss.vz_ms, EKF_INITIAL_Z_VARIANCE_M2, EKF_INITIAL_VZ_VARIANCE_M2_S2, EKF_INITIAL_BIAS_VARIANCE_M2_S4
+            );
+        }
+        else {
+            // r_variance uses Javad's own REPORTED per-epoch uncertainty (vrms_m/vvel_rms_ms),
+            // not a fixed placeholder, so the filter automatically weighs a noisy epoch less --
+            // see ZAxisEkf::update_altitude()'s doc comment. NOTE THE SQUARING: vrms_m/
+            // vvel_rms_ms are standard deviations (RMS, i.e. sigma), but r_variance must be
+            // variance = sigma^2 -- passing sigma directly here would silently under-weight
+            // Javad's measurements. Floored against a zero/implausibly tiny reported value that
+            // would otherwise make the filter overconfident in a single epoch.
+            float javad_z_r_variance = std::max(gnss.vrms_m * gnss.vrms_m, JAVAD_ALTITUDE_R_VARIANCE_FLOOR_M2);
+            z_axis_ekf.update_altitude(gnss.up_m, javad_z_r_variance);
+
+            float javad_vz_r_variance = std::max(gnss.vvel_rms_ms * gnss.vvel_rms_ms, JAVAD_VELOCITY_R_VARIANCE_FLOOR_M2_S2);
+            z_axis_ekf.update_velocity(gnss.vz_ms, javad_vz_r_variance);
+        }
+    }
+    else if (javad_health == SensorHealth::FAULTY && imu.has_arrival_time_ns && imu.has_vel_d) {
+        // Javad is faulty -- fall back to VN300's own INS-derived vertical velocity rather than
+        // leaving the EKF with no velocity correction at all while Javad is down. No altitude
+        // fallback here: VN300 doesn't have an independent absolute altitude reference (ins_alt
+        // is itself already fused internally), so using it as a measurement here would be
+        // circular. Only asked for the velocity fallback, so that's all this does.
+        //
+        // Sign: vel_n/vel_e/vel_d follow the standard NED (North-East-DOWN) navigation
+        // convention -- "d" is positive DOWN, the opposite sign from this codebase's Z-up-is-
+        // positive convention (see calculateVerticalAltitude()'s frame-convention comment;
+        // gnss.up_m/position.z/velocity.z are all up-positive). So vz_world = -vel_d, not vel_d
+        // directly.
+        //
+        // NOTE: the existing Javad-vs-VN300 divergence check above compares gnss.vz_ms against
+        // imu.vel_d directly with NO sign flip. If vz_ms is genuinely up-positive like the rest
+        // of this codebase, that comparison may have this same sign issue. Not fixed here --
+        // out of scope for this task (lateral/existing velocity handling is untouched), and
+        // fixing it would change behavior of an already-working, previously-verified check --
+        // flagging for a deliberate follow-up decision instead.
+        float vz_world_from_vn300 = -imu.vel_d;
+        z_axis_ekf.update_velocity(vz_world_from_vn300, VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2);
     }
 
     // Lidar 1: track timestamp.
@@ -445,9 +561,12 @@ std::optional<EstimatedState> StateEstimator::estimate(
     // rather than raw VN300 output, so this automatically respects the VN300/backup-IMU health
     // tracking above instead of trusting a flagged-faulty VN300 quaternion directly.
     //
-    // TODO: fuse lidar_1_altitude_m / lidar_2_altitude_m with GNSS-derived altitude
-    // (current_estimate.position.z, set from gnss.up_m above) -- not yet implemented, since a real
-    // fusion strategy (LiDAR range limits, weighting, disagreement handling) hasn't been decided.
+    // Fusion into position.z now happens via the Z-axis EKF (fed below, after the divergence
+    // check has this tick's final lidar_N_health) -- this closes the "TODO: fuse lidar_1_altitude_m
+    // / lidar_2_altitude_m with GNSS-derived altitude" that used to be here. The EKF IS that
+    // fusion strategy: predict() propagates from VN300 acceleration, update_altitude() corrects
+    // from whichever LiDAR(s)/Javad are currently healthy, weighted by each source's own
+    // r_variance -- see the "VEHICLE ALTITUDE SOURCE CHANGE" comment near the end of this function.
     if (lidar_1_updated) {
         lidar_1_altitude_m = calculateVerticalAltitude(lidar_1.distance_m, current_estimate.R_WB, LIDAR_MOUNT_ANGLE_DEG * DEG2RAD_F);
     }
@@ -511,6 +630,45 @@ std::optional<EstimatedState> StateEstimator::estimate(
                 lidar_2_agree_streak = 0;
             }
         }
+    }
+
+    // Z-axis EKF: feed each LiDAR's computed altitude as a measurement update, but ONLY while
+    // that LiDAR's health is HEALTHY -- this is what makes lidar_1_health/lidar_2_health live for
+    // the first time (previously computed and tracked, but never consumed anywhere; see the
+    // divergence check above and its own comment). Checked AFTER the divergence check runs, so a
+    // LiDAR flagged faulty on this exact tick is excluded immediately, not one tick late.
+    if (lidar_1_updated && lidar_1_health == SensorHealth::HEALTHY) {
+        z_axis_ekf.update_altitude(lidar_1_altitude_m, LIDAR_1_ALTITUDE_R_VARIANCE_M2);
+    }
+    if (lidar_2_updated && lidar_2_health == SensorHealth::HEALTHY) {
+        z_axis_ekf.update_altitude(lidar_2_altitude_m, LIDAR_2_ALTITUDE_R_VARIANCE_M2);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // VEHICLE ALTITUDE SOURCE CHANGE: position.z and velocity.z now come from the Z-axis EKF --
+    // a fusion of VN300 acceleration (predict), LiDAR altitude, and Javad altitude/velocity
+    // (update), with a VN300 vel_d fallback when Javad is faulty -- NOT directly from raw
+    // gnss.up_m/vz_ms anymore (removed from the GNSS block above). The EKF IS the fusion policy
+    // that block's old "TODO: fuse ... with GNSS-derived altitude" comment was deferring.
+    //
+    // USE_ZAXIS_EKF_FOR_ALTITUDE (declared near the top of this file) is a ground-testing escape
+    // hatch back to raw, unfiltered GNSS passthrough -- flip it to false and rebuild to compare.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    if constexpr (USE_ZAXIS_EKF_FOR_ALTITUDE) {
+        if (z_axis_ekf.is_valid()) {
+            current_estimate.position.z = z_axis_ekf.z_m();
+            current_estimate.velocity.z = z_axis_ekf.vz_ms();
+        }
+        else if (gnss_updated) {
+            // EKF not yet initialized (no healthy GNSS reading has arrived yet) -- pass raw GNSS
+            // straight through so the estimate isn't left frozen at 0 in the meantime.
+            current_estimate.position.z = gnss.up_m;
+            current_estimate.velocity.z = gnss.vz_ms;
+        }
+    }
+    else if (gnss_updated) {
+        current_estimate.position.z = gnss.up_m;
+        current_estimate.velocity.z = gnss.vz_ms;
     }
 
     return current_estimate;

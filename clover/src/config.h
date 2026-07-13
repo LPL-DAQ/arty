@@ -1,6 +1,7 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
+#include <cstdint>
 #include <limits>
 
 constexpr int CONTROLLER_STEP_WORK_Q_PRIORITY = -10;
