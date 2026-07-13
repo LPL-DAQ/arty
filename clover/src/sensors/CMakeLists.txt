@@ -13,3 +13,7 @@ endif()
 if(CONFIG_IMU)
 target_sources(app PRIVATE VectornavIMU.cpp)
 endif()
+
+# Placeholder interface for the two backup IMUs -- no hardware/Kconfig gate yet since the
+# hardware doesn't exist.
+target_sources(app PRIVATE BackupImu.cpp)

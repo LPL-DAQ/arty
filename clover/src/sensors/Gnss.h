@@ -41,6 +41,11 @@ struct GnssReading {
     uint8_t sol_type;
 
     float sense_time_ns;
+
+    // Wall-clock time (ns since chip start, k_cycle_get_64 scale) this reading arrived at the
+    // estimator. Unlike sense_time_ns (inter-arrival delta), this is an absolute timestamp usable
+    // for staleness checks.
+    uint64_t arrival_time_ns;
 };
 
 extern k_sem gnss_ready_sem;  // Must be static-initialized as the sense thread waits on this
@@ -402,6 +407,7 @@ inline std::optional<GnssReading> Gnss::read()
     }
     has_reading = false;
     current_reading.sense_time_ns = sense_time_ns;
+    current_reading.arrival_time_ns = k_cyc_to_ns_near64(k_cycle_get_64());
     return {current_reading};
 }
 

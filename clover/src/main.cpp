@@ -12,6 +12,7 @@
 #include "ThrottleValve.h"
 #include "Valves.h"
 #include "sensors/AnalogSensors.h"
+#include "sensors/BackupImu.h"
 #include "sensors/Gnss.h"
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
@@ -78,6 +79,19 @@ int main(void)
         return 0;
     }
 #endif
+
+    // Backup IMUs. Placeholder init -- hardware does not exist yet (see BackupImu.h).
+    LOG_INF("Initializing backup IMU 1");
+    if (auto result = BackupImu1::init(); !result) {
+        LOG_ERR("Failed to initialize backup IMU 1: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing backup IMU 2");
+    if (auto result = BackupImu2::init(); !result) {
+        LOG_ERR("Failed to initialize backup IMU 2: %s", result.error().build_message().c_str());
+        return 0;
+    }
 
 #ifdef CONFIG_GNSS
     LOG_INF("Initializing GNSS");
