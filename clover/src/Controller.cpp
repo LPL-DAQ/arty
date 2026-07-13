@@ -4,6 +4,7 @@
 #include "flight/FlightController.h"
 #include "flight/StateEstimator.h"
 #include "sensors/AnalogSensors.h"
+#include "sensors/BackupImu.h"
 #include "sensors/Gnss.h"
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
@@ -450,6 +451,13 @@ static void step_control_loop(k_work*)
         data.gnss.receiver_time_ms = gnss->receiver_time_ms;
         data.gnss.sol_type = gnss->sol_type;
         data.gnss.sense_time_ns = gnss->sense_time_ns;
+        // Gnss::read() returns a hand-rolled GnssReading struct (not the nanopb GnssReadings type
+        // directly, unlike Lidar/VectornavImu's read()), so arrival_time_ns has to be copied field
+        // by field here like everything else in this block -- there's no single-assignment path
+        // that would carry it across automatically. StateEstimator's Javad-vs-VN300 divergence
+        // check depends on has_arrival_time_ns being set here to know a reading is fresh this tick.
+        data.gnss.arrival_time_ns = gnss->arrival_time_ns;
+        data.gnss.has_arrival_time_ns = true;
         LOG_INF(
             "[Gnss] sol_type=%u sol_time=%u ms rx_time=%u ms",
             Gnss::current_reading.sol_type,
@@ -521,6 +529,18 @@ static void step_control_loop(k_work*)
     }
 #endif  // CONFIG_IMU
 
+    // Backup IMUs. Placeholder reads -- hardware does not exist yet (see BackupImu.h), so these
+    // never actually produce a reading until a real driver lands.
+    if (auto backup_imu_1 = BackupImu1::read()) {
+        data.backup_imu_1 = *backup_imu_1;
+        data.has_backup_imu_1 = true;
+    }
+
+    if (auto backup_imu_2 = BackupImu2::read()) {
+        data.backup_imu_2 = *backup_imu_2;
+        data.has_backup_imu_2 = true;
+    }
+
     // Actuators statuses
 #if CONFIG_THROTTLE_VALVES
     data.has_fuel_valve_status = true;
@@ -535,7 +555,8 @@ static void step_control_loop(k_work*)
     // Valve actuator statuses
 
 #ifdef CONFIG_FLIGHT
-    auto estimated_state = StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.gnss);
+    auto estimated_state =
+        StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.backup_imu_1, data.backup_imu_2, data.gnss);
     if (estimated_state) {
         data.has_estimated_state = true;
         data.estimated_state = *estimated_state;
