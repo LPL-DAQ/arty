@@ -257,6 +257,109 @@ ZTEST(ZAxisEkf_tests, test_innovation_gate_rejects_wild_outlier_and_leaves_state
     }
 }
 
+// ══ update_velocity() tests (mirrors the update_altitude() suite above -- same scalar_update()
+// code path via h_index=1, but nothing had directly exercised the H=[0,1,0] channel in isolation
+// until now; the 1000-mixed-cycles test below calls update_velocity() too, but only asserts P
+// stays PSD/symmetric, not that vz actually moves correctly) ═══════════════════════════════════
+
+// (A) Velocity update pulls vz toward the measurement and shrinks P[1][1]
+
+ZTEST(ZAxisEkf_tests, test_velocity_update_pulls_vz_toward_measurement_and_shrinks_variance)
+{
+    ZAxisEkf ekf;
+    ekf.init(0.0f, 0.0f);
+
+    const float dt = 0.01f;
+    for (int i = 0; i < 20; i++) {
+        ekf.predict(GRAVITY_M_S2 + 1.0f, dt);
+    }
+
+    const float vz_before = ekf.vz_ms();
+    const float p_before = ekf.vz_variance();
+    zassert_true(p_before > 0.0f, "P[1][1] should be nonzero after predict-only steps");
+
+    // Offset chosen well inside the innovation gate: P[1][1] after 20 short predict steps is
+    // large relative to the altitude channel (PROCESS_NOISE_VZ_M2_S2 is 100x PROCESS_NOISE_Z_M2),
+    // so 5*sigma here is comfortably wide (~2.7 with r=0.1) -- verified numerically before picking
+    // this value, not guessed.
+    const float vz_meas = vz_before + 0.1f;
+    ekf.update_velocity(vz_meas, 0.1f);
+
+    zassert_true(ekf.vz_ms() > vz_before, "vz should move toward the measurement after the update");
+    zassert_true(ekf.vz_ms() < vz_meas, "vz should not overshoot past the measurement (K should be < 1 for finite P, r)");
+    zassert_true(ekf.vz_variance() < p_before, "P[1][1] should shrink after a measurement update");
+    zassert_equal(ekf.rejected_update_count(), 0, "a plausible measurement should not be rejected");
+}
+
+// (B) Smaller r_variance pulls harder than larger r_variance, same measurement
+
+ZTEST(ZAxisEkf_tests, test_smaller_r_variance_pulls_velocity_harder_toward_measurement)
+{
+    ZAxisEkf ekf_small_r;
+    ZAxisEkf ekf_large_r;
+    ekf_small_r.init(0.0f, 0.0f);
+    ekf_large_r.init(0.0f, 0.0f);
+
+    const float dt = 0.01f;
+    for (int i = 0; i < 20; i++) {
+        ekf_small_r.predict(GRAVITY_M_S2 + 1.0f, dt);
+        ekf_large_r.predict(GRAVITY_M_S2 + 1.0f, dt);
+    }
+
+    // Identical predict history on both filters -- vz_before is the same for both. Offset kept
+    // small enough to clear the innovation gate for the SMALL-r case (the tighter constraint) --
+    // verified numerically.
+    const float vz_before = ekf_small_r.vz_ms();
+    const float vz_meas = vz_before + 0.05f;
+
+    ekf_small_r.update_velocity(vz_meas, 0.01f);   // confident measurement
+    ekf_large_r.update_velocity(vz_meas, 100.0f);  // noisy measurement
+
+    const float move_small_r = ekf_small_r.vz_ms() - vz_before;
+    const float move_large_r = ekf_large_r.vz_ms() - vz_before;
+
+    zassert_true(move_small_r > 0.0f && move_large_r > 0.0f, "both should move toward the measurement, just by different amounts");
+    zassert_true(move_small_r > move_large_r, "smaller r_variance should pull vz harder toward the measurement");
+}
+
+// (C) Innovation gate rejects a wild velocity outlier, state unchanged
+
+ZTEST(ZAxisEkf_tests, test_innovation_gate_rejects_wild_velocity_outlier_and_leaves_state_unchanged)
+{
+    ZAxisEkf ekf;
+    ekf.init(0.0f, 0.0f);
+
+    const float dt = 0.01f;
+    for (int i = 0; i < 20; i++) {
+        ekf.predict(GRAVITY_M_S2 + 1.0f, dt);
+    }
+
+    const float z_before = ekf.z_m();
+    const float vz_before = ekf.vz_ms();
+    const float bias_before = ekf.accel_bias_mss();
+    float p_before[3][3];
+    ekf.get_covariance_for_testing(p_before);
+
+    zassert_equal(ekf.rejected_update_count(), 0, "no rejections should have happened yet");
+
+    // Wildly implausible given the filter's tiny uncertainty after only 20 short predict steps --
+    // 1000 m/s makes this unambiguous regardless of P[1][1]'s exact value.
+    ekf.update_velocity(vz_before + 1000.0f, 0.01f);
+
+    zassert_equal(ekf.rejected_update_count(), 1, "the wild outlier should have been counted as rejected");
+    zassert_within(ekf.z_m(), z_before, 1e-6f, "z should be unchanged after a rejected update");
+    zassert_within(ekf.vz_ms(), vz_before, 1e-6f, "vz should be unchanged after a rejected update");
+    zassert_within(ekf.accel_bias_mss(), bias_before, 1e-6f, "bias should be unchanged after a rejected update");
+
+    float p_after[3][3];
+    ekf.get_covariance_for_testing(p_after);
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            zassert_within(p_after[i][j], p_before[i][j], 1e-9f, "P should be unchanged after a rejected update");
+        }
+    }
+}
+
 // (5) P remains symmetric, positive-diagonal through 1000 mixed predict/update cycles
 
 ZTEST(ZAxisEkf_tests, test_covariance_stays_symmetric_and_positive_diagonal_through_1000_mixed_cycles)

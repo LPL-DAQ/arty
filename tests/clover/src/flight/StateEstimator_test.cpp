@@ -770,4 +770,116 @@ ZTEST(StateEstimator_tests, test_accel_dropout_then_resume_does_not_produce_garb
     zassert_true(result->velocity.z > vz_before_dropout, "a normal-dt predict step after the dropout should resume updating vz as usual");
 }
 
+// (6) predict()'s body->world accel rotation, exercised through the REAL StateEstimator path
+// with a genuinely tilted (non-identity) attitude -- test 1 above used an identity quaternion, so
+// it could not have caught a sign/axis bug in the rotation wiring; this one specifically can.
+
+ZTEST(StateEstimator_tests, test_ekf_predict_rotation_tracks_truth_under_tilted_attitude)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+
+    // 45-degree pitch about Y -- same quaternion convention/axis as
+    // test_calculate_vertical_altitude_with_vehicle_tilt (half-angle in qy). That test already
+    // established, independently of this one, that under this exact attitude a body-frame
+    // vector rotates through conjugateQuaternion()+multiplyQuaternionVector() (the SAME call
+    // pair predict()'s rotation uses) such that a pure body+Z component maps to
+    // world.z = body_z * cos(angle). The body accel below is picked from that established
+    // relation, not reverse-engineered from this test's own expected output -- a rotation bug
+    // would make this test fail, not pass vacuously.
+    const float angle_deg = 45.0f;
+    const float angle_rad = angle_deg * PI_F / 180.0f;
+    const float half = angle_rad / 2.0f;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = std::cos(half);
+    imu.quat_x = 0.0f;
+    imu.quat_y = -std::sin(half);
+    imu.quat_z = 0.0f;
+
+    const float a_true = 2.0f;  // m/s^2, true WORLD-frame net vertical acceleration (the target)
+    // K is deliberately LARGER than GRAVITY_M_S2 + a_true would be for an untilted vehicle --
+    // exactly as a real tilted accelerometer would report (more thrust needed along the tilted
+    // body axis to produce the same vertical component). K*cos(45deg) == GRAVITY_M_S2 + a_true.
+    const float K = (GRAVITY_M_S2 + a_true) / std::cos(angle_rad);
+    imu.accel_x = 0.0f;
+    imu.accel_y = 0.0f;
+    imu.accel_z = K;
+
+    GnssReadings gnss = GnssReadings_init_default;
+    uint64_t t_ns = 0;
+
+    // Warm VN300 to HEALTHY with the tilted quaternion held throughout. This also establishes
+    // current_estimate.R_WB = the tilted attitude by the end of warmup (R_WB is set from
+    // imu.quat_* on the same tick health flips to HEALTHY). predict() calls during warmup are
+    // no-ops regardless (z_axis_ekf isn't init()'d via GNSS yet), so nothing here contaminates
+    // the clean measurement below.
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be healthy after warmup");
+
+    // Bootstrap the EKF to a known-clean (0, 0) baseline via a single GNSS reading, with the
+    // tilted attitude already active.
+    gnss.up_m = 0.0f;
+    gnss.vz_ms = 0.0f;
+    gnss.has_arrival_time_ns = true;
+    t_ns += PERIOD_NS;
+    gnss.arrival_time_ns = t_ns;
+    gnss.sense_time_ns += 1.0f;
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    auto boot_result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(boot_result.has_value());
+    zassert_within(boot_result->position.z, 0.0f, 1e-4f, "EKF should bootstrap to exactly z=0");
+    zassert_within(boot_result->velocity.z, 0.0f, 1e-4f, "EKF should bootstrap to exactly vz=0");
+
+    // Predict-ONLY ticks from here on (gnss.sense_time_ns/lidar sense_time_ns are never advanced
+    // again below, so the dedup gates keep both excluded) -- the tilted attitude and body accel
+    // are held constant. If the body->world rotation is wired correctly, the EKF should track the
+    // TRUE world-frame constant-acceleration trajectory (a_true=2.0 m/s^2) -- NOT the raw,
+    // un-rotated body-frame reading (K, ~16.7 m/s^2 net after subtracting gravity), which is
+    // nearly an order of magnitude different and would result from a broken/missing rotation.
+    // predict()'s discrete update is exact for piecewise-constant acceleration (see
+    // test_constant_acceleration_matches_closed_form_kinematics in ZAxisEkf_test.cpp), so a tight
+    // tolerance is appropriate here despite going through quaternion trig -- verified numerically.
+    const int n = 100;
+    std::optional<EstimatedState> result;
+    for (int i = 0; i < n; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+
+    zassert_true(result.has_value());
+    float t_s = static_cast<float>(n) * static_cast<float>(PERIOD_NS) / 1e9f;
+    float expected_z = 0.5f * a_true * t_s * t_s;
+    float expected_vz = a_true * t_s;
+
+    zassert_within(
+        result->position.z, expected_z, 0.01f,
+        "z should track the TRUE world-frame acceleration under a tilted attitude -- proves the body->world rotation is wired correctly, not just present in isolated math_util tests"
+    );
+    zassert_within(
+        result->velocity.z, expected_vz, 0.01f,
+        "vz should track the TRUE world-frame acceleration under a tilted attitude -- proves the body->world rotation is wired correctly, not just present in isolated math_util tests"
+    );
+
+    // Sanity check that this test is actually discriminating against the most likely real
+    // regression (rotation silently skipped/no-op'd): the un-rotated prediction is far outside
+    // the tolerance above, so this test can't be passing by accident.
+    float wrong_a = K - GRAVITY_M_S2;
+    float wrong_vz = wrong_a * t_s;
+    zassert_true(
+        std::fabs(result->velocity.z - wrong_vz) > 1.0f,
+        "sanity check: correct and un-rotated predictions must be clearly distinguishable"
+    );
+}
+
 ZTEST_SUITE(StateEstimator_tests, NULL, NULL, NULL, NULL, NULL);

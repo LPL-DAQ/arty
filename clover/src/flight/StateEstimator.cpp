@@ -528,6 +528,13 @@ std::optional<EstimatedState> StateEstimator::estimate(
         // is itself already fused internally), so using it as a measurement here would be
         // circular. Only asked for the velocity fallback, so that's all this does.
         //
+        // Trigger, precisely: javad_health is set FAULTY by the Javad-vs-VN300 VELOCITY
+        // divergence check above (gnss.vx_ms/vy_ms/vz_ms vs. imu.vel_n/vel_e/vel_d) -- NOT a
+        // separate lateral-POSITION divergence check; no such check exists on Javad in this file.
+        // Functionally this still satisfies "Javad flagged bad -> fall back to VN300 for vertical
+        // velocity," but callers/readers expecting a position-based trigger specifically should
+        // know that's not what actually gates this fallback.
+        //
         // Sign: vel_n/vel_e/vel_d follow the standard NED (North-East-DOWN) navigation
         // convention -- "d" is positive DOWN, the opposite sign from this codebase's Z-up-is-
         // positive convention (see calculateVerticalAltitude()'s frame-convention comment;
