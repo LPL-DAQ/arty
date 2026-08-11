@@ -273,80 +273,95 @@ void StateEstimator::reset()
 #endif
 }
 
-std::optional<EstimatedState> StateEstimator::estimate(
-    LidarReading& lidar_1,
-    LidarReading& lidar_2,
-    ImuReading& imu,
-    ImuReading& backup_imu_1,
-    ImuReading& backup_imu_2,
-    GnssReadings& gnss
-)
+// ── estimate() sub-steps ────────────────────────────────────────────────────────────────────
+// Called in order from estimate() below. Each operates on the same file-static state; the split
+// is for readability only -- execution order and behavior are unchanged from the single function
+// these were extracted from.
+
+// Advances VN300 arrival-time tracking and the post-outage re-convergence window. Returns whether
+// a genuinely new reading arrived this tick: this function updates vn300_last_arrival_time_ns, so
+// predictVerticalState() can't re-test the same gate and has to be told.
+static bool trackVn300Freshness(const ImuReading& imu)
 {
-    update_timestamp_ns = static_cast<float>(k_cycle_get_64()) / sys_clock_hw_cycles_per_sec() * 1e9f;
-    has_update_timestamp_ns = true;
-
-    bool lidar_1_updated = false;
-    bool lidar_2_updated = false;
-    bool gnss_updated = false;
-
     // VN300 staleness / re-trust tracking, based on wall-clock arrival time rather than
     // sense_time_ns (an inter-arrival delta, not usable for staleness checks).
-    if (imu.has_arrival_time_ns && imu.arrival_time_ns > vn300_last_arrival_time_ns) {
-        vn300_last_arrival_time_ns = imu.arrival_time_ns;
-
-        if (vn300_health == SensorHealth::STALE) {
-            if (!vn300_recovering) {
-                // First good reading since the outage began -- start the re-convergence window.
-                vn300_recovering = true;
-                vn300_recovery_start_time_ns = imu.arrival_time_ns;
-            }
-            else if (imu.arrival_time_ns - vn300_recovery_start_time_ns >= VN300_RETRUST_THRESHOLD_NS) {
-                vn300_health = SensorHealth::HEALTHY;
-                vn300_recovering = false;
-            }
-        }
-
-        // Z-axis EKF predict step, on every fresh VN300 reading (reusing the freshness gate
-        // above rather than re-checking it). Rotates body-frame acceleration into world frame
-        // using the current fused attitude -- same conjugateQuaternion pattern as
-        // calculateVerticalAltitude() below, and the same reasoning: current_estimate.R_WB is
-        // already health-gated (VN300/backup-IMU fallback, frozen under a critical fault), so
-        // this automatically inherits that instead of trusting a possibly-faulty VN300
-        // quaternion directly. Nothing besides the rotation happens here -- no gravity or bias
-        // subtraction -- predict() does that internally (see ZAxisEkf.cpp).
-        //
-        // dt comes from consecutive VN300 arrival_time_ns deltas, not a fixed nominal period, so
-        // it stays correct even if VN300's actual rate drifts from ~400Hz. Skip entirely on the
-        // very first ever reading (z_axis_ekf_last_predict_time_ns == 0) -- there's no prior
-        // timestamp to form a real dt from yet (time-since-boot isn't a "dt" at all). predict()
-        // would also reject that huge bogus dt internally via MAX_PREDICT_DT_S, but skipping here
-        // avoids the wasted rotation math and states the real reason explicitly (no prior sample),
-        // not "some dt happened to be too big."
-        if (z_axis_ekf_last_predict_time_ns != 0) {
-            float dt_s = static_cast<float>(imu.arrival_time_ns - z_axis_ekf_last_predict_time_ns) / 1e9f;
-
-            Quaternion attitude_bw = math_util::conjugateQuaternion(current_estimate.R_WB);
-            Vector3D accel_body = math_util::createVector3D(imu.accel_x, imu.accel_y, imu.accel_z);
-            Vector3D accel_world = math_util::multiplyQuaternionVector(attitude_bw, accel_body);
-
-            z_axis_ekf.predict(accel_world.z, dt_s);
-        }
-        z_axis_ekf_last_predict_time_ns = imu.arrival_time_ns;
+    if (!(imu.has_arrival_time_ns && imu.arrival_time_ns > vn300_last_arrival_time_ns)) {
+        return false;
     }
 
+    vn300_last_arrival_time_ns = imu.arrival_time_ns;
+
+    if (vn300_health == SensorHealth::STALE) {
+        if (!vn300_recovering) {
+            // First good reading since the outage began -- start the re-convergence window.
+            vn300_recovering = true;
+            vn300_recovery_start_time_ns = imu.arrival_time_ns;
+        }
+        else if (imu.arrival_time_ns - vn300_recovery_start_time_ns >= VN300_RETRUST_THRESHOLD_NS) {
+            vn300_health = SensorHealth::HEALTHY;
+            vn300_recovering = false;
+        }
+    }
+
+    return true;
+}
+
+static void predictVerticalState(const ImuReading& imu, bool vn300_fresh)
+{
+    if (!vn300_fresh) {
+        return;
+    }
+
+    // Z-axis EKF predict step, on every fresh VN300 reading (reusing the freshness gate
+    // above rather than re-checking it). Rotates body-frame acceleration into world frame
+    // using the current fused attitude -- same conjugateQuaternion pattern as
+    // calculateVerticalAltitude() below, and the same reasoning: current_estimate.R_WB is
+    // already health-gated (VN300/backup-IMU fallback, frozen under a critical fault), so
+    // this automatically inherits that instead of trusting a possibly-faulty VN300
+    // quaternion directly. Nothing besides the rotation happens here -- no gravity or bias
+    // subtraction -- predict() does that internally (see ZAxisEkf.cpp).
+    //
+    // dt comes from consecutive VN300 arrival_time_ns deltas, not a fixed nominal period, so
+    // it stays correct even if VN300's actual rate drifts from ~400Hz. Skip entirely on the
+    // very first ever reading (z_axis_ekf_last_predict_time_ns == 0) -- there's no prior
+    // timestamp to form a real dt from yet (time-since-boot isn't a "dt" at all). predict()
+    // would also reject that huge bogus dt internally via MAX_PREDICT_DT_S, but skipping here
+    // avoids the wasted rotation math and states the real reason explicitly (no prior sample),
+    // not "some dt happened to be too big."
+    if (z_axis_ekf_last_predict_time_ns != 0) {
+        float dt_s = static_cast<float>(imu.arrival_time_ns - z_axis_ekf_last_predict_time_ns) / 1e9f;
+
+        Quaternion attitude_bw = math_util::conjugateQuaternion(current_estimate.R_WB);
+        Vector3D accel_body = math_util::createVector3D(imu.accel_x, imu.accel_y, imu.accel_z);
+        Vector3D accel_world = math_util::multiplyQuaternionVector(attitude_bw, accel_body);
+
+        z_axis_ekf.predict(accel_world.z, dt_s);
+    }
+    z_axis_ekf_last_predict_time_ns = imu.arrival_time_ns;
+}
+
+static uint64_t currentTimeNs()
+{
 #if CONFIG_TEST
-    uint64_t now_ns = now_ns_override_set ? now_ns_override : k_cyc_to_ns_near64(k_cycle_get_64());
+    return now_ns_override_set ? now_ns_override : k_cyc_to_ns_near64(k_cycle_get_64());
 #else
-    uint64_t now_ns = k_cyc_to_ns_near64(k_cycle_get_64());
+    return k_cyc_to_ns_near64(k_cycle_get_64());
 #endif
-    if (now_ns - vn300_last_arrival_time_ns > VN300_STALE_THRESHOLD_NS) {
+}
+
+static void updateVn300Staleness()
+{
+    if (currentTimeNs() - vn300_last_arrival_time_ns > VN300_STALE_THRESHOLD_NS) {
         // No new reading in too long -- mark stale and reset any in-progress re-convergence, since
         // the "consecutive good data" requirement must restart from scratch after another dropout.
         // Takes precedence over a FAULTY flag: with no data at all there's nothing left to diverge.
         vn300_health = SensorHealth::STALE;
         vn300_recovering = false;
     }
+}
 
+static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2)
+{
     // VN300-vs-backup-IMU divergence check. Requires the two backups to agree with each other
     // FIRST, then checks whether VN300 disagrees with both -- this two-step structure (corroborate
     // the references, then compare against them) is what lets the check tell "VN300 is wrong" apart
@@ -397,7 +412,10 @@ std::optional<EstimatedState> StateEstimator::estimate(
             }
         }
     }
+}
 
+static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss)
+{
     // Javad-vs-VN300 velocity divergence check. Only runs while VN300 isn't already flagged --
     // if VN300 itself is untrustworthy, a mismatch tells us nothing about Javad. Compares GNSS
     // Cartesian velocity (vx/vy/vz) against VN300's INS-derived velocity (vel_n/vel_e/vel_d); see
@@ -429,7 +447,11 @@ std::optional<EstimatedState> StateEstimator::estimate(
             }
         }
     }
+}
 
+// Returns whether both primary sensors are simultaneously FAULTY (a critical fault).
+static bool updateFaultStatus()
+{
     // Combined fault status, carried directly on the returned EstimatedState so any consumer
     // (FlightController, telemetry, ...) can distinguish "one primary sensor down" from "both
     // primary sensors down" by reading this single field -- rather than re-deriving it themselves
@@ -457,6 +479,24 @@ std::optional<EstimatedState> StateEstimator::estimate(
         current_estimate.fault_status = EstimatorFaultStatus_NOMINAL;
     }
 
+    return critical_fault;
+}
+
+// Single entry point for the primary-sensor (VN300 + Javad) health checks. The LiDAR cross-check
+// is deliberately NOT here -- it depends on this tick's projected LiDAR altitudes, which in turn
+// depend on the attitude chosen after this runs. See checkLidarDivergence().
+static bool checkPrimarySensorFaults(
+    const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2, const GnssReadings& gnss
+)
+{
+    updateVn300Staleness();
+    checkVn300Divergence(imu, backup_imu_1, backup_imu_2);
+    checkJavadDivergence(imu, gnss);
+    return updateFaultStatus();
+}
+
+static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1, bool critical_fault)
+{
     // IMU: update quaternion from VN300 while healthy. Once flagged faulty by the divergence
     // check, switch to backup IMU 1 (backup_imu_2 is redundant with it once corroborated above).
     // A merely STALE VN300 still just freezes the last estimate, unchanged from before. Under a
@@ -481,6 +521,12 @@ std::optional<EstimatedState> StateEstimator::estimate(
             }
         }
     }
+}
+
+// Returns whether a fresh, trusted GNSS reading was consumed this tick.
+static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
+{
+    bool gnss_updated = false;
 
     // GNSS: update x/y position and x/y velocity if timestamp changed, unless Javad is flagged
     // faulty (freeze last known-good lateral position/velocity instead). javad_health == FAULTY
@@ -551,18 +597,23 @@ std::optional<EstimatedState> StateEstimator::estimate(
         z_axis_ekf.update_velocity(vz_world_from_vn300, VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2);
     }
 
-    // Lidar 1: track timestamp.
-    if (lidar_1.sense_time_ns > lidar_1_update_timestamp_ns) {
-        lidar_1_update_timestamp_ns = lidar_1.sense_time_ns;
-        lidar_1_updated = true;
-    }
+    return gnss_updated;
+}
 
-    // Lidar 2: track timestamp.
-    if (lidar_2.sense_time_ns > lidar_2_update_timestamp_ns) {
-        lidar_2_update_timestamp_ns = lidar_2.sense_time_ns;
-        lidar_2_updated = true;
+// Returns whether this LiDAR produced a new reading, advancing its last-seen timestamp if so.
+static bool trackLidarFreshness(const LidarReading& lidar, float& last_update_timestamp_ns)
+{
+    if (lidar.sense_time_ns > last_update_timestamp_ns) {
+        last_update_timestamp_ns = lidar.sense_time_ns;
+        return true;
     }
+    return false;
+}
 
+static void projectLidarAltitudes(
+    const LidarReading& lidar_1, const LidarReading& lidar_2, bool lidar_1_updated, bool lidar_2_updated
+)
+{
     // Z position filter. calculateVerticalAltitude() converts each LiDAR's slant range into true
     // vertical altitude using the vehicle's current (fused/fallback-aware) attitude -- current_estimate.R_WB
     // rather than raw VN300 output, so this automatically respects the VN300/backup-IMU health
@@ -580,7 +631,10 @@ std::optional<EstimatedState> StateEstimator::estimate(
     if (lidar_2_updated) {
         lidar_2_altitude_m = calculateVerticalAltitude(lidar_2.distance_m, current_estimate.R_WB, LIDAR_MOUNT_ANGLE_DEG * DEG2RAD_F);
     }
+}
 
+static void checkLidarDivergence(const GnssReadings& gnss, bool lidar_1_updated, bool lidar_2_updated)
+{
     // LiDAR-vs-Javad-vs-other-LiDAR altitude divergence check. Structurally different from the
     // VN300-vs-backups check above: instead of first requiring two references to agree and then
     // checking the third against them, this evaluates each LiDAR independently against the other
@@ -638,7 +692,10 @@ std::optional<EstimatedState> StateEstimator::estimate(
             }
         }
     }
+}
 
+static void updateVerticalFromLidars(bool lidar_1_updated, bool lidar_2_updated)
+{
     // Z-axis EKF: feed each LiDAR's computed altitude as a measurement update, but ONLY while
     // that LiDAR's health is HEALTHY -- this is what makes lidar_1_health/lidar_2_health live for
     // the first time (previously computed and tracked, but never consumed anywhere; see the
@@ -650,7 +707,10 @@ std::optional<EstimatedState> StateEstimator::estimate(
     if (lidar_2_updated && lidar_2_health == SensorHealth::HEALTHY) {
         z_axis_ekf.update_altitude(lidar_2_altitude_m, LIDAR_2_ALTITUDE_R_VARIANCE_M2);
     }
+}
 
+static void publishVerticalState(const GnssReadings& gnss, bool gnss_updated)
+{
     // ═══════════════════════════════════════════════════════════════════════════════════════
     // VEHICLE ALTITUDE SOURCE CHANGE: position.z and velocity.z now come from the Z-axis EKF --
     // a fusion of VN300 acceleration (predict), LiDAR altitude, and Javad altitude/velocity
@@ -677,6 +737,38 @@ std::optional<EstimatedState> StateEstimator::estimate(
         current_estimate.position.z = gnss.up_m;
         current_estimate.velocity.z = gnss.vz_ms;
     }
+}
+
+std::optional<EstimatedState> StateEstimator::estimate(
+    LidarReading& lidar_1,
+    LidarReading& lidar_2,
+    ImuReading& imu,
+    ImuReading& backup_imu_1,
+    ImuReading& backup_imu_2,
+    GnssReadings& gnss
+)
+{
+    update_timestamp_ns = static_cast<float>(k_cycle_get_64()) / sys_clock_hw_cycles_per_sec() * 1e9f;
+    has_update_timestamp_ns = true;
+
+    bool vn300_fresh = trackVn300Freshness(imu);
+    predictVerticalState(imu, vn300_fresh);
+
+    bool critical_fault = checkPrimarySensorFaults(imu, backup_imu_1, backup_imu_2, gnss);
+
+    updateAttitude(imu, backup_imu_1, critical_fault);
+    bool gnss_updated = updateFromGnss(imu, gnss);
+
+    bool lidar_1_updated = trackLidarFreshness(lidar_1, lidar_1_update_timestamp_ns);
+    bool lidar_2_updated = trackLidarFreshness(lidar_2, lidar_2_update_timestamp_ns);
+    projectLidarAltitudes(lidar_1, lidar_2, lidar_1_updated, lidar_2_updated);
+
+    // Runs here rather than alongside the primary-sensor checks above: it compares this tick's
+    // projected LiDAR altitudes, which depend on the attitude selected by updateAttitude().
+    checkLidarDivergence(gnss, lidar_1_updated, lidar_2_updated);
+    updateVerticalFromLidars(lidar_1_updated, lidar_2_updated);
+
+    publishVerticalState(gnss, gnss_updated);
 
     return current_estimate;
 }
