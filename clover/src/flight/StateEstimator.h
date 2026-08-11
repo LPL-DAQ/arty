@@ -20,12 +20,10 @@ namespace StateEstimator {
     );
 
 #if CONFIG_TEST
-    // Overrides the wall-clock "now" used by the staleness check, instead of the real
-    // k_cycle_get_64(). reset() clears the override (falls back to the real clock).
+    // Overrides the wall-clock "now" used by the staleness check. reset() clears the override.
     void set_now_ns_for_testing(uint64_t ns);
 
-    // Per-sensor health accessors. SensorHealth itself is internal to StateEstimator.cpp (not
-    // part of the public interface), so these expose only the yes/no questions tests need.
+    // SensorHealth is internal to StateEstimator.cpp, so these expose only the yes/no answers.
     bool vn300_is_healthy_for_testing();
     bool vn300_is_stale_for_testing();
     bool vn300_is_faulty_for_testing();
@@ -33,15 +31,13 @@ namespace StateEstimator {
     bool lidar_1_is_faulty_for_testing();
     bool lidar_2_is_faulty_for_testing();
 
-    // Placeholder divergence-streak thresholds, so tests can assert "not flagged before N" /
-    // "flagged at N" without duplicating the actual constants (which are expected to change once
-    // real sensor noise specs are available).
+    // Lets tests assert "not flagged before N" / "flagged at N" without duplicating the constants,
+    // which are placeholders expected to change once real sensor noise specs are available.
     int vn300_divergence_streak_threshold_for_testing();
     int javad_divergence_streak_threshold_for_testing();
     int lidar_divergence_streak_threshold_for_testing();
 
-    // Direct access to calculateVerticalAltitude(), which is otherwise static/internal to
-    // StateEstimator.cpp.
+    // calculateVerticalAltitude() is otherwise static to StateEstimator.cpp.
     float calculate_vertical_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad);
 #endif
 

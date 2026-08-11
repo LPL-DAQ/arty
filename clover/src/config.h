@@ -18,9 +18,8 @@ constexpr float RAD2DEG_F = 57.2957795f;
 constexpr float N_TO_LBF  = 0.224809f;
 constexpr float GRAVITY_M_S2 = 9.80665f;
 
-// PLACEHOLDER -- real LiDAR mount angle not yet measured. Fixed angle, in degrees, of the LiDAR
-// boresight off the body -Z axis (straight down when 0). Assumes a single-plane tilt toward body
-// +X; confirm this matches the real mounting geometry once known.
+// PLACEHOLDER -- not yet measured. Angle of the LiDAR boresight off the body -Z axis (straight
+// down at 0), assumed to tilt in the body X-Z plane toward +X. Confirm against real geometry.
 constexpr float LIDAR_MOUNT_ANGLE_DEG = 0.0f;
 
 // PWM pulse width range (microseconds): 0% throttle = 1000 µs, 100% throttle = 2000 µs

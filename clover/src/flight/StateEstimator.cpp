@@ -13,29 +13,15 @@ LOG_MODULE_REGISTER(StateEstimator, LOG_LEVEL_INF);
 
 // ── Design notes ────────────────────────────────────────────────────────────────────────────
 //
-// Why a streak (N consecutive readings) instead of acting on a single sample: a lone
-// mismatch/match could just be sensor noise, a one-tick timing skew between independently-clocked
-// sensors, or a transient glitch. Acting on it immediately would flap the health state on noise
-// alone. Requiring N consecutive readings before flipping in EITHER direction means a fault only
-// gets declared once it's a persistent pattern rather than a fluke, and a recovery is only trusted
-// once it's persistent too -- see VN300_DIVERGENCE_STREAK_THRESHOLD / JAVAD_DIVERGENCE_STREAK_
-// THRESHOLD / LIDAR_DIVERGENCE_STREAK_THRESHOLD below, and every *_disagree_streak/*_agree_streak
-// pair.
+// Health flags flip only after N consecutive readings agree, in both directions, so sensor noise
+// or a one-tick timing skew between independently-clocked sensors can't flap the state.
 //
-// Why STALE recovers on a TIMER but FAULTY recovers on a STREAK: these are different physical
-// situations, not just two ways of writing the same idea. STALE means "no data at all" -- once
-// data resumes, the sensor's own onboard filter needs real wall-clock time to re-converge (see
-// VN300_RETRUST_THRESHOLD_NS), so recovery is gated on elapsed time, not sample count, because
-// trusting the very first post-outage sample would mean trusting a filter that hasn't caught up
-// yet. FAULTY means "data is arriving but disagrees with corroborating sensors" -- there's no
-// analogous convergence process to wait out, just a need for enough independent samples to be
-// confident the disagreement (or its resolution) is real rather than noise, so recovery is gated
-// on a sample count instead. VN300 is the only sensor here with a staleness concept at all
-// (Javad/LiDAR don't have one in this file -- see their SensorHealth declarations below), so it's
-// also the only one with both recovery mechanisms in play at once.
+// STALE recovers on a timer, FAULTY on a streak: STALE means no data at all, and once it resumes
+// the sensor's own filter needs wall-clock time to re-converge; FAULTY means data is arriving but
+// disagrees, which only needs enough samples to confirm. VN300 is the only sensor here with a
+// staleness concept, so it's the only one using both.
 
-// Health state for a fused sensor. Generic so it can be reused for other redundant sensors as
-// backup hardware comes online -- currently only tracked for VN300, Javad, and the two LiDARs.
+// Health state for a fused sensor. Tracked for VN300, Javad, and the two LiDARs.
 enum class SensorHealth {
     HEALTHY,  // trusted, actively used in the estimate
     STALE,    // no reading recently enough to trust (see staleness check) -- timer-based recovery
@@ -53,42 +39,35 @@ static float gnss_update_timestamp_ns = 0;
 static float lidar_1_altitude_m = 0;
 static float lidar_2_altitude_m = 0;
 
-// The Z-axis EKF IS the fusion policy for vertical state (position.z/velocity.z) -- see the
-// "VEHICLE ALTITUDE SOURCE CHANGE" comment in estimate() below. Tracks its own dt internally from
-// consecutive VN300 arrival times, separate from vn300_last_arrival_time_ns (which serves the
-// staleness check's own purpose) to avoid coupling the two unrelated concerns together.
+// Fusion policy for vertical state (position.z/velocity.z). Tracks its own dt from consecutive
+// VN300 arrival times, separate from vn300_last_arrival_time_ns, which serves the staleness check.
 static ZAxisEkf z_axis_ekf;
 static uint64_t z_axis_ekf_last_predict_time_ns = 0;
 
-// Ground-testing escape hatch: flip to false to fall back to raw, unfiltered GNSS altitude/
-// vertical-velocity passthrough (bypassing the Z-axis EKF entirely), e.g. to compare the EKF's
-// output against raw GNSS during ground testing. Should be true for real flight. A `constexpr
-// bool` gating `if constexpr` below rather than a Kconfig option: this is a one-line flip-and-
-// rebuild switch, not something that needs its own build variant.
+// Ground-testing escape hatch: flip to false to bypass the EKF and pass raw GNSS altitude/vertical
+// velocity straight through. Should be true for real flight.
 static constexpr bool USE_ZAXIS_EKF_FOR_ALTITUDE = true;
 
-// Placeholder -- needs real analysis before flight. "Large" initial covariance for bootstrapping
-// the Z-axis EKF from the first healthy GNSS reading: z0/vz0 are a first guess from a single
-// measurement, not a confident known-exact state, so the filter should start out knowing it
-// doesn't know much yet. Bias starts less uncertain than z/vz since accelerometer biases are
-// typically small, but still nonzero -- it shouldn't be treated as known-exact either.
+// Placeholder -- needs real analysis before flight. Initial covariance when bootstrapping the EKF
+// from the first healthy GNSS reading, which is a single uncertain measurement rather than a known
+// state. Bias starts less uncertain than z/vz, but not known-exact.
 static constexpr float EKF_INITIAL_Z_VARIANCE_M2 = 100.0f;
 static constexpr float EKF_INITIAL_VZ_VARIANCE_M2_S2 = 25.0f;
 static constexpr float EKF_INITIAL_BIAS_VARIANCE_M2_S4 = 1.0f;
 
-// Placeholder -- needs real LiDAR noise specs before flight. r_variance for feeding each LiDAR's
-// computed altitude into the Z-axis EKF via update_altitude().
+// Placeholder -- needs real LiDAR noise specs before flight. r_variance for each LiDAR's computed
+// altitude.
 static constexpr float LIDAR_1_ALTITUDE_R_VARIANCE_M2 = 0.01f;
 static constexpr float LIDAR_2_ALTITUDE_R_VARIANCE_M2 = 0.01f;
 
-// Placeholder -- needs real GNSS receiver noise-floor analysis before flight. Floors for Javad's
-// own reported per-epoch uncertainty (vrms_m/vvel_rms_ms), guarding against a zero or
-// implausibly tiny reported value making the filter overconfident in a single GNSS epoch.
+// Placeholder -- needs real GNSS noise-floor analysis before flight. Floors on Javad's own
+// reported per-epoch uncertainty, so a zero or implausibly tiny value can't make the filter
+// overconfident in one epoch.
 static constexpr float JAVAD_ALTITUDE_R_VARIANCE_FLOOR_M2 = 1e-4f;
 static constexpr float JAVAD_VELOCITY_R_VARIANCE_FLOOR_M2_S2 = 1e-4f;
 
 // Placeholder -- needs real VN300 INS velocity noise specs before flight. r_variance for the
-// VN300 vel_d fallback velocity measurement, used only while Javad is faulty.
+// vel_d fallback, used only while Javad is faulty.
 static constexpr float VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2 = 0.25f;
 
 // VN300 updates at ~400Hz (2.5ms period). If this long passes without a new reading arriving,
@@ -96,48 +75,37 @@ static constexpr float VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2 = 0.25f;
 static constexpr uint64_t VN300_STALE_THRESHOLD_NS = 50'000'000;
 
 // After an outage, require this much continuous good data before trusting VN300 again -- 100ms
-// (~40 consecutive updates at 400Hz) gives its onboard filter time to re-converge, since a reading
-// right after a dropout isn't as reliable as one from a filter that's been running steadily.
-//
-// Deliberately 2x the stale threshold, not the same value: declaring stale should be quick (any
-// gap this size already means ~20 missed samples, a clear and cheap-to-detect problem, and staying
-// STALE briefly costs little), but declaring "trustworthy again" should be conservative, since
-// trusting attitude data too early risks feeding a not-yet-converged filter into flight control.
-// The two thresholds encode "fail fast, recover cautiously" rather than a single symmetric window.
+// (~40 updates at 400Hz) gives its onboard filter time to re-converge. Deliberately 2x the stale
+// threshold: fail fast, recover cautiously.
 static constexpr uint64_t VN300_RETRUST_THRESHOLD_NS = 100'000'000;
 
 // Placeholder -- needs real backup IMU noise specs before flight. Max per-component quaternion
-// difference allowed between the two backup IMUs to consider them in agreement with each other.
+// difference for the two backups to count as agreeing with each other.
 static constexpr float BACKUP_IMU_AGREEMENT_THRESHOLD = 0.05f;
 
 // Placeholder -- needs real backup IMU noise specs before flight. Max per-component quaternion
-// difference allowed between VN300 and a backup IMU before considering them in disagreement.
+// difference before VN300 and a backup count as disagreeing.
 static constexpr float VN300_DIVERGENCE_THRESHOLD = 0.05f;
 
-// Placeholder -- needs real backup IMU noise specs before flight. Number of consecutive
-// disagreeing readings (backups agree with each other but not with VN300) required to flag VN300
-// as faulty, and consecutive agreeing readings required to un-flag it -- symmetric N in both
-// directions so a single noisy sample can't flip the flag either way (avoids flapping).
+// Placeholder -- needs real backup IMU noise specs before flight. Consecutive disagreeing readings
+// to flag VN300 faulty, and consecutive agreeing readings to un-flag it.
 static constexpr int VN300_DIVERGENCE_STREAK_THRESHOLD = 10;
 
-// Placeholder -- needs real GNSS/VN300 velocity noise + frame-alignment analysis before flight
-// (GNSS vx/vy/vz and VN300 vel_n/vel_e/vel_d aren't guaranteed to be directly comparable without
-// a proper frame transform). Max per-axis velocity difference (m/s) before Javad and VN300 count
-// as disagreeing.
+// Placeholder -- also needs a frame-alignment pass before flight: GNSS vx/vy/vz and VN300
+// vel_n/vel_e/vel_d aren't guaranteed to be directly comparable without a proper transform. Max
+// per-axis velocity difference [m/s] before Javad and VN300 count as disagreeing.
 static constexpr float JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD = 1.0f;
 
 // Placeholder -- needs real GNSS/VN300 velocity noise analysis before flight. Consecutive
-// disagreeing GNSS refreshes required to flag Javad as faulty, and consecutive agreeing
-// refreshes required to un-flag it -- symmetric N in both directions to avoid flapping.
+// disagreeing GNSS refreshes to flag Javad faulty, and agreeing refreshes to un-flag it.
 static constexpr int JAVAD_DIVERGENCE_STREAK_THRESHOLD = 10;
 
 // Placeholder -- needs real LiDAR/GNSS altitude noise analysis before flight. Max altitude
-// difference (m) before a LiDAR and Javad, or the two LiDARs, count as disagreeing.
+// difference [m] before a LiDAR and Javad, or the two LiDARs, count as disagreeing.
 static constexpr float LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD = 1.0f;
 
 // Placeholder -- needs real LiDAR/GNSS altitude noise analysis before flight. Consecutive
-// disagreeing refreshes required to flag a LiDAR as faulty, and consecutive agreeing refreshes
-// required to un-flag it -- symmetric N in both directions to avoid flapping.
+// disagreeing refreshes to flag a LiDAR faulty, and agreeing refreshes to un-flag it.
 static constexpr int LIDAR_DIVERGENCE_STREAK_THRESHOLD = 10;
 
 #if CONFIG_TEST
@@ -152,23 +120,15 @@ static bool vn300_recovering = false;
 static int vn300_disagree_streak = 0;
 static int vn300_agree_streak = 0;
 
-// Javad has no dedicated staleness tracking here (out of scope for this check), so its health
-// only ever toggles HEALTHY <-> FAULTY via the velocity divergence check below -- it starts
-// HEALTHY (rather than STALE, like VN300 does) because there's no timer-based signal that would
-// ever move it out of a STALE state in the first place; an "unknown until proven otherwise"
-// default would just be dead state with no way to leave it.
+// Javad has no staleness tracking, so its health only toggles HEALTHY <-> FAULTY via the velocity
+// divergence check. Starts HEALTHY rather than STALE because nothing would ever move it out of
+// STALE.
 static SensorHealth javad_health = SensorHealth::HEALTHY;
 static int javad_disagree_streak = 0;
 static int javad_agree_streak = 0;
 
-// LiDARs have no dedicated staleness tracking here either, so their health only ever toggles
-// HEALTHY <-> FAULTY via the altitude divergence check below (same HEALTHY-default reasoning as
-// Javad above). Deliberately not consumed by current_estimate or fault_status yet -- see the TODO
-// on the LiDAR altitude fusion below. This is a staged rollout: the health-tracking detector is
-// independently useful and testable on its own, and doesn't need the (harder, more consequential)
-// fusion-into-position.z policy decided first. Wiring a flagged-faulty LiDAR into the actual
-// position estimate before that policy exists would mean guessing at a flight-safety-relevant
-// behavior instead of having it decided explicitly.
+// Same for the LiDARs: no staleness tracking, HEALTHY default, toggled by the altitude divergence
+// check.
 static SensorHealth lidar_1_health = SensorHealth::HEALTHY;
 static int lidar_1_disagree_streak = 0;
 static int lidar_1_agree_streak = 0;
@@ -176,13 +136,8 @@ static SensorHealth lidar_2_health = SensorHealth::HEALTHY;
 static int lidar_2_disagree_streak = 0;
 static int lidar_2_agree_streak = 0;
 
-// These two helpers answer "do these two readings agree right now" for a single tick -- they are
-// NOT the fault-detection logic themselves. The disagree/agree streak counters below are what
-// turn a sequence of these per-tick answers into a flag (see the "Design notes" comment above for
-// why a streak is used instead of acting on one answer directly).
-//
-// Placeholder comparison -- max per-component absolute difference between two quaternions.
-// Good enough until real backup IMU noise specs are available to design a proper metric.
+// Placeholder comparison -- max per-component absolute difference between two quaternions. Good
+// enough until real backup IMU noise specs are available to design a proper metric.
 static bool quats_agree(
     float aw, float ax, float ay, float az, float bw, float bx, float by, float bz, float threshold
 )
@@ -198,28 +153,16 @@ static bool vec3_close(float ax, float ay, float az, float bx, float by, float b
     return std::fabs(ax - bx) < threshold && std::fabs(ay - by) < threshold && std::fabs(az - bz) < threshold;
 }
 
-// Converts a LiDAR slant range into true vertical altitude (height above whatever the beam hit),
-// accounting for both the vehicle's current attitude and the LiDAR's fixed body-frame mount
-// angle.
+// Converts a LiDAR slant range into vertical altitude (height above whatever the beam hit), using
+// the vehicle's current attitude and the LiDAR's fixed body-frame mount angle.
 //
-// Frame conventions, verified against the rest of this codebase rather than assumed:
-//  - World frame is Z-up: GnssReadings.up_m is assigned straight into EstimatedState.position.z
-//    elsewhere in this file, and FlightController.cpp treats a rotated body vector's world-frame
-//    Z component as "aligned with world up" when computing tilt (atan2(x, z) / atan2(y, z)).
-//  - attitude_wb (matches EstimatedState.R_WB / ImuReading.quat_*) is WORLD-to-BODY: rotating a
-//    body-frame vector INTO world frame requires its conjugate, not attitude_wb directly -- see
-//    FlightController.cpp's `q_bw = conjugateQuaternion(q_wb)` before rotating unitZ() into world
-//    frame. Getting this backwards would silently invert the tilt correction.
+// Frame conventions: the world frame is Z-up, and attitude_wb (EstimatedState.R_WB /
+// ImuReading.quat_*) is world-to-body, so rotating a body vector into world frame takes its
+// conjugate. Getting that backwards would silently invert the tilt correction.
 //
-// ASSUMPTION pending confirmation, alongside the placeholder mount angle value itself: the
-// boresight points straight down (body -Z) when mount_angle_rad is 0, tilted by mount_angle_rad
-// in the body X-Z plane. Confirm this matches the real LiDAR mounting geometry once known.
-//
-// Both the VALUE (LIDAR_MOUNT_ANGLE_DEG, currently 0 as a placeholder in config.h) and this AXIS
-// CONVENTION need flagging, not just the value: a wrong angle produces an altitude that's off by a
-// bounded, checkable amount, but a wrong axis/plane assumption would silently produce a
-// plausible-looking altitude that's wrong in a way nothing here would catch -- there's no
-// "obviously broken" signal to notice, unlike e.g. a NaN or an out-of-range value.
+// ASSUMPTION pending confirmation: the boresight points straight down (body -Z) at
+// mount_angle_rad 0, tilted in the body X-Z plane. A wrong axis assumption produces a
+// plausible-looking but wrong altitude with no obvious failure signal, unlike a wrong angle.
 static float calculateVerticalAltitude(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad)
 {
     Vector3D boresight_body = math_util::createVector3D(std::sin(mount_angle_rad), 0.0f, -std::cos(mount_angle_rad));
@@ -312,22 +255,12 @@ static void predictVerticalState(const ImuReading& imu, bool vn300_fresh)
         return;
     }
 
-    // Z-axis EKF predict step, on every fresh VN300 reading (reusing the freshness gate
-    // above rather than re-checking it). Rotates body-frame acceleration into world frame
-    // using the current fused attitude -- same conjugateQuaternion pattern as
-    // calculateVerticalAltitude() below, and the same reasoning: current_estimate.R_WB is
-    // already health-gated (VN300/backup-IMU fallback, frozen under a critical fault), so
-    // this automatically inherits that instead of trusting a possibly-faulty VN300
-    // quaternion directly. Nothing besides the rotation happens here -- no gravity or bias
-    // subtraction -- predict() does that internally (see ZAxisEkf.cpp).
+    // Rotates body-frame acceleration into world frame using current_estimate.R_WB, which is
+    // already health-gated, so this inherits the VN300/backup-IMU fallback rather than trusting a
+    // possibly-faulty VN300 quaternion. Gravity and bias subtraction happen inside predict().
     //
-    // dt comes from consecutive VN300 arrival_time_ns deltas, not a fixed nominal period, so
-    // it stays correct even if VN300's actual rate drifts from ~400Hz. Skip entirely on the
-    // very first ever reading (z_axis_ekf_last_predict_time_ns == 0) -- there's no prior
-    // timestamp to form a real dt from yet (time-since-boot isn't a "dt" at all). predict()
-    // would also reject that huge bogus dt internally via MAX_PREDICT_DT_S, but skipping here
-    // avoids the wasted rotation math and states the real reason explicitly (no prior sample),
-    // not "some dt happened to be too big."
+    // dt comes from consecutive arrival_time_ns deltas, so it stays correct if VN300's rate drifts
+    // from ~400Hz. Skipped on the very first reading, where there's no prior timestamp to form one.
     if (z_axis_ekf_last_predict_time_ns != 0) {
         float dt_s = static_cast<float>(imu.arrival_time_ns - z_axis_ekf_last_predict_time_ns) / 1e9f;
 
@@ -352,9 +285,8 @@ static uint64_t currentTimeNs()
 static void updateVn300Staleness()
 {
     if (currentTimeNs() - vn300_last_arrival_time_ns > VN300_STALE_THRESHOLD_NS) {
-        // No new reading in too long -- mark stale and reset any in-progress re-convergence, since
-        // the "consecutive good data" requirement must restart from scratch after another dropout.
-        // Takes precedence over a FAULTY flag: with no data at all there's nothing left to diverge.
+        // Any in-progress re-convergence restarts from scratch. Takes precedence over a FAULTY
+        // flag: with no data at all there's nothing left to diverge.
         vn300_health = SensorHealth::STALE;
         vn300_recovering = false;
     }
@@ -362,14 +294,9 @@ static void updateVn300Staleness()
 
 static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2)
 {
-    // VN300-vs-backup-IMU divergence check. Requires the two backups to agree with each other
-    // FIRST, then checks whether VN300 disagrees with both -- this two-step structure (corroborate
-    // the references, then compare against them) is what lets the check tell "VN300 is wrong" apart
-    // from "one of the backups is wrong": if the backups themselves disagreed, a VN300-vs-backup
-    // mismatch wouldn't say anything about which sensor is actually at fault. Only meaningful when
-    // all three produced a genuinely new reading this tick -- with no real backup hardware yet,
-    // has_arrival_time_ns on the backups is never set, so this never fires today, but is ready for
-    // when it does.
+    // The backups must corroborate each other before VN300 is compared against them: if they
+    // disagreed, a VN300-vs-backup mismatch wouldn't say which sensor is at fault. Never fires
+    // today -- no backup hardware exists, so has_arrival_time_ns is never set on them.
     if (imu.has_arrival_time_ns && backup_imu_1.has_arrival_time_ns && backup_imu_2.has_arrival_time_ns) {
         bool backups_agree = quats_agree(
             backup_imu_1.quat_w,
@@ -416,10 +343,8 @@ static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup
 
 static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss)
 {
-    // Javad-vs-VN300 velocity divergence check. Only runs while VN300 isn't already flagged --
-    // if VN300 itself is untrustworthy, a mismatch tells us nothing about Javad. Compares GNSS
-    // Cartesian velocity (vx/vy/vz) against VN300's INS-derived velocity (vel_n/vel_e/vel_d); see
-    // the frame-alignment caveat on JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD above.
+    // Only runs while VN300 is healthy: if VN300 itself is untrustworthy, a mismatch says nothing
+    // about Javad. See the frame-alignment caveat on JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD.
     if (vn300_health == SensorHealth::HEALTHY && gnss.has_arrival_time_ns && imu.has_arrival_time_ns &&
         imu.has_vel_n && imu.has_vel_e && imu.has_vel_d) {
         bool velocities_agree = vec3_close(
@@ -452,17 +377,13 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
 // Returns whether both primary sensors are simultaneously FAULTY (a critical fault).
 static bool updateFaultStatus()
 {
-    // Combined fault status, carried directly on the returned EstimatedState so any consumer
-    // (FlightController, telemetry, ...) can distinguish "one primary sensor down" from "both
-    // primary sensors down" by reading this single field -- rather than re-deriving it themselves
-    // from vn300_health/javad_health, which are internal to this file and not visible outside it.
+    // Carried on EstimatedState so consumers can tell "one primary sensor down" from "both" by
+    // reading one field, rather than re-deriving it from the health states, which are file-local.
     //
-    // CRITICAL requires both VN300 AND Javad to be specifically FAULTY (not merely STALE) -- if
-    // VN300 and Javad are BOTH flagged faulty at once, there's no trustworthy attitude or velocity
-    // source left to fall back to. Documented default, not a confirmed requirement: hold the last
-    // known-good estimate and raise a distinct critical fault rather than silently degrading to
-    // whichever sensor happens to still be "less wrong." Open question: should CRITICAL instead
-    // fall back to the less-wrong sensor rather than freezing entirely?
+    // CRITICAL needs both VN300 and Javad specifically FAULTY, not merely STALE -- no trustworthy
+    // attitude or velocity source is left. Holding the last known-good estimate is a documented
+    // default, not a confirmed requirement.
+    // TODO: decide whether CRITICAL should fall back to the less-wrong sensor instead of freezing.
     bool vn300_ok = vn300_health == SensorHealth::HEALTHY;
     bool javad_ok = javad_health == SensorHealth::HEALTHY;
     bool critical_fault = vn300_health == SensorHealth::FAULTY && javad_health == SensorHealth::FAULTY;
@@ -471,8 +392,7 @@ static bool updateFaultStatus()
         current_estimate.fault_status = EstimatorFaultStatus_CRITICAL;
     }
     else if (!vn300_ok || !javad_ok) {
-        // Exactly one primary sensor down (VN300 stale/faulty, or Javad faulty) -- the estimate is
-        // still updating via fallback or partial freeze, not fully nominal but not critical either.
+        // One primary sensor down -- still updating via fallback or partial freeze.
         current_estimate.fault_status = EstimatorFaultStatus_DEGRADED;
     }
     else {
@@ -497,10 +417,9 @@ static bool checkPrimarySensorFaults(
 
 static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1, bool critical_fault)
 {
-    // IMU: update quaternion from VN300 while healthy. Once flagged faulty by the divergence
-    // check, switch to backup IMU 1 (backup_imu_2 is redundant with it once corroborated above).
-    // A merely STALE VN300 still just freezes the last estimate, unchanged from before. Under a
-    // critical fault, freeze entirely -- don't even fall back to backup_imu_1.
+    // VN300 while healthy; backup IMU 1 once flagged faulty (backup_imu_2 is redundant with it
+    // once corroborated). A merely STALE VN300 freezes the last estimate. Under a critical fault,
+    // freeze entirely -- don't even fall back to backup_imu_1.
     if (!critical_fault) {
         if (vn300_health == SensorHealth::HEALTHY) {
             if (imu.sense_time_ns > imu_update_timestamp_ns) {
@@ -528,13 +447,9 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
 {
     bool gnss_updated = false;
 
-    // GNSS: update x/y position and x/y velocity if timestamp changed, unless Javad is flagged
-    // faulty (freeze last known-good lateral position/velocity instead). javad_health == FAULTY
-    // already implies !critical_fault doesn't matter here: if Javad is faulty this block is
-    // skipped either way, whether or not VN300 is also faulty.
-    //
-    // Lateral (x/y) handling below is UNCHANGED. position.z/velocity.z are NOT set here anymore
-    // -- see the "VEHICLE ALTITUDE SOURCE CHANGE" comment near the end of this function.
+    // Lateral position/velocity from GNSS when the timestamp changed, unless Javad is flagged
+    // faulty -- then the last known-good values are held instead. Vertical state is not set here;
+    // it comes from the EKF, via publishVerticalState().
     if (javad_health != SensorHealth::FAULTY && gnss.sense_time_ns > gnss_update_timestamp_ns) {
         gnss_update_timestamp_ns = gnss.sense_time_ns;
         gnss_updated = true;
@@ -543,23 +458,15 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
         current_estimate.velocity.x = gnss.vx_ms;
         current_estimate.velocity.y = gnss.vy_ms;
 
-        // Z-axis EKF: bootstrap from the first healthy GNSS reading if not yet initialized,
-        // otherwise feed this reading as a measurement update.
+        // Bootstrap the EKF from the first healthy GNSS reading; feed later ones as updates.
         if (!z_axis_ekf.is_valid()) {
-            // Large initial covariance: z0/vz0 are a first guess from a single measurement, not a
-            // confident known-exact state (see EKF_INITIAL_*_VARIANCE_* above).
             z_axis_ekf.init(
                 gnss.up_m, gnss.vz_ms, EKF_INITIAL_Z_VARIANCE_M2, EKF_INITIAL_VZ_VARIANCE_M2_S2, EKF_INITIAL_BIAS_VARIANCE_M2_S4
             );
         }
         else {
-            // r_variance uses Javad's own REPORTED per-epoch uncertainty (vrms_m/vvel_rms_ms),
-            // not a fixed placeholder, so the filter automatically weighs a noisy epoch less --
-            // see ZAxisEkf::update_altitude()'s doc comment. NOTE THE SQUARING: vrms_m/
-            // vvel_rms_ms are standard deviations (RMS, i.e. sigma), but r_variance must be
-            // variance = sigma^2 -- passing sigma directly here would silently under-weight
-            // Javad's measurements. Floored against a zero/implausibly tiny reported value that
-            // would otherwise make the filter overconfident in a single epoch.
+            // r_variance comes from Javad's own reported per-epoch uncertainty, so a noisy epoch
+            // is weighted less. vrms_m/vvel_rms_ms are sigma; r_variance is sigma^2.
             float javad_z_r_variance = std::max(gnss.vrms_m * gnss.vrms_m, JAVAD_ALTITUDE_R_VARIANCE_FLOOR_M2);
             z_axis_ekf.update_altitude(gnss.up_m, javad_z_r_variance);
 
@@ -568,31 +475,14 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
         }
     }
     else if (javad_health == SensorHealth::FAULTY && imu.has_arrival_time_ns && imu.has_vel_d) {
-        // Javad is faulty -- fall back to VN300's own INS-derived vertical velocity rather than
-        // leaving the EKF with no velocity correction at all while Javad is down. No altitude
-        // fallback here: VN300 doesn't have an independent absolute altitude reference (ins_alt
-        // is itself already fused internally), so using it as a measurement here would be
-        // circular. Only asked for the velocity fallback, so that's all this does.
+        // Javad is faulty -- use VN300's INS vertical velocity so the EKF still gets a velocity
+        // correction. No altitude fallback: VN300's ins_alt is itself already fused, so feeding it
+        // back in would be circular.
         //
-        // Trigger, precisely: javad_health is set FAULTY by the Javad-vs-VN300 VELOCITY
-        // divergence check above (gnss.vx_ms/vy_ms/vz_ms vs. imu.vel_n/vel_e/vel_d) -- NOT a
-        // separate lateral-POSITION divergence check; no such check exists on Javad in this file.
-        // Functionally this still satisfies "Javad flagged bad -> fall back to VN300 for vertical
-        // velocity," but callers/readers expecting a position-based trigger specifically should
-        // know that's not what actually gates this fallback.
-        //
-        // Sign: vel_n/vel_e/vel_d follow the standard NED (North-East-DOWN) navigation
-        // convention -- "d" is positive DOWN, the opposite sign from this codebase's Z-up-is-
-        // positive convention (see calculateVerticalAltitude()'s frame-convention comment;
-        // gnss.up_m/position.z/velocity.z are all up-positive). So vz_world = -vel_d, not vel_d
-        // directly.
-        //
-        // NOTE: the existing Javad-vs-VN300 divergence check above compares gnss.vz_ms against
-        // imu.vel_d directly with NO sign flip. If vz_ms is genuinely up-positive like the rest
-        // of this codebase, that comparison may have this same sign issue. Not fixed here --
-        // out of scope for this task (lateral/existing velocity handling is untouched), and
-        // fixing it would change behavior of an already-working, previously-verified check --
-        // flagging for a deliberate follow-up decision instead.
+        // vel_d follows the NED convention and is positive DOWN, opposite this codebase's Z-up,
+        // hence the negation.
+        // TODO: checkJavadDivergence() compares gnss.vz_ms against imu.vel_d with no such flip.
+        // If vz_ms is genuinely up-positive, that comparison has a sign bug.
         float vz_world_from_vn300 = -imu.vel_d;
         z_axis_ekf.update_velocity(vz_world_from_vn300, VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2);
     }
@@ -614,17 +504,8 @@ static void projectLidarAltitudes(
     const LidarReading& lidar_1, const LidarReading& lidar_2, bool lidar_1_updated, bool lidar_2_updated
 )
 {
-    // Z position filter. calculateVerticalAltitude() converts each LiDAR's slant range into true
-    // vertical altitude using the vehicle's current (fused/fallback-aware) attitude -- current_estimate.R_WB
-    // rather than raw VN300 output, so this automatically respects the VN300/backup-IMU health
-    // tracking above instead of trusting a flagged-faulty VN300 quaternion directly.
-    //
-    // Fusion into position.z now happens via the Z-axis EKF (fed below, after the divergence
-    // check has this tick's final lidar_N_health) -- this closes the "TODO: fuse lidar_1_altitude_m
-    // / lidar_2_altitude_m with GNSS-derived altitude" that used to be here. The EKF IS that
-    // fusion strategy: predict() propagates from VN300 acceleration, update_altitude() corrects
-    // from whichever LiDAR(s)/Javad are currently healthy, weighted by each source's own
-    // r_variance -- see the "VEHICLE ALTITUDE SOURCE CHANGE" comment near the end of this function.
+    // Uses current_estimate.R_WB rather than raw VN300 output, so the projection respects the
+    // VN300/backup-IMU health tracking instead of trusting a flagged-faulty quaternion.
     if (lidar_1_updated) {
         lidar_1_altitude_m = calculateVerticalAltitude(lidar_1.distance_m, current_estimate.R_WB, LIDAR_MOUNT_ANGLE_DEG * DEG2RAD_F);
     }
@@ -635,18 +516,10 @@ static void projectLidarAltitudes(
 
 static void checkLidarDivergence(const GnssReadings& gnss, bool lidar_1_updated, bool lidar_2_updated)
 {
-    // LiDAR-vs-Javad-vs-other-LiDAR altitude divergence check. Structurally different from the
-    // VN300-vs-backups check above: instead of first requiring two references to agree and then
-    // checking the third against them, this evaluates each LiDAR independently against the other
-    // two ("does THIS LiDAR disagree with both of the others"). With three sensors this is
-    // equivalent in the single-fault case (a healthy LiDAR will agree with Javad, so its own check
-    // never trips) while also degrading sensibly if all three disagree with each other at once
-    // (both LiDARs would get flagged, rather than neither, which is the more honest outcome when
-    // nothing can be corroborated). Only meaningful when all three produced a fresh reading this
-    // tick -- same synchronization simplification as the other divergence checks above. Unlike the
-    // Javad-vs-VN300 check, this doesn't require Javad to be currently healthy first; not asked for
-    // here, and with three independent altitude sources a 2-of-3 comparison is still informative
-    // even if Javad itself is flagged.
+    // 2-of-3 across LiDAR 1, LiDAR 2 and Javad: each LiDAR is flagged only if it disagrees with
+    // both of the others. If all three disagree at once, both LiDARs get flagged, which is the
+    // honest outcome when nothing can be corroborated.
+    // TODO: unlike checkJavadDivergence(), this doesn't require Javad to be healthy first.
     if (lidar_1_updated && lidar_2_updated && gnss.has_arrival_time_ns) {
         bool lidar_1_matches_javad = std::fabs(lidar_1_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
         bool lidar_2_matches_javad = std::fabs(lidar_2_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
@@ -696,11 +569,8 @@ static void checkLidarDivergence(const GnssReadings& gnss, bool lidar_1_updated,
 
 static void updateVerticalFromLidars(bool lidar_1_updated, bool lidar_2_updated)
 {
-    // Z-axis EKF: feed each LiDAR's computed altitude as a measurement update, but ONLY while
-    // that LiDAR's health is HEALTHY -- this is what makes lidar_1_health/lidar_2_health live for
-    // the first time (previously computed and tracked, but never consumed anywhere; see the
-    // divergence check above and its own comment). Checked AFTER the divergence check runs, so a
-    // LiDAR flagged faulty on this exact tick is excluded immediately, not one tick late.
+    // Only healthy LiDARs feed the EKF. Runs after checkLidarDivergence(), so a LiDAR flagged
+    // faulty on this exact tick is excluded immediately rather than one tick late.
     if (lidar_1_updated && lidar_1_health == SensorHealth::HEALTHY) {
         z_axis_ekf.update_altitude(lidar_1_altitude_m, LIDAR_1_ALTITUDE_R_VARIANCE_M2);
     }
@@ -711,24 +581,17 @@ static void updateVerticalFromLidars(bool lidar_1_updated, bool lidar_2_updated)
 
 static void publishVerticalState(const GnssReadings& gnss, bool gnss_updated)
 {
-    // ═══════════════════════════════════════════════════════════════════════════════════════
-    // VEHICLE ALTITUDE SOURCE CHANGE: position.z and velocity.z now come from the Z-axis EKF --
-    // a fusion of VN300 acceleration (predict), LiDAR altitude, and Javad altitude/velocity
-    // (update), with a VN300 vel_d fallback when Javad is faulty -- NOT directly from raw
-    // gnss.up_m/vz_ms anymore (removed from the GNSS block above). The EKF IS the fusion policy
-    // that block's old "TODO: fuse ... with GNSS-derived altitude" comment was deferring.
-    //
-    // USE_ZAXIS_EKF_FOR_ALTITUDE (declared near the top of this file) is a ground-testing escape
-    // hatch back to raw, unfiltered GNSS passthrough -- flip it to false and rebuild to compare.
-    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // position.z/velocity.z come from the EKF -- VN300 acceleration via predict(), LiDAR and Javad
+    // via update(), with the vel_d fallback while Javad is faulty. USE_ZAXIS_EKF_FOR_ALTITUDE
+    // switches back to raw GNSS passthrough for ground testing.
     if constexpr (USE_ZAXIS_EKF_FOR_ALTITUDE) {
         if (z_axis_ekf.is_valid()) {
             current_estimate.position.z = z_axis_ekf.z_m();
             current_estimate.velocity.z = z_axis_ekf.vz_ms();
         }
         else if (gnss_updated) {
-            // EKF not yet initialized (no healthy GNSS reading has arrived yet) -- pass raw GNSS
-            // straight through so the estimate isn't left frozen at 0 in the meantime.
+            // No healthy GNSS reading yet -- pass raw GNSS through so the estimate isn't frozen
+            // at 0 in the meantime.
             current_estimate.position.z = gnss.up_m;
             current_estimate.velocity.z = gnss.vz_ms;
         }

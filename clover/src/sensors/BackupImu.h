@@ -8,19 +8,11 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-// Placeholder interface for the two backup IMUs. Hardware does not exist yet -- this exists so the
-// estimator has a stable interface to integrate against ahead of the real sensor drivers. Mirrors
+// Placeholder interface for the two backup IMUs -- hardware does not exist yet. Mirrors
 // VectornavIMU.h's shape (static reading buffer + mutex + has_reading flag + read()), minus the
-// UART/device plumbing there's no hardware to back yet.
-//
-// Why mirror the real sensor's shape rather than stub something simpler (e.g. a bare struct):
-// StateEstimator.cpp and Controller.cpp call BackupImu1::read()/init() exactly like they call
-// VectornavImu::read()/init() (see StateEstimator.cpp's VN300-vs-backup-IMU divergence check and
-// Controller.cpp's read block). When real hardware and a real decode()/sense() thread eventually
-// land, they only need to fill in this class's private internals -- the mutex-guarded
-// reading/has_reading pattern is already in place -- without changing any call site. The mutex in
-// particular exists now (even though nothing populates `reading` yet) so `read()`'s locking
-// behavior won't change out from under callers once a sense() thread starts writing concurrently.
+// UART plumbing, so a real driver can fill in the private internals without changing any call
+// site. The mutex is already here so read()'s locking doesn't change once a sense() thread starts
+// writing concurrently.
 
 enum class BackupImuKind { BACKUP_IMU_1, BACKUP_IMU_2 };
 
