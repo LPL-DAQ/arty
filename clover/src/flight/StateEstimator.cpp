@@ -79,6 +79,23 @@ static constexpr uint64_t VN300_STALE_THRESHOLD_NS = 50'000'000;
 // threshold: fail fast, recover cautiously.
 static constexpr uint64_t VN300_RETRUST_THRESHOLD_NS = 100'000'000;
 
+// Placeholder -- to be tuned against real VN300 dropout behavior. Total time without a reading
+// before VN300 escalates STALE -> FAULTY, handing attitude over to backup IMU 1.
+//
+// STALE holds the last R_WB without integrating anything, so attitude error accrues at the full
+// body rotation rate: at 30 deg/s every 100ms of freeze is ~3 deg. This sits only 100ms past the
+// stale threshold (~4.5 deg total at 30 deg/s) -- long enough that a brief serial hiccup still
+// just freezes, short enough that a dead VN300 is handed off quickly.
+//
+// On current hardware this fixes the attitude-source ROUTING, not the visible symptom: no backup
+// IMU hardware exists, so backup_imu_1.sense_time_ns never advances and updateAttitude()'s backup
+// branch no-ops -- a dead VN300 still practically freezes today. The fallback becomes real once
+// backup hardware is fitted.
+static constexpr uint64_t VN300_FAULT_THRESHOLD_NS = 150'000'000;
+static_assert(
+    VN300_FAULT_THRESHOLD_NS > VN300_STALE_THRESHOLD_NS, "fault threshold must sit beyond the stale window"
+);
+
 // Placeholder -- needs real backup IMU noise specs before flight. Max per-component quaternion
 // difference for the two backups to count as agreeing with each other.
 static constexpr float BACKUP_IMU_AGREEMENT_THRESHOLD = 0.05f;
@@ -119,6 +136,12 @@ static uint64_t vn300_recovery_start_time_ns = 0;
 static bool vn300_recovering = false;
 static int vn300_disagree_streak = 0;
 static int vn300_agree_streak = 0;
+
+// Why vn300_health is FAULTY, so recovery routes to the right mechanism: a fault raised by
+// staleness clears on the VN300_RETRUST_THRESHOLD_NS timer once data returns, while one raised by
+// checkVn300Divergence() still clears only via its agree-streak, which needs live readings to
+// compare against.
+static bool vn300_fault_from_staleness = false;
 
 // Javad has no staleness tracking, so its health only toggles HEALTHY <-> FAULTY via the velocity
 // divergence check. Starts HEALTHY rather than STALE because nothing would ever move it out of
@@ -183,6 +206,7 @@ void StateEstimator::reset()
     vn300_last_arrival_time_ns = 0;
     vn300_recovery_start_time_ns = 0;
     vn300_recovering = false;
+    vn300_fault_from_staleness = false;
     vn300_disagree_streak = 0;
     vn300_agree_streak = 0;
     javad_health = SensorHealth::HEALTHY;
@@ -217,15 +241,26 @@ static bool trackVn300Freshness(const ImuReading& imu)
 
     vn300_last_arrival_time_ns = imu.arrival_time_ns;
 
-    if (vn300_health == SensorHealth::STALE) {
+    // A stale-induced FAULTY re-converges the same way STALE does -- on the re-trust timer, once
+    // data comes back. A divergence-induced FAULTY deliberately does not: it clears only via
+    // checkVn300Divergence()'s agree-streak, since "the data returned" says nothing about whether
+    // the sensor is still lying.
+    bool awaiting_reconvergence = vn300_health == SensorHealth::STALE ||
+                                  (vn300_health == SensorHealth::FAULTY && vn300_fault_from_staleness);
+
+    if (awaiting_reconvergence) {
         if (!vn300_recovering) {
             // First good reading since the outage began -- start the re-convergence window.
             vn300_recovering = true;
             vn300_recovery_start_time_ns = imu.arrival_time_ns;
         }
         else if (imu.arrival_time_ns - vn300_recovery_start_time_ns >= VN300_RETRUST_THRESHOLD_NS) {
+            // TODO: a VN300 that returns but genuinely disagrees with the backups is re-trusted
+            // here at the 100ms timer before the disagree-streak can re-raise FAULTY. Unreachable
+            // today (no backup hardware); resolve alongside the comment-24 streak-gating work.
             vn300_health = SensorHealth::HEALTHY;
             vn300_recovering = false;
+            vn300_fault_from_staleness = false;
         }
     }
 
@@ -267,11 +302,28 @@ static uint64_t currentTimeNs()
 
 static void updateVn300Staleness()
 {
-    if (currentTimeNs() - vn300_last_arrival_time_ns > VN300_STALE_THRESHOLD_NS) {
-        // Any in-progress re-convergence restarts from scratch. Takes precedence over a FAULTY
-        // flag: with no data at all there's nothing left to diverge.
+    uint64_t time_since_last_reading_ns = currentTimeNs() - vn300_last_arrival_time_ns;
+
+    if (time_since_last_reading_ns <= VN300_STALE_THRESHOLD_NS) {
+        return;
+    }
+
+    // Any in-progress re-convergence restarts from scratch.
+    vn300_recovering = false;
+
+    if (time_since_last_reading_ns > VN300_FAULT_THRESHOLD_NS) {
+        // The freeze has run long enough that the held attitude is no longer worth trusting.
+        // Escalating to FAULTY is what routes updateAttitude() to backup IMU 1 -- without this,
+        // STALE is terminal (nothing else can flag a sensor that sends no readings to disagree
+        // with) and a dead VN300 would hold last-good attitude forever.
+        vn300_health = SensorHealth::FAULTY;
+        vn300_fault_from_staleness = true;
+    }
+    else {
+        // Brief dropout -- freeze and wait. Takes precedence over a divergence FAULTY flag: with
+        // no data at all there's nothing left to diverge.
         vn300_health = SensorHealth::STALE;
-        vn300_recovering = false;
+        vn300_fault_from_staleness = false;
     }
 }
 
@@ -309,6 +361,7 @@ static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup
 
             if (vn300_health != SensorHealth::FAULTY && vn300_disagree_streak >= VN300_DIVERGENCE_STREAK_THRESHOLD) {
                 vn300_health = SensorHealth::FAULTY;
+                vn300_fault_from_staleness = false;
                 vn300_disagree_streak = 0;
             }
         }
@@ -316,7 +369,11 @@ static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup
             vn300_agree_streak++;
             vn300_disagree_streak = 0;
 
-            if (vn300_health == SensorHealth::FAULTY && vn300_agree_streak >= VN300_DIVERGENCE_STREAK_THRESHOLD) {
+            // Only un-flags a divergence-induced fault. A stale-induced one recovers on the
+            // re-trust timer in trackVn300Freshness() instead: agreeing with backups says the
+            // sensor isn't lying, not that it has had time to re-converge after an outage.
+            if (vn300_health == SensorHealth::FAULTY && !vn300_fault_from_staleness &&
+                vn300_agree_streak >= VN300_DIVERGENCE_STREAK_THRESHOLD) {
                 vn300_health = SensorHealth::HEALTHY;
                 vn300_agree_streak = 0;
             }

@@ -33,6 +33,16 @@ void warm_vn300_to_healthy(
     }
 }
 
+// Asserts R_WB component-wise, so a test can prove WHICH sensor the attitude actually came from
+// rather than only that a health flag flipped.
+void assert_attitude_is(const EstimatedState& state, float qw, float qx, float qy, float qz, const char* what)
+{
+    zassert_within(state.R_WB.qw, qw, 1e-6f, "%s (qw)", what);
+    zassert_within(state.R_WB.qx, qx, 1e-6f, "%s (qx)", what);
+    zassert_within(state.R_WB.qy, qy, 1e-6f, "%s (qy)", what);
+    zassert_within(state.R_WB.qz, qz, 1e-6f, "%s (qz)", what);
+}
+
 }  // namespace
 
 // ── (1) VN300 staleness: triggers at >50ms, clears only after a full 100ms re-convergence ──────
@@ -432,6 +442,158 @@ ZTEST(StateEstimator_tests, test_lidar_cross_check_flags_diverging_lidar)
 
     zassert_true(StateEstimator::lidar_2_is_faulty_for_testing(), "Lidar 2 should be flagged faulty after N consecutive mismatches with both Javad and Lidar 1");
     zassert_false(StateEstimator::lidar_1_is_faulty_for_testing(), "Lidar 1 should remain healthy -- it agrees with Javad throughout");
+}
+
+// ── (8) VN300 staleness escalates to FAULTY and attitude actually falls back to backup IMU 1 ────
+
+ZTEST(StateEstimator_tests, test_vn300_long_outage_escalates_to_faulty_and_falls_back_to_backup_imu)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 0.7071f;
+    imu.quat_x = 0.7071f;
+
+    // Deliberately nothing like the VN300 quaternion, so "attitude came from the backup" and
+    // "attitude is frozen at the last VN300 value" can never be confused for each other.
+    ImuReading backup_1 = ImuReading_init_default;
+    backup_1.quat_w = 0.0f;
+    backup_1.quat_y = 1.0f;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be HEALTHY after warmup");
+
+    // Stop feeding VN300 (has_arrival_time_ns = false, matching how Controller.cpp zero-inits
+    // DataPacket.imu when VectornavImu::read() returns nullopt), but keep the backup fresh from
+    // here on -- so any attitude change below can only have come from the backup.
+    imu.has_arrival_time_ns = false;
+
+    t_ns += 60'000'000;  // +60ms: past the 50ms stale threshold, well short of the 150ms fault one
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    backup_1.sense_time_ns += 1.0f;
+    auto stale_result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(stale_result.has_value());
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "VN300 should be STALE after >50ms without a reading");
+    assert_attitude_is(*stale_result, 0.7071f, 0.7071f, 0.0f, 0.0f, "a merely STALE VN300 should freeze the last attitude, not fall back to the backup");
+
+    // Push total time without a reading past the fault threshold.
+    t_ns += 100'000'000;  // 160ms total since the last VN300 reading
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    backup_1.sense_time_ns += 1.0f;
+    auto faulty_result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(faulty_result.has_value());
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should escalate STALE -> FAULTY past the fault threshold, with no divergence check involved");
+    assert_attitude_is(*faulty_result, 0.0f, 0.0f, 1.0f, 0.0f, "attitude should now come from backup IMU 1 -- the flag flipping is not enough, the fallback must actually happen");
+}
+
+// ── (9) A stale-induced FAULTY recovers on the re-trust timer, not the divergence agree-streak ──
+
+ZTEST(StateEstimator_tests, test_vn300_stale_induced_fault_recovers_via_retrust_timer)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 0.7071f;
+    imu.quat_x = 0.7071f;
+
+    ImuReading backup_1 = ImuReading_init_default;
+    backup_1.quat_w = 0.0f;
+    backup_1.quat_y = 1.0f;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    // Drive it into stale-induced FAULTY.
+    imu.has_arrival_time_ns = false;
+    t_ns += 200'000'000;  // one jump straight past the fault threshold
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    backup_1.sense_time_ns += 1.0f;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should be FAULTY by staleness before recovery starts");
+
+    // Data comes back. backup_1.sense_time_ns is deliberately frozen from here on, so the final
+    // attitude assertion can only be satisfied by VN300 having genuinely reclaimed the channel.
+    imu.has_arrival_time_ns = true;
+
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "one reading back should not instantly restore trust -- the re-convergence window must run");
+
+    // 40 more readings complete the 100ms re-trust window.
+    std::optional<EstimatedState> result;
+    for (int i = 0; i < 40; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+
+    zassert_true(result.has_value());
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "a stale-induced FAULTY should clear via the re-trust timer once data returns");
+    assert_attitude_is(*result, 0.7071f, 0.7071f, 0.0f, 0.0f, "attitude should be tracking VN300 again after recovery");
+}
+
+// ── (10) A brief stale window must NOT escalate -- guards the two-threshold split ────────────────
+
+ZTEST(StateEstimator_tests, test_vn300_brief_stale_does_not_escalate_and_holds_last_attitude)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 0.7071f;
+    imu.quat_x = 0.7071f;
+
+    ImuReading backup_1 = ImuReading_init_default;
+    backup_1.quat_w = 0.0f;
+    backup_1.quat_y = 1.0f;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be HEALTHY after warmup");
+
+    // Backup stays fresh throughout, so if STALE ever wrongly routed to the fallback this test
+    // would catch it immediately.
+    imu.has_arrival_time_ns = false;
+
+    t_ns += 60'000'000;  // 60ms since the last reading
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    backup_1.sense_time_ns += 1.0f;
+    auto first = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(first.has_value());
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "60ms without a reading should be STALE, not FAULTY");
+    zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "60ms is short of the fault threshold");
+    assert_attitude_is(*first, 0.7071f, 0.7071f, 0.0f, 0.0f, "attitude should stay frozen at the last VN300 value while merely STALE");
+
+    t_ns += 40'000'000;  // 100ms total -- still inside the stale window, below the 150ms threshold
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    backup_1.sense_time_ns += 1.0f;
+    auto second = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(second.has_value());
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "100ms without a reading should still be STALE -- escalation must wait for the fault threshold");
+    assert_attitude_is(*second, 0.7071f, 0.7071f, 0.0f, 0.0f, "attitude should still be frozen, not handed to the backup");
 }
 
 // ══ Z-axis EKF integration tests (wiring into estimate()) ═══════════════════════════════════════
