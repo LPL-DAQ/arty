@@ -1,83 +1,7 @@
 #include "ZAxisEkf.h"
 #include "../config.h"
+#include "../math_util.h"
 #include <cmath>
-
-// ── 3x3 matrix helpers ──────────────────────────────────────────────────────────────────────
-// Only what predict()/scalar_update() need. Out-parameter style since raw C arrays can't be
-// returned by value.
-static void mat3_mult(const float a[3][3], const float b[3][3], float out[3][3])
-{
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            float sum = 0.0f;
-            for (int k = 0; k < 3; k++) {
-                sum += a[i][k] * b[k][j];
-            }
-            out[i][j] = sum;
-        }
-    }
-}
-
-static void mat3_transpose(const float a[3][3], float out[3][3])
-{
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            out[j][i] = a[i][j];
-        }
-    }
-}
-
-static void mat3_add(const float a[3][3], const float b[3][3], float out[3][3])
-{
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            out[i][j] = a[i][j] + b[i][j];
-        }
-    }
-}
-
-static void mat3_vec_mult(const float a[3][3], const float v[3], float out[3])
-{
-    for (int i = 0; i < 3; i++) {
-        float sum = 0.0f;
-        for (int j = 0; j < 3; j++) {
-            sum += a[i][j] * v[j];
-        }
-        out[i] = sum;
-    }
-}
-
-static float vec3_dot(const float a[3], const float b[3])
-{
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-// Outer product out = a * b^T. Needed for K*H and K*r*K^T in the Joseph-form update below.
-static void mat3_outer(const float a[3], const float b[3], float out[3][3])
-{
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            out[i][j] = a[i] * b[j];
-        }
-    }
-}
-
-// In-place P = 0.5*(P + P^T). Guards against covariance drifting asymmetric from float rounding
-// across repeated predict/update cycles.
-static void mat3_symmetrize(float a[3][3])
-{
-    float transposed[3][3];
-    mat3_transpose(a, transposed);
-
-    float summed[3][3];
-    mat3_add(a, transposed, summed);
-
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            a[i][j] = 0.5f * summed[i][j];
-        }
-    }
-}
 
 // Placeholder -- needs tuning against real sensor data. Max dt for a single predict() step [s]:
 // past this the reading feed has likely stalled, and one step spanning the whole gap would inject
@@ -102,37 +26,23 @@ void ZAxisEkf::init(float z0, float vz0)
 
 void ZAxisEkf::init(float z0, float vz0, float z0_variance, float vz0_variance, float bias0_variance)
 {
+    // Back to the default member initializers (x_ and P_ zeroed, invalid, no rejections), then set
+    // only what this overload specifies. Accel bias stays at 0.
+    *this = ZAxisEkf{};
+
     x_[0] = z0;
     x_[1] = vz0;
-    x_[2] = 0.0f;  // accel bias starts at zero
 
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            P_[i][j] = 0.0f;
-        }
-    }
     P_[0][0] = z0_variance;
     P_[1][1] = vz0_variance;
     P_[2][2] = bias0_variance;
 
-    rejected_update_count_ = 0;
     valid_ = true;
 }
 
 void ZAxisEkf::reset()
 {
-    x_[0] = 0.0f;
-    x_[1] = 0.0f;
-    x_[2] = 0.0f;
-
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            P_[i][j] = 0.0f;
-        }
-    }
-
-    rejected_update_count_ = 0;
-    valid_ = false;
+    *this = ZAxisEkf{};
 }
 
 void ZAxisEkf::predict(float accel_world_z, float dt_s)
@@ -171,13 +81,13 @@ void ZAxisEkf::predict(float accel_world_z, float dt_s)
     };
 
     float Ft[3][3];
-    mat3_transpose(F, Ft);
+    math_util::transposeMatrix3(F, Ft);
 
     float FP[3][3];
-    mat3_mult(F, P_, FP);
+    math_util::multiplyMatrix3(F, P_, FP);
 
     float FPFt[3][3];
-    mat3_mult(FP, Ft, FPFt);
+    math_util::multiplyMatrix3(FP, Ft, FPFt);
 
     const float Q[3][3] = {
         {PROCESS_NOISE_Z_M2, 0.0f, 0.0f},
@@ -186,10 +96,10 @@ void ZAxisEkf::predict(float accel_world_z, float dt_s)
     };
 
     // P = F*P*F^T + Q
-    mat3_add(FPFt, Q, P_);
+    math_util::addMatrix3(FPFt, Q, P_);
 
     // Re-symmetrize every step rather than letting float rounding accumulate.
-    mat3_symmetrize(P_);
+    math_util::symmetrizeMatrix3(P_);
 }
 
 void ZAxisEkf::update_altitude(float z_meas, float r_variance)
@@ -220,13 +130,13 @@ void ZAxisEkf::scalar_update(int h_index, float meas, float r_variance)
     H[h_index] = 1.0f;
 
     // y = meas - H*x  (innovation: how far the measurement is from what the current state predicts)
-    float y = meas - vec3_dot(H, x_);
+    float y = meas - math_util::dotProduct(H, x_);
 
     // S = H*P*H^T + r  (innovation covariance). P*H^T first (H^T is just H's values as a column
     // vector, same array), then H*(P*H^T) via dot product, since H*P*H^T is a scalar here.
     float PHt[3];
-    mat3_vec_mult(P_, H, PHt);
-    float S = vec3_dot(H, PHt) + r_variance;
+    math_util::multiplyMatrix3Vector(P_, H, PHt);
+    float S = math_util::dotProduct(H, PHt) + r_variance;
 
     // Innovation gate. S > 0 holds because P stays PSD (Joseph form, below) and r_variance > 0.
     float sigma = std::sqrt(S);
@@ -250,7 +160,7 @@ void ZAxisEkf::scalar_update(int h_index, float meas, float r_variance)
     // PSD under float rounding -- unlike the simpler P = (I-KH)*P, which only matches in exact
     // arithmetic and can develop negative diagonal entries.
     float KH[3][3];
-    mat3_outer(K, H, KH);
+    math_util::outerProduct(K, H, KH);
 
     float IminusKH[3][3];
     for (int i = 0; i < 3; i++) {
@@ -260,16 +170,16 @@ void ZAxisEkf::scalar_update(int h_index, float meas, float r_variance)
     }
 
     float IminusKHt[3][3];
-    mat3_transpose(IminusKH, IminusKHt);
+    math_util::transposeMatrix3(IminusKH, IminusKHt);
 
     float temp[3][3];
-    mat3_mult(IminusKH, P_, temp);
+    math_util::multiplyMatrix3(IminusKH, P_, temp);
 
     float term1[3][3];
-    mat3_mult(temp, IminusKHt, term1);
+    math_util::multiplyMatrix3(temp, IminusKHt, term1);
 
     float KKt[3][3];
-    mat3_outer(K, K, KKt);
+    math_util::outerProduct(K, K, KKt);
 
     float term2[3][3];
     for (int i = 0; i < 3; i++) {
@@ -278,10 +188,10 @@ void ZAxisEkf::scalar_update(int h_index, float meas, float r_variance)
         }
     }
 
-    mat3_add(term1, term2, P_);
+    math_util::addMatrix3(term1, term2, P_);
 
     // Same reasoning as predict(): re-symmetrize rather than letting rounding accumulate.
-    mat3_symmetrize(P_);
+    math_util::symmetrizeMatrix3(P_);
 }
 
 float ZAxisEkf::z_m() const

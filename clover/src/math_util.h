@@ -171,5 +171,99 @@ namespace math_util
 
         return out;
     }
+
+    // Do two quaternions agree to within threshold, compared per component?
+    inline bool quaternionsAgree(
+        float aw, float ax, float ay, float az, float bw, float bx, float by, float bz, float threshold
+    )
+    {
+        return std::fabs(aw - bw) < threshold && std::fabs(ax - bx) < threshold && std::fabs(ay - by) < threshold &&
+               std::fabs(az - bz) < threshold;
+    }
+
+    // Do two 3-vectors agree to within threshold, compared per axis?
+    inline bool vectorsClose(float ax, float ay, float az, float bx, float by, float bz, float threshold)
+    {
+        return std::fabs(ax - bx) < threshold && std::fabs(ay - by) < threshold && std::fabs(az - bz) < threshold;
+    }
+
+    // ── 3x3 matrix / 3-vector helpers ───────────────────────────────────────────────────────
+    // Out-parameter style since raw C arrays can't be returned by value. These operate on plain
+    // float arrays rather than Quaternion/Vector3D, so they don't overlap with the vector helpers
+    // above.
+
+    inline void multiplyMatrix3(const float a[3][3], const float b[3][3], float out[3][3])
+    {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                float sum = 0.0f;
+                for (int k = 0; k < 3; k++) {
+                    sum += a[i][k] * b[k][j];
+                }
+                out[i][j] = sum;
+            }
+        }
+    }
+
+    inline void transposeMatrix3(const float a[3][3], float out[3][3])
+    {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                out[j][i] = a[i][j];
+            }
+        }
+    }
+
+    inline void addMatrix3(const float a[3][3], const float b[3][3], float out[3][3])
+    {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                out[i][j] = a[i][j] + b[i][j];
+            }
+        }
+    }
+
+    inline void multiplyMatrix3Vector(const float a[3][3], const float v[3], float out[3])
+    {
+        for (int i = 0; i < 3; i++) {
+            float sum = 0.0f;
+            for (int j = 0; j < 3; j++) {
+                sum += a[i][j] * v[j];
+            }
+            out[i] = sum;
+        }
+    }
+
+    inline float dotProduct(const float a[3], const float b[3])
+    {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    }
+
+    // Outer product out = a * b^T.
+    inline void outerProduct(const float a[3], const float b[3], float out[3][3])
+    {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                out[i][j] = a[i] * b[j];
+            }
+        }
+    }
+
+    // In-place a = 0.5*(a + a^T). Guards against a covariance matrix drifting asymmetric from
+    // float rounding across repeated updates.
+    inline void symmetrizeMatrix3(float a[3][3])
+    {
+        float transposed[3][3];
+        transposeMatrix3(a, transposed);
+
+        float summed[3][3];
+        addMatrix3(a, transposed, summed);
+
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                a[i][j] = 0.5f * summed[i][j];
+            }
+        }
+    }
 }
 #endif

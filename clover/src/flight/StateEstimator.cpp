@@ -136,23 +136,6 @@ static SensorHealth lidar_2_health = SensorHealth::HEALTHY;
 static int lidar_2_disagree_streak = 0;
 static int lidar_2_agree_streak = 0;
 
-// Placeholder comparison -- max per-component absolute difference between two quaternions. Good
-// enough until real backup IMU noise specs are available to design a proper metric.
-static bool quats_agree(
-    float aw, float ax, float ay, float az, float bw, float bx, float by, float bz, float threshold
-)
-{
-    return std::fabs(aw - bw) < threshold && std::fabs(ax - bx) < threshold && std::fabs(ay - by) < threshold &&
-           std::fabs(az - bz) < threshold;
-}
-
-// Placeholder comparison -- max per-axis absolute difference between two 3-vectors. Same caveats
-// as quats_agree: good enough until real sensor/frame analysis is available.
-static bool vec3_close(float ax, float ay, float az, float bx, float by, float bz, float threshold)
-{
-    return std::fabs(ax - bx) < threshold && std::fabs(ay - by) < threshold && std::fabs(az - bz) < threshold;
-}
-
 // Converts a LiDAR slant range into vertical altitude (height above whatever the beam hit), using
 // the vehicle's current attitude and the LiDAR's fixed body-frame mount angle.
 //
@@ -298,7 +281,7 @@ static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup
     // disagreed, a VN300-vs-backup mismatch wouldn't say which sensor is at fault. Never fires
     // today -- no backup hardware exists, so has_arrival_time_ns is never set on them.
     if (imu.has_arrival_time_ns && backup_imu_1.has_arrival_time_ns && backup_imu_2.has_arrival_time_ns) {
-        bool backups_agree = quats_agree(
+        bool backups_agree = math_util::quaternionsAgree(
             backup_imu_1.quat_w,
             backup_imu_1.quat_x,
             backup_imu_1.quat_y,
@@ -309,12 +292,12 @@ static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup
             backup_imu_2.quat_z,
             BACKUP_IMU_AGREEMENT_THRESHOLD
         );
-        bool vn300_matches_backup_1 = quats_agree(
+        bool vn300_matches_backup_1 = math_util::quaternionsAgree(
             imu.quat_w, imu.quat_x, imu.quat_y, imu.quat_z,
             backup_imu_1.quat_w, backup_imu_1.quat_x, backup_imu_1.quat_y, backup_imu_1.quat_z,
             VN300_DIVERGENCE_THRESHOLD
         );
-        bool vn300_matches_backup_2 = quats_agree(
+        bool vn300_matches_backup_2 = math_util::quaternionsAgree(
             imu.quat_w, imu.quat_x, imu.quat_y, imu.quat_z,
             backup_imu_2.quat_w, backup_imu_2.quat_x, backup_imu_2.quat_y, backup_imu_2.quat_z,
             VN300_DIVERGENCE_THRESHOLD
@@ -347,7 +330,7 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
     // about Javad. See the frame-alignment caveat on JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD.
     if (vn300_health == SensorHealth::HEALTHY && gnss.has_arrival_time_ns && imu.has_arrival_time_ns &&
         imu.has_vel_n && imu.has_vel_e && imu.has_vel_d) {
-        bool velocities_agree = vec3_close(
+        bool velocities_agree = math_util::vectorsClose(
             gnss.vx_ms, gnss.vy_ms, gnss.vz_ms,
             imu.vel_n, imu.vel_e, imu.vel_d,
             JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD
