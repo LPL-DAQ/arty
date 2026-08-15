@@ -138,91 +138,6 @@ static inline void lpspi_fill_tx_fifo(const struct device* dev, const uint8_t* b
     LOG_DBG("Filled TX FIFO to %d words (%d bytes)", fill_len, offset);
 }
 
-/* just fills TX fifo with the specified amount of NOPS */
-static void lpspi_fill_tx_fifo_nop(const struct device* dev, size_t fill_len)
-{
-    LPSPI_Type* base = (LPSPI_Type*)DEVICE_MMIO_NAMED_GET(dev, reg_base);
-    struct lpspi_data* data = dev->data;
-    struct lpspi_driver_data* lpspi_data = (struct lpspi_driver_data*)data->driver_data;
-
-    for (int i = 0; i < fill_len; i++) {
-        base->TDR = 0;
-    }
-
-    lpspi_data->words_clocked += fill_len;
-    LOG_DBG("Filled TX fifo with %d NOPs", fill_len);
-}
-
-/* handles refilling the TX fifo from empty */
-static void lpspi_next_tx_fill(const struct device* dev)
-{
-    const struct lpspi_config* config = dev->config;
-    LPSPI_Type* base = (LPSPI_Type*)DEVICE_MMIO_NAMED_GET(dev, reg_base);
-    struct lpspi_data* data = dev->data;
-    struct lpspi_driver_data* lpspi_data = (struct lpspi_driver_data*)data->driver_data;
-    struct spi_context* ctx = &data->ctx;
-    uint8_t left_in_fifo = tx_fifo_cur_len(base);
-    size_t fill_len = MIN(ctx->tx_len, config->tx_fifo_size - left_in_fifo);
-    size_t actual_filled = 0;
-
-    const struct spi_buf* current_buf = ctx->current_tx;
-    const uint8_t* cur_buf_pos = ctx->tx_buf;
-    size_t cur_buf_len_left = ctx->tx_len;
-    size_t bufs_left = ctx->tx_count;
-
-    while (fill_len > 0) {
-        size_t next_buf_fill = MIN(cur_buf_len_left, fill_len);
-
-        if (cur_buf_pos == NULL) {
-            lpspi_fill_tx_fifo_nop(dev, next_buf_fill);
-        }
-        else {
-            lpspi_fill_tx_fifo(dev, cur_buf_pos, current_buf->len, next_buf_fill);
-        }
-
-        fill_len -= next_buf_fill;
-        cur_buf_pos += next_buf_fill;
-
-        /* in the case where we just filled as much as we could from the current buffer,
-         * this logic while wrong should have no effect, since fill_len will be 0,
-         * so I choose not to make the code extra complex
-         */
-        bufs_left--;
-        if (bufs_left > 0) {
-            current_buf += 1;
-            cur_buf_len_left = current_buf->len;
-            cur_buf_pos = current_buf->buf;
-        }
-        else {
-            fill_len = 0;
-        }
-
-        actual_filled += next_buf_fill;
-    }
-
-    spi_context_update_tx(ctx, lpspi_data->word_size_bytes, actual_filled);
-}
-
-static void lpspi_master_setup_native_cs(const struct device* dev, const struct spi_config* spi_cfg)
-{
-    LPSPI_Type* base = (LPSPI_Type*)DEVICE_MMIO_NAMED_GET(dev, reg_base);
-
-    /* keep the chip select asserted until the end of the zephyr xfer by using
-     * continunous transfer mode. If SPI_HOLD_ON_CS is requested, we need
-     * to also set CONTC in order to continue the previous command to keep CS
-     * asserted.
-     */
-    if (spi_cfg->operation & SPI_HOLD_ON_CS || base->TCR & LPSPI_TCR_CONTC_MASK) {
-        base->TCR |= LPSPI_TCR_CONTC_MASK | LPSPI_TCR_CONT_MASK;
-    }
-    else {
-        base->TCR |= LPSPI_TCR_CONT_MASK;
-    }
-
-    /* tcr is written to tx fifo */
-    lpspi_wait_tx_fifo_empty(dev);
-}
-
 /* This is the equation for the sck frequency given a div and prescaler. */
 static uint32_t lpspi_calc_sck_freq(uint32_t src_clk_hz, uint16_t sckdiv, uint8_t prescaler)
 {
@@ -392,7 +307,6 @@ static inline uint32_t lpspi_set_delays(const struct device* dev, uint32_t presc
 /// Checks if the previously used SPI config is identical to the config for the upcoming frame.
 /// Unlike the original spi_context_configured, we *ignore* the chip select/slave fields as we handle
 /// that independently.
-static int fdasfdasfdasfads = 0;
 static inline bool fast_lpspi_context_configured(struct spi_context* ctx, const struct spi_config* new_config)
 {
     const struct spi_config* old_config = ctx->config;
@@ -547,8 +461,8 @@ int fast_lpspi_transceive_dt(const struct spi_dt_spec* spec, const struct spi_bu
         LOG_ERR("Only one rx buf may be specified, no scatter-gather");
         goto error;
     }
-    struct spi_buf* tx_buf = &(tx_bufs->buffers[0]);
-    struct spi_buf* rx_buf = &(rx_bufs->buffers[0]);
+    const struct spi_buf* tx_buf = &(tx_bufs->buffers[0]);
+    const struct spi_buf* rx_buf = &(rx_bufs->buffers[0]);
     if (tx_buf->len != rx_buf->len) {
         LOG_ERR("tx and rx bufs must have same length");
         goto error;
