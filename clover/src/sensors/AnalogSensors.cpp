@@ -18,6 +18,8 @@ static constexpr int NUM_ADCS = DT_PROP_LEN(DT_PATH(zephyr_user), analog_sensor_
 static constexpr std::array<const device*, NUM_ADCS> adc_devices = {
     DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), analog_sensor_adcs, DEVICE_DT_GET_BY_IDX, (, ))};
 
+static constexpr int MAX_CHANNELS_PER_ADC = DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels);
+
 static constexpr int OVERSAMPLING = DT_PROP(DT_PATH(zephyr_user), analog_sensor_adc_oversampling);
 static constexpr int RESOLUTION = DT_PROP(DT_PATH(zephyr_user), analog_sensor_adc_resolution);
 
@@ -44,29 +46,29 @@ static consteval uint32_t channels_bitmask(const device* adc_dev)
 }
 
 /// Buffer into which raw readings are written. Only accessed by the analog_sensors thread.
-static std::array<std::array<uint16_t, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> raw_readings;
+static std::array<std::array<uint16_t, MAX_CHANNELS_PER_ADC>, NUM_ADCS> raw_readings;
 
 /// Maps ADC and ADC channel into overall channel index
-static std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> adc_reading_index_to_input_channel =
-    []() consteval {
-        std::array<std::array<int, DT_PROP(DT_PATH(zephyr_user), analog_sensor_max_adc_channels)>, NUM_ADCS> out;
-        for (int i = 0; i < NUM_ADCS; ++i) {
-            const device* adc_dev = adc_devices[i];
-            int reading_index = 0;
+static std::array<std::array<int, MAX_CHANNELS_PER_ADC>, NUM_ADCS> adc_reading_index_to_input_channel = []() consteval {
+    std::array<std::array<int, MAX_CHANNELS_PER_ADC>, NUM_ADCS> out;
+    for (int i = 0; i < NUM_ADCS; ++i) {
+        const device* adc_dev = adc_devices[i];
+        int reading_index = 0;
 
-            for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
-                const auto& channel = adc_channels[j];
-                if (channel.dev == adc_dev) {
-                    out[i][reading_index] = j;
-                    ++reading_index;
-                }
-                else {
-                    out[i][reading_index] = -1;
-                }
+        for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
+            const auto& channel = adc_channels[j];
+            if (channel.dev == adc_dev) {
+                out[i][reading_index] = j;
+                ++reading_index;
             }
         }
-        return out;
-    }();
+
+        for (; reading_index < MAX_CHANNELS_PER_ADC; ++reading_index) {
+            out[i][reading_index] = -1;
+        }
+    }
+    return out;
+}();
 
 /// Sequence read options
 static adc_sequence_options adc_read_options = {
@@ -149,8 +151,6 @@ static void sense()
             MutexGuard analog_sensors_guard{&analog_sensors_mutex};
 
             sense_time_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
-            LOG_INF("Sense time: %f, sense val: %d", sense_time_ns, raw_readings[0][0]);
-
             has_reading = true;
 
             for (int i = 0; i < NUM_ADCS; ++i) {

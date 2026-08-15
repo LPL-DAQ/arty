@@ -15,7 +15,7 @@ static constexpr int NUM_VALVE_GPIOS = DT_PROP_LEN(DT_PATH(zephyr_user), valve_g
 static constexpr gpio_dt_spec VALVE_GPIOS[NUM_VALVE_GPIOS] = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), valve_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 std::array<std::optional<ValveConfig>, _Valve_ARRAYSIZE> valve_configs;
-std::array<ValveState, _Valve_ARRAYSIZE> valve_states;
+std::array<ValveState, _Valve_ARRAYSIZE> valve_states; 
 
 /// Configure valve GPIOs.
 std::expected<void, Error> Valves::init()

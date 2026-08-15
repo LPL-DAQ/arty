@@ -1,3 +1,10 @@
+/// NOTE:
+/// This driver was originally from a more recent version of Zephyr. We must vend it locally as our pinned Zephyr
+/// version is too out of date.
+///
+/// We also implement some patches to more efficiently communicate over SPI. The original driver used the built-in SPI
+/// interface, which incurs costly overhead with excessive yielding.
+
 /* TI ADS79xx Series ADCs
  *
  * Copyright (c) 2026 James Walmsley <james@fullfat-fs.co.uk>
@@ -5,6 +12,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "fast_lpspi.h"
 #include <sys/errno.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/adc.h>
@@ -93,6 +101,22 @@ static int ads79xx_channel_setup(const struct device* dev, const struct adc_chan
     return 0;
 }
 
+/// Reserve the SPI bus.
+static void ads79xx_spi_lock(const struct device* dev)
+{
+    const struct ads79xx_config* config = dev->config;
+
+    fast_lpspi_lock_spi(&config->spi);
+}
+
+/// Release the SPI bus.
+static void ads79xx_spi_release(const struct device* dev)
+{
+    const struct ads79xx_config* config = dev->config;
+
+    fast_lpspi_release_spi(&config->spi);
+}
+
 static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint16_t* rx_word)
 {
     const struct ads79xx_config* cfg = dev->config;
@@ -106,7 +130,9 @@ static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint
     struct spi_buf_set txs = {.buffers = &txb, .count = 1};
     struct spi_buf_set rxs = {.buffers = &rxb, .count = 1};
 
-    ret = spi_transceive_dt(&cfg->spi, &txs, &rxs);
+    // PATCH: Use fast SPI transceive.
+    ret = fast_lpspi_transceive_dt(&cfg->spi, &txs, &rxs);
+
     if (ret) {
         return ret;
     }
@@ -350,13 +376,16 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
     int ret;
 
     /* Prime the ads79xx */
+    ads79xx_spi_lock(dev);
     ret = ads79xx_spi_transfer(dev, ads79xx_manual_command(cfg, 0), &dummy);
     if (ret) {
         LOG_ERR("SPI transfer failed (err %d)", ret);
     }
+    ads79xx_spi_release(dev);
 
     while (true) {
         k_sem_take(&data->sem, K_FOREVER);
+        ads79xx_spi_lock(dev);
 
         if (data->auto1_mask != data->channels) {
             LOG_DBG("programming auto-1 channel mask");
@@ -395,6 +424,8 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
             *data->buffer++ = ads79xx_sample(cfg, rx);
             LOG_DBG("rx_addr: %d, sample: %d", ads79xx_rx_addr(cfg, rx), ads79xx_sample(cfg, rx));
         }
+        ads79xx_spi_release(dev);
+
         adc_context_on_sampling_done(&data->ctx, data->dev);
     acquisition_failed:;
     }
