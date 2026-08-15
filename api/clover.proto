@@ -27,8 +27,8 @@ message Request {
     ThrottlePowerOffRequest throttle_power_off = 24;
     ThrottlePowerOnRequest throttle_power_on = 23;
 
-    ConfigureValvesRequest configure_valves_request = 5;
-    ActuateValveRequest actuate_valve_request = 39;
+    ConfigureValvesRequest configure_valves = 5;
+    ActuateValveRequest actuate_valve = 39;
 
     // Transitions any state -> ABORT
     AbortRequest abort = 10;

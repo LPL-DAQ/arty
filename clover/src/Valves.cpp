@@ -145,7 +145,7 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
 }
 
 /// Load a new set of valve configs. All valves must be powered off before the reconfiguration is accepted.
-std::expected<void, Error> Valves::handle_configure_valves_request(const ConfigureValvesRequest& req)
+std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValvesRequest& req)
 {
     MutexGuard valves_guard{&valves_lock};
 
@@ -206,11 +206,13 @@ std::expected<void, Error> Valves::handle_configure_valves_request(const Configu
         }
     }
 
+    LOG_INF("Configured %d valves", req.configs_count);
+
     return {};
 }
 
 /// Actuate a single valve.
-std::expected<void, Error> Valves::handle_actuate_valve_request(const ActuateValveRequest& req)
+std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveRequest& req)
 {
     MutexGuard valves_guard{&valves_lock};
 

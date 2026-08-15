@@ -212,20 +212,20 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
 
         // Provided by Valves
-        case Request_configure_valves_request_tag: {
-            LOG_INF("configure_valves_request");
+        case Request_configure_valves_tag: {
+            LOG_INF("configure_valves");
 #ifdef CONFIG_VALVES
-            cmd_result = Valves::handle_configure_valves_request(request.payload.configure_valves_request);
+            cmd_result = Valves::handle_configure_valves(request.payload.configure_valves);
 #else
             cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
 #endif  // CONFIG_VALVES
             break;
         }
 
-        case Request_actuate_valve_request_tag: {
-            LOG_INF("actuate_valve_request");
+        case Request_actuate_valve_tag: {
+            LOG_INF("actuate_valve");
 #ifdef CONFIG_VALVES
-            cmd_result = Valves::handle_actuate_valve_request(request.payload.actuate_valve_request);
+            cmd_result = Valves::handle_actuate_valve(request.payload.actuate_valve);
 #else
             cmd_result = std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
 #endif  // CONFIG_VALVES
