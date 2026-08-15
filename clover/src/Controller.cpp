@@ -14,9 +14,9 @@
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
 
-#include "Valves.h"
 #include "PwmActuator.h"
 #include "ThrottleValve.h"
+#include "Valves.h"
 #include "hornet/HornetRcs.h"
 #include "hornet/HornetThrottle.h"
 #include "hornet/HornetTvc.h"
@@ -423,7 +423,7 @@ static void step_control_loop(k_work*)
 
 #ifdef CONFIG_VALVES
     auto valve_readings = Valves::get_valve_states();
-    if(valve_readings) {
+    if (valve_readings) {
         data.valve_states = *valve_readings;
     }
     else {
@@ -457,22 +457,22 @@ static void step_control_loop(k_work*)
             Gnss::current_reading.receiver_time_ms);
         LOG_INF(
             "[Gnss] pos  N=%.3f E=%.3f U=%.3f sigma=%.3f m",
-            Gnss::current_reading.north_m,
-            Gnss::current_reading.east_m,
-            Gnss::current_reading.up_m,
-            (double)Gnss::current_reading.pos_sigma_m);
+            static_cast<double>(Gnss::current_reading.north_m),
+            static_cast<double>(Gnss::current_reading.east_m),
+            static_cast<double>(Gnss::current_reading.up_m),
+            static_cast<double>(Gnss::current_reading.pos_sigma_m));
         LOG_INF(
             "[Gnss] vel  vx=%.3f vy=%.3f vz=%.3f sigma=%.3f m/s",
-            (double)Gnss::current_reading.vx_ms,
-            (double)Gnss::current_reading.vy_ms,
-            (double)Gnss::current_reading.vz_ms,
-            (double)Gnss::current_reading.vel_sigma_ms);
+            static_cast<double>(Gnss::current_reading.vx_ms),
+            static_cast<double>(Gnss::current_reading.vy_ms),
+            static_cast<double>(Gnss::current_reading.vz_ms),
+            static_cast<double>(Gnss::current_reading.vel_sigma_ms));
         LOG_INF(
             "[Gnss] rms  hpos=%.3f vpos=%.3f hvel=%.3f vvel=%.3f",
-            (double)Gnss::current_reading.hrms_m,
-            (double)Gnss::current_reading.vrms_m,
-            (double)Gnss::current_reading.hvel_rms_ms,
-            (double)Gnss::current_reading.vvel_rms_ms);
+            static_cast<double>(Gnss::current_reading.hrms_m),
+            static_cast<double>(Gnss::current_reading.vrms_m),
+            static_cast<double>(Gnss::current_reading.hvel_rms_ms),
+            static_cast<double>(Gnss::current_reading.vvel_rms_ms));
     }
 #endif  // CONFIG_GNSS
 
@@ -481,18 +481,18 @@ static void step_control_loop(k_work*)
         data.lidar_1 = *lidar1;
         LOG_INF(
             "LiDAR1 distance: %f m, signal: %f, sense time: %f ns",
-            (double)data.lidar_1.distance_m,
-            (double)data.lidar_1.strength,
-            (double)data.lidar_1.sense_time_ns);
+            static_cast<double>(data.lidar_1.distance_m),
+            static_cast<double>(data.lidar_1.strength),
+            static_cast<double>(data.lidar_1.sense_time_ns));
     }
 
     if (auto lidar2 = Lidar2::read()) {
         data.lidar_2 = *lidar2;
         LOG_INF(
             "LiDAR2 distance: %f m, signal: %f, sense time: %f ns",
-            (double)data.lidar_2.distance_m,
-            (double)data.lidar_2.strength,
-            (double)data.lidar_2.sense_time_ns);
+            static_cast<double>(data.lidar_2.distance_m),
+            static_cast<double>(data.lidar_2.strength),
+            static_cast<double>(data.lidar_2.sense_time_ns));
     }
 #endif  // CONFIG_LIDAR
 
@@ -698,13 +698,13 @@ static void step_control_loop(k_work*)
 
     // RCS
     // TODO: Check which actually corresponds to what
-    err = BetaTop::tick(data.rcs_propeller_cw_command);
-    err = BetaCW::tick(data.rcs_propeller_cw_command);
-    err = BetaBottom::tick(data.rcs_propeller_ccw_command);
-    err = BetaCCW::tick(data.rcs_propeller_ccw_command);
+    // err = BetaTop::tick(data.rcs_propeller_cw_command);
+    // err = BetaCW::tick(data.rcs_propeller_cw_command);
+    // err = BetaBottom::tick(data.rcs_propeller_ccw_command);
+    // err = BetaCCW::tick(data.rcs_propeller_ccw_command);
 
-    err = MotorTop::tick(data.main_propeller_command);
-    err = MotorBottom::tick(data.main_propeller_command);
+    // err = MotorTop::tick(data.main_propeller_command);
+    // err = MotorBottom::tick(data.main_propeller_command);
 
 #endif
 
@@ -773,6 +773,7 @@ std::expected<void, Error> Controller::handle_throttle_reset_valve_position(cons
 
     MutexGuard guard{&controller_state_lock};
 
+#ifdef CONFIG_THROTTLE_VALVES
     if (req.valve == ThrottleValveType_FUEL) {
         LOG_INF("Resetting fuel valve to %f", static_cast<double>(req.new_pos_deg));
         prev_fuel_valve_command = ThrottleValveCommand{
@@ -792,6 +793,7 @@ std::expected<void, Error> Controller::handle_throttle_reset_valve_position(cons
     else {
         return std::unexpected(Error::from_cause("Unknown valve type: %d", req.valve));
     }
+#endif
 
     return {};
 }
@@ -933,10 +935,11 @@ std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const
     // All traces must be the same length
     if (req.has_fuel_trace_deg && req.has_lox_trace_deg) {
         if (throttle_fuel_valve_trace_deg.get_total_time_ms() != throttle_lox_valve_trace_deg.get_total_time_ms()) {
-            return std::unexpected(Error::from_cause(
-                "both traces must be the same length, fuel was %f while lox was %f",
-                static_cast<double>(throttle_fuel_valve_trace_deg.get_total_time_ms()),
-                static_cast<double>(throttle_lox_valve_trace_deg.get_total_time_ms())));
+            return std::unexpected(
+                Error::from_cause(
+                    "both traces must be the same length, fuel was %f while lox was %f",
+                    static_cast<double>(throttle_fuel_valve_trace_deg.get_total_time_ms()),
+                    static_cast<double>(throttle_lox_valve_trace_deg.get_total_time_ms())));
         }
     }
 
@@ -1000,7 +1003,11 @@ std::expected<void, Error> Controller::handle_start_throttle_sequence(const Star
         return std::unexpected(Error::from_cause("State must be THROTTLE_PRIMED to enter THROTTLE"));
     }
 
+#ifdef CONFIG_RANGER_THROTTLE
     RangerThrottle::reset();
+#elif CONFIG_HORNET_THROTTLE
+    HornetThrottle::reset();
+#endif
     trace_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_THROTTLE;
 
@@ -1050,10 +1057,11 @@ std::expected<void, Error> Controller::handle_load_tvc_sequence(const LoadTvcSeq
 
     // Both traces must be the same length
     if (tvc_pitch_trace_deg.get_total_time_ms() != tvc_yaw_trace_deg.get_total_time_ms()) {
-        return std::unexpected(Error::from_cause(
-            "tvc traces must have the same length, pitch was %f while yaw was %f",
-            static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
-            static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
+        return std::unexpected(
+            Error::from_cause(
+                "tvc traces must have the same length, pitch was %f while yaw was %f",
+                static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
+                static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }
     trace_total_time_msec = tvc_pitch_trace_deg.get_total_time_ms();
 
@@ -1105,10 +1113,11 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const Load
 
     // Both traces must be the same length
     if (rcs_cw_valve_trace.get_total_time_ms() != rcs_ccw_valve_trace.get_total_time_ms()) {
-        return std::unexpected(Error::from_cause(
-            "rcs valve traces must have the same length, cw was %f while ccw was %f",
-            static_cast<double>(rcs_cw_valve_trace.get_total_time_ms()),
-            static_cast<double>(rcs_ccw_valve_trace.get_total_time_ms())));
+        return std::unexpected(
+            Error::from_cause(
+                "rcs valve traces must have the same length, cw was %f while ccw was %f",
+                static_cast<double>(rcs_cw_valve_trace.get_total_time_ms()),
+                static_cast<double>(rcs_ccw_valve_trace.get_total_time_ms())));
     }
     trace_total_time_msec = rcs_cw_valve_trace.get_total_time_ms();
 
@@ -1209,11 +1218,12 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     // All traces must be the same length
     if (!(throttle_thrust_lbf.get_total_time_ms() == tvc_pitch_trace_deg.get_total_time_ms() &&
           tvc_pitch_trace_deg.get_total_time_ms() == tvc_yaw_trace_deg.get_total_time_ms())) {
-        return std::unexpected(Error::from_cause(
-            "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
-            static_cast<double>(throttle_thrust_lbf.get_total_time_ms()),
-            static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
-            static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
+        return std::unexpected(
+            Error::from_cause(
+                "static fire traces must have the same length, thrust was %f, pitch was %f, yaw was %f",
+                static_cast<double>(throttle_thrust_lbf.get_total_time_ms()),
+                static_cast<double>(tvc_pitch_trace_deg.get_total_time_ms()),
+                static_cast<double>(tvc_yaw_trace_deg.get_total_time_ms())));
     }
     trace_total_time_msec = flight_x_trace_m.get_total_time_ms();
 
@@ -1277,12 +1287,13 @@ std::expected<void, Error> Controller::handle_load_flight_sequence(const LoadFli
     if (!(flight_x_trace_m.get_total_time_ms() == flight_y_trace_m.get_total_time_ms() &&
           flight_y_trace_m.get_total_time_ms() == flight_z_trace_m.get_total_time_ms() &&
           flight_z_trace_m.get_total_time_ms() == flight_roll_trace_deg.get_total_time_ms())) {
-        return std::unexpected(Error::from_cause(
-            "flight traces must have the same length, x was %f, y was %f, z was %f, roll was %f",
-            static_cast<double>(flight_x_trace_m.get_total_time_ms()),
-            static_cast<double>(flight_y_trace_m.get_total_time_ms()),
-            static_cast<double>(flight_z_trace_m.get_total_time_ms()),
-            static_cast<double>(flight_roll_trace_deg.get_total_time_ms())));
+        return std::unexpected(
+            Error::from_cause(
+                "flight traces must have the same length, x was %f, y was %f, z was %f, roll was %f",
+                static_cast<double>(flight_x_trace_m.get_total_time_ms()),
+                static_cast<double>(flight_y_trace_m.get_total_time_ms()),
+                static_cast<double>(flight_z_trace_m.get_total_time_ms()),
+                static_cast<double>(flight_roll_trace_deg.get_total_time_ms())));
     }
     trace_total_time_msec = flight_x_trace_m.get_total_time_ms();
 
