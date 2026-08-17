@@ -1551,7 +1551,7 @@ def cmd_actuate_valve():
     console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
     MAX_VALVE = 13
     for i in range(1, MAX_VALVE + 1):
-        console.print(f'    [{i}] {file_pb2._Valve.values_by_number[i].name}')
+        console.print(f'    [{i}] {clover_pb2._Valve.values_by_number[i].name}')
     choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
     valve = int(choice)
     
