@@ -1551,17 +1551,15 @@ def cmd_actuate_valve():
     console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
     MAX_VALVE = 13
     for i in range(1, MAX_VALVE + 1):
-        console.print(f'    [{i}] {clover_pb2._Valve.values_by_number[i].name}')
+        console.print(f'    [{i}] {clover_pb2.Valve.Name(i)}')
     choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
     valve = int(choice)
     
     console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
-    console.print('    [1] Unpowered Open')
-    console.print('    [2] Unpowered Closed')
-    console.print('    [3] Powered Open')
-    console.print('    [4] Powered Closed')
+    for i in range(1, 5):
+        console.print(f'    [{i}] {clover_pb2.ValveState.Name(i)}')
     choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
-    state = [clover_pb2.UNPOWERED_OPEN, clover_pb2.UNPOWERED_CLOSED, clover_pb2.POWERED_OPEN, clover_pb2.POWERED_CLOSED][int(choice)-1]
+    state = int(choice)
     
     req = clover_pb2.Request()
     req.actuate_valve.valve = valve
