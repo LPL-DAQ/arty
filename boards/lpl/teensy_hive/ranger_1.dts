@@ -121,8 +121,8 @@ Ranger 1 board.
     };
 
     chosen {
-        zephyr,console = &lpuart2;
-        // zephyr,console = &cdc_acm_uart0;
+        // zephyr,console = &lpuart2;
+        zephyr,console = &cdc_acm_uart0;
     };
 };
 
