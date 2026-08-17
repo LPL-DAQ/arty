@@ -26,7 +26,7 @@
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
-K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 10, 1);
+K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 5, 1);
 
 // Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);

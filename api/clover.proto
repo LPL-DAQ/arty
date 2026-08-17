@@ -176,6 +176,40 @@ enum AnalogSensor {
 
   // Hornet
   BATTERY_VOLTAGE = 22;
+
+  // Debug
+  ANALOG_DBG_CHAN0 = 64;
+  ANALOG_DBG_CHAN1 = 65;
+  ANALOG_DBG_CHAN2 = 66;
+  ANALOG_DBG_CHAN3 = 67;
+  ANALOG_DBG_CHAN4 = 68;
+  ANALOG_DBG_CHAN5 = 69;
+  ANALOG_DBG_CHAN6 = 70;
+  ANALOG_DBG_CHAN7 = 71;
+  ANALOG_DBG_CHAN8 = 72;
+  ANALOG_DBG_CHAN9 = 73;
+  ANALOG_DBG_CHAN10 = 74;
+  ANALOG_DBG_CHAN11 = 75;
+  ANALOG_DBG_CHAN12 = 76;
+  ANALOG_DBG_CHAN13 = 77;
+  ANALOG_DBG_CHAN14 = 78;
+  ANALOG_DBG_CHAN15 = 79;
+  ANALOG_DBG_CHAN16 = 80;
+  ANALOG_DBG_CHAN17 = 81;
+  ANALOG_DBG_CHAN18 = 82;
+  ANALOG_DBG_CHAN19 = 83;
+  ANALOG_DBG_CHAN20 = 84;
+  ANALOG_DBG_CHAN21 = 85;
+  ANALOG_DBG_CHAN22 = 86;
+  ANALOG_DBG_CHAN23 = 87;
+  ANALOG_DBG_CHAN24 = 88;
+  ANALOG_DBG_CHAN25 = 89;
+  ANALOG_DBG_CHAN26 = 90;
+  ANALOG_DBG_CHAN27 = 91;
+  ANALOG_DBG_CHAN28 = 92;
+  ANALOG_DBG_CHAN29 = 93;
+  ANALOG_DBG_CHAN30 = 94;
+  ANALOG_DBG_CHAN31 = 95;
 }
 
 // Configure GPIOs as valves.
@@ -220,6 +254,40 @@ enum Valve {
   SVR002 = 11;
   SVR003 = 12;
   SVR004 = 13;
+
+  // Debug
+  VALVE_DBG_CHAN0 = 64;
+  VALVE_DBG_CHAN1 = 65;
+  VALVE_DBG_CHAN2 = 66;
+  VALVE_DBG_CHAN3 = 67;
+  VALVE_DBG_CHAN4 = 68;
+  VALVE_DBG_CHAN5 = 69;
+  VALVE_DBG_CHAN6 = 70;
+  VALVE_DBG_CHAN7 = 71;
+  VALVE_DBG_CHAN8 = 72;
+  VALVE_DBG_CHAN9 = 73;
+  VALVE_DBG_CHAN10 = 74;
+  VALVE_DBG_CHAN11 = 75;
+  VALVE_DBG_CHAN12 = 76;
+  VALVE_DBG_CHAN13 = 77;
+  VALVE_DBG_CHAN14 = 78;
+  VALVE_DBG_CHAN15 = 79;
+  VALVE_DBG_CHAN16 = 80;
+  VALVE_DBG_CHAN17 = 81;
+  VALVE_DBG_CHAN18 = 82;
+  VALVE_DBG_CHAN19 = 83;
+  VALVE_DBG_CHAN20 = 84;
+  VALVE_DBG_CHAN21 = 85;
+  VALVE_DBG_CHAN22 = 86;
+  VALVE_DBG_CHAN23 = 87;
+  VALVE_DBG_CHAN24 = 88;
+  VALVE_DBG_CHAN25 = 89;
+  VALVE_DBG_CHAN26 = 90;
+  VALVE_DBG_CHAN27 = 91;
+  VALVE_DBG_CHAN28 = 92;
+  VALVE_DBG_CHAN29 = 93;
+  VALVE_DBG_CHAN30 = 94;
+  VALVE_DBG_CHAN31 = 95;
 }
 
 // Actuate a single valve.
@@ -231,8 +299,10 @@ message ActuateValveRequest {
 // We distinguish power on/off from open/closed as the valve may have a certain normal state.
 enum ValveState {
   UNKNOWN_VALVE_STATE = 0;
-  OPEN = 1;
-  CLOSED = 2;
+  UNPOWERED_OPEN = 1;
+  UNPOWERED_CLOSED = 2;
+  POWERED_OPEN = 3;
+  POWERED_CLOSED = 4;
 }
 
 // Reset the valve's position.
@@ -636,6 +706,40 @@ message AnalogSensorReadings {
 
   // Hornet
   optional float battery_voltage = 22;
+
+  // Debug
+  optional float analog_dbg_chan0 = 64;
+  optional float analog_dbg_chan1 = 65;
+  optional float analog_dbg_chan2 = 66;
+  optional float analog_dbg_chan3 = 67;
+  optional float analog_dbg_chan4 = 68;
+  optional float analog_dbg_chan5 = 69;
+  optional float analog_dbg_chan6 = 70;
+  optional float analog_dbg_chan7 = 71;
+  optional float analog_dbg_chan8 = 72;
+  optional float analog_dbg_chan9 = 73;
+  optional float analog_dbg_chan10 = 74;
+  optional float analog_dbg_chan11 = 75;
+  optional float analog_dbg_chan12 = 76;
+  optional float analog_dbg_chan13 = 77;
+  optional float analog_dbg_chan14 = 78;
+  optional float analog_dbg_chan15 = 79;
+  optional float analog_dbg_chan16 = 80;
+  optional float analog_dbg_chan17 = 81;
+  optional float analog_dbg_chan18 = 82;
+  optional float analog_dbg_chan19 = 83;
+  optional float analog_dbg_chan20 = 84;
+  optional float analog_dbg_chan21 = 85;
+  optional float analog_dbg_chan22 = 86;
+  optional float analog_dbg_chan23 = 87;
+  optional float analog_dbg_chan24 = 88;
+  optional float analog_dbg_chan25 = 89;
+  optional float analog_dbg_chan26 = 90;
+  optional float analog_dbg_chan27 = 91;
+  optional float analog_dbg_chan28 = 92;
+  optional float analog_dbg_chan29 = 93;
+  optional float analog_dbg_chan30 = 94;
+  optional float analog_dbg_chan31 = 95;
 }
 
 message Vector3D {
@@ -670,6 +774,40 @@ message ValveStates {
   optional ValveState svr002 = 11;
   optional ValveState svr003 = 12;
   optional ValveState svr004 = 13;
+
+  // Debug
+  optional ValveState valve_dbg_chan0 = 64;
+  optional ValveState valve_dbg_chan1 = 65;
+  optional ValveState valve_dbg_chan2 = 66;
+  optional ValveState valve_dbg_chan3 = 67;
+  optional ValveState valve_dbg_chan4 = 68;
+  optional ValveState valve_dbg_chan5 = 69;
+  optional ValveState valve_dbg_chan6 = 70;
+  optional ValveState valve_dbg_chan7 = 71;
+  optional ValveState valve_dbg_chan8 = 72;
+  optional ValveState valve_dbg_chan9 = 73;
+  optional ValveState valve_dbg_chan10 = 74;
+  optional ValveState valve_dbg_chan11 = 75;
+  optional ValveState valve_dbg_chan12 = 76;
+  optional ValveState valve_dbg_chan13 = 77;
+  optional ValveState valve_dbg_chan14 = 78;
+  optional ValveState valve_dbg_chan15 = 79;
+  optional ValveState valve_dbg_chan16 = 80;
+  optional ValveState valve_dbg_chan17 = 81;
+  optional ValveState valve_dbg_chan18 = 82;
+  optional ValveState valve_dbg_chan19 = 83;
+  optional ValveState valve_dbg_chan20 = 84;
+  optional ValveState valve_dbg_chan21 = 85;
+  optional ValveState valve_dbg_chan22 = 86;
+  optional ValveState valve_dbg_chan23 = 87;
+  optional ValveState valve_dbg_chan24 = 88;
+  optional ValveState valve_dbg_chan25 = 89;
+  optional ValveState valve_dbg_chan26 = 90;
+  optional ValveState valve_dbg_chan27 = 91;
+  optional ValveState valve_dbg_chan28 = 92;
+  optional ValveState valve_dbg_chan29 = 93;
+  optional ValveState valve_dbg_chan30 = 94;
+  optional ValveState valve_dbg_chan31 = 95;
 }
 
 message LidarReading {

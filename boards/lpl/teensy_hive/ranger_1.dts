@@ -85,12 +85,43 @@ Ranger 1 board.
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
         // GPIOs connected to valves. Valve channel numbers are indexed by their position in this list.
-        valve-gpios = <&mcp23017_2 0 GPIO_ACTIVE_HIGH>, <&mcp23017_2 1 GPIO_ACTIVE_HIGH>, <&mcp23017_2 15 GPIO_ACTIVE_HIGH>;
-        // valve-gpios = <&gpio2 10 GPIO_ACTIVE_HIGH>, <&gpio2 17 GPIO_ACTIVE_HIGH>, <&gpio2 16 GPIO_ACTIVE_HIGH>;
+        valve-gpios = 
+            <&mcp23017_1 8 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 9 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 10 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 11 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 12 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 13 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 14 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 15 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 0 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 1 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 2 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 3 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 4 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 5 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 6 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_1 7 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 8 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 9 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 10 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 11 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 12 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 13 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 14 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 15 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 0 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 1 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 2 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 3 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 4 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 5 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 6 GPIO_ACTIVE_HIGH>,
+            <&mcp23017_2 7 GPIO_ACTIVE_HIGH>;
     };
 
     chosen {
-        // zephyr,console = &lpuart1;
+        // zephyr,console = &lpuart3;
         zephyr,console = &cdc_acm_uart0;
     };
 };

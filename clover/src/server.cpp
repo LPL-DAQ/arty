@@ -30,7 +30,7 @@ static_assert(Request_size <= MAX_MESSAGE_SIZE);
 static_assert(Response_size <= MAX_MESSAGE_SIZE);
 
 /// Max number of connected clients.
-#define MAX_OPEN_CLIENTS 3
+#define MAX_OPEN_CLIENTS 2
 
 /// Main server thread must acquire one of these before accepting a connection. It must then scan through the thread
 /// array to find an open slot.

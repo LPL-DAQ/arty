@@ -342,6 +342,168 @@ static void sense()
                         break;
                     }
 
+                    // Debug
+                    case AnalogSensor_ANALOG_DBG_CHAN0: {
+                        sensor_readings.has_analog_dbg_chan0 = true;
+                        sensor_readings.analog_dbg_chan0 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN1: {
+                        sensor_readings.has_analog_dbg_chan1 = true;
+                        sensor_readings.analog_dbg_chan1 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN2: {
+                        sensor_readings.has_analog_dbg_chan2 = true;
+                        sensor_readings.analog_dbg_chan2 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN3: {
+                        sensor_readings.has_analog_dbg_chan3 = true;
+                        sensor_readings.analog_dbg_chan3 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN4: {
+                        sensor_readings.has_analog_dbg_chan4 = true;
+                        sensor_readings.analog_dbg_chan4 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN5: {
+                        sensor_readings.has_analog_dbg_chan5 = true;
+                        sensor_readings.analog_dbg_chan5 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN6: {
+                        sensor_readings.has_analog_dbg_chan6 = true;
+                        sensor_readings.analog_dbg_chan6 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN7: {
+                        sensor_readings.has_analog_dbg_chan7 = true;
+                        sensor_readings.analog_dbg_chan7 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN8: {
+                        sensor_readings.has_analog_dbg_chan8 = true;
+                        sensor_readings.analog_dbg_chan8 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN9: {
+                        sensor_readings.has_analog_dbg_chan9 = true;
+                        sensor_readings.analog_dbg_chan9 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN10: {
+                        sensor_readings.has_analog_dbg_chan10 = true;
+                        sensor_readings.analog_dbg_chan10 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN11: {
+                        sensor_readings.has_analog_dbg_chan11 = true;
+                        sensor_readings.analog_dbg_chan11 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN12: {
+                        sensor_readings.has_analog_dbg_chan12 = true;
+                        sensor_readings.analog_dbg_chan12 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN13: {
+                        sensor_readings.has_analog_dbg_chan13 = true;
+                        sensor_readings.analog_dbg_chan13 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN14: {
+                        sensor_readings.has_analog_dbg_chan14 = true;
+                        sensor_readings.analog_dbg_chan14 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN15: {
+                        sensor_readings.has_analog_dbg_chan15 = true;
+                        sensor_readings.analog_dbg_chan15 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN16: {
+                        sensor_readings.has_analog_dbg_chan16 = true;
+                        sensor_readings.analog_dbg_chan16 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN17: {
+                        sensor_readings.has_analog_dbg_chan17 = true;
+                        sensor_readings.analog_dbg_chan17 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN18: {
+                        sensor_readings.has_analog_dbg_chan18 = true;
+                        sensor_readings.analog_dbg_chan18 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN19: {
+                        sensor_readings.has_analog_dbg_chan19 = true;
+                        sensor_readings.analog_dbg_chan19 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN20: {
+                        sensor_readings.has_analog_dbg_chan20 = true;
+                        sensor_readings.analog_dbg_chan20 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN21: {
+                        sensor_readings.has_analog_dbg_chan21 = true;
+                        sensor_readings.analog_dbg_chan21 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN22: {
+                        sensor_readings.has_analog_dbg_chan22 = true;
+                        sensor_readings.analog_dbg_chan22 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN23: {
+                        sensor_readings.has_analog_dbg_chan23 = true;
+                        sensor_readings.analog_dbg_chan23 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN24: {
+                        sensor_readings.has_analog_dbg_chan24 = true;
+                        sensor_readings.analog_dbg_chan24 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN25: {
+                        sensor_readings.has_analog_dbg_chan25 = true;
+                        sensor_readings.analog_dbg_chan25 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN26: {
+                        sensor_readings.has_analog_dbg_chan26 = true;
+                        sensor_readings.analog_dbg_chan26 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN27: {
+                        sensor_readings.has_analog_dbg_chan27 = true;
+                        sensor_readings.analog_dbg_chan27 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN28: {
+                        sensor_readings.has_analog_dbg_chan28 = true;
+                        sensor_readings.analog_dbg_chan28 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN29: {
+                        sensor_readings.has_analog_dbg_chan29 = true;
+                        sensor_readings.analog_dbg_chan29 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN30: {
+                        sensor_readings.has_analog_dbg_chan30 = true;
+                        sensor_readings.analog_dbg_chan30 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_ANALOG_DBG_CHAN31: {
+                        sensor_readings.has_analog_dbg_chan31 = true;
+                        sensor_readings.analog_dbg_chan31 = curr_reading;
+                        break;
+                    }
+
                     // Impossible as we validated configs beforehand.
                     default: {
                         LOG_ERR("Got invalid sensor assignment %d despite us validating configs beforehand", config.assignment);

@@ -1473,85 +1473,64 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
-    # cfg1 = clover_pb2.AnalogSensorConfig()
-    # cfg1.channel = 0
-    # cfg1.assignment = clover_pb2.TC102
-    # cfg1.tc_type = clover_pb2.K_TYPE
-    cfg1 = clover_pb2.AnalogSensorConfig()
-    cfg1.channel = 3
-    cfg1.assignment = clover_pb2.PT006
-    cfg1.pt_range_psig = 2000
-    cfg1.pt_bias_psig = -33
-
-    cfg2 = clover_pb2.AnalogSensorConfig()
-    cfg2.channel = 4
-    cfg2.assignment = clover_pb2.PT103
-    cfg2.pt_range_psig = 2000
-    cfg2.pt_bias_psig = -39
-
-    cfg3 = clover_pb2.AnalogSensorConfig()
-    cfg3.channel = 2
-    cfg3.assignment = clover_pb2.PT004
-    cfg3.pt_range_psig = 2000
-    cfg3.pt_bias_psig = -40
-
-    cfg4 = clover_pb2.AnalogSensorConfig()
-    cfg4.channel = 6
-    cfg4.assignment = clover_pb2.PT203
-    cfg4.pt_range_psig = 3000
-    cfg4.pt_bias_psig = -43
-
-    cfg5 = clover_pb2.AnalogSensorConfig()
-    cfg5.channel = 5
-    cfg5.assignment = clover_pb2.PTF401
-    cfg5.pt_range_psig = 2000
-    cfg5.pt_bias_psig = -45
-
-    cfg6 = clover_pb2.AnalogSensorConfig()
-    cfg6.channel = 1
-    cfg6.assignment = clover_pb2.PTO401
-    cfg6.pt_range_psig = 1000
-    cfg6.pt_bias_psig = -15
-
-    cfg7 = clover_pb2.AnalogSensorConfig()
-    cfg7.channel = 0
-    cfg7.assignment = clover_pb2.PTC401
-    cfg7.pt_range_psig = 1000
-    cfg7.pt_bias_psig = -15
-
-    cfg8 = clover_pb2.AnalogSensorConfig()
-    cfg8.channel = 7
-    cfg8.assignment = clover_pb2.PTC402
-    cfg8.pt_range_psig = 1000
-    cfg8.pt_bias_psig = -13.8
+    
+    console.print('    Profile:')
+    console.print('      [1] Default  (actual vehicle)')
+    console.print('      [2] Test    (populate ANALOG_DBG_CHAN* fields)')
+    profile = Prompt.ask('    Choose', choices=['1', '2'], default='1')
+    
+    if profile == '1':
+        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
+        configs = []
+        
+    elif profile == '2':
+        configs = []
+        
+        for chan in range(32):
+            cfg = clover_pb2.AnalogSensorConfig()
+            cfg.channel = chan
+            cfg.assignment = clover_pb2._AnalogSensor.values_by_name[f'ANALOG_DBG_CHAN{chan}'].number
+            cfg.raw_range_v = 5
+            cfg.raw_bias_v = 0
+                
+            configs.append(cfg)
+    
+    else:
+        raise ValueError(f'Unknown profile of `{profile}`')
 
     req = clover_pb2.Request()
-    req.configure_analog_sensors.configs.extend([cfg1, cfg2, cfg3, cfg4, cfg5, cfg6, cfg7, cfg8])
+    req.configure_analog_sensors.configs.extend(configs)
     send_request(req, 'CONFIGURE_ANALOG_SENSORS')
 
 
 def cmd_configure_valves():
     """Configure valves."""
-    # cfg1 = clover_pb2.AnalogSensorConfig()
-    # cfg1.channel = 0
-    # cfg1.assignment = clover_pb2.TC102
-    # cfg1.tc_type = clover_pb2.K_TYPE
-    cfg1 = clover_pb2.ValveConfig()
-    cfg1.channel = 0
-    cfg1.assignment = clover_pb2.SV001
-
-    cfg2 = clover_pb2.ValveConfig()
-    cfg2.channel = 1
-    cfg2.assignment = clover_pb2.SV002
-
-    cfg3 = clover_pb2.ValveConfig()
-    cfg3.channel = 2
-    cfg3.assignment = clover_pb2.SV003
-    cfg3.normally_closed = True
+    
+    console.print('    Profile:')
+    console.print('      [1] Default  (actual vehicle)')
+    console.print('      [2] Test    (populate VALVE_DBG_CHAN* fields)')
+    profile = Prompt.ask('    Choose', choices=['1', '2'], default='1')
+    
+    if profile == '1':
+        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
+        configs = []
+        
+    elif profile == '2':
+        configs = []
+        
+        for chan in range(32):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan
+            cfg.assignment = clover_pb2._Valve.values_by_name[f'VALVE_DBG_CHAN{chan}'].number
+                
+            configs.append(cfg)
+        
+    else:
+        raise ValueError(f'Unknown profile of `{profile}`')
 
     req = clover_pb2.Request()
-    req.configure_valves.configs.extend([cfg1, cfg2, cfg3])
-    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
+    req.configure_valves.configs.extend(configs)
+    send_request(req, 'CONFIGURE_VALVES')
 
 
 def cmd_subscribe_data_stream():

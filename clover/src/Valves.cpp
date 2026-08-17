@@ -15,7 +15,7 @@ static constexpr int NUM_VALVE_GPIOS = DT_PROP_LEN(DT_PATH(zephyr_user), valve_g
 static constexpr gpio_dt_spec VALVE_GPIOS[NUM_VALVE_GPIOS] = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), valve_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 std::array<std::optional<ValveConfig>, _Valve_ARRAYSIZE> valve_configs;
-std::array<ValveState, _Valve_ARRAYSIZE> valve_states; 
+std::array<ValveState, _Valve_ARRAYSIZE> valve_states;
 
 /// Configure valve GPIOs.
 std::expected<void, Error> Valves::init()
@@ -136,6 +136,168 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
             break;
         }
 
+        // Debug
+        case Valve_VALVE_DBG_CHAN0: {
+            out.has_valve_dbg_chan0 = true;
+            out.valve_dbg_chan0 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN1: {
+            out.has_valve_dbg_chan1 = true;
+            out.valve_dbg_chan1 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN2: {
+            out.has_valve_dbg_chan2 = true;
+            out.valve_dbg_chan2 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN3: {
+            out.has_valve_dbg_chan3 = true;
+            out.valve_dbg_chan3 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN4: {
+            out.has_valve_dbg_chan4 = true;
+            out.valve_dbg_chan4 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN5: {
+            out.has_valve_dbg_chan5 = true;
+            out.valve_dbg_chan5 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN6: {
+            out.has_valve_dbg_chan6 = true;
+            out.valve_dbg_chan6 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN7: {
+            out.has_valve_dbg_chan7 = true;
+            out.valve_dbg_chan7 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN8: {
+            out.has_valve_dbg_chan8 = true;
+            out.valve_dbg_chan8 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN9: {
+            out.has_valve_dbg_chan9 = true;
+            out.valve_dbg_chan9 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN10: {
+            out.has_valve_dbg_chan10 = true;
+            out.valve_dbg_chan10 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN11: {
+            out.has_valve_dbg_chan11 = true;
+            out.valve_dbg_chan11 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN12: {
+            out.has_valve_dbg_chan12 = true;
+            out.valve_dbg_chan12 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN13: {
+            out.has_valve_dbg_chan13 = true;
+            out.valve_dbg_chan13 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN14: {
+            out.has_valve_dbg_chan14 = true;
+            out.valve_dbg_chan14 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN15: {
+            out.has_valve_dbg_chan15 = true;
+            out.valve_dbg_chan15 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN16: {
+            out.has_valve_dbg_chan16 = true;
+            out.valve_dbg_chan16 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN17: {
+            out.has_valve_dbg_chan17 = true;
+            out.valve_dbg_chan17 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN18: {
+            out.has_valve_dbg_chan18 = true;
+            out.valve_dbg_chan18 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN19: {
+            out.has_valve_dbg_chan19 = true;
+            out.valve_dbg_chan19 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN20: {
+            out.has_valve_dbg_chan20 = true;
+            out.valve_dbg_chan20 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN21: {
+            out.has_valve_dbg_chan21 = true;
+            out.valve_dbg_chan21 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN22: {
+            out.has_valve_dbg_chan22 = true;
+            out.valve_dbg_chan22 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN23: {
+            out.has_valve_dbg_chan23 = true;
+            out.valve_dbg_chan23 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN24: {
+            out.has_valve_dbg_chan24 = true;
+            out.valve_dbg_chan24 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN25: {
+            out.has_valve_dbg_chan25 = true;
+            out.valve_dbg_chan25 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN26: {
+            out.has_valve_dbg_chan26 = true;
+            out.valve_dbg_chan26 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN27: {
+            out.has_valve_dbg_chan27 = true;
+            out.valve_dbg_chan27 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN28: {
+            out.has_valve_dbg_chan28 = true;
+            out.valve_dbg_chan28 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN29: {
+            out.has_valve_dbg_chan29 = true;
+            out.valve_dbg_chan29 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN30: {
+            out.has_valve_dbg_chan30 = true;
+            out.valve_dbg_chan30 = valve_state;
+            break;
+        }
+        case Valve_VALVE_DBG_CHAN31: {
+            out.has_valve_dbg_chan31 = true;
+            out.valve_dbg_chan31 = valve_state;
+            break;
+        }
+
         default:
             return std::unexpected(Error::from_cause("invalid valve assignment in supposedly sanitized configs: %d", valve_config->assignment));
         }
@@ -157,13 +319,15 @@ std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValves
         if (!config) {
             continue;
         }
-        if (config->normally_closed && state != ValveState_CLOSED) {
+        if (config->normally_closed && state != ValveState_UNPOWERED_CLOSED) {
             return std::unexpected(
-                Error::from_cause("valve at channel %d (assigned %d) must be in its normal state of CLOSED before reconfiguration", config->assignment, i));
+                Error::from_cause(
+                    "valve at channel %d (assigned %d) must be in its normal state of UNPOWERED_CLOSED before reconfiguration", config->assignment, i));
         }
-        if (!config->normally_closed && state != ValveState_OPEN) {
+        if (!config->normally_closed && state != ValveState_UNPOWERED_OPEN) {
             return std::unexpected(
-                Error::from_cause("valve at channel %d (assigned %d) must be in its normal state of OPEN before reconfiguration", config->assignment, i));
+                Error::from_cause(
+                    "valve at channel %d (assigned %d) must be in its normal state of UNPOWERED_OPEN before reconfiguration", config->assignment, i));
         }
     }
 
@@ -199,10 +363,10 @@ std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValves
 
         // Populate states -- we just checked that all GPIOs are off, so configured valves should be in their normal states.
         if (valve_configs[config.assignment]->normally_closed) {
-            valve_states[config.assignment] = ValveState_CLOSED;
+            valve_states[config.assignment] = ValveState_UNPOWERED_CLOSED;
         }
         else {
-            valve_states[config.assignment] = ValveState_OPEN;
+            valve_states[config.assignment] = ValveState_UNPOWERED_OPEN;
         }
     }
 
@@ -220,8 +384,8 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
         return std::unexpected(Error::from_cause("invalid valve assignment %d, must be from %d to %d", req.valve, _Valve_MIN, _Valve_MAX));
     }
 
-    if (req.state != ValveState_OPEN && req.state != ValveState_CLOSED) {
-        return std::unexpected(Error::from_cause("request must specify either OPEN or CLOSED, got %d", req.state));
+    if (req.state == ValveState_UNKNOWN_VALVE_STATE || req.state > ValveState_POWERED_CLOSED) {
+        return std::unexpected(Error::from_cause("invalid valve state, got %d", req.state));
     }
 
     // Ensure valve is configured to a GPIO
@@ -232,8 +396,16 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
 
     // Check valve state
     const auto& valve_state = valve_states[req.valve];
-    if (valve_state != ValveState_OPEN && valve_state != ValveState_CLOSED) {
+    if (valve_state == ValveState_UNKNOWN_VALVE_STATE && valve_state > ValveState_POWERED_CLOSED) {
         return std::unexpected(Error::from_cause("valve %d is not in any valid state, got: %d", req.valve, valve_state));
+    }
+
+    // Check if commanded valve state is valid for the current normally open/closed configuration.
+    if ((config->normally_closed && (req.state == ValveState_UNPOWERED_OPEN || req.state == ValveState_POWERED_CLOSED)) ||
+        (!config->normally_closed && (req.state == ValveState_UNPOWERED_CLOSED || req.state == ValveState_POWERED_OPEN))) {
+        return std::unexpected(
+            Error::from_cause(
+                "commanded valve state %d is invalid for valve %d's normally closed setting of %d", req.state, req.valve, config->normally_closed));
     }
 
     // Check if we even need to do any work
@@ -243,11 +415,14 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
 
     // We in fact must actuate this valve.
     int target_state;
-    if ((req.state == ValveState_CLOSED && config->normally_closed) || (req.state == ValveState_OPEN && !config->normally_closed)) {
+    if ((req.state == ValveState_UNPOWERED_CLOSED && config->normally_closed) || (req.state == ValveState_UNPOWERED_OPEN && !config->normally_closed)) {
         target_state = 0;
     }
-    else {
+    else if((req.state == ValveState_POWERED_OPEN && config->normally_closed) || (req.state == ValveState_POWERED_CLOSED && !config->normally_closed)) {
         target_state = 1;
+    }
+    else {
+        return std::unexpected(Error::from_cause("bad valve logic"));
     }
 
     if (int err = gpio_pin_set_dt(&VALVE_GPIOS[config->channel], target_state); err) {
