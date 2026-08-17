@@ -1013,95 +1013,6 @@ def _build_status_renderable():
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
 
-    # Analog Table
-    sensors = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    sensors.add_column('Sensor', style='bold white', no_wrap=True)
-    sensors.add_column('Value', style='white', justify='right', no_wrap=True)
-    sensors.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    def _add_analog_row(label: str, field: str, unit: str):
-        if _has(pkt.analog_sensors, field):
-            sensors.add_row(label, f'{getattr(pkt.analog_sensors, field):.2f}', unit)
-        elif _has_msg_field(pkt.analog_sensors, field):
-            sensors.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
-
-    # Analog sensors (shown when available in schema/config).
-    _add_analog_row('PT-001', 'pt001', 'psi')
-    _add_analog_row('PT-002', 'pt002', 'psi')
-    _add_analog_row('PT-003', 'pt003', 'psi')
-    _add_analog_row('PT-004', 'pt004', 'psi')
-    _add_analog_row('PT-005', 'pt005', 'psi')
-    _add_analog_row('PT-006', 'pt006', 'psi')
-    _add_analog_row('PT-103', 'pt103', 'psi')
-    _add_analog_row('PT-203', 'pt203', 'psi')
-    _add_analog_row('PTF-401', 'ptf401', 'psi')
-    _add_analog_row('PT0-401', 'pto401', 'psi')
-    _add_analog_row('PTC-401', 'ptc401', 'psi')
-    _add_analog_row('PTC-402', 'ptc402', 'psi')
-    _add_analog_row('TC-001', 'tc001', 'C')
-    _add_analog_row('TC-101', 'tc101', 'C')
-    _add_analog_row('TC-102', 'tc102', 'C')
-    _add_analog_row('TC-F1', 'tcf1', 'C')
-    _add_analog_row('TC-O1', 'tco1', 'C')
-    _add_analog_row('PT-G001', 'ptg001', 'psi')
-    _add_analog_row('PT-G002', 'ptg002', 'psi')
-    _add_analog_row('PT-G101', 'ptg101', 'psi')
-    _add_analog_row('Battery', 'battery_voltage', 'V')
-
-    sensors.add_row(
-        'Lidar 1',
-        f'{pkt.lidar_1.distance_m:.2f}'
-        if _has(pkt, 'lidar_1')
-        else f'[{t["muted"]}]—[/{t["muted"]}]',
-        'm',
-    )
-    sensors.add_row(
-        'Lidar 2',
-        f'{pkt.lidar_2.distance_m:.2f}'
-        if _has(pkt, 'lidar_2')
-        else f'[{t["muted"]}]—[/{t["muted"]}]',
-        'm',
-    )
-
-    thrust_value = None
-    if _has(pkt, 'hornet_throttle_metrics') and _has(pkt.hornet_throttle_metrics, 'thrust_N'):
-        thrust_value = f'{pkt.hornet_throttle_metrics.thrust_N:.2f}'
-    sensors.add_row(
-        'Thrust',
-        thrust_value if thrust_value is not None else f'[{t["muted"]}]—[/{t["muted"]}]',
-        'N',
-    )
-
-    # Shared valve state telemetry.
-    if _has(pkt, 'valve_states'):
-        vs = pkt.valve_states
-
-        def _valve_state_to_str(v: int) -> str:
-            try:
-                return clover_pb2.ValveState.Name(v)
-            except ValueError:
-                return str(v)
-
-        for field, label in [
-            ('sv001', 'SV001'),
-            ('sv002', 'SV002'),
-            ('sv003', 'SV003'),
-            ('sv004', 'SV004'),
-            ('pbv002', 'PBV002'),
-            ('sv005', 'SV005'),
-            ('svg001', 'SVG001'),
-            ('svg002', 'SVG002'),
-            ('svg003', 'SVG003'),
-        ]:
-            if _has(vs, field):
-                sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
-
     # Controller table
     timing = Table(
         box=box.SIMPLE_HEAD,
@@ -1149,11 +1060,6 @@ def _build_status_renderable():
         ]
     )
     bottom_columns = [
-        Panel(
-            sensors,
-            title=f'[{t["primary"]}]Sensors[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
         Panel(
             timing,
             title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
@@ -1261,7 +1167,37 @@ def _build_status_renderable():
             border_style=t['panel_border'],
         ),)
 
-    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    # Analog sensors
+    if _has(pkt, 'analog_sensors'):
+        table = Table(
+            box=box.SIMPLE_HEAD,
+            show_header=True,
+            header_style=t['primary'],
+            border_style=t['panel_border'],
+            padding=(0, 1),
+        )
+        table.add_column('Sensor', style='bold white', no_wrap=True)
+        table.add_column('Reading', style='white', justify='right', no_wrap=True)
+        table.add_column('Unit', style=t['muted'], no_wrap=True)
+        
+        for sensor, reading in MessageToDict(pkt.analog_sensors).items():
+            if sensor[:2] == 'pt':
+                unit = 'psig'
+            elif sensor[:2] == 'tc':
+                unit = '°C'
+            else:
+                unit = 'V'
+            table.add_row(sensor.upper(), reading, unit)
+
+        bottom_columns.append(
+            Panel(
+                table,
+                title=f'[{t["primary"]}]Analog Sensors[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
+        )
+
+    # Valve states
     if _has(pkt, 'valve_states'):
         table = Table(
             box=box.SIMPLE_HEAD,
@@ -1274,7 +1210,7 @@ def _build_status_renderable():
         table.add_column('State', style='white', justify='right', no_wrap=True)
         
         for valve, state in MessageToDict(pkt.valve_states).items():
-            table.add_row(valve, state)
+            table.add_row(valve.upper(), state)
 
         bottom_columns.append(
             Panel(
@@ -1476,7 +1412,7 @@ def cmd_configure_analog_sensors():
     
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test    (populate ANALOG_DBG_CHAN* fields)')
+    console.print('      [2] Test    (basically random channel assignments just to see stuff happen)')
     profile = Prompt.ask('    Choose', choices=['1', '2'], default='1')
     
     if profile == '1':
