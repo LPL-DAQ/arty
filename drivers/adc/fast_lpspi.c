@@ -430,8 +430,8 @@ int fast_lpspi_transceive_dt(const struct spi_dt_spec* spec, const struct spi_bu
         goto error;
     }
 
-    if (ctx->config && spi_cs_is_gpio(ctx->config)) {
-        gpio_pin_set_dt(&ctx->config->cs.gpio, 1);
+    if (spi_cs_is_gpio(spi_cfg)) {
+        gpio_pin_set_dt(&spi_cfg->cs.gpio, 1);
     }
 
     if (op_mode == SPI_OP_MODE_MASTER) {
@@ -475,8 +475,8 @@ int fast_lpspi_transceive_dt(const struct spi_dt_spec* spec, const struct spi_bu
         LOG_ERR("Failed to perform lpspi transfer blocking, see MCUXpresso API for error code: %d", ret);
     }
 
-    if (ctx->config && spi_cs_is_gpio(ctx->config)) {
-        gpio_pin_set_dt(&ctx->config->cs.gpio, 0);
+    if (spi_cs_is_gpio(spi_cfg)) {
+        gpio_pin_set_dt(&spi_cfg->cs.gpio, 0);
     }
 
 error:

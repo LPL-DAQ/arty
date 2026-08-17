@@ -15,7 +15,7 @@ static constexpr int NUM_VALVE_GPIOS = DT_PROP_LEN(DT_PATH(zephyr_user), valve_g
 static constexpr gpio_dt_spec VALVE_GPIOS[NUM_VALVE_GPIOS] = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), valve_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 std::array<std::optional<ValveConfig>, _Valve_ARRAYSIZE> valve_configs;
-std::array<ValveState, _Valve_ARRAYSIZE> valve_states; 
+std::array<ValveState, _Valve_ARRAYSIZE> valve_states;
 
 /// Configure valve GPIOs.
 std::expected<void, Error> Valves::init()
@@ -157,13 +157,15 @@ std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValves
         if (!config) {
             continue;
         }
-        if (config->normally_closed && state != ValveState_CLOSED) {
+        if (config->normally_closed && state != ValveState_UNPOWERED_CLOSED) {
             return std::unexpected(
-                Error::from_cause("valve at channel %d (assigned %d) must be in its normal state of CLOSED before reconfiguration", config->assignment, i));
+                Error::from_cause(
+                    "valve at channel %d (assigned %d) must be in its normal state of UNPOWERED_CLOSED before reconfiguration", config->assignment, i));
         }
-        if (!config->normally_closed && state != ValveState_OPEN) {
+        if (!config->normally_closed && state != ValveState_UNPOWERED_OPEN) {
             return std::unexpected(
-                Error::from_cause("valve at channel %d (assigned %d) must be in its normal state of OPEN before reconfiguration", config->assignment, i));
+                Error::from_cause(
+                    "valve at channel %d (assigned %d) must be in its normal state of UNPOWERED_OPEN before reconfiguration", config->assignment, i));
         }
     }
 
@@ -199,10 +201,10 @@ std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValves
 
         // Populate states -- we just checked that all GPIOs are off, so configured valves should be in their normal states.
         if (valve_configs[config.assignment]->normally_closed) {
-            valve_states[config.assignment] = ValveState_CLOSED;
+            valve_states[config.assignment] = ValveState_UNPOWERED_CLOSED;
         }
         else {
-            valve_states[config.assignment] = ValveState_OPEN;
+            valve_states[config.assignment] = ValveState_UNPOWERED_OPEN;
         }
     }
 
@@ -220,8 +222,8 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
         return std::unexpected(Error::from_cause("invalid valve assignment %d, must be from %d to %d", req.valve, _Valve_MIN, _Valve_MAX));
     }
 
-    if (req.state != ValveState_OPEN && req.state != ValveState_CLOSED) {
-        return std::unexpected(Error::from_cause("request must specify either OPEN or CLOSED, got %d", req.state));
+    if (req.state == ValveState_UNKNOWN_VALVE_STATE || req.state > ValveState_POWERED_CLOSED) {
+        return std::unexpected(Error::from_cause("invalid valve state, got %d", req.state));
     }
 
     // Ensure valve is configured to a GPIO
@@ -232,8 +234,16 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
 
     // Check valve state
     const auto& valve_state = valve_states[req.valve];
-    if (valve_state != ValveState_OPEN && valve_state != ValveState_CLOSED) {
+    if (valve_state == ValveState_UNKNOWN_VALVE_STATE && valve_state > ValveState_POWERED_CLOSED) {
         return std::unexpected(Error::from_cause("valve %d is not in any valid state, got: %d", req.valve, valve_state));
+    }
+
+    // Check if commanded valve state is valid for the current normally open/closed configuration.
+    if ((config->normally_closed && (req.state == ValveState_UNPOWERED_OPEN || req.state == ValveState_POWERED_CLOSED)) ||
+        (!config->normally_closed && (req.state == ValveState_UNPOWERED_CLOSED || req.state == ValveState_POWERED_OPEN))) {
+        return std::unexpected(
+            Error::from_cause(
+                "commanded valve state %d is invalid for valve %d's normally closed setting of %d", req.state, req.valve, config->normally_closed));
     }
 
     // Check if we even need to do any work
@@ -243,11 +253,14 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
 
     // We in fact must actuate this valve.
     int target_state;
-    if ((req.state == ValveState_CLOSED && config->normally_closed) || (req.state == ValveState_OPEN && !config->normally_closed)) {
+    if ((req.state == ValveState_UNPOWERED_CLOSED && config->normally_closed) || (req.state == ValveState_UNPOWERED_OPEN && !config->normally_closed)) {
         target_state = 0;
     }
-    else {
+    else if ((req.state == ValveState_POWERED_OPEN && config->normally_closed) || (req.state == ValveState_POWERED_CLOSED && !config->normally_closed)) {
         target_state = 1;
+    }
+    else {
+        return std::unexpected(Error::from_cause("bad valve logic"));
     }
 
     if (int err = gpio_pin_set_dt(&VALVE_GPIOS[config->channel], target_state); err) {

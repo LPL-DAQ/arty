@@ -375,6 +375,8 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
     uint16_t dummy;
     int ret;
 
+    k_thread_name_set(NULL, dev->name);
+
     /* Prime the ads79xx */
     ads79xx_spi_lock(dev);
     ret = ads79xx_spi_transfer(dev, ads79xx_manual_command(cfg, 0), &dummy);

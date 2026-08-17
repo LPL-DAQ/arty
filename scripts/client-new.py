@@ -1013,95 +1013,6 @@ def _build_status_renderable():
         else:
             cmd.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
 
-    # Analog Table
-    sensors = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style=t['primary'],
-        border_style=t['panel_border'],
-        padding=(0, 1),
-    )
-    sensors.add_column('Sensor', style='bold white', no_wrap=True)
-    sensors.add_column('Value', style='white', justify='right', no_wrap=True)
-    sensors.add_column('Unit', style=t['muted'], no_wrap=True)
-
-    def _add_analog_row(label: str, field: str, unit: str):
-        if _has(pkt.analog_sensors, field):
-            sensors.add_row(label, f'{getattr(pkt.analog_sensors, field):.2f}', unit)
-        elif _has_msg_field(pkt.analog_sensors, field):
-            sensors.add_row(label, f'[{t["muted"]}]—[/{t["muted"]}]', unit)
-
-    # Analog sensors (shown when available in schema/config).
-    _add_analog_row('PT-001', 'pt001', 'psi')
-    _add_analog_row('PT-002', 'pt002', 'psi')
-    _add_analog_row('PT-003', 'pt003', 'psi')
-    _add_analog_row('PT-004', 'pt004', 'psi')
-    _add_analog_row('PT-005', 'pt005', 'psi')
-    _add_analog_row('PT-006', 'pt006', 'psi')
-    _add_analog_row('PT-103', 'pt103', 'psi')
-    _add_analog_row('PT-203', 'pt203', 'psi')
-    _add_analog_row('PTF-401', 'ptf401', 'psi')
-    _add_analog_row('PT0-401', 'pto401', 'psi')
-    _add_analog_row('PTC-401', 'ptc401', 'psi')
-    _add_analog_row('PTC-402', 'ptc402', 'psi')
-    _add_analog_row('TC-001', 'tc001', 'C')
-    _add_analog_row('TC-101', 'tc101', 'C')
-    _add_analog_row('TC-102', 'tc102', 'C')
-    _add_analog_row('TC-F1', 'tcf1', 'C')
-    _add_analog_row('TC-O1', 'tco1', 'C')
-    _add_analog_row('PT-G001', 'ptg001', 'psi')
-    _add_analog_row('PT-G002', 'ptg002', 'psi')
-    _add_analog_row('PT-G101', 'ptg101', 'psi')
-    _add_analog_row('Battery', 'battery_voltage', 'V')
-
-    sensors.add_row(
-        'Lidar 1',
-        f'{pkt.lidar_1.distance_m:.2f}'
-        if _has(pkt, 'lidar_1')
-        else f'[{t["muted"]}]—[/{t["muted"]}]',
-        'm',
-    )
-    sensors.add_row(
-        'Lidar 2',
-        f'{pkt.lidar_2.distance_m:.2f}'
-        if _has(pkt, 'lidar_2')
-        else f'[{t["muted"]}]—[/{t["muted"]}]',
-        'm',
-    )
-
-    thrust_value = None
-    if _has(pkt, 'hornet_throttle_metrics') and _has(pkt.hornet_throttle_metrics, 'thrust_N'):
-        thrust_value = f'{pkt.hornet_throttle_metrics.thrust_N:.2f}'
-    sensors.add_row(
-        'Thrust',
-        thrust_value if thrust_value is not None else f'[{t["muted"]}]—[/{t["muted"]}]',
-        'N',
-    )
-
-    # Shared valve state telemetry.
-    if _has(pkt, 'valve_states'):
-        vs = pkt.valve_states
-
-        def _valve_state_to_str(v: int) -> str:
-            try:
-                return clover_pb2.ValveState.Name(v)
-            except ValueError:
-                return str(v)
-
-        for field, label in [
-            ('sv001', 'SV001'),
-            ('sv002', 'SV002'),
-            ('sv003', 'SV003'),
-            ('sv004', 'SV004'),
-            ('pbv002', 'PBV002'),
-            ('sv005', 'SV005'),
-            ('svg001', 'SVG001'),
-            ('svg002', 'SVG002'),
-            ('svg003', 'SVG003'),
-        ]:
-            if _has(vs, field):
-                sensors.add_row(label, _valve_state_to_str(getattr(vs, field)), '')
-
     # Controller table
     timing = Table(
         box=box.SIMPLE_HEAD,
@@ -1149,11 +1060,6 @@ def _build_status_renderable():
         ]
     )
     bottom_columns = [
-        Panel(
-            sensors,
-            title=f'[{t["primary"]}]Sensors[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
         Panel(
             timing,
             title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
@@ -1261,7 +1167,37 @@ def _build_status_renderable():
             border_style=t['panel_border'],
         ),)
 
-    # Ranger throttle sequence metrics (equivalent replacement for old thrust_sequence_data panel values).
+    # Analog sensors
+    if _has(pkt, 'analog_sensors'):
+        table = Table(
+            box=box.SIMPLE_HEAD,
+            show_header=True,
+            header_style=t['primary'],
+            border_style=t['panel_border'],
+            padding=(0, 1),
+        )
+        table.add_column('Sensor', style='bold white', no_wrap=True)
+        table.add_column('Reading', style='white', justify='right', no_wrap=True)
+        table.add_column('Unit', style=t['muted'], no_wrap=True)
+        
+        for sensor, reading in MessageToDict(pkt.analog_sensors).items():
+            if sensor[:2] == 'pt':
+                unit = 'psig'
+            elif sensor[:2] == 'tc':
+                unit = '°C'
+            else:
+                unit = 'V'
+            table.add_row(sensor.upper(), f'{reading:.2f}', unit)
+
+        bottom_columns.append(
+            Panel(
+                table,
+                title=f'[{t["primary"]}]Analog Sensors[/{t["primary"]}]',
+                border_style=t['panel_border'],
+            ),
+        )
+
+    # Valve states
     if _has(pkt, 'valve_states'):
         table = Table(
             box=box.SIMPLE_HEAD,
@@ -1274,7 +1210,7 @@ def _build_status_renderable():
         table.add_column('State', style='white', justify='right', no_wrap=True)
         
         for valve, state in MessageToDict(pkt.valve_states).items():
-            table.add_row(valve, state)
+            table.add_row(valve.upper(), state)
 
         bottom_columns.append(
             Panel(
@@ -1473,85 +1409,100 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
-    # cfg1 = clover_pb2.AnalogSensorConfig()
-    # cfg1.channel = 0
-    # cfg1.assignment = clover_pb2.TC102
-    # cfg1.tc_type = clover_pb2.K_TYPE
-    cfg1 = clover_pb2.AnalogSensorConfig()
-    cfg1.channel = 3
-    cfg1.assignment = clover_pb2.PT006
-    cfg1.pt_range_psig = 2000
-    cfg1.pt_bias_psig = -33
+    
+    console.print('    Profile:')
+    console.print('      [1] Default  (actual vehicle)')
+    console.print('      [2] Test     (assigns channels 0-21)')
+    console.print('      [3] Test 2   (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
+    
+    if profile == '1':
+        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
+        configs = []
+        
+    elif profile == '2':
+        configs = []
+        
+        for chan in range(22):
+            cfg = clover_pb2.AnalogSensorConfig()
+            cfg.channel = chan
+            cfg.assignment = chan + 1
+            cfg.raw_range_v = 5
+            cfg.raw_bias_v = 0
+                
+            configs.append(cfg)
 
-    cfg2 = clover_pb2.AnalogSensorConfig()
-    cfg2.channel = 4
-    cfg2.assignment = clover_pb2.PT103
-    cfg2.pt_range_psig = 2000
-    cfg2.pt_bias_psig = -39
-
-    cfg3 = clover_pb2.AnalogSensorConfig()
-    cfg3.channel = 2
-    cfg3.assignment = clover_pb2.PT004
-    cfg3.pt_range_psig = 2000
-    cfg3.pt_bias_psig = -40
-
-    cfg4 = clover_pb2.AnalogSensorConfig()
-    cfg4.channel = 6
-    cfg4.assignment = clover_pb2.PT203
-    cfg4.pt_range_psig = 3000
-    cfg4.pt_bias_psig = -43
-
-    cfg5 = clover_pb2.AnalogSensorConfig()
-    cfg5.channel = 5
-    cfg5.assignment = clover_pb2.PTF401
-    cfg5.pt_range_psig = 2000
-    cfg5.pt_bias_psig = -45
-
-    cfg6 = clover_pb2.AnalogSensorConfig()
-    cfg6.channel = 1
-    cfg6.assignment = clover_pb2.PTO401
-    cfg6.pt_range_psig = 1000
-    cfg6.pt_bias_psig = -15
-
-    cfg7 = clover_pb2.AnalogSensorConfig()
-    cfg7.channel = 0
-    cfg7.assignment = clover_pb2.PTC401
-    cfg7.pt_range_psig = 1000
-    cfg7.pt_bias_psig = -15
-
-    cfg8 = clover_pb2.AnalogSensorConfig()
-    cfg8.channel = 7
-    cfg8.assignment = clover_pb2.PTC402
-    cfg8.pt_range_psig = 1000
-    cfg8.pt_bias_psig = -13.8
+    elif profile == '3':
+        configs = []
+        
+        for chan in range(10):
+            cfg = clover_pb2.AnalogSensorConfig()
+            cfg.channel = chan + 22
+            cfg.assignment = chan + 1
+            cfg.raw_range_v = 5
+            cfg.raw_bias_v = 0
+                
+            configs.append(cfg)
+    
+    else:
+        raise ValueError(f'Unknown profile of `{profile}`')
 
     req = clover_pb2.Request()
-    req.configure_analog_sensors.configs.extend([cfg1, cfg2, cfg3, cfg4, cfg5, cfg6, cfg7, cfg8])
+    req.configure_analog_sensors.configs.extend(configs)
     send_request(req, 'CONFIGURE_ANALOG_SENSORS')
 
 
 def cmd_configure_valves():
     """Configure valves."""
-    # cfg1 = clover_pb2.AnalogSensorConfig()
-    # cfg1.channel = 0
-    # cfg1.assignment = clover_pb2.TC102
-    # cfg1.tc_type = clover_pb2.K_TYPE
-    cfg1 = clover_pb2.ValveConfig()
-    cfg1.channel = 0
-    cfg1.assignment = clover_pb2.SV001
+    
+    console.print('    Profile:')
+    console.print('      [1] Default  (actual vehicle)')
+    console.print('      [2] Test    (assigns channel 0-12)')
+    console.print('      [3] Test 2  (assigns channel 13-25)')
+    console.print('      [4] Test 3  (assigns channel 26-31)')
 
-    cfg2 = clover_pb2.ValveConfig()
-    cfg2.channel = 1
-    cfg2.assignment = clover_pb2.SV002
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1')
+    
+    if profile == '1':
+        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
+        configs = []
+        
+    elif profile == '2':
+        configs = []
+        
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan
+            cfg.assignment = chan + 1
+                
+            configs.append(cfg)
+        
+    elif profile == '3':
+        configs = []
+        
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 13
+            cfg.assignment = chan + 1
+                
+            configs.append(cfg)
 
-    cfg3 = clover_pb2.ValveConfig()
-    cfg3.channel = 2
-    cfg3.assignment = clover_pb2.SV003
-    cfg3.normally_closed = True
+    elif profile == '3':
+        configs = []
+        
+        for chan in range(6):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 26
+            cfg.assignment = chan + 1
+                
+            configs.append(cfg)
+
+    else:
+        raise ValueError(f'Unknown profile of `{profile}`')
 
     req = clover_pb2.Request()
-    req.configure_valves.configs.extend([cfg1, cfg2, cfg3])
-    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
+    req.configure_valves.configs.extend(configs)
+    send_request(req, 'CONFIGURE_VALVES')
 
 
 def cmd_subscribe_data_stream():
@@ -1598,17 +1549,17 @@ def cmd_reset_valve_position():
 def cmd_actuate_valve():
     t = THEME
     console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
-    console.print('    [1] SV001')
-    console.print('    [2] SV002')
-    console.print('    [3] SV003')
-    choice = Prompt.ask('  Select valve', choices=['1', '2', '3'])
-    valve = clover_pb2.SV001 if choice == '1' else clover_pb2.SV002 if choice == '2' else clover_pb2.SV003
+    MAX_VALVE = 13
+    for i in range(1, MAX_VALVE + 1):
+        console.print(f'    [{i}] {clover_pb2.Valve.Name(i)}')
+    choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
+    valve = int(choice)
     
     console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
-    console.print('    [1] Open')
-    console.print('    [2] Closed')
-    choice = Prompt.ask('  Select state', choices=['1', '2'])
-    state = clover_pb2.OPEN if choice == '1' else clover_pb2.CLOSED
+    for i in range(1, 5):
+        console.print(f'    [{i}] {clover_pb2.ValveState.Name(i)}')
+    choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
+    state = int(choice)
     
     req = clover_pb2.Request()
     req.actuate_valve.valve = valve

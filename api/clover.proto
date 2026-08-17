@@ -231,8 +231,10 @@ message ActuateValveRequest {
 // We distinguish power on/off from open/closed as the valve may have a certain normal state.
 enum ValveState {
   UNKNOWN_VALVE_STATE = 0;
-  OPEN = 1;
-  CLOSED = 2;
+  UNPOWERED_OPEN = 1;
+  UNPOWERED_CLOSED = 2;
+  POWERED_OPEN = 3;
+  POWERED_CLOSED = 4;
 }
 
 // Reset the valve's position.
