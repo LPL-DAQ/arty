@@ -1549,17 +1549,19 @@ def cmd_reset_valve_position():
 def cmd_actuate_valve():
     t = THEME
     console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
-    console.print('    [1] SV001')
-    console.print('    [2] SV002')
-    console.print('    [3] SV003')
-    choice = Prompt.ask('  Select valve', choices=['1', '2', '3'])
-    valve = clover_pb2.SV001 if choice == '1' else clover_pb2.SV002 if choice == '2' else clover_pb2.SV003
+    MAX_VALVE = 13
+    for i in range(1, MAX_VALVE + 1):
+        console.print(f'    [{i}] {file_pb2._Valve.values_by_number[i].name}')
+    choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
+    valve = int(choice)
     
     console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
-    console.print('    [1] Open')
-    console.print('    [2] Closed')
-    choice = Prompt.ask('  Select state', choices=['1', '2'])
-    state = clover_pb2.OPEN if choice == '1' else clover_pb2.CLOSED
+    console.print('    [1] Unpowered Open')
+    console.print('    [2] Unpowered Closed')
+    console.print('    [3] Powered Open')
+    console.print('    [4] Powered Closed')
+    choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
+    state = [clover_pb2.UNPOWERED_OPEN, clover_pb2.UNPOWERED_CLOSED, clover_pb2.POWERED_OPEN, clover_pb2.POWERED_CLOSED][int(choice)-1]
     
     req = clover_pb2.Request()
     req.actuate_valve.valve = valve
