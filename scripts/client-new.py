@@ -1187,7 +1187,7 @@ def _build_status_renderable():
                 unit = '°C'
             else:
                 unit = 'V'
-            table.add_row(sensor.upper(), reading, unit)
+            table.add_row(sensor.upper(), str(reading), unit)
 
         bottom_columns.append(
             Panel(
