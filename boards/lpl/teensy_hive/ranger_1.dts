@@ -121,19 +121,25 @@ Ranger 1 board.
     };
 
     chosen {
-        // zephyr,console = &lpuart3;
-        zephyr,console = &cdc_acm_uart0;
+        zephyr,console = &lpuart2;
+        // zephyr,console = &cdc_acm_uart0;
     };
 };
 
-// VN-300 IMU
-&lpuart1 {
+// Debug logging
+&lpuart2 {
     status = "okay";
     current-speed = <115200>;
 };
 
-// TF-02 Pro LiDARs
-&lpuart2 {
+// VN-300 IMU
+&lpuart6 {
+    status = "okay";
+    current-speed = <115200>;
+};
+
+// LiDARs
+&lpuart7 {
     status = "okay";
     current-speed = <115200>;
 };
@@ -471,125 +477,6 @@ Ranger 1 board.
         #gpio-cells = <2>;
 		ngpios = <16>;
     };
-};
-
-// Docs: https: //docs.zephyrproject.org/latest/build/dts/api/bindings/pinctrl/nxp%2Cmcux-rt-pinctrl.html
-&pinctrl {
-   // LPUART6: pins 0/1
-    pinmux_lpuart6: pinmux_lpuart6 {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b0_02_lpuart6_tx>,
-                     <&iomuxc_gpio_ad_b0_03_lpuart6_rx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    pinmux_lpuart6_sleep: pinmux_lpuart6_sleep {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b0_02_lpuart6_tx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    // LPUART7: pins 28/29
-    pinmux_lpuart7: pinmux_lpuart7 {
-        group0 {
-            pinmux = <&iomuxc_gpio_emc_31_lpuart7_tx>,
-                     <&iomuxc_gpio_emc_32_lpuart7_rx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    pinmux_lpuart7_sleep: pinmux_lpuart7_sleep {
-        group0 {
-            pinmux = <&iomuxc_gpio_emc_31_lpuart7_tx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    // LPUART8: pins 20/21
-    pinmux_lpuart8: pinmux_lpuart8 {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_10_lpuart8_tx>,
-                     <&iomuxc_gpio_ad_b1_11_lpuart8_rx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    pinmux_lpuart8_sleep: pinmux_lpuart8_sleep {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_10_lpuart8_tx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    // LPUART3: pins 16/17
-    pinmux_lpuart3: pinmux_lpuart3 {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_06_lpuart3_tx>,
-                     <&iomuxc_gpio_ad_b1_07_lpuart3_rx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-
-    pinmux_lpuart3_sleep: pinmux_lpuart3_sleep {
-        group0 {
-            pinmux = <&iomuxc_gpio_ad_b1_06_lpuart3_tx>;
-            drive-strength = "r0-6";
-            slew-rate = "slow";
-            nxp,speed = "100-mhz";
-        };
-    };
-};
-
-// VN-300 IMU (pins 0/1)
-&lpuart6 {
-    status = "okay";
-    current-speed = <115200>;
-    pinctrl-0 = <&pinmux_lpuart6>;
-    pinctrl-1 = <&pinmux_lpuart6_sleep>;
-    pinctrl-names = "default", "sleep";
-};
-
-// TF-02 Pro LiDAR #1 (pins 28/29)
-&lpuart7 {
-    status = "okay";
-    current-speed = <115200>;
-    pinctrl-0 = <&pinmux_lpuart7>;
-    pinctrl-1 = <&pinmux_lpuart7_sleep>;
-    pinctrl-names = "default", "sleep";
-};
-
-// TF-02 Pro LiDAR #2 (pins 20/21)
-&lpuart8 {
-    status = "okay";
-    current-speed = <115200>;
-    pinctrl-0 = <&pinmux_lpuart8>;
-    pinctrl-1 = <&pinmux_lpuart8_sleep>;
-    pinctrl-names = "default", "sleep";
-};
-
-// JAVAD TR-2S GNSS (pins 16/17)
-&lpuart3 {
-    status = "okay";
-    current-speed = <115200>;
-    pinctrl-0 = <&pinmux_lpuart3>;
-    pinctrl-1 = <&pinmux_lpuart3_sleep>;
-    pinctrl-names = "default", "sleep";
 };
 
 // Timer for stepper pulses.

@@ -25,10 +25,6 @@
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
-constexpr size_t MAX_MESSAGE_SIZE = 1024 * 8;
-static_assert(Request_size <= MAX_MESSAGE_SIZE);
-static_assert(Response_size <= MAX_MESSAGE_SIZE);
-
 /// Max number of connected clients.
 #define MAX_OPEN_CLIENTS 2
 
@@ -40,7 +36,7 @@ bool has_thread[MAX_OPEN_CLIENTS] = {false};
 K_MUTEX_DEFINE(has_thread_lock);
 
 static k_thread client_threads[MAX_OPEN_CLIENTS] = {nullptr};
-#define CONNECTION_THREAD_STACK_SIZE (6 * 1024)
+#define CONNECTION_THREAD_STACK_SIZE (8 * 1024)
 K_THREAD_STACK_ARRAY_DEFINE(client_stacks, MAX_OPEN_CLIENTS, CONNECTION_THREAD_STACK_SIZE);
 
 constexpr int MAX_THREAD_NAME_LENGTH = 10;
@@ -143,6 +139,33 @@ daq_client_status get_daq_client_status()
     return daq_client_status{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
 }
 
+/// Add an IP address to the list of data stream recipients.
+std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStreamRequest& req, int client_thread_index, int client_socket)
+{
+    MutexGuard data_client_info_guard{&data_client_info_lock};
+
+    for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
+        if (data_client_slot_indexes[i] != -1) {
+            continue;
+        }
+        // data_client_slot_indexes[i] = client_thread_index;
+
+        int err = getpeername(client_socket, &data_client_addrs[i], &data_client_addr_lens[i]);
+        if (err) {
+            return std::unexpected(Error::from_code(err).context("failed to get peername when subscribing to data stream"));
+        }
+
+        // Set client port
+        LOG_INF("Before set client port");
+        reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
+
+        LOG_INF("yeah done");
+        return {};
+    }
+
+    return std::unexpected(Error::from_cause("did not find a data client slot"));
+}
+
 /// Handles a client connection. Should run in its own thread.
 static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
@@ -160,6 +183,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_ERR("Failed to decode next message: errno=%d pb_err='%s'", errno, PB_GET_ERROR(&pb_input));
             break;
         }
+        LOG_INF("Received request");
 
         std::expected<void, Error> cmd_result = {};
 
@@ -167,33 +191,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         switch (request.which_payload) {
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
-            MutexGuard daq_status_guard{&data_client_info_lock};
-
-            bool found_data_client_slot = false;
-            for (int i = 0; i < MAX_DATA_CLIENTS; ++i) {
-                if (data_client_slot_indexes[i] != -1) {
-                    continue;
-                }
-                found_data_client_slot = true;
-                data_client_slot_indexes[i] = thread_index;
-
-                int err = getpeername(client_socket, &data_client_addrs[i], &data_client_addr_lens[i]);
-                if (err) {
-                    LOG_ERR("Failed to get peername when subscribing to data stream: err %d", err);
-                }
-
-                // Set client port
-                reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
-
-                break;
-            }
-
-            if (!found_data_client_slot) {
-                LOG_ERR("Did not find a data client slot");
-            }
-
+            cmd_result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_socket);
+            LOG_INF("Command result set");
             break;
         }
+
         case Request_identify_client_tag: {
             LOG_INF("Identify client");
             cmd_result = handle_identify_client(request.payload.identify_client, thread_index);
@@ -368,10 +370,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
         }
 
+        LOG_INF("HIII");
         Response response = Response_init_default;
 
         // Populate error message in response if required.
         if (!cmd_result.has_value()) {
+            LOG_INF("umm hello");
             response.has_err = true;
             MaxLengthString<MAX_ERR_MESSAGE_SIZE> err_msg = cmd_result.error().build_message();
 
@@ -389,6 +393,8 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             LOG_ERR("Failed to encode command response: %s", pb_output.errmsg);
         }
     }
+
+    LOG_INF("Closing socket %d", client_socket);
     zsock_close(client_socket);
 }
 
@@ -537,6 +543,7 @@ void serve_command_connections()
             5,
             0,
             K_NO_WAIT);
+        LOG_INF("Made client thread");
 
         {
             MutexGuard has_thread_guard{&has_thread_lock};
@@ -600,7 +607,7 @@ void serve_data_connections()
     }
 }
 
-K_THREAD_DEFINE(data_server, 8192, serve_data_connections, nullptr, nullptr, nullptr, 2, 0, 0);
+K_THREAD_DEFINE(data_server, 8192, serve_data_connections, nullptr, nullptr, nullptr, 3, 0, 0);
 
 /// Called at the end of startup, allowing the command and data server threads to initialize their respective sockets
 /// and serve connections.

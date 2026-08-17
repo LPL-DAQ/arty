@@ -3,5 +3,5 @@ ConfigureValvesRequest.configs max_count:32
 
 ControlTrace.segments max_count:30
 
-Response.err max_size:500
+Response.err max_size:1024
 
