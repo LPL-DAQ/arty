@@ -148,7 +148,7 @@ std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStrea
         if (data_client_slot_indexes[i] != -1) {
             continue;
         }
-        // data_client_slot_indexes[i] = client_thread_index;
+        data_client_slot_indexes[i] = client_thread_index;
 
         int err = getpeername(client_socket, &data_client_addrs[i], &data_client_addr_lens[i]);
         if (err) {
@@ -156,10 +156,8 @@ std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStrea
         }
 
         // Set client port
-        LOG_INF("Before set client port");
         reinterpret_cast<sockaddr_in*>(&data_client_addrs[i])->sin_port = htons(19691);
 
-        LOG_INF("yeah done");
         return {};
     }
 
@@ -171,6 +169,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
     int thread_index = reinterpret_cast<int>(p1_thread_index);
     int client_socket = reinterpret_cast<int>(p2_client_socket);
+
+    // Set thread name, including the index.
+    char thread_name[] = "handle_client - index X";
+    thread_name[sizeof(thread_name) - 2] = '0' + thread_index;
+    k_thread_name_set(nullptr, thread_name);
+
     LOG_INF("Handling socket: %d", client_socket);
 
     pb_istream_t pb_input = pb_istream_from_socket(client_socket);
@@ -192,7 +196,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
             cmd_result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_socket);
-            LOG_INF("Command result set");
             break;
         }
 
@@ -370,12 +373,10 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
         }
 
-        LOG_INF("HIII");
         Response response = Response_init_default;
 
         // Populate error message in response if required.
         if (!cmd_result.has_value()) {
-            LOG_INF("umm hello");
             response.has_err = true;
             MaxLengthString<MAX_ERR_MESSAGE_SIZE> err_msg = cmd_result.error().build_message();
 

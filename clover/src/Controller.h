@@ -9,7 +9,7 @@
 
 namespace Controller {
 constexpr float ABORT_TIME_MSEC = 500;
-constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'000'000; // 1 ms
+constexpr uint64_t NSEC_PER_CONTROL_TICK = 1'500'000;  // 1 ms
 constexpr float SEC_PER_CONTROL_TICK = NSEC_PER_CONTROL_TICK * 1e-9f;
 
 std::expected<void, Error> init();

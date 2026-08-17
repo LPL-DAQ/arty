@@ -1486,10 +1486,10 @@ def cmd_configure_analog_sensors():
     elif profile == '2':
         configs = []
         
-        for chan in range(32):
+        for chan in range(22):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan
-            cfg.assignment = clover_pb2._AnalogSensor.values_by_name[f'ANALOG_DBG_CHAN{chan}'].number
+            cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
                 
@@ -1508,7 +1508,7 @@ def cmd_configure_valves():
     
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test    (populate VALVE_DBG_CHAN* fields)')
+    console.print('      [2] Test    (basically random channel assignments just to see stuff happen)')
     profile = Prompt.ask('    Choose', choices=['1', '2'], default='1')
     
     if profile == '1':
@@ -1518,10 +1518,10 @@ def cmd_configure_valves():
     elif profile == '2':
         configs = []
         
-        for chan in range(32):
+        for chan in range(13):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan
-            cfg.assignment = clover_pb2._Valve.values_by_name[f'VALVE_DBG_CHAN{chan}'].number
+            cfg.assignment = chan + 1
                 
             configs.append(cfg)
         
