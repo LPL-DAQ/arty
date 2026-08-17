@@ -1412,8 +1412,9 @@ def cmd_configure_analog_sensors():
     
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test    (basically random channel assignments just to see stuff happen)')
-    profile = Prompt.ask('    Choose', choices=['1', '2'], default='1')
+    console.print('      [2] Test     (assigns channels 0-21)')
+    console.print('      [3] Test 2   (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
     
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
@@ -1425,6 +1426,18 @@ def cmd_configure_analog_sensors():
         for chan in range(22):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan
+            cfg.assignment = chan + 1
+            cfg.raw_range_v = 5
+            cfg.raw_bias_v = 0
+                
+            configs.append(cfg)
+
+    elif profile == '3':
+        configs = []
+        
+        for chan in range(10):
+            cfg = clover_pb2.AnalogSensorConfig()
+            cfg.channel = chan + 22
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
@@ -1444,8 +1457,11 @@ def cmd_configure_valves():
     
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test    (basically random channel assignments just to see stuff happen)')
-    profile = Prompt.ask('    Choose', choices=['1', '2'], default='1')
+    console.print('      [2] Test    (assigns channel 0-12)')
+    console.print('      [3] Test 2  (assigns channel 13-25)')
+    console.print('      [4] Test 3  (assigns channel 26-31)')
+
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1')
     
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
@@ -1461,6 +1477,26 @@ def cmd_configure_valves():
                 
             configs.append(cfg)
         
+    elif profile == '3':
+        configs = []
+        
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 13
+            cfg.assignment = chan + 1
+                
+            configs.append(cfg)
+
+    elif profile == '3':
+        configs = []
+        
+        for chan in range(6):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 26
+            cfg.assignment = chan + 1
+                
+            configs.append(cfg)
+
     else:
         raise ValueError(f'Unknown profile of `{profile}`')
 
