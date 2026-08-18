@@ -1215,7 +1215,13 @@ ZTEST(StateEstimator_tests, test_ekf_initializes_from_first_gnss_reading_and_the
 }
 
 // (5) Accel dropout (no fresh VN300 readings) followed by resume must not produce a garbage
-// spike -- the dt clamp (verified directly in ZAxisEkf_test.cpp) must also work end to end here.
+// spike. A dropout this long escalates VN300 to FAULTY, so the state is held deliberately until
+// re-trust completes -- the dt clamp is not what protects us here, and is exercised on its own in
+// the moderate-dropout test that follows.
+//
+// Updated for staleness escalation (67b92be): before it, a 500ms dropout left VN300 merely STALE
+// and predict resumed on the very next reading. This test asserted that, and now asserts the
+// escalate -> hold -> re-trust -> resume sequence that replaced it.
 
 ZTEST(StateEstimator_tests, test_accel_dropout_then_resume_does_not_produce_garbage_spike)
 {
@@ -1271,28 +1277,133 @@ ZTEST(StateEstimator_tests, test_accel_dropout_then_resume_does_not_produce_garb
     zassert_within(result->position.z, z_before_dropout, 1e-6f, "z should be untouched during the dropout tick itself");
 
     // Resume: a fresh VN300 reading arrives, but dt since the last one spans the whole 500ms gap.
-    // GNSS/lidar are still stale this tick too, so predict() is the ONLY thing that could change
-    // the EKF here -- and it should reject this dt entirely (dt_s > MAX_PREDICT_DT_S), leaving
-    // z/vz completely unchanged rather than integrating a huge, bogus step.
+    // GNSS/lidar are still stale this tick too, so the vertical predict step is the ONLY thing
+    // that could change the EKF here -- and VN300 is FAULTY by now, so that step propagates
+    // covariance only and leaves z/vz untouched. (The dt clamp would reject this dt as well; the
+    // moderate-dropout test below is where the clamp is what does the rejecting.)
     imu.arrival_time_ns = t_ns;
     imu.has_arrival_time_ns = true;
     imu.sense_time_ns += 1.0f;
     result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
 
     zassert_true(result.has_value());
-    zassert_within(result->position.z, z_before_dropout, 1e-6f, "z should not spike on resume -- the dt clamp should reject the huge-dt predict step");
-    zassert_within(result->velocity.z, vz_before_dropout, 1e-6f, "vz should not spike on resume -- the dt clamp should reject the huge-dt predict step");
+    zassert_within(result->position.z, z_before_dropout, 1e-6f, "z should not spike on resume -- a FAULTY VN300 must not integrate the gap");
+    zassert_within(result->velocity.z, vz_before_dropout, 1e-6f, "vz should not spike on resume -- a FAULTY VN300 must not integrate the gap");
 
-    // Recovery isn't permanently broken: a normal-dt predict step afterward should resume
-    // updating the state as usual (proving the rejection was a one-time skip, not a stuck filter).
+    // A gap this long escalated VN300 to staleness-induced FAULTY, so recovery is deliberately
+    // not immediate: a FAULTY VN300 coasts on covariance rather than integrating an accelerometer
+    // it does not trust yet.
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "a 500ms dropout should escalate VN300 to FAULTY, not leave it merely STALE");
+
+    // Part-way through the re-convergence window: data is flowing again, but VN300 is not trusted
+    // yet, so the state must stay held.
+    for (int i = 0; i < 10; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_true(result.has_value());
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should still be FAULTY part-way through the re-trust window");
+    zassert_within(result->velocity.z, vz_before_dropout, 1e-6f, "vz must stay held while VN300 is still FAULTY -- predict must not resume early");
+
+    // Finish the 100ms re-trust window: the resume reading above started it, 40 more complete it.
+    for (int i = 0; i < 30; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be HEALTHY again after a full 100ms of continuous good data");
+
+    // Only now should predict resume -- proving the dropout caused a bounded hold, not a
+    // permanently stuck filter.
     t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
     imu.arrival_time_ns = t_ns;
     imu.sense_time_ns += 1.0f;
-    StateEstimator::set_now_ns_for_testing(t_ns);
     result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
 
     zassert_true(result.has_value());
-    zassert_true(result->velocity.z > vz_before_dropout, "a normal-dt predict step after the dropout should resume updating vz as usual");
+    zassert_true(result->velocity.z > vz_before_dropout, "predict should resume updating vz once VN300 is trusted again");
+}
+
+// (5b) The other dropout regime: long enough that the dt clamp must reject the resume step, short
+// enough that VN300 stays STALE rather than escalating to FAULTY. This is where predict()'s clamp
+// is actually load-bearing -- in test (5) above the FAULTY gate holds the state regardless of dt,
+// so the clamp could be removed there without the assertions noticing.
+
+ZTEST(StateEstimator_tests, test_moderate_dropout_rejects_oversized_dt_without_escalating_to_faulty)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 1.0f;
+    // Same reasoning as test (5): a nonzero net acceleration is what makes a broken clamp visible.
+    imu.accel_z = GRAVITY_M_S2 + 1.0f;
+
+    GnssReadings gnss = GnssReadings_init_default;
+    gnss.up_m = 10.0f;
+    gnss.vz_ms = 0.0f;
+
+    uint64_t t_ns = 0;
+    std::optional<EstimatedState> result;
+
+    for (int i = 0; i < 20; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.has_arrival_time_ns = true;
+        imu.sense_time_ns = static_cast<float>(i + 1);
+        gnss.has_arrival_time_ns = true;
+        gnss.arrival_time_ns = t_ns;
+        gnss.sense_time_ns = static_cast<float>(i + 1);
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_true(result.has_value());
+    float z_before_dropout = result->position.z;
+    float vz_before_dropout = result->velocity.z;
+
+    // 100ms without a reading: past the 50ms stale threshold and past MAX_PREDICT_DT_S, but short
+    // of the 150ms fault threshold.
+    imu.has_arrival_time_ns = false;
+    t_ns += 100'000'000;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(result.has_value());
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "a 100ms dropout should leave VN300 STALE");
+    zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "100ms is short of the fault threshold -- this must not escalate");
+
+    // Resume. VN300 is STALE, not FAULTY, so predict() genuinely runs -- and the only thing
+    // standing between a 100ms dt and a garbage spike is the clamp rejecting it.
+    imu.arrival_time_ns = t_ns;
+    imu.has_arrival_time_ns = true;
+    imu.sense_time_ns += 1.0f;
+    result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    zassert_true(result.has_value());
+    zassert_within(result->position.z, z_before_dropout, 1e-6f, "z should not spike on resume -- the dt clamp should reject the oversized predict step");
+    zassert_within(result->velocity.z, vz_before_dropout, 1e-6f, "vz should not spike on resume -- the dt clamp should reject the oversized predict step");
+
+    // A normal-dt step right after resumes updating immediately: a STALE VN300 still predicts by
+    // design, so unlike the long-dropout case there is no re-trust window to wait out here.
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    zassert_true(result.has_value());
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "VN300 should still be STALE -- the re-trust window has not elapsed");
+    zassert_true(result->velocity.z > vz_before_dropout, "a normal-dt step should resume updating vz -- the rejection was a one-time skip, not a stuck filter");
 }
 
 // (6) predict()'s body->world accel rotation, exercised through the REAL StateEstimator path
