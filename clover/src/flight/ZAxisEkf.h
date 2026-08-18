@@ -35,6 +35,12 @@ public:
     // falls outside (0, MAX_PREDICT_DT_S].
     void predict(float accel_world_z, float dt_s);
 
+    // Propagates covariance only: P = F*P*F^T + Q, leaving x_ untouched. For steps where the
+    // acceleration input can't be trusted (a faulted IMU): the estimate coasts on its last value
+    // while its reported uncertainty grows, rather than freezing P and claiming a confidence the
+    // stale state no longer has. Same validity and dt gating as predict().
+    void predict_covariance_only(float dt_s);
+
     // Absolute altitude measurement (GNSS/LiDAR), H = [1,0,0]. r_variance is this reading's own
     // variance, so noisier readings are weighted less.
     void update_altitude(float z_meas, float r_variance);

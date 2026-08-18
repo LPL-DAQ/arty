@@ -289,21 +289,33 @@ static void predictVerticalState(const ImuReading& imu, bool vn300_fresh)
         return;
     }
 
-    // Rotates body-frame acceleration into world frame using current_estimate.R_WB, which is
-    // already health-gated, so this inherits the VN300/backup-IMU fallback rather than trusting a
-    // possibly-faulty VN300 quaternion. Gravity and bias subtraction happen inside predict().
-    //
     // dt comes from consecutive arrival_time_ns deltas, so it stays correct if VN300's rate drifts
     // from ~400Hz. Skipped on the very first reading, where there's no prior timestamp to form one.
     if (z_axis_ekf_last_predict_time_ns != 0) {
         float dt_s = static_cast<float>(imu.arrival_time_ns - z_axis_ekf_last_predict_time_ns) / 1e9f;
 
-        Quaternion attitude_bw = math_util::conjugateQuaternion(current_estimate.R_WB);
-        Vector3D accel_body = math_util::createVector3D(imu.accel_x, imu.accel_y, imu.accel_z);
-        Vector3D accel_world = math_util::multiplyQuaternionVector(attitude_bw, accel_body);
+        if (vn300_health == SensorHealth::FAULTY) {
+            // Never integrate off an accelerometer already declared untrustworthy -- a confidently
+            // wrong altitude is worse than a stale one. Covariance still propagates, so the held
+            // estimate reports uncertainty rising instead of a confidence it no longer has.
+            z_axis_ekf.predict_covariance_only(dt_s);
+        }
+        else {
+            // Rotates body-frame acceleration into world frame using current_estimate.R_WB, which
+            // is already health-gated, so this inherits the VN300/backup-IMU fallback rather than
+            // trusting a possibly-faulty VN300 quaternion. Gravity and bias subtraction happen
+            // inside predict().
+            Quaternion attitude_bw = math_util::conjugateQuaternion(current_estimate.R_WB);
+            Vector3D accel_body = math_util::createVector3D(imu.accel_x, imu.accel_y, imu.accel_z);
+            Vector3D accel_world = math_util::multiplyQuaternionVector(attitude_bw, accel_body);
 
-        z_axis_ekf.predict(accel_world.z, dt_s);
+            z_axis_ekf.predict(accel_world.z, dt_s);
+        }
     }
+
+    // Stamped on every fresh reading, faulty or not. Letting it go stale across a fault would make
+    // the first step after recovery integrate the whole fault window at once whenever that window
+    // is shorter than MAX_PREDICT_DT_S.
     z_axis_ekf_last_predict_time_ns = imu.arrival_time_ns;
 }
 
@@ -451,16 +463,16 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
     }
 }
 
-// Returns whether both primary sensors are simultaneously FAULTY (a critical fault).
-static bool updateFaultStatus()
+// Publishes NOMINAL / DEGRADED / CRITICAL on the estimate from the primary sensors' health.
+static void updateFaultStatus()
 {
     // Carried on EstimatedState so consumers can tell "one primary sensor down" from "both" by
     // reading one field, rather than re-deriving it from the health states, which are file-local.
     //
     // CRITICAL needs both VN300 and Javad specifically FAULTY, not merely STALE -- no trustworthy
-    // attitude or velocity source is left. Holding the last known-good estimate is a documented
-    // default, not a confirmed requirement.
-    // TODO: decide whether CRITICAL should fall back to the less-wrong sensor instead of freezing.
+    // attitude or velocity source is left. It is a severity signal for consumers, not a mode: the
+    // channels each fall back on their own (attitude to backup IMU 1, lateral held, vertical
+    // coasting on covariance alone), so nothing keys off this flag to decide behavior.
     bool vn300_ok = vn300_health == SensorHealth::HEALTHY;
     bool javad_ok = javad_health == SensorHealth::HEALTHY;
     bool critical_fault = vn300_health == SensorHealth::FAULTY && javad_health == SensorHealth::FAULTY;
@@ -475,14 +487,12 @@ static bool updateFaultStatus()
     else {
         current_estimate.fault_status = EstimatorFaultStatus_NOMINAL;
     }
-
-    return critical_fault;
 }
 
 // Single entry point for the primary-sensor (VN300 + Javad) health checks. The LiDAR cross-check
 // is deliberately NOT here -- it depends on this tick's projected LiDAR altitudes, which in turn
 // depend on the attitude chosen after this runs. See checkLidarDivergence().
-static bool checkPrimarySensorFaults(
+static void checkPrimarySensorFaults(
     const ImuReading& imu,
     const ImuReading& backup_imu_1,
     const ImuReading& backup_imu_2,
@@ -493,32 +503,31 @@ static bool checkPrimarySensorFaults(
     updateVn300Staleness();
     checkVn300Divergence(imu, backup_imu_1, backup_imu_2, vn300_fresh);
     checkJavadDivergence(imu, gnss, vn300_fresh);
-    return updateFaultStatus();
+    updateFaultStatus();
 }
 
-static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1, bool critical_fault)
+static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1)
 {
     // VN300 while healthy; backup IMU 1 once flagged faulty (backup_imu_2 is redundant with it
-    // once corroborated). A merely STALE VN300 freezes the last estimate. Under a critical fault,
-    // freeze entirely -- don't even fall back to backup_imu_1.
-    if (!critical_fault) {
-        if (vn300_health == SensorHealth::HEALTHY) {
-            if (imu.sense_time_ns > imu_update_timestamp_ns) {
-                imu_update_timestamp_ns = imu.sense_time_ns;
-                current_estimate.R_WB.qw = imu.quat_w;
-                current_estimate.R_WB.qx = imu.quat_x;
-                current_estimate.R_WB.qy = imu.quat_y;
-                current_estimate.R_WB.qz = imu.quat_z;
-            }
+    // once corroborated). A merely STALE VN300 freezes the last estimate. A critical fault takes
+    // this same backup path rather than a special freeze: holding last-good attitude with a usable
+    // backup available is the more dangerous of the two options.
+    if (vn300_health == SensorHealth::HEALTHY) {
+        if (imu.sense_time_ns > imu_update_timestamp_ns) {
+            imu_update_timestamp_ns = imu.sense_time_ns;
+            current_estimate.R_WB.qw = imu.quat_w;
+            current_estimate.R_WB.qx = imu.quat_x;
+            current_estimate.R_WB.qy = imu.quat_y;
+            current_estimate.R_WB.qz = imu.quat_z;
         }
-        else if (vn300_health == SensorHealth::FAULTY) {
-            if (backup_imu_1.sense_time_ns > backup_imu_1_update_timestamp_ns) {
-                backup_imu_1_update_timestamp_ns = backup_imu_1.sense_time_ns;
-                current_estimate.R_WB.qw = backup_imu_1.quat_w;
-                current_estimate.R_WB.qx = backup_imu_1.quat_x;
-                current_estimate.R_WB.qy = backup_imu_1.quat_y;
-                current_estimate.R_WB.qz = backup_imu_1.quat_z;
-            }
+    }
+    else if (vn300_health == SensorHealth::FAULTY) {
+        if (backup_imu_1.sense_time_ns > backup_imu_1_update_timestamp_ns) {
+            backup_imu_1_update_timestamp_ns = backup_imu_1.sense_time_ns;
+            current_estimate.R_WB.qw = backup_imu_1.quat_w;
+            current_estimate.R_WB.qx = backup_imu_1.quat_x;
+            current_estimate.R_WB.qy = backup_imu_1.quat_y;
+            current_estimate.R_WB.qz = backup_imu_1.quat_z;
         }
     }
 }
@@ -555,10 +564,15 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
             z_axis_ekf.update_velocity(gnss.vz_ms, javad_vz_r_variance);
         }
     }
-    else if (javad_health == SensorHealth::FAULTY && imu.has_arrival_time_ns && imu.has_vel_d) {
+    else if (javad_health == SensorHealth::FAULTY && vn300_health != SensorHealth::FAULTY &&
+             imu.has_arrival_time_ns && imu.has_vel_d) {
         // Javad is faulty -- use VN300's INS vertical velocity so the EKF still gets a velocity
         // correction. No altitude fallback: VN300's ins_alt is itself already fused, so feeding it
         // back in would be circular.
+        //
+        // Requires a non-faulty VN300: under a critical fault both are down, and taking this
+        // sensor's velocity while predictVerticalState() refuses its acceleration would be
+        // incoherent -- the vertical channel would still be riding a sensor we don't trust.
         //
         // vel_d follows the NED convention and is positive DOWN, opposite this codebase's Z-up,
         // hence the negation.
@@ -705,11 +719,14 @@ std::optional<EstimatedState> StateEstimator::estimate(
     has_update_timestamp_ns = true;
 
     bool vn300_fresh = trackVn300Freshness(imu);
+
+    checkPrimarySensorFaults(imu, backup_imu_1, backup_imu_2, gnss, vn300_fresh);
+
+    // After the health checks so the faulted-VN300 gate inside sees this tick's health, and still
+    // before updateAttitude() so it keeps rotating by the previous tick's R_WB, as it always has.
     predictVerticalState(imu, vn300_fresh);
 
-    bool critical_fault = checkPrimarySensorFaults(imu, backup_imu_1, backup_imu_2, gnss, vn300_fresh);
-
-    updateAttitude(imu, backup_imu_1, critical_fault);
+    updateAttitude(imu, backup_imu_1);
     bool gnss_updated = updateFromGnss(imu, gnss);
 
     bool lidar_1_updated = trackLidarFreshness(lidar_1, lidar_1_update_timestamp_ns);
@@ -776,6 +793,11 @@ int StateEstimator::javad_divergence_streak_threshold_for_testing()
 int StateEstimator::lidar_divergence_streak_threshold_for_testing()
 {
     return LIDAR_DIVERGENCE_STREAK_THRESHOLD;
+}
+
+float StateEstimator::ekf_z_variance_for_testing()
+{
+    return z_axis_ekf.z_variance();
 }
 
 float StateEstimator::calculate_vertical_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad)

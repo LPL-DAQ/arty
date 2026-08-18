@@ -281,9 +281,9 @@ ZTEST(StateEstimator_tests, test_javad_check_does_not_fire_when_vn300_already_fl
     zassert_false(StateEstimator::javad_is_faulty_for_testing(), "Javad should never be flagged while VN300 is already flagged faulty");
 }
 
-// ── (5) Simultaneous VN300+Javad fault: CRITICAL and holds last known-good ──────────────────────
+// ── (5) Simultaneous VN300+Javad fault: CRITICAL, attitude falls back to the backup IMU ────────
 
-ZTEST(StateEstimator_tests, test_simultaneous_vn300_and_javad_fault_triggers_critical_and_holds_last_known_good)
+ZTEST(StateEstimator_tests, test_simultaneous_vn300_and_javad_fault_triggers_critical_and_falls_back_to_backup_imu)
 {
     StateEstimator::reset();
     StateEstimator::set_now_ns_for_testing(0);
@@ -352,7 +352,15 @@ ZTEST(StateEstimator_tests, test_simultaneous_vn300_and_javad_fault_triggers_cri
 
     EstimatedState frozen_snapshot = *last_result;
 
-    // Feed yet more, clearly different data -- the estimate must not move.
+    // Attitude must now come from backup IMU 1 rather than freeze. A distinguishable quaternion,
+    // applied only from here, makes "fell back to the backup" and "held its last VN300 value"
+    // impossible to confuse. Only backup_1 feeds attitude; backup_2 is left as it was.
+    backup_1.quat_w = 0.7071f;
+    backup_1.quat_x = 0.0f;
+    backup_1.quat_z = 0.7071f;
+
+    // Feed yet more, clearly different data. Lateral must still hold -- Javad is the only lateral
+    // source and it is faulty -- while attitude tracks the backup.
     for (int i = 0; i < 5; i++) {
         t_ns += PERIOD_NS;
         StateEstimator::set_now_ns_for_testing(t_ns);
@@ -360,6 +368,7 @@ ZTEST(StateEstimator_tests, test_simultaneous_vn300_and_javad_fault_triggers_cri
         imu.sense_time_ns += 1.0f;
         imu.quat_x = 0.0f;
         imu.quat_y = 1.0f;  // yet another different orientation
+        backup_1.sense_time_ns += 1.0f;
         gnss.vx_ms = -55.0f;
         gnss.arrival_time_ns = t_ns;
         gnss.sense_time_ns += 1.0f;
@@ -367,9 +376,10 @@ ZTEST(StateEstimator_tests, test_simultaneous_vn300_and_javad_fault_triggers_cri
         auto result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
         zassert_true(result.has_value(), "estimate() should keep returning a value under critical fault");
         zassert_equal(result->fault_status, EstimatorFaultStatus_CRITICAL, "Should remain CRITICAL");
-        zassert_within(result->R_WB.qw, frozen_snapshot.R_WB.qw, 0.0001f, "R_WB.qw should be frozen under critical fault");
-        zassert_within(result->R_WB.qx, frozen_snapshot.R_WB.qx, 0.0001f, "R_WB.qx should be frozen under critical fault");
-        zassert_within(result->R_WB.qy, frozen_snapshot.R_WB.qy, 0.0001f, "R_WB.qy should be frozen under critical fault");
+        assert_attitude_is(
+            *result, 0.7071f, 0.0f, 0.0f, 0.7071f,
+            "attitude should fall back to backup IMU 1 under a critical fault rather than freeze"
+        );
         zassert_within(result->position.x, frozen_snapshot.position.x, 0.0001f, "position.x should be frozen under critical fault");
         zassert_within(result->velocity.x, frozen_snapshot.velocity.x, 0.0001f, "velocity.x should be frozen under critical fault");
     }
@@ -846,6 +856,107 @@ ZTEST(StateEstimator_tests, test_lidar_divergence_streak_ignores_held_javad_read
     StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_true(StateEstimator::lidar_2_is_faulty_for_testing(), "Lidar 2 should be flagged on exactly the Nth distinct Javad epoch");
     zassert_false(StateEstimator::lidar_1_is_faulty_for_testing(), "Lidar 1 should remain healthy -- it agrees with Javad throughout");
+}
+
+// ── (14) Vertical predict stops on a faulted VN300, but uncertainty keeps growing ───────────────
+
+ZTEST(StateEstimator_tests, test_vertical_predict_stops_while_vn300_faulty)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 1.0f;                     // identity, so the body->world rotation is a no-op
+    imu.accel_z = GRAVITY_M_S2 + 4.0f;     // net +4 m/s^2 up, so z climbs visibly while healthy
+
+    // The backups agree with each other and not with VN300, which is what flags VN300 by
+    // divergence -- readings keep arriving, so the accelerometer stays live-but-untrusted, the
+    // case this gate exists for. Their sense_time_ns is deliberately never advanced, so
+    // updateAttitude() never switches R_WB to them and the accel rotation stays identity.
+    ImuReading backup_1 = ImuReading_init_default;
+    backup_1.quat_w = 0.0f;
+    backup_1.quat_x = 1.0f;
+    ImuReading backup_2 = ImuReading_init_default;
+    backup_2.quat_w = 0.0f;
+    backup_2.quat_x = 1.0f;
+
+    GnssReadings gnss = GnssReadings_init_default;
+    gnss.up_m = 0.0f;
+    gnss.vz_ms = 0.0f;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be HEALTHY after warmup");
+
+    // Bootstrap the EKF from a single GNSS reading. GNSS is never refreshed again below, so its
+    // dedup keeps it out and predict() is the only thing that can move z.
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    gnss.has_arrival_time_ns = true;
+    gnss.arrival_time_ns = t_ns;
+    gnss.sense_time_ns += 1.0f;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    // Phase A: healthy VN300 -- predict() runs and z climbs off the accelerometer.
+    std::optional<EstimatedState> result;
+    for (int i = 0; i < 40; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_true(result.has_value());
+    zassert_true(
+        result->position.z > 0.005f,
+        "z should be climbing off the accelerometer while VN300 is HEALTHY -- otherwise the phase below proves nothing"
+    );
+
+    // Phase B: flag VN300 FAULTY by divergence, with its readings still arriving every tick.
+    backup_1.has_arrival_time_ns = true;
+    backup_2.has_arrival_time_ns = true;
+    int n = StateEstimator::vn300_divergence_streak_threshold_for_testing();
+    for (int i = 0; i < n; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        backup_1.arrival_time_ns = t_ns;
+        backup_2.arrival_time_ns = t_ns;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should be FAULTY by divergence, with readings still arriving");
+    zassert_true(result.has_value());
+
+    const float z_at_fault = result->position.z;
+    const float vz_at_fault = result->velocity.z;
+    const float variance_at_fault = StateEstimator::ekf_z_variance_for_testing();
+
+    // Phase C: same fresh accelerometer, now from a sensor we have declared faulty. The state must
+    // stop moving, and the reported uncertainty must not stop growing.
+    for (int i = 0; i < 40; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+
+    zassert_true(result.has_value());
+    zassert_within(
+        result->position.z, z_at_fault, 1e-6f,
+        "z must stop advancing once VN300 is FAULTY -- predict() must not integrate a faulted accelerometer"
+    );
+    zassert_within(result->velocity.z, vz_at_fault, 1e-6f, "vz must stop advancing once VN300 is FAULTY");
+    zassert_true(
+        StateEstimator::ekf_z_variance_for_testing() > variance_at_fault,
+        "altitude variance must keep growing while the estimate is held, so consumers see uncertainty rising rather than false confidence"
+    );
 }
 
 // ══ Z-axis EKF integration tests (wiring into estimate()) ═══════════════════════════════════════

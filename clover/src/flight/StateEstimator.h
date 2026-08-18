@@ -37,6 +37,10 @@ namespace StateEstimator {
     int javad_divergence_streak_threshold_for_testing();
     int lidar_divergence_streak_threshold_for_testing();
 
+    // z_axis_ekf is file-static to StateEstimator.cpp; exposes its altitude variance so a test can
+    // assert uncertainty rises while the state itself is held.
+    float ekf_z_variance_for_testing();
+
     // calculateVerticalAltitude() is otherwise static to StateEstimator.cpp.
     float calculate_vertical_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad);
 #endif

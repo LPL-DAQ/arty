@@ -391,4 +391,62 @@ ZTEST(ZAxisEkf_tests, test_covariance_stays_symmetric_and_positive_diagonal_thro
     }
 }
 
+// ══ predict_covariance_only(): coasting when the acceleration input can't be trusted ═══════════
+
+ZTEST(ZAxisEkf_tests, test_predict_covariance_only_grows_covariance_and_leaves_state_untouched)
+{
+    ZAxisEkf ekf;
+    ekf.init(5.0f, 2.0f, 1.0f, 1.0f, 1.0f);
+
+    // A nonzero bias and velocity would both move the state if predict() were called by mistake,
+    // so "state untouched" here is a real assertion rather than one that holds trivially.
+    ekf.set_state_for_testing(5.0f, 2.0f, 0.3f);
+
+    float before[3][3];
+    ekf.get_covariance_for_testing(before);
+
+    const float dt = 0.01f;
+    for (int i = 0; i < 20; i++) {
+        ekf.predict_covariance_only(dt);
+    }
+
+    zassert_within(ekf.z_m(), 5.0f, 1e-6f, "z must not move -- covariance-only propagation leaves the state alone");
+    zassert_within(ekf.vz_ms(), 2.0f, 1e-6f, "vz must not move under covariance-only propagation");
+    zassert_within(ekf.accel_bias_mss(), 0.3f, 1e-6f, "bias must not move under covariance-only propagation");
+
+    float after[3][3];
+    ekf.get_covariance_for_testing(after);
+
+    zassert_true(after[0][0] > before[0][0], "z variance should grow while coasting -- that is the whole point");
+    zassert_true(after[1][1] > before[1][1], "vz variance should grow while coasting");
+    zassert_true(after[2][2] > before[2][2], "bias variance should grow while coasting");
+
+    zassert_within(after[0][1], after[1][0], 1e-6f, "P should stay symmetric under covariance-only propagation");
+    zassert_within(after[0][2], after[2][0], 1e-6f, "P should stay symmetric under covariance-only propagation");
+    zassert_within(after[1][2], after[2][1], 1e-6f, "P should stay symmetric under covariance-only propagation");
+}
+
+ZTEST(ZAxisEkf_tests, test_predict_covariance_only_rejects_invalid_filter_and_out_of_range_dt)
+{
+    // An uninitialized filter has no covariance worth propagating.
+    ZAxisEkf fresh;
+    float p_before[3][3];
+    float p_after[3][3];
+    fresh.get_covariance_for_testing(p_before);
+    fresh.predict_covariance_only(0.01f);
+    fresh.get_covariance_for_testing(p_after);
+    zassert_within(p_after[0][0], p_before[0][0], 1e-9f, "an invalid filter should not propagate covariance");
+
+    // Valid filter, dt outside (0, MAX_PREDICT_DT_S] -- rejected outright, exactly as predict()
+    // rejects it, rather than inflating P by one oversized step.
+    ZAxisEkf ekf;
+    ekf.init(0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    ekf.get_covariance_for_testing(p_before);
+    ekf.predict_covariance_only(0.0f);
+    ekf.predict_covariance_only(-0.01f);
+    ekf.predict_covariance_only(10.0f);
+    ekf.get_covariance_for_testing(p_after);
+    zassert_within(p_after[0][0], p_before[0][0], 1e-9f, "non-positive or oversized dt should be rejected, not clamped");
+}
+
 ZTEST_SUITE(ZAxisEkf_tests, NULL, NULL, NULL, NULL, NULL);

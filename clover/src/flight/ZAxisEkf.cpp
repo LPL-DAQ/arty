@@ -19,6 +19,42 @@ static constexpr float PROCESS_NOISE_BIAS_M2_S4 = 1e-6f;  // small: bias should 
 // sqrt(S). Rejects single wild measurements (LiDAR/GNSS multipath, corrupted packets).
 static constexpr float INNOVATION_GATE_SIGMA = 5.0f;
 
+// Covariance half of a propagation step: P = F*P*F^T + Q. Shared by predict() and
+// predict_covariance_only() so the two can't drift apart. F depends only on dt_s, never on x_,
+// which is what makes propagating covariance without touching the state well-defined.
+static void propagateCovariance(float P[3][3], float dt_s)
+{
+    // State transition Jacobian F = df/dx over x = [z, vz, bias]. The bias column is negative
+    // because da/dbias = -1: raising the bias estimate lowers the inferred true acceleration.
+    float dt2 = dt_s * dt_s;
+    const float F[3][3] = {
+        {1.0f, dt_s, -0.5f * dt2},
+        {0.0f, 1.0f, -dt_s},
+        {0.0f, 0.0f, 1.0f},
+    };
+
+    float Ft[3][3];
+    math_util::transposeMatrix3(F, Ft);
+
+    float FP[3][3];
+    math_util::multiplyMatrix3(F, P, FP);
+
+    float FPFt[3][3];
+    math_util::multiplyMatrix3(FP, Ft, FPFt);
+
+    const float Q[3][3] = {
+        {PROCESS_NOISE_Z_M2, 0.0f, 0.0f},
+        {0.0f, PROCESS_NOISE_VZ_M2_S2, 0.0f},
+        {0.0f, 0.0f, PROCESS_NOISE_BIAS_M2_S4},
+    };
+
+    // P = F*P*F^T + Q
+    math_util::addMatrix3(FPFt, Q, P);
+
+    // Re-symmetrize every step rather than letting float rounding accumulate.
+    math_util::symmetrizeMatrix3(P);
+}
+
 void ZAxisEkf::init(float z0, float vz0)
 {
     init(z0, vz0, 0.0f, 0.0f, 0.0f);
@@ -71,35 +107,24 @@ void ZAxisEkf::predict(float accel_world_z, float dt_s)
     x_[0] += x_[1] * dt_s + 0.5f * a * dt_s * dt_s;
     x_[1] += a * dt_s;
 
-    // State transition Jacobian F = df/dx over x = [z, vz, bias]. The bias column is negative
-    // because da/dbias = -1: raising the bias estimate lowers the inferred true acceleration.
-    float dt2 = dt_s * dt_s;
-    const float F[3][3] = {
-        {1.0f, dt_s, -0.5f * dt2},
-        {0.0f, 1.0f, -dt_s},
-        {0.0f, 0.0f, 1.0f},
-    };
+    propagateCovariance(P_, dt_s);
+}
 
-    float Ft[3][3];
-    math_util::transposeMatrix3(F, Ft);
+void ZAxisEkf::predict_covariance_only(float dt_s)
+{
+    if (!valid_) {
+        return;
+    }
+    if (!std::isfinite(dt_s)) {
+        return;
+    }
+    if (dt_s <= 0.0f || dt_s > MAX_PREDICT_DT_S) {
+        // Same rejection as predict(): a gap this long says the feed stalled, and inflating P by
+        // one huge step would understate how little is actually known.
+        return;
+    }
 
-    float FP[3][3];
-    math_util::multiplyMatrix3(F, P_, FP);
-
-    float FPFt[3][3];
-    math_util::multiplyMatrix3(FP, Ft, FPFt);
-
-    const float Q[3][3] = {
-        {PROCESS_NOISE_Z_M2, 0.0f, 0.0f},
-        {0.0f, PROCESS_NOISE_VZ_M2_S2, 0.0f},
-        {0.0f, 0.0f, PROCESS_NOISE_BIAS_M2_S4},
-    };
-
-    // P = F*P*F^T + Q
-    math_util::addMatrix3(FPFt, Q, P_);
-
-    // Re-symmetrize every step rather than letting float rounding accumulate.
-    math_util::symmetrizeMatrix3(P_);
+    propagateCovariance(P_, dt_s);
 }
 
 void ZAxisEkf::update_altitude(float z_meas, float r_variance)
