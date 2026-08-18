@@ -137,6 +137,13 @@ static bool vn300_recovering = false;
 static int vn300_disagree_streak = 0;
 static int vn300_agree_streak = 0;
 
+// Divergence streaks must count independent disagreements, not control-loop iterations. The loop
+// runs ~1000Hz while the slowest participant in each comparison updates far slower, so without
+// these the same held reading is re-counted on every iteration and N stops meaning "N readings".
+// Each check advances its streak only on a tick where every sensor it compares is genuinely fresh.
+static uint64_t vn300_divergence_last_backup_1_time_ns = 0;
+static uint64_t vn300_divergence_last_backup_2_time_ns = 0;
+
 // Why vn300_health is FAULTY, so recovery routes to the right mechanism: a fault raised by
 // staleness clears on the VN300_RETRUST_THRESHOLD_NS timer once data returns, while one raised by
 // checkVn300Divergence() still clears only via its agree-streak, which needs live readings to
@@ -149,6 +156,7 @@ static bool vn300_fault_from_staleness = false;
 static SensorHealth javad_health = SensorHealth::HEALTHY;
 static int javad_disagree_streak = 0;
 static int javad_agree_streak = 0;
+static uint64_t javad_divergence_last_gnss_time_ns = 0;
 
 // Same for the LiDARs: no staleness tracking, HEALTHY default, toggled by the altitude divergence
 // check.
@@ -158,6 +166,10 @@ static int lidar_1_agree_streak = 0;
 static SensorHealth lidar_2_health = SensorHealth::HEALTHY;
 static int lidar_2_disagree_streak = 0;
 static int lidar_2_agree_streak = 0;
+
+// The LiDAR pair's own freshness is already established by trackLidarFreshness(); this covers the
+// Javad side of the same comparison.
+static uint64_t lidar_divergence_last_gnss_time_ns = 0;
 
 // Converts a LiDAR slant range into vertical altitude (height above whatever the beam hit), using
 // the vehicle's current attitude and the LiDAR's fixed body-frame mount angle.
@@ -209,15 +221,19 @@ void StateEstimator::reset()
     vn300_fault_from_staleness = false;
     vn300_disagree_streak = 0;
     vn300_agree_streak = 0;
+    vn300_divergence_last_backup_1_time_ns = 0;
+    vn300_divergence_last_backup_2_time_ns = 0;
     javad_health = SensorHealth::HEALTHY;
     javad_disagree_streak = 0;
     javad_agree_streak = 0;
+    javad_divergence_last_gnss_time_ns = 0;
     lidar_1_health = SensorHealth::HEALTHY;
     lidar_1_disagree_streak = 0;
     lidar_1_agree_streak = 0;
     lidar_2_health = SensorHealth::HEALTHY;
     lidar_2_disagree_streak = 0;
     lidar_2_agree_streak = 0;
+    lidar_divergence_last_gnss_time_ns = 0;
 #if CONFIG_TEST
     now_ns_override_set = false;
 #endif
@@ -327,12 +343,25 @@ static void updateVn300Staleness()
     }
 }
 
-static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2)
+static void checkVn300Divergence(
+    const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2, bool vn300_fresh
+)
 {
     // The backups must corroborate each other before VN300 is compared against them: if they
     // disagreed, a VN300-vs-backup mismatch wouldn't say which sensor is at fault. Never fires
     // today -- no backup hardware exists, so has_arrival_time_ns is never set on them.
     if (imu.has_arrival_time_ns && backup_imu_1.has_arrival_time_ns && backup_imu_2.has_arrival_time_ns) {
+        // One independent sample of this comparison needs new data on every side of it. The
+        // backups are the slow participants (~50-100Hz against a ~1000Hz loop), so without this
+        // the same held pair is re-counted on every iteration between their readings and N
+        // measures loop ticks rather than disagreements.
+        if (!vn300_fresh || backup_imu_1.arrival_time_ns <= vn300_divergence_last_backup_1_time_ns ||
+            backup_imu_2.arrival_time_ns <= vn300_divergence_last_backup_2_time_ns) {
+            return;
+        }
+        vn300_divergence_last_backup_1_time_ns = backup_imu_1.arrival_time_ns;
+        vn300_divergence_last_backup_2_time_ns = backup_imu_2.arrival_time_ns;
+
         bool backups_agree = math_util::quaternionsAgree(
             backup_imu_1.quat_w,
             backup_imu_1.quat_x,
@@ -381,12 +410,20 @@ static void checkVn300Divergence(const ImuReading& imu, const ImuReading& backup
     }
 }
 
-static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss)
+static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss, bool vn300_fresh)
 {
     // Only runs while VN300 is healthy: if VN300 itself is untrustworthy, a mismatch says nothing
     // about Javad. See the frame-alignment caveat on JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD.
     if (vn300_health == SensorHealth::HEALTHY && gnss.has_arrival_time_ns && imu.has_arrival_time_ns &&
         imu.has_vel_n && imu.has_vel_e && imu.has_vel_d) {
+        // Javad is the slow participant (~10-20Hz against a ~1000Hz loop), so an un-gated counter
+        // reaches N within a single Javad epoch -- before a second reading has even arrived to
+        // disagree independently.
+        if (!vn300_fresh || gnss.arrival_time_ns <= javad_divergence_last_gnss_time_ns) {
+            return;
+        }
+        javad_divergence_last_gnss_time_ns = gnss.arrival_time_ns;
+
         bool velocities_agree = math_util::vectorsClose(
             gnss.vx_ms, gnss.vy_ms, gnss.vz_ms,
             imu.vel_n, imu.vel_e, imu.vel_d,
@@ -446,12 +483,16 @@ static bool updateFaultStatus()
 // is deliberately NOT here -- it depends on this tick's projected LiDAR altitudes, which in turn
 // depend on the attitude chosen after this runs. See checkLidarDivergence().
 static bool checkPrimarySensorFaults(
-    const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2, const GnssReadings& gnss
+    const ImuReading& imu,
+    const ImuReading& backup_imu_1,
+    const ImuReading& backup_imu_2,
+    const GnssReadings& gnss,
+    bool vn300_fresh
 )
 {
     updateVn300Staleness();
-    checkVn300Divergence(imu, backup_imu_1, backup_imu_2);
-    checkJavadDivergence(imu, gnss);
+    checkVn300Divergence(imu, backup_imu_1, backup_imu_2, vn300_fresh);
+    checkJavadDivergence(imu, gnss, vn300_fresh);
     return updateFaultStatus();
 }
 
@@ -561,6 +602,15 @@ static void checkLidarDivergence(const GnssReadings& gnss, bool lidar_1_updated,
     // honest outcome when nothing can be corroborated.
     // TODO: unlike checkJavadDivergence(), this doesn't require Javad to be healthy first.
     if (lidar_1_updated && lidar_2_updated && gnss.has_arrival_time_ns) {
+        // lidar_*_updated already establishes the LiDAR pair's freshness; Javad is the slow
+        // participant here, so without this one Javad epoch supplies the Javad half of all N
+        // counts. This costs LiDAR-fault detection latency (now bounded by Javad's rate) rather
+        // than leaving the counter inflatable -- tune N if that latency matters.
+        if (gnss.arrival_time_ns <= lidar_divergence_last_gnss_time_ns) {
+            return;
+        }
+        lidar_divergence_last_gnss_time_ns = gnss.arrival_time_ns;
+
         bool lidar_1_matches_javad = std::fabs(lidar_1_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
         bool lidar_2_matches_javad = std::fabs(lidar_2_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
         bool lidars_match_each_other = std::fabs(lidar_1_altitude_m - lidar_2_altitude_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
@@ -657,7 +707,7 @@ std::optional<EstimatedState> StateEstimator::estimate(
     bool vn300_fresh = trackVn300Freshness(imu);
     predictVerticalState(imu, vn300_fresh);
 
-    bool critical_fault = checkPrimarySensorFaults(imu, backup_imu_1, backup_imu_2, gnss);
+    bool critical_fault = checkPrimarySensorFaults(imu, backup_imu_1, backup_imu_2, gnss, vn300_fresh);
 
     updateAttitude(imu, backup_imu_1, critical_fault);
     bool gnss_updated = updateFromGnss(imu, gnss);

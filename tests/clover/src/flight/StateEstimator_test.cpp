@@ -132,7 +132,9 @@ ZTEST(StateEstimator_tests, test_vn300_divergence_flags_after_n_consecutive_mism
         imu.arrival_time_ns = t_ns;
         imu.sense_time_ns += 1.0f;
         backup_1.has_arrival_time_ns = true;
+        backup_1.arrival_time_ns = t_ns;
         backup_2.has_arrival_time_ns = true;
+        backup_2.arrival_time_ns = t_ns;
         StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
         zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should not be flagged before N consecutive mismatches");
     }
@@ -141,6 +143,8 @@ ZTEST(StateEstimator_tests, test_vn300_divergence_flags_after_n_consecutive_mism
     StateEstimator::set_now_ns_for_testing(t_ns);
     imu.arrival_time_ns = t_ns;
     imu.sense_time_ns += 1.0f;
+    backup_1.arrival_time_ns = t_ns;
+    backup_2.arrival_time_ns = t_ns;
     StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should be flagged faulty at the Nth consecutive mismatch");
 }
@@ -178,7 +182,9 @@ ZTEST(StateEstimator_tests, test_vn300_divergence_unflags_after_n_consecutive_ag
         imu.arrival_time_ns = t_ns;
         imu.sense_time_ns += 1.0f;
         backup_1.has_arrival_time_ns = true;
+        backup_1.arrival_time_ns = t_ns;
         backup_2.has_arrival_time_ns = true;
+        backup_2.arrival_time_ns = t_ns;
         StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     }
     zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should be flagged faulty");
@@ -191,6 +197,8 @@ ZTEST(StateEstimator_tests, test_vn300_divergence_unflags_after_n_consecutive_ag
         StateEstimator::set_now_ns_for_testing(t_ns);
         imu.arrival_time_ns = t_ns;
         imu.sense_time_ns += 1.0f;
+        backup_1.arrival_time_ns = t_ns;
+        backup_2.arrival_time_ns = t_ns;
         StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
         zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should remain flagged before N consecutive agreements");
     }
@@ -199,6 +207,8 @@ ZTEST(StateEstimator_tests, test_vn300_divergence_unflags_after_n_consecutive_ag
     StateEstimator::set_now_ns_for_testing(t_ns);
     imu.arrival_time_ns = t_ns;
     imu.sense_time_ns += 1.0f;
+    backup_1.arrival_time_ns = t_ns;
+    backup_2.arrival_time_ns = t_ns;
     StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should be un-flagged at the Nth consecutive agreement");
 }
@@ -246,7 +256,9 @@ ZTEST(StateEstimator_tests, test_javad_check_does_not_fire_when_vn300_already_fl
         imu.arrival_time_ns = t_ns;
         imu.sense_time_ns += 1.0f;
         backup_1.has_arrival_time_ns = true;
+        backup_1.arrival_time_ns = t_ns;
         backup_2.has_arrival_time_ns = true;
+        backup_2.arrival_time_ns = t_ns;
         StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     }
     zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should now be flagged faulty");
@@ -329,7 +341,9 @@ ZTEST(StateEstimator_tests, test_simultaneous_vn300_and_javad_fault_triggers_cri
         imu.arrival_time_ns = t_ns;
         imu.sense_time_ns += 1.0f;
         backup_1.has_arrival_time_ns = true;
+        backup_1.arrival_time_ns = t_ns;
         backup_2.has_arrival_time_ns = true;
+        backup_2.arrival_time_ns = t_ns;
         last_result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     }
     zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should now be flagged faulty too");
@@ -594,6 +608,244 @@ ZTEST(StateEstimator_tests, test_vn300_brief_stale_does_not_escalate_and_holds_l
     zassert_true(second.has_value());
     zassert_true(StateEstimator::vn300_is_stale_for_testing(), "100ms without a reading should still be STALE -- escalation must wait for the fault threshold");
     assert_attitude_is(*second, 0.7071f, 0.7071f, 0.0f, 0.0f, "attitude should still be frozen, not handed to the backup");
+}
+
+// ── (11) VN300 divergence counts fresh backup readings, not control-loop iterations ─────────────
+
+ZTEST(StateEstimator_tests, test_vn300_divergence_streak_ignores_held_backup_readings)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 1.0f;
+    ImuReading backup_1 = ImuReading_init_default;
+    backup_1.quat_w = 1.0f;
+    ImuReading backup_2 = ImuReading_init_default;
+    backup_2.quat_w = 1.0f;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be HEALTHY after warmup");
+
+    // One tick with the backups present and still agreeing, to establish the last-counted stamp.
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    backup_1.has_arrival_time_ns = true;
+    backup_1.arrival_time_ns = t_ns;
+    backup_2.has_arrival_time_ns = true;
+    backup_2.arrival_time_ns = t_ns;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    const uint64_t held_backup_time_ns = t_ns;
+    int n = StateEstimator::vn300_divergence_streak_threshold_for_testing();
+
+    // Phase 1: VN300 diverges and the control loop keeps running, but the backups are HELD --
+    // their arrival timestamp never moves, exactly as it would not between two 50-100Hz readings.
+    // With the counter advancing per loop iteration these 3N ticks would have tripped N threefold.
+    imu.quat_w = 0.0f;
+    imu.quat_x = 1.0f;
+    for (int i = 0; i < n * 3; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        backup_1.arrival_time_ns = held_backup_time_ns;
+        backup_2.arrival_time_ns = held_backup_time_ns;
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_false(
+        StateEstimator::vn300_is_faulty_for_testing(),
+        "held backup readings must not advance the divergence streak, however many loop iterations run"
+    );
+
+    // Phase 2: the same sustained disagreement, now with a genuinely new backup pair each tick.
+    // It must take exactly N distinct readings.
+    for (int i = 0; i < n - 1; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        backup_1.arrival_time_ns = t_ns;
+        backup_2.arrival_time_ns = t_ns;
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+        zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should not be flagged before N distinct backup readings");
+    }
+
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    backup_1.arrival_time_ns = t_ns;
+    backup_2.arrival_time_ns = t_ns;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 should be flagged on exactly the Nth distinct backup reading");
+}
+
+// ── (12) Javad divergence counts fresh GNSS epochs, not control-loop iterations ──────────────────
+
+ZTEST(StateEstimator_tests, test_javad_divergence_streak_ignores_held_gnss_readings)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+
+    // Backups stay absent (has_arrival_time_ns false), so the VN300 cross-check never runs and
+    // VN300 health is driven purely by freshness here.
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 1.0f;
+    imu.has_vel_n = true;
+    imu.has_vel_e = true;
+    imu.has_vel_d = true;
+    imu.vel_n = 0.0f;
+    imu.vel_e = 0.0f;
+    imu.vel_d = 0.0f;
+
+    GnssReadings gnss = GnssReadings_init_default;
+    gnss.vx_ms = 0.0f;
+    gnss.vy_ms = 0.0f;
+    gnss.vz_ms = 0.0f;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 should be HEALTHY after warmup");
+
+    // Baseline tick: GNSS present and still agreeing, establishing the last-counted stamp.
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    gnss.has_arrival_time_ns = true;
+    gnss.arrival_time_ns = t_ns;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    const uint64_t held_gnss_time_ns = t_ns;
+    int n = StateEstimator::javad_divergence_streak_threshold_for_testing();
+
+    // Phase 1: Javad's velocity disagrees wildly, but its epoch is HELD. At 10-20Hz against a
+    // ~1000Hz loop this is the common case, and the un-gated counter reached N inside a single
+    // epoch -- before Javad had sent a second reading to disagree independently.
+    gnss.vx_ms = 100.0f;
+    for (int i = 0; i < n * 3; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        gnss.arrival_time_ns = held_gnss_time_ns;
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_false(
+        StateEstimator::javad_is_faulty_for_testing(),
+        "a single held Javad epoch must not advance the divergence streak, however many loop iterations run"
+    );
+
+    // Phase 2: one genuinely new Javad epoch per tick -- exactly N to flag.
+    for (int i = 0; i < n - 1; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        gnss.arrival_time_ns = t_ns;
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+        zassert_false(StateEstimator::javad_is_faulty_for_testing(), "Javad should not be flagged before N distinct epochs");
+    }
+
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    imu.arrival_time_ns = t_ns;
+    imu.sense_time_ns += 1.0f;
+    gnss.arrival_time_ns = t_ns;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::javad_is_faulty_for_testing(), "Javad should be flagged on exactly the Nth distinct epoch");
+}
+
+// ── (13) LiDAR divergence counts fresh Javad epochs too, not just fresh LiDAR pairs ──────────────
+
+ZTEST(StateEstimator_tests, test_lidar_divergence_streak_ignores_held_javad_readings)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+
+    // imu.has_arrival_time_ns stays false, so R_WB holds its identity default and
+    // calculateVerticalAltitude() reduces to altitude == distance_m (LIDAR_MOUNT_ANGLE_DEG is 0).
+    ImuReading imu = ImuReading_init_default;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+
+    GnssReadings gnss = GnssReadings_init_default;
+    gnss.up_m = 10.0f;
+
+    LidarReading lidar_1 = LidarReading_init_default;
+    lidar_1.distance_m = 10.0f;  // agrees with Javad throughout
+    LidarReading lidar_2 = LidarReading_init_default;
+    lidar_2.distance_m = 10.0f;  // starts in agreement, diverges below
+
+    int n = StateEstimator::lidar_divergence_streak_threshold_for_testing();
+    uint64_t t_ns = 0;
+    float lidar_seq = 0.0f;
+
+    // Baseline tick: both LiDARs fresh and agreeing, Javad fresh -- establishes the stamp.
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    lidar_seq += 1.0f;
+    lidar_1.sense_time_ns = lidar_seq;
+    lidar_2.sense_time_ns = lidar_seq;
+    gnss.has_arrival_time_ns = true;
+    gnss.arrival_time_ns = t_ns;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    const uint64_t held_gnss_time_ns = t_ns;
+
+    // Phase 1: LiDAR 2 diverges and the LiDAR pair refreshes every tick -- the half of the 2-of-3
+    // comparison that was already fresh-gated. Javad is HELD, so one Javad epoch would otherwise
+    // supply the Javad half of all N counts.
+    lidar_2.distance_m = 3.0f;
+    for (int i = 0; i < n * 3; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        lidar_seq += 1.0f;
+        lidar_1.sense_time_ns = lidar_seq;
+        lidar_2.sense_time_ns = lidar_seq;
+        gnss.arrival_time_ns = held_gnss_time_ns;
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_false(
+        StateEstimator::lidar_2_is_faulty_for_testing(),
+        "a held Javad epoch must not advance the LiDAR divergence streak, however many fresh LiDAR pairs arrive"
+    );
+
+    // Phase 2: every participant fresh each tick -- exactly N to flag.
+    for (int i = 0; i < n - 1; i++) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        lidar_seq += 1.0f;
+        lidar_1.sense_time_ns = lidar_seq;
+        lidar_2.sense_time_ns = lidar_seq;
+        gnss.arrival_time_ns = t_ns;
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+        zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "Lidar 2 should not be flagged before N distinct Javad epochs");
+    }
+
+    t_ns += PERIOD_NS;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    lidar_seq += 1.0f;
+    lidar_1.sense_time_ns = lidar_seq;
+    lidar_2.sense_time_ns = lidar_seq;
+    gnss.arrival_time_ns = t_ns;
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(StateEstimator::lidar_2_is_faulty_for_testing(), "Lidar 2 should be flagged on exactly the Nth distinct Javad epoch");
+    zassert_false(StateEstimator::lidar_1_is_faulty_for_testing(), "Lidar 1 should remain healthy -- it agrees with Javad throughout");
 }
 
 // ══ Z-axis EKF integration tests (wiring into estimate()) ═══════════════════════════════════════
