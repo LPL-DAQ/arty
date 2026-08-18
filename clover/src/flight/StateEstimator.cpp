@@ -48,11 +48,16 @@ static uint64_t z_axis_ekf_last_predict_time_ns = 0;
 // velocity straight through. Should be true for real flight.
 static constexpr bool USE_ZAXIS_EKF_FOR_ALTITUDE = true;
 
-// Placeholder -- needs real analysis before flight. Initial covariance when bootstrapping the EKF
-// from the first healthy GNSS reading, which is a single uncertain measurement rather than a known
-// state. Bias starts less uncertain than z/vz, but not known-exact.
-static constexpr float EKF_INITIAL_Z_VARIANCE_M2 = 100.0f;
-static constexpr float EKF_INITIAL_VZ_VARIANCE_M2_S2 = 25.0f;
+// Initial covariance when bootstrapping the EKF from the first healthy GNSS reading, which is a
+// single uncertain measurement rather than a known state. Bias starts less uncertain than z/vz,
+// but not known-exact.
+//
+// z and vz are 2m and 2 m/s sigma (variance = sigma^2 = 4.0), set from review feedback on PR #234:
+// a 10m / 5 m/s starting uncertainty is far larger than anything this vehicle actually starts with
+// and makes the filter over-trust the first few measurements while it collapses. The bias term is
+// still an untuned placeholder.
+static constexpr float EKF_INITIAL_Z_VARIANCE_M2 = 4.0f;
+static constexpr float EKF_INITIAL_VZ_VARIANCE_M2_S2 = 4.0f;
 static constexpr float EKF_INITIAL_BIAS_VARIANCE_M2_S4 = 1.0f;
 
 // Placeholder -- needs real LiDAR noise specs before flight. r_variance for each LiDAR's computed

@@ -1198,20 +1198,30 @@ ZTEST(StateEstimator_tests, test_ekf_initializes_from_first_gnss_reading_and_the
     zassert_within(result1->position.z, 7.5f, 1e-4f, "position.z should equal the first GNSS reading exactly (EKF init)");
     zassert_within(result1->velocity.z, 1.2f, 1e-4f, "velocity.z should equal the first GNSS reading exactly (EKF init)");
 
-    // Second GNSS reading, a very different value. If this were still raw passthrough (the
+    // Second GNSS reading, a clearly different value. If this were still raw passthrough (the
     // pre-EKF behavior this task replaced), position.z would snap exactly to the new value.
     // Instead it should be a Kalman-filtered partial correction -- pulled toward, but not equal
     // to, the new reading -- proving the EKF is genuinely driving the output now, not a mirror of
     // gnss.up_m.
-    gnss.up_m = 50.0f;
-    gnss.vrms_m = 0.1f;  // nonzero, non-floor r_variance so the pull is a real partial correction
+    //
+    // Retuned when the initial covariance dropped to 2m / 2 (m/s) sigma (review comments 4 and 5).
+    // The old jump of 7.5 -> 50 was a 21-sigma innovation against the new P and is now correctly
+    // rejected by the innovation gate, which would leave z at 7.5 and prove nothing.
+    //
+    // r_variance is deliberately comparable to P here (vrms_m = 2 -> r = 4, against P00 = 4), so
+    // K = 0.5 and z lands near 9.75 -- an unmistakable partial correction. The previous
+    // vrms_m = 0.1 gave r = 0.01 against P00 = 100, i.e. a 99.99% pull, which was effectively the
+    // passthrough this test claims to rule out.
+    gnss.up_m = 12.0f;
+    gnss.vrms_m = 2.0f;
     gnss.arrival_time_ns = 2'000'000;
     gnss.sense_time_ns = 2.0f;
 
     auto result2 = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_true(result2.has_value());
     zassert_true(result2->position.z > 7.5f, "position.z should move toward the new reading...");
-    zassert_true(result2->position.z < 50.0f, "...but not snap exactly to it -- this is filtering, not passthrough");
+    zassert_true(result2->position.z < 12.0f, "...but not snap exactly to it -- this is filtering, not passthrough");
+    zassert_within(result2->position.z, 9.75f, 0.05f, "the correction should be roughly half the gap (K = P/(P+r) = 0.5), not a near-total snap");
 }
 
 // (5) Accel dropout (no fresh VN300 readings) followed by resume must not produce a garbage
