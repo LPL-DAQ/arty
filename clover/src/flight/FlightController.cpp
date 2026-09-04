@@ -104,7 +104,8 @@ static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics)
     // outerloop on position
     if (loopCount % FLIGHT_OUTER_LOOP_DIVISOR == 0)
     {
-        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, dt);
+        float outer_dt = FLIGHT_OUTER_LOOP_DIVISOR * dt;
+        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, outer_dt);
     }
 
     metrics.desired_vertical_velocity_m_s = des_state.vz_m_s;
