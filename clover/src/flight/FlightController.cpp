@@ -15,8 +15,8 @@ static const float maxTiltRad = 8.0f * DEG2RAD_F;  // 8 degrees in radians – m
 // TODO: Tune, including adding integral terms (is requried)
 // reference: kp, ki, kd, min out, max out, min integral, max integral, integral zone, deriv filter
 // integral cant command more than 1/3rd output range, with 10 Hz derivative lowpass
-static PID pidXTilt(FLIGHT_PID_X_TILT_KP, FLIGHT_PID_X_TILT_KI, FLIGHT_PID_X_TILT_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, -maxGimble / 3, maxGimble / 3, FLOAT_INFINITY, 10.0);   // about the X axis
-static PID pidYTilt(FLIGHT_PID_Y_TILT_KP, FLIGHT_PID_Y_TILT_KI, FLIGHT_PID_Y_TILT_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, -maxGimble / 3, maxGimble / 3, FLOAT_INFINITY, 10.0);   // about the Y axis
+static PID pidPitchTilt(FLIGHT_PID_X_TILT_KP, FLIGHT_PID_X_TILT_KI, FLIGHT_PID_X_TILT_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, -maxGimble / 3, maxGimble / 3, FLOAT_INFINITY, 10.0);
+static PID pidYawTilt(FLIGHT_PID_Y_TILT_KP, FLIGHT_PID_Y_TILT_KI, FLIGHT_PID_Y_TILT_KD, FLOAT_NEG_INFINITY, FLOAT_INFINITY, -maxGimble / 3, maxGimble / 3, FLOAT_INFINITY, 10.0);
 static PID pidX(FLIGHT_PID_X_KP, FLIGHT_PID_X_KI, FLIGHT_PID_X_KD);              // needs tuning, these are complete guesses
 static PID pidY(FLIGHT_PID_Y_KP, FLIGHT_PID_Y_KI, FLIGHT_PID_Y_KD);              // needs tuning, these are complete guesses
 // only use integral within 5 cm of target.
@@ -64,7 +64,9 @@ static std::pair<float, float> lateralPID(EstimatedState state, FlightController
     metrics.actual_world_tilt_x_rad = std::atan2(z_act_w.x, z_act_w.z);
     metrics.actual_world_tilt_y_rad = std::atan2(z_act_w.y, z_act_w.z);
 
-    // Desired thrust axis in world from desired literal tilt angles
+    // The protobuf field names retain x/y for compatibility, but these values
+    // feed the pitch/yaw output channels below.
+    // Desired thrust axis in world from desired pitch/yaw tilt commands.
     Vector3D z_des_w = math_util::createVector3D(
         std::tan(des_state.world_tilt_x),
         std::tan(des_state.world_tilt_y),
@@ -86,8 +88,8 @@ static std::pair<float, float> lateralPID(EstimatedState state, FlightController
     // TODO: find angular rates to feed to derivative
 
     // Feed body-axis error
-    output_accelerations.first  = pidXTilt.calculate(0.0f, axis_error_b.x, dt);
-    output_accelerations.second = pidYTilt.calculate(0.0f, axis_error_b.y, dt);
+    output_accelerations.first  = pidPitchTilt.calculate(0.0f, axis_error_b.x, dt);
+    output_accelerations.second = pidYawTilt.calculate(0.0f, axis_error_b.y, dt);
 
     metrics.desired_world_tilt_x_rad = des_state.world_tilt_x;
     metrics.desired_world_tilt_y_rad = des_state.world_tilt_y;
@@ -118,8 +120,8 @@ static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics)
 void FlightController::reset()
 {
     MutexGuard flight_controller_guard(&flight_controller_lock);
-    pidXTilt.reset();
-    pidYTilt.reset();
+    pidPitchTilt.reset();
+    pidYawTilt.reset();
     pidX.reset();
     pidY.reset();
     pidZ.reset();
@@ -159,16 +161,16 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
     MutexGuard flight_controller_guard(&flight_controller_lock);
 
     // Update PID gains if provided
-    pidXTilt.setGains(
-        req.has_pidXTilt_kp ? req.pidXTilt_kp : pidXTilt.getP(),
-        req.has_pidXTilt_ki ? req.pidXTilt_ki : pidXTilt.getI(),
-        req.has_pidXTilt_kd ? req.pidXTilt_kd : pidXTilt.getD()
+    pidPitchTilt.setGains(
+        req.has_pidXTilt_kp ? req.pidXTilt_kp : pidPitchTilt.getP(),
+        req.has_pidXTilt_ki ? req.pidXTilt_ki : pidPitchTilt.getI(),
+        req.has_pidXTilt_kd ? req.pidXTilt_kd : pidPitchTilt.getD()
     );
 
-    pidYTilt.setGains(
-        req.has_pidYTilt_kp ? req.pidYTilt_kp : pidYTilt.getP(),
-        req.has_pidYTilt_ki ? req.pidYTilt_ki : pidYTilt.getI(),
-        req.has_pidYTilt_kd ? req.pidYTilt_kd : pidYTilt.getD()
+    pidYawTilt.setGains(
+        req.has_pidYTilt_kp ? req.pidYTilt_kp : pidYawTilt.getP(),
+        req.has_pidYTilt_ki ? req.pidYTilt_ki : pidYawTilt.getI(),
+        req.has_pidYTilt_kd ? req.pidYTilt_kd : pidYawTilt.getD()
     );
 
     pidX.setGains(
@@ -198,10 +200,10 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
 
 
     if ((req.has_pidXTilt_min_out && req.has_pidXTilt_max_out)) {
-        pidXTilt.setOutputLimits(req.pidXTilt_min_out, req.pidXTilt_max_out);
+        pidPitchTilt.setOutputLimits(req.pidXTilt_min_out, req.pidXTilt_max_out);
     }
     if ((req.has_pidYTilt_min_out && req.has_pidYTilt_max_out)) {
-        pidYTilt.setOutputLimits(req.pidYTilt_min_out, req.pidYTilt_max_out);
+        pidYawTilt.setOutputLimits(req.pidYTilt_min_out, req.pidYTilt_max_out);
     }
     if ((req.has_pidX_min_out && req.has_pidX_max_out)) {
         pidX.setOutputLimits(req.pidX_min_out, req.pidX_max_out);
@@ -218,10 +220,10 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
 
     // Update integral limits if provided
     if ((req.has_pidXTilt_min_integral && req.has_pidXTilt_max_integral)) {
-        pidXTilt.setIntegralLimits(req.pidXTilt_min_integral, req.pidXTilt_max_integral);
+        pidPitchTilt.setIntegralLimits(req.pidXTilt_min_integral, req.pidXTilt_max_integral);
     }
     if ((req.has_pidYTilt_min_integral && req.has_pidYTilt_max_integral)) {
-        pidYTilt.setIntegralLimits(req.pidYTilt_min_integral, req.pidYTilt_max_integral);
+        pidYawTilt.setIntegralLimits(req.pidYTilt_min_integral, req.pidYTilt_max_integral);
     }
     if ((req.has_pidX_min_integral && req.has_pidX_max_integral)) {
         pidX.setIntegralLimits(req.pidX_min_integral, req.pidX_max_integral);
@@ -238,10 +240,10 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
 
     // Update integral zones if provided
     if (req.has_pidXTilt_integral_zone) {
-        pidXTilt.setIntegralZone(req.pidXTilt_integral_zone);
+        pidPitchTilt.setIntegralZone(req.pidXTilt_integral_zone);
     }
     if (req.has_pidYTilt_integral_zone) {
-        pidYTilt.setIntegralZone(req.pidYTilt_integral_zone);
+        pidYawTilt.setIntegralZone(req.pidYTilt_integral_zone);
     }
     if (req.has_pidX_integral_zone) {
         pidX.setIntegralZone(req.pidX_integral_zone);
@@ -258,10 +260,10 @@ std::expected<void, Error> FlightController::handle_configure_gains(const Config
 
     // Update derivative low-pass filter if provided
     if (req.has_pidXTilt_deriv_lp_hz) {
-        pidXTilt.setDerivativeLowPass(req.pidXTilt_deriv_lp_hz);
+        pidPitchTilt.setDerivativeLowPass(req.pidXTilt_deriv_lp_hz);
     }
     if (req.has_pidYTilt_deriv_lp_hz) {
-        pidYTilt.setDerivativeLowPass(req.pidYTilt_deriv_lp_hz);
+        pidYawTilt.setDerivativeLowPass(req.pidYTilt_deriv_lp_hz);
     }
     if (req.has_pidX_deriv_lp_hz) {
         pidX.setDerivativeLowPass(req.pidX_deriv_lp_hz);
