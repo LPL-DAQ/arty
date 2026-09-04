@@ -99,7 +99,7 @@ public:
         float dmeas = 0.0f;
         if (!std::isnan(prev_meas_))
         {
-            dmeas = measurement - prev_meas_;
+            dmeas = (measurement - prev_meas_) / std::max(dt, 1e-9f);
         }
 
         return calculate(setpoint, measurement, dmeas, dt);
