@@ -15,7 +15,8 @@ namespace CanFdLoggerTest {
 namespace {
 
 // Depth of the receive message queue.  Each can_frame is ~72 bytes.
-static constexpr int kQueueDepth = 8;
+// Sized to absorb ~250 ms of 125 Hz traffic without overflowing if printk stalls.
+static constexpr int kQueueDepth = 32;
 
 // Stack and thread for the receive loop.
 static K_THREAD_STACK_DEFINE(s_stack, 2048);
@@ -266,21 +267,33 @@ static void log_moteus(uint32_t arb_id,
 static void recv_thread(void *, void *, void *) {
     printk("[CanFdLoggerTest] waiting for CAN-FD frames...\n");
 
+    // Last command payload seen — suppress duplicate command prints.
+    uint8_t  last_cmd_data[64] = {};
+    uint8_t  last_cmd_len      = 0xFF;  // sentinel: never matches first frame
+
     while (true) {
         struct can_frame f = {};
-        // Block until a frame arrives (no timeout = wait forever).
         int rc = k_msgq_get(&s_queue, &f, K_FOREVER);
         if (rc != 0) continue;
-
-        log_raw(f);
 
         const uint32_t arb_id = f.id & CAN_EXT_ID_MASK;
         const uint8_t  len    = can_dlc_to_bytes(f.dlc);
 
         if (is_moteus_reply(arb_id)) {
+            log_raw(f);
             log_moteus(arb_id, f.data, len);
         } else if (is_moteus_command(arb_id)) {
-            log_moteus_command(arb_id, f.data, len);
+            // Only log when command content changes.
+            if (len != last_cmd_len || memcmp(f.data, last_cmd_data, len) != 0) {
+                memcpy(last_cmd_data, f.data, len);
+                last_cmd_len = len;
+                log_raw(f);
+                log_moteus_command(arb_id, f.data, len);
+            }
+        } else {
+            // Unknown frame — log raw so we can see if motor replies arrive
+            // with an unexpected ID (e.g. non-zero CAN prefix).
+            log_raw(f);
         }
     }
 }

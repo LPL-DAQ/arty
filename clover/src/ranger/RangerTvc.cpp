@@ -23,9 +23,21 @@ static mjbots::moteus::Controller::Options make_motor_opts(
     mjbots::moteus::Controller::Options opts;
     opts.id        = id;
     opts.transport = transport;
-    opts.query_format.position = mjbots::moteus::kFloat;
-    opts.query_format.velocity = mjbots::moteus::kFloat;
-    opts.query_format.torque   = mjbots::moteus::kFloat;
+
+    // Query format — produces the same 3 query groups as the working test bench:
+    //   mode(int8) | pos+vel+torque+Iq+Id(float×5) | voltage+temp+fault(int8×3)
+    // mode/position/velocity/torque/voltage/temperature/fault are already the
+    // right defaults in Query::Format; only q_current and d_current need adding.
+    opts.query_format.q_current = mjbots::moteus::kFloat;
+    opts.query_format.d_current = mjbots::moteus::kFloat;
+
+    // Position command format — include the three NaN fields so they appear
+    // in the frame exactly as the test bench sends them.
+    opts.position_format.stop_position    = mjbots::moteus::kFloat;
+    opts.position_format.velocity_limit  = mjbots::moteus::kFloat;
+    opts.position_format.accel_limit     = mjbots::moteus::kFloat;
+    opts.position_format.watchdog_timeout = mjbots::moteus::kFloat;
+
     return opts;
 }
 
@@ -54,17 +66,18 @@ void reset() {
     LOG_INF("CAN started in FD mode");
 
     mjbots::moteus::ZephyrCanTransport::Options t_opts;
-    t_opts.can_dev = s_can_dev;
+    t_opts.can_dev         = s_can_dev;
+    t_opts.brs_enabled     = false;  // match test bench — no BRS until confirmed working
+    t_opts.recv_timeout_ms = 100;    // 100 ms; motor reply typically arrives within a few ms
     s_transport = std::make_shared<mjbots::moteus::ZephyrCanTransport>(t_opts);
+    LOG_INF("transport created");
 
     s_motor.emplace(make_motor_opts(1, s_transport));
-
-    mjbots::moteus::PositionMode::Command init_cmd;
-    init_cmd.position = 1.0f;
-    init_cmd.velocity = 1.0f;
-    s_motor->SetPosition(init_cmd);
-
     LOG_INF("controller ready (motor id=1)");
+
+    // Clear any fault/timeout state left from a previous session.
+    s_motor->SetStop();
+    k_msleep(50);
 }
 
 std::expected<std::tuple<TvcActuatorCommand, TvcActuatorCommand, RangerTvcMetrics>, Error>
@@ -74,7 +87,12 @@ tick(float pitch_command_deg) {
     }
 
     mjbots::moteus::PositionMode::Command cmd;
-    cmd.position = pitch_command_deg / 360.0f;
+    cmd.position         = pitch_command_deg / 360.0f;
+    cmd.velocity         = 0.0f;
+    cmd.stop_position    = NaN;
+    cmd.velocity_limit   = 0.13f;  // ~0.13 rev/s → covers 46° in ~1 s
+    cmd.accel_limit      = 4.0;
+    cmd.watchdog_timeout = 0.5f;  // 500 ms — motor safe-stops if Teensy hangs
 
     LOG_INF("tx: pos=%d mrot", (int)(cmd.position * 1000));
 

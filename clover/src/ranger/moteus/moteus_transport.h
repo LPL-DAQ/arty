@@ -84,12 +84,43 @@ class ZephyrCanTransport : public Transport {
     // Timeout waiting for the TX mailbox to become free.
     int send_timeout_ms = 10;
     // Timeout waiting for a reply frame after sending.
-    int recv_timeout_ms = 10;
-    // Maximum number of simultaneous reply filters (one per motor in a batch).
-    int max_replies = 4;
+    int recv_timeout_ms = 100;
+    // Depth of the persistent RX queue (absorbs bursts between Cycle() calls).
+    int rx_queue_depth = 16;
+    // Enable CAN-FD Bit Rate Switching (faster data phase). Disable if the
+    // motor firmware or transceiver is not configured for the higher data rate.
+    bool brs_enabled = true;
   };
 
-  explicit ZephyrCanTransport(const Options& opts) : opts_(opts) {}
+  explicit ZephyrCanTransport(const Options& opts) : opts_(opts) {
+    // Install a single catch-all extended-ID filter that stays active for the
+    // lifetime of the transport — exactly like ACAN_T4's continuous reception.
+    // No per-cycle filter add/remove means no FlexCAN Freeze Mode overhead
+    // between TX and the motor's reply.
+    k_msgq_init(&rx_queue_,
+                reinterpret_cast<char*>(rx_queue_buf_),
+                sizeof(struct can_frame),
+                kRxQueueDepth);
+
+    struct can_filter f = {};
+    f.flags = CAN_FILTER_IDE;
+    f.id    = 0;
+    f.mask  = 0;
+    rx_filter_id_ = can_add_rx_filter_msgq(opts_.can_dev, &rx_queue_, &f);
+    if (rx_filter_id_ < 0) {
+      printk("[transport] ERROR: can_add_rx_filter_msgq failed (%d)\n",
+             rx_filter_id_);
+    } else {
+      printk("[transport] persistent catch-all filter installed (id=%d)\n",
+             rx_filter_id_);
+    }
+  }
+
+  ~ZephyrCanTransport() {
+    if (rx_filter_id_ >= 0) {
+      can_remove_rx_filter(opts_.can_dev, rx_filter_id_);
+    }
+  }
 
   void Cycle(const CanFdFrame* frames,
              size_t size,
@@ -97,58 +128,52 @@ class ZephyrCanTransport : public Transport {
              CompletionCallback callback) override {
     if (replies) replies->clear();
 
-    // Allocate the message queue on the stack.
-    // can_frame is ~72 bytes; 4 frames = ~288 bytes — acceptable.
-    alignas(4) struct can_frame q_buf[4];
-    struct k_msgq q;
-    const int q_depth = (opts_.max_replies <= 4) ? opts_.max_replies : 4;
-    k_msgq_init(&q, reinterpret_cast<char*>(q_buf),
-                sizeof(struct can_frame), q_depth);
-
-    // Install RX filters before sending so we don't miss the reply.
-    int filter_ids[4];
-    int n_filters = 0;
-
-    for (size_t i = 0; i < size && n_filters < q_depth; i++) {
-      if (!frames[i].reply_required) continue;
-
-      // Reply arbitration ID: (motor_id << 8) | host_source
-      // frames[i].destination = motor_id, frames[i].source = host (0)
-      struct can_filter f = {};
-      f.flags = CAN_FILTER_IDE;
-      f.id    = ((uint32_t)frames[i].destination << 8) | frames[i].source;
-      f.mask  = CAN_EXT_ID_MASK;
-
-      int fid = can_add_rx_filter_msgq(opts_.can_dev, &q, &f);
-      if (fid >= 0) {
-        filter_ids[n_filters++] = fid;
-      }
+    // Count how many reply frames we expect.
+    int n_expected = 0;
+    for (size_t i = 0; i < size; i++) {
+      if (frames[i].reply_required) n_expected++;
     }
 
-    // Send all frames.
+    // Drain any stale frames that arrived before this Cycle() call.
+    {
+      struct can_frame stale = {};
+      while (k_msgq_get(&rx_queue_, &stale, K_NO_WAIT) == 0) {}
+    }
+
+    // Send all outgoing frames.
     for (size_t i = 0; i < size; i++) {
       send_can_frame(frames[i]);
     }
 
-    // Collect reply frames.
-    for (int i = 0; i < n_filters && replies; i++) {
+    if (!replies || n_expected == 0) {
+      callback(0);
+      return;
+    }
+
+    // Collect reply frames — the filter is already active so we just wait.
+    for (int i = 0; i < n_expected; i++) {
       struct can_frame rx = {};
-      if (k_msgq_get(&q, &rx, K_MSEC(opts_.recv_timeout_ms)) != 0) {
-        break;  // timeout — stop waiting
+      if (k_msgq_get(&rx_queue_, &rx, K_MSEC(opts_.recv_timeout_ms)) != 0) {
+        printk("[transport] reply timeout after %d ms\n", opts_.recv_timeout_ms);
+        break;
       }
 
+      const uint32_t arb_id = rx.id & CAN_EXT_ID_MASK;
+      printk("[transport] rx id=0x%08X prefix=%u src=%u dst=%u len=%u\n",
+             (unsigned)arb_id,
+             (unsigned)((arb_id >> 16) & 0x1FFF),
+             (unsigned)((arb_id >> 8) & 0x7F),
+             (unsigned)(arb_id & 0xFF),
+             can_dlc_to_bytes(rx.dlc));
+
       CanFdFrame reply = {};
-      reply.arbitration_id = rx.id & CAN_EXT_ID_MASK;
-      reply.source         = (reply.arbitration_id >> 8) & 0x7F;
-      reply.destination    =  reply.arbitration_id       & 0x7F;
-      reply.can_prefix     =  reply.arbitration_id >> 16;
+      reply.arbitration_id = arb_id;
+      reply.source         = (arb_id >> 8) & 0x7F;
+      reply.destination    =  arb_id       & 0xFF;
+      reply.can_prefix     = (arb_id >> 16) & 0x1FFF;
       reply.size           = can_dlc_to_bytes(rx.dlc);
       memcpy(reply.data, rx.data, reply.size);
       replies->push_back(reply);
-    }
-
-    for (int i = 0; i < n_filters; i++) {
-      can_remove_rx_filter(opts_.can_dev, filter_ids[i]);
     }
 
     callback(0);
@@ -157,14 +182,15 @@ class ZephyrCanTransport : public Transport {
   void Post(std::function<void()> fn) override { fn(); }
 
  private:
+  static constexpr int kRxQueueDepth = 16;
+
   void send_can_frame(const CanFdFrame& frame) {
     struct can_frame zf = {};
     zf.flags = CAN_FRAME_IDE;
 
-    // Use CAN-FD unless the frame explicitly forces classic CAN.
     if (frame.fdcan_frame != CanFdFrame::kForceOff) {
       zf.flags |= CAN_FRAME_FDF;
-      if (frame.brs != CanFdFrame::kForceOff) {
+      if (opts_.brs_enabled && frame.brs != CanFdFrame::kForceOff) {
         zf.flags |= CAN_FRAME_BRS;
       }
     }
@@ -173,11 +199,21 @@ class ZephyrCanTransport : public Transport {
     zf.dlc = can_bytes_to_dlc(frame.size);
     memcpy(zf.data, frame.data, frame.size);
 
-    can_send(opts_.can_dev, &zf, K_MSEC(opts_.send_timeout_ms),
-             nullptr, nullptr);
+    int ret = can_send(opts_.can_dev, &zf, K_MSEC(opts_.send_timeout_ms),
+                       nullptr, nullptr);
+    if (ret != 0) {
+      printk("[transport] can_send failed: %d (id=0x%08X)\n",
+             ret, (unsigned)zf.id);
+    }
   }
 
   Options opts_;
+  int rx_filter_id_ = -1;
+
+  // Queue buffer — allocated here so it has static lifetime (required by
+  // k_msgq_init when not using K_MSGQ_DEFINE).
+  alignas(4) struct can_frame rx_queue_buf_[kRxQueueDepth];
+  struct k_msgq rx_queue_;
 };
 
 // ---------------------------------------------------------------------------

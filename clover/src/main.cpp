@@ -7,6 +7,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
 
+#include "ranger/RangerTvc.h"
 #include "Controller.h"
 #include "sensors/AnalogSensors.h"
 #include "server.h"
@@ -25,6 +26,9 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 int main(void)
 {
+    // Motor init first — before USB wait — so the watchdog never fires on boot.
+    RangerTvc::reset();
+
     // Serial over USB setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB is not enabled.");
@@ -45,11 +49,15 @@ int main(void)
 
     LOG_INF("USB Connected. Bypassing flight hardware for TVC standalone test.");
 
-    // DO NOT initialize Valves, LiDAR, or Analog Sensors right now.
-    // Just keep the main thread alive so the background TVC thread can run!
+    float pitch_deg = 80.0f;
     while (1) {
-        k_sleep(K_MSEC(1000));
+        pitch_deg -= 0.5f;  // 0.5 deg per tick at 50 Hz = 25 deg/s
+        auto result = RangerTvc::tick(pitch_deg);
+        if (!result) {
+            LOG_ERR("tick failed: %s", result.error().build_message().c_str());
+        }
+        k_sleep(K_MSEC(20));
     }
-    
+
     return 0;
 }
