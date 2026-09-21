@@ -166,6 +166,15 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Sample flight trace and run flight controller
     if (current_state == SystemState_STATE_FLIGHT) {
+        auto estimated_state = StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.gnss);
+        if (estimated_state) {
+            data.has_estimated_state = true;
+            data.estimated_state = *estimated_state;
+        }
+        else {
+            // TODO: handle estimate failure; leaving defaults for now
+        }
+        
         // Sample flight traces
         auto x_sample = flight_x_trace_m.sample(data.trace_time_msec);
         if (!x_sample.has_value()) {
@@ -534,16 +543,6 @@ static void step_control_loop(k_work*)
 
     // Valve actuator statuses
 
-#ifdef CONFIG_FLIGHT
-    auto estimated_state = StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.gnss);
-    if (estimated_state) {
-        data.has_estimated_state = true;
-        data.estimated_state = *estimated_state;
-    }
-    else {
-        // TODO: handle estimate failure; leaving defaults for now
-    }
-#endif  // CONFIG_FLIGHT
 
     // Populate default actuator commands -- essentially telling everybody to hold their current state.
 #ifdef CONFIG_THROTTLE_VALVES
