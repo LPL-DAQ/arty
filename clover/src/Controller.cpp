@@ -123,7 +123,7 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 // TODO roll control. the module should not accept a position as that is active control
 
-/// Transform actuator commands into actuator commands, modifying the data pcket in-place.
+/// Transform Trace input into actuator commands, modifying the data pcket in-place.
 /// If an abort is necessary, an Error is returned. This is called for all active control
 /// states. trace_time_msec must be pre-populated.
 static std::expected<void, Error> tick_active_control(DataPacket& data)
@@ -174,7 +174,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         else {
             // TODO: handle estimate failure; leaving defaults for now
         }
-        
+
         // Sample flight traces
         auto x_sample = flight_x_trace_m.sample(data.trace_time_msec);
         if (!x_sample.has_value()) {
