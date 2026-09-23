@@ -81,7 +81,7 @@ public:
 
         auto result = write_pulse_us(static_cast<uint32_t>(k_min_pulse_us));
         if (!result) {
-            LOG_ERR("%s Failed to set initial pulse width: err %d", kind_to_prefix(Kind), result);
+            LOG_ERR("%s Failed to set initial pulse width: %s", kind_to_prefix(Kind), result.error().build_message().c_str());
             return result;
         }
 
