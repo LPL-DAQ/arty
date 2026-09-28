@@ -16,6 +16,11 @@ properties:
       Input range selection for manual mode:
       1 = 0..Vref (default device state)
       2 = 0..2*Vref (requires 2*Vref <= VA)
+  ref-des:
+    type: string
+    description: |
+      Board reference designator (e.g. "U7"), used to tag this ADC in
+      CONFIG_ADC_ADS79XX_DEBUG_SPI_TRANSFERS logs. Defaults to the node name.
 
 io-channel-cells:
   - input

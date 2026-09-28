@@ -173,6 +173,7 @@ Ranger 1 board.
         spi-max-frequency = <20000000>; // Maximum for ADS7953.
         #io-channel-cells = <1>;
         ti,range = <2>; // 2x V_REF of 2.5V
+        ref-des = "U7";
 
         #address-cells = <1>;
         #size-cells = <0>;
@@ -313,6 +314,7 @@ Ranger 1 board.
         spi-max-frequency = <20000000>; // Maximum for ADS7953.
         #io-channel-cells = <1>;
         ti,range = <2>;
+        ref-des = "U8";
 
         #address-cells = <1>;
         #size-cells = <0>;

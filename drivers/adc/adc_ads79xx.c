@@ -52,6 +52,7 @@ struct ads79xx_config {
     uint8_t channels;
     uint8_t resolution;
     uint8_t range;
+    const char* ref_des;
 };
 
 struct ads79xx_data {
@@ -155,7 +156,7 @@ static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint
             (w >> 5) & 1,
             (w >> 4) & 1,
             w & 0xF);
-        LOG_WRN("SDO=0x%04x addr=%x val=%u", r, (r >> 12), r & 0x0FFF);
+        LOG_WRN("%s SDO=0x%04x addr=%x val=%u", cfg->ref_des, r, (r >> 12), r & 0x0FFF);
     }
 
     return ret;
@@ -486,6 +487,7 @@ static DEVICE_API(adc, ads79xx_api) = {
         .channels = chan, \
         .resolution = res, \
         .range = DT_INST_PROP_OR(n, ti_range, 1), \
+        .ref_des = DT_PROP_OR(DT_INST_ADS79XX(n, t), ref_des, DT_NODE_FULL_NAME(DT_INST_ADS79XX(n, t))), \
     }; \
     DEVICE_DT_DEFINE( \
         DT_INST_ADS79XX(n, t), ads79xx_init, NULL, &ads##t##_data_##n, &ads##t##_cfg_##n, POST_KERNEL, CONFIG_ADC_ADS79XX_INIT_PRIORITY, &ads79xx_api);
