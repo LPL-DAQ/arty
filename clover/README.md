@@ -25,7 +25,9 @@ west build ~/arty/clover --pristine auto --board tvc_throttle_dev/mimxrt1062 --b
 
 ## Flash
 
-Ensure the dev board is in bootloader mode, and that tycmd is installed.
+Ensure the dev board is in bootloader mode (press PROGRAM), and that tycmd is installed on the host.
+Setup, the PROGRAM-button step, and how to confirm a flash worked: see
+[flasherd/README.md → Flashing Teensy boards](../flasherd/README.md#flashing-teensy-boards).
 
 ```shell
 west flash --build-dir ~/arty/clover/build

@@ -52,9 +52,11 @@ Run the following from within the dev container to check that flasherd is runnin
 if uv --project flasherd run flasherd/check_connection.py; then echo -e "\\e[32;1mflasherd is active\\e[0m"; else echo -e "\\e[31;1mflasherd is inactive\\e[0m"; fi
 ```
 
-## Flashing Teensy boards (Ranger 1 / HIVE)
+## Flashing Teensy boards
 
-`west flash` on Teensy boards uses the `tycmd_flasherd` runner, which has flasherd run
+Applies to every board whose `board.cmake` uses the `tycmd_flasherd` runner: `ranger_1` and
+`hornet_mk_3` (`boards/lpl/teensy_hive`), and `tvc_throttle_dev` and `throttle_legacy`
+(`boards/lpl/gnc_legacy`). `west flash` on these has flasherd run
 `tycmd upload --nocheck zephyr.hex` **on the host**. `tycmd` is not installed with flasherd.
 
 ### Install tycmd (host, one time)
@@ -62,8 +64,14 @@ if uv --project flasherd run flasherd/check_connection.py; then echo -e "\\e[32;
 - **macOS:** there is no Homebrew package. Download `tytools_X.Y.Z_osx.dmg` from the
   [TyTools releases](https://github.com/Koromix/tytools/releases), open it, and copy the `tycmd`
   binary onto your `PATH` (e.g. `/opt/homebrew/bin`), then `chmod +x` it. Check with `which tycmd`.
-- **Windows:** install TyTools with its installer. The runner expects
-  `C:\Program Files (x86)\TyTools\tycmd.exe`.
+  - `which tycmd` only checks *your terminal's* PATH. flasherd runs `tycmd` with *its own* PATH,
+    and an app launched from Finder/Dock may not include `/opt/homebrew/bin` (untested). If
+    `west flash` still reports the error below after installing, quit the flasherd app and run
+    it from the same host terminal instead, so it inherits that PATH:
+    `uv --project flasherd run flasherd/server.py` (from the repo root).
+- **Windows:** install TyTools with its installer. The runner hardcodes
+  `C:\Program Files (x86)\TyTools\tycmd.exe`; if your install landed somewhere else (e.g.
+  `C:\Program Files\TyTools`), `west flash` won't find it.
 
 Without it, `west flash` fails with `[Errno 2] No such file or directory: 'tycmd'`.
 
@@ -72,7 +80,11 @@ Without it, `west flash` fails with `[Errno 2] No such file or directory: 'tycmd
 1. **Press the PROGRAM button on the Teensy first.** Our Zephyr firmware doesn't respond to
    tycmd's software reboot request, so without the button tycmd fails with `Cannot reboot board`.
    `tycmd list` should now show the board as `Teensy 4.1 (HalfKay)` (bootloader).
-2. Run `west flash` from the dev container.
-3. tycmd often ends with `Board '...' has disappeared` and exit code 1 even though the flash worked.
-   Confirm with `tycmd list`: the board should come back as `Ranger 1`. If it's still
-   `(HalfKay)`, just run `west flash` again (no button needed).
+2. From the dev container, run `west flash --build-dir <your build dir>`
+   (e.g. `west flash --build-dir ~/arty/clover/build`, see [clover/README.md](../clover/README.md)).
+3. **Don't trust `west flash`'s exit status.** flasherd only logs tycmd's result
+   (`Process terminated with code N`), so `west flash` exits 0 even when tycmd failed.
+   tycmd also often ends with `Board '...' has disappeared` and code 1 when the flash *worked*.
+   Always confirm with `tycmd list` on the host: the board should be back running your firmware
+   (e.g. `Ranger 1`), not `(HalfKay)`. If it's still `(HalfKay)`, run `west flash` again
+   (no button needed).
