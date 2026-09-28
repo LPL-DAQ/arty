@@ -146,8 +146,9 @@ static int ads79xx_spi_transfer(const struct device* dev, uint16_t tx_word, uint
         uint16_t w = tx_word;
 
         LOG_DBG(
-            "SDI=0x%04x mode=%x prog=%u next_ch=%u range=%u pd=%u sdo_gpio=%u "
+            "%s SDI=0x%04x mode=%x prog=%u next_ch=%u range=%u pd=%u sdo_gpio=%u "
             "gpio=0x%x",
+            cfg->ref_des,
             w,
             (w >> 12) & 0xF,
             (w >> 11) & 1,
