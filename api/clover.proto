@@ -1,4 +1,5 @@
 syntax = "proto2";
+import "nanopb.proto";
 
 //////////////////////////////////////////////////////////////////////
 // IMPORTANT:                                                       //
@@ -12,7 +13,7 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 40
+// next tag: 41
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
@@ -29,6 +30,7 @@ message Request {
 
     ConfigureValvesRequest configure_valves = 5;
     ActuateValveRequest actuate_valve = 39;
+    RunAutonomousValveSequenceRequest run_autonomous_valve_sequence = 40;
 
     // Transitions any state -> ABORT
     AbortRequest abort = 10;
@@ -220,6 +222,15 @@ enum Valve {
   SVR002 = 11;
   SVR003 = 12;
   SVR004 = 13;
+
+  // Vehicle valves available to the autonomous sequencer.
+  PBV001 = 14;
+  PBV002 = 15;
+  PBV003 = 16;
+  PBV004 = 17;
+  PBV005 = 18;
+  PBV301 = 19;
+  PBV302 = 20;
 }
 
 // Actuate a single valve.
@@ -257,6 +268,12 @@ message HaltRequest {}
 
 // Unprime an active control sequence.
 message UnprimeRequest {}
+
+// Load and immediately run a named autonomous valve sequence file.
+message RunAutonomousValveSequenceRequest {
+  required string sequence_file = 1 [(nanopb).max_size = 49];
+  optional uint32 run_index = 2;
+}
 
 
 // THROTTLE Requests
@@ -468,6 +485,7 @@ enum SystemState {
   STATE_STATIC_FIRE_PRIMED = 16;
   STATE_FLIGHT = 17;
   STATE_FLIGHT_PRIMED = 18;
+  STATE_AUTONOMOUS_VALVE_SEQUENCE = 19;
 }
 
 // next tag: 94
@@ -672,6 +690,14 @@ message ValveStates {
   optional ValveState svr002 = 11;
   optional ValveState svr003 = 12;
   optional ValveState svr004 = 13;
+
+  optional ValveState pbv001 = 14;
+  optional ValveState pbv002 = 15;
+  optional ValveState pbv003 = 16;
+  optional ValveState pbv004 = 17;
+  optional ValveState pbv005 = 18;
+  optional ValveState pbv301 = 19;
+  optional ValveState pbv302 = 20;
 }
 
 message LidarReading {

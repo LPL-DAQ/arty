@@ -21,8 +21,14 @@
 #include "hornet/HornetThrottle.h"
 #include "hornet/HornetTvc.h"
 #include "ranger/RangerRcs.h"
+#include "ranger/Sequence.h"
 #include "ranger/RangerThrottle.h"
 #include "ranger/RangerTvc.h"
+
+#include <array>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -91,6 +97,96 @@ static Trace throttle_lox_valve_trace_deg;
 // Valid in RCS_VALVE_PRIMED and RCS_VALVE.
 static Trace rcs_cw_valve_trace;
 static Trace rcs_ccw_valve_trace;
+
+#ifdef CONFIG_VALVES
+static Sequence::Scheduler autonomous_valve_sequence;
+static uint64_t autonomous_valve_sequence_start_cycle = 0;
+static std::array<Valve, Sequence::MAX_EVENTS> autonomous_valves{};
+static std::array<ValveState, Sequence::MAX_EVENTS> autonomous_valve_safe_states{};
+static size_t autonomous_valve_count = 0;
+
+static Valve valve_from_sequence_name(std::string_view name)
+{
+    if (name == "PBV001") return Valve_PBV001;
+    if (name == "PBV002") return Valve_PBV002;
+    if (name == "PBV003") return Valve_PBV003;
+    if (name == "PBV004") return Valve_PBV004;
+    if (name == "PBV005") return Valve_PBV005;
+    if (name == "PBV006") return Valve_PBV006;
+    if (name == "PBV101") return Valve_PBV101;
+    if (name == "PBV201") return Valve_PBV201;
+    if (name == "PBV301") return Valve_PBV301;
+    if (name == "PBV302") return Valve_PBV302;
+    if (name == "SV001") return Valve_SV001;
+    if (name == "SV002") return Valve_SV002;
+    if (name == "SV003") return Valve_SV003;
+    if (name == "SV004") return Valve_SV004;
+    if (name == "SV005") return Valve_SV005;
+    if (name == "SV301") return Valve_SV301;
+    if (name == "SVR001") return Valve_SVR001;
+    if (name == "SVR002") return Valve_SVR002;
+    if (name == "SVR003") return Valve_SVR003;
+    if (name == "SVR004") return Valve_SVR004;
+    return Valve_UNKNOWN_VALVE;
+}
+
+static std::expected<ValveState, Error> get_packet_valve_state(const ValveStates& states, Valve valve)
+{
+    switch (valve) {
+    case Valve_PBV001: if (states.has_pbv001) return states.pbv001; break;
+    case Valve_PBV002: if (states.has_pbv002) return states.pbv002; break;
+    case Valve_PBV003: if (states.has_pbv003) return states.pbv003; break;
+    case Valve_PBV004: if (states.has_pbv004) return states.pbv004; break;
+    case Valve_PBV005: if (states.has_pbv005) return states.pbv005; break;
+    case Valve_PBV006: if (states.has_pbv006) return states.pbv006; break;
+    case Valve_PBV101: if (states.has_pbv101) return states.pbv101; break;
+    case Valve_PBV201: if (states.has_pbv201) return states.pbv201; break;
+    case Valve_PBV301: if (states.has_pbv301) return states.pbv301; break;
+    case Valve_PBV302: if (states.has_pbv302) return states.pbv302; break;
+    case Valve_SV001: if (states.has_sv001) return states.sv001; break;
+    case Valve_SV002: if (states.has_sv002) return states.sv002; break;
+    case Valve_SV003: if (states.has_sv003) return states.sv003; break;
+    case Valve_SV004: if (states.has_sv004) return states.sv004; break;
+    case Valve_SV005: if (states.has_sv005) return states.sv005; break;
+    case Valve_SV301: if (states.has_sv301) return states.sv301; break;
+    case Valve_SVR001: if (states.has_svr001) return states.svr001; break;
+    case Valve_SVR002: if (states.has_svr002) return states.svr002; break;
+    case Valve_SVR003: if (states.has_svr003) return states.svr003; break;
+    case Valve_SVR004: if (states.has_svr004) return states.svr004; break;
+    default: break;
+    }
+    return std::unexpected(Error::from_cause("valve %d is not configured or has no reported state", valve));
+}
+
+static std::expected<ValveState, Error> valve_state_for_position(ValveState safe_state, bool open)
+{
+    if (safe_state == ValveState_UNPOWERED_CLOSED) {
+        return open ? ValveState_POWERED_OPEN : ValveState_UNPOWERED_CLOSED;
+    }
+    if (safe_state == ValveState_UNPOWERED_OPEN) {
+        return open ? ValveState_UNPOWERED_OPEN : ValveState_POWERED_CLOSED;
+    }
+    return std::unexpected(Error::from_cause("valve safe state must be unpowered, got %d", safe_state));
+}
+
+static std::expected<void, Error> restore_autonomous_valve_safe_states()
+{
+    std::optional<Error> first_error;
+    for (size_t index = 0; index < autonomous_valve_count; ++index) {
+        ActuateValveRequest request = ActuateValveRequest_init_default;
+        request.valve = autonomous_valves[index];
+        request.state = autonomous_valve_safe_states[index];
+        auto result = Valves::handle_actuate_valve(request);
+        if (!result && !first_error) {
+            first_error = result.error();
+        }
+    }
+    if (first_error) {
+        return std::unexpected(std::move(*first_error));
+    }
+    return {};
+}
+#endif  // CONFIG_VALVES
 
 /// This lock must be acquired for anything reliant on Controller state.
 K_MUTEX_DEFINE(controller_state_lock);
@@ -592,6 +688,86 @@ static void step_control_loop(k_work*)
         break;
     }
 
+    case SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE: {
+#ifdef CONFIG_VALVES
+        const uint32_t elapsed_ms = static_cast<uint32_t>(nsec_since_cycle(autonomous_valve_sequence_start_cycle) / 1'000'000);
+        data.trace_time_msec = static_cast<float>(elapsed_ms);
+        data.has_trace_time_msec = true;
+
+        auto tick = autonomous_valve_sequence.advance(elapsed_ms);
+        if (!tick) {
+            LOG_ERR("Autonomous valve sequence scheduler failed: %s", tick.error().build_message().c_str());
+            auto safe_result = restore_autonomous_valve_safe_states();
+            if (!safe_result) {
+                LOG_ERR("Failed to restore autonomous valve safe states: %s", safe_result.error().build_message().c_str());
+            }
+            autonomous_valve_sequence.reset();
+            abort_start_cycle = k_cycle_get_64();
+            current_state = SystemState_STATE_ABORT;
+            break;
+        }
+
+        bool command_failed = false;
+        for (const auto& event : tick->due_events) {
+            const Valve valve = valve_from_sequence_name(event.valve.data());
+            size_t safe_state_index = 0;
+            while (safe_state_index < autonomous_valve_count && autonomous_valves[safe_state_index] != valve) {
+                ++safe_state_index;
+            }
+            if (valve == Valve_UNKNOWN_VALVE || safe_state_index == autonomous_valve_count) {
+                LOG_ERR("Autonomous valve sequence contains an unmapped valve");
+                command_failed = true;
+                break;
+            }
+
+            auto target_state = valve_state_for_position(autonomous_valve_safe_states[safe_state_index], event.open);
+            if (!target_state) {
+                LOG_ERR("Cannot map autonomous valve sequence state: %s", target_state.error().build_message().c_str());
+                command_failed = true;
+                break;
+            }
+            ActuateValveRequest request = ActuateValveRequest_init_default;
+            request.valve = valve;
+            request.state = *target_state;
+            auto result = Valves::handle_actuate_valve(request);
+            if (!result) {
+                LOG_ERR("Autonomous valve command failed: %s", result.error().build_message().c_str());
+                command_failed = true;
+                break;
+            }
+        }
+
+        if (command_failed) {
+            auto safe_result = restore_autonomous_valve_safe_states();
+            if (!safe_result) {
+                LOG_ERR("Failed to restore autonomous valve safe states: %s", safe_result.error().build_message().c_str());
+            }
+            autonomous_valve_sequence.reset();
+            abort_start_cycle = k_cycle_get_64();
+            current_state = SystemState_STATE_ABORT;
+        }
+        else if (tick->complete) {
+            auto safe_result = restore_autonomous_valve_safe_states();
+            if (!safe_result) {
+                LOG_ERR("Failed to restore autonomous valve safe states: %s", safe_result.error().build_message().c_str());
+                autonomous_valve_sequence.reset();
+                abort_start_cycle = k_cycle_get_64();
+                current_state = SystemState_STATE_ABORT;
+            }
+            else {
+                LOG_INF("Autonomous valve sequence completed; valves returned to safe states");
+                autonomous_valve_sequence.reset();
+                autonomous_valve_count = 0;
+                current_state = SystemState_STATE_IDLE;
+            }
+        }
+#else
+        LOG_ERR("Autonomous valve sequence state entered without CONFIG_VALVES");
+        current_state = SystemState_STATE_IDLE;
+#endif
+        break;
+    }
+
     // Commands all actuators back to nominal states.
     case SystemState_STATE_ABORT: {
         // TODO
@@ -797,12 +973,99 @@ std::expected<void, Error> Controller::handle_throttle_reset_valve_position(cons
     return {};
 }
 
+namespace Controller {
+std::expected<void, Error> handle_run_autonomous_valve_sequence(const RunAutonomousValveSequenceRequest& req);
+}
+
+/// Load and immediately start a named autonomous valve sequence from IDLE.
+std::expected<void, Error> Controller::handle_run_autonomous_valve_sequence(const RunAutonomousValveSequenceRequest& req)
+{
+    ENSURE_CONFIG(CONFIG_VALVES);
+
+#ifndef CONFIG_VALVES
+    return std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
+#else
+    if (req.sequence_file[0] == '\0') {
+        return std::unexpected(Error::from_cause("sequence_file is required"));
+    }
+    auto definition = Sequence::Definition::load_file(req.sequence_file, req.has_run_index ? req.run_index : 0);
+    if (!definition) {
+        return std::unexpected(definition.error().context("failed to load autonomous valve sequence"));
+    }
+
+    MutexGuard guard{&controller_state_lock};
+    if (current_state != SystemState_STATE_IDLE) {
+        return std::unexpected(Error::from_cause("autonomous valve sequence can only start while idle"));
+    }
+
+    auto reported_states = Valves::get_valve_states();
+    if (!reported_states) {
+        return std::unexpected(reported_states.error().context("failed to read valve states before sequence"));
+    }
+
+    std::array<Valve, Sequence::MAX_EVENTS> sequence_valves{};
+    std::array<ValveState, Sequence::MAX_EVENTS> safe_states{};
+    size_t valve_count = 0;
+    for (const auto& event : definition->events()) {
+        const Valve valve = valve_from_sequence_name(event.valve.data());
+        if (valve == Valve_UNKNOWN_VALVE) {
+            return std::unexpected(Error::from_cause("unsupported valve in autonomous sequence"));
+        }
+
+        size_t index = 0;
+        while (index < valve_count && sequence_valves[index] != valve) {
+            ++index;
+        }
+        if (index < valve_count) {
+            continue;
+        }
+
+        auto state = get_packet_valve_state(*reported_states, valve);
+        if (!state) {
+            return std::unexpected(state.error());
+        }
+        if (*state != ValveState_UNPOWERED_OPEN && *state != ValveState_UNPOWERED_CLOSED) {
+            return std::unexpected(Error::from_cause("valve %d must be in its configured unpowered safe state before sequence start", valve));
+        }
+        sequence_valves[valve_count] = valve;
+        safe_states[valve_count] = *state;
+        ++valve_count;
+    }
+
+    Sequence::Scheduler scheduler;
+    if (auto result = scheduler.load(std::move(*definition)); !result) {
+        return std::unexpected(result.error());
+    }
+    if (auto result = scheduler.start(); !result) {
+        return std::unexpected(result.error());
+    }
+
+    autonomous_valves = sequence_valves;
+    autonomous_valve_safe_states = safe_states;
+    autonomous_valve_count = valve_count;
+    autonomous_valve_sequence = std::move(scheduler);
+    autonomous_valve_sequence_start_cycle = k_cycle_get_64();
+    current_state = SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE;
+    LOG_INF("Starting autonomous valve sequence from %s", req.sequence_file);
+    return {};
+#endif
+}
+
 /// Abort, returning the system to a safe state.
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_WRN("CLIENT TRIGGERED ABORT");
     MutexGuard guard{&controller_state_lock};
 
+#ifdef CONFIG_VALVES
+    if (current_state == SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE) {
+        autonomous_valve_sequence.reset();
+        auto safe_result = restore_autonomous_valve_safe_states();
+        if (!safe_result) {
+            LOG_ERR("Failed to restore autonomous valve safe states during abort: %s", safe_result.error().build_message().c_str());
+        }
+    }
+#endif
     abort_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_ABORT;
     return {};
@@ -821,11 +1084,24 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
     case SystemState_STATE_STATIC_FIRE:
     case SystemState_STATE_THROTTLE_VALVE:
     case SystemState_STATE_RCS_VALVE:
+    case SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE:
         break;
     default:
         return std::unexpected(Error::from_cause("must be in an active control state to halt"));
     }
 
+#ifdef CONFIG_VALVES
+    if (current_state == SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE) {
+        autonomous_valve_sequence.reset();
+        auto safe_result = restore_autonomous_valve_safe_states();
+        if (!safe_result) {
+            abort_start_cycle = k_cycle_get_64();
+            current_state = SystemState_STATE_ABORT;
+            return std::unexpected(safe_result.error().context("halted autonomous valve sequence but safe-state command failed"));
+        }
+        autonomous_valve_count = 0;
+    }
+#endif
     current_state = SystemState_STATE_IDLE;
     setup_idle();
     LOG_INF("Halting sequence");

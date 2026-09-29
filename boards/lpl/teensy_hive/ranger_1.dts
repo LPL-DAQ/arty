@@ -85,7 +85,7 @@ Ranger 1 board.
         analog-sensor-adc-resolution = <ANALOG_SENSORS_ADC_RESOLUTION>;
 
         // GPIOs connected to valves. Valve channel numbers are indexed by their position in this list.
-        valve-gpios = 
+        valve-gpios =
             <&mcp23017_1 8 GPIO_ACTIVE_HIGH>,
             <&mcp23017_1 9 GPIO_ACTIVE_HIGH>,
             <&mcp23017_1 10 GPIO_ACTIVE_HIGH>,
