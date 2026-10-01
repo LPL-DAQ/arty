@@ -78,7 +78,7 @@ static std::pair<float, float> lateralPID(EstimatedState state, FlightController
 
     // Body-frame reduced attitude error
     // Unit Z because we are in body frame
-    Vector3D axis_error_b = math_util::crossProduct(math_util::unitZ(), z_des_b);
+    Vector3D axis_error_b = math_util::crossProduct(math_util::unitX(), z_des_b);
 
     // Inner loop on body-axis tilt error
     // TODO: Check if this needs a negative sign.
@@ -97,6 +97,18 @@ static std::pair<float, float> lateralPID(EstimatedState state, FlightController
     return output_accelerations;
 }
 
+/*
+Function to compute vertical acceleration command from position and velocity errors.
+This function implements a cascaded PID control structur
+
+Parameters: 
+- EstimatedState state: The current estimated state of the system, including position and velocity.
+- FlightControllerMetrics& metrics: A reference to a metrics structure that will be populated 
+    with relevant data during the computation.
+
+Returns:
+- float: The computed vertical acceleration command in meters per second squared (m/s^2).
+*/
 static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics){
 
     // outerloop on position
