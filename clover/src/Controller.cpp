@@ -685,14 +685,14 @@ static void step_control_loop(k_work*)
 #endif  // CONFIG_THROTTLE_VALVES
 
 #ifdef CONFIG_PWM_ACTUATORS
-    auto servo_x_status = ServoX::tick(data.pitch_servo_command);
-    if (!servo_x_status) {
-        LOG_ERR("Error while ticking servo x: %s", servo_x_status.error().build_message().c_str());
+    auto tvc_pitch_status = TvcPitch::tick(data.pitch_servo_command);
+    if (!tvc_pitch_status) {
+        LOG_ERR("Error while ticking tvc pitch: %s", tvc_pitch_status.error().build_message().c_str());
     }
 
-    auto servo_y_status = ServoY::tick(data.yaw_servo_command);
-    if (!servo_y_status) {
-        LOG_ERR("Error while ticking servo y: %s", servo_y_status.error().build_message().c_str());
+    auto tvc_yaw_status = TvcYaw::tick(data.yaw_servo_command);
+    if (!tvc_yaw_status) {
+        LOG_ERR("Error while ticking tvc yaw: %s", tvc_yaw_status.error().build_message().c_str());
     }
 
     // RCS

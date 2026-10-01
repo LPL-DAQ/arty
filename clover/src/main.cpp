@@ -120,15 +120,15 @@ int main(void)
 #endif
 
 #ifdef CONFIG_PWM_ACTUATORS
-    LOG_INF("Initializing servo x");
-    if (auto result = ServoX::init(); !result) {
-        LOG_ERR("Failed to initialize servo x: %s", result.error().build_message().c_str());
+    LOG_INF("Initializing tvc pitch");
+    if (auto result = TvcPitch::init(); !result) {
+        LOG_ERR("Failed to initialize tvc pitch: %s", result.error().build_message().c_str());
         return 0;
     }
 
-    LOG_INF("Initializing servo y");
-    if (auto result = ServoY::init(); !result) {
-        LOG_ERR("Failed to initialize servo y: %s", result.error().build_message().c_str());
+    LOG_INF("Initializing tvc yaw");
+    if (auto result = TvcYaw::init(); !result) {
+        LOG_ERR("Failed to initialize tvc yaw: %s", result.error().build_message().c_str());
         return 0;
     }
 

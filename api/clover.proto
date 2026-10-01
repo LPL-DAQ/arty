@@ -771,7 +771,16 @@ message HornetThrottleMetrics {
 
 message RangerTvcMetrics {}
 
-message HornetTvcMetrics {}
+message HornetTvcMetrics {
+  required float commanded_pitch_gimbal_deg = 1;
+  required float commanded_yaw_gimbal_deg = 2;
+  required float target_pitch_extension_mm = 3;
+  required float target_yaw_extension_mm = 4;
+  required float commanded_pitch_extension_mm = 5;
+  required float commanded_yaw_extension_mm = 6;
+  required uint32 pitch_pulse_us = 7;
+  required uint32 yaw_pulse_us = 8;
+}
 
 message RangerRcsMetrics {}
 
