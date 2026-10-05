@@ -123,6 +123,9 @@ Ranger 1 board.
     chosen {
         // zephyr,console = &lpuart2;
         zephyr,console = &cdc_acm_uart0;
+
+        // TVC moteus controllers (pitch + yaw actuators).
+        zephyr,canbus = &flexcan3;
     };
 };
 
@@ -504,4 +507,12 @@ Ranger 1 board.
 &enet_mac {
     /delete-property/ nxp,unique-mac;
     local-mac-address = [ 67 67 67 67 67 67  ];
+};
+
+// TVC CAN-FD bus to the moteus controllers. TX: Pin 31 (EMC_36), RX: Pin 30 (EMC_37); pinctrl comes from teensy40.dts.
+// Bitrates match the moteus defaults (1 Mbps arbitration / 5 Mbps data); see TVC_CAN_BRS in tvc_config.h.
+&flexcan3 {
+    status = "okay";
+    bitrate = <1000000>;
+    bitrate-data = <5000000>;
 };
