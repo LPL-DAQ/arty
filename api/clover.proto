@@ -593,8 +593,16 @@ message ThrottleValveCommand {
   required float target_deg = 3;
 }
 
+// What the TVC loop last sent to one gimbal actuator (moteus). Published every controller tick, in every state.
 message TvcActuatorCommand {
-
+  // Gimbal angle after the +/-limit clamp and slew limit.
+  required float target_angle_deg = 1;
+  // Actuator length from inverse kinematics, after the length clamp.
+  required float target_length_in = 2;
+  // moteus output position setpoint, relative to the homed center.
+  required float target_position_rev = 3;
+  // True if the last TVC cycle sent a position command (false while stopped, homing or not yet enabled).
+  required bool driving = 4;
 }
 
 // PTs are in psig, TCs are in deg C, raw are in volts.
@@ -769,7 +777,65 @@ message HornetThrottleMetrics {
   optional float thrust_N = 1;
 }
 
-message RangerTvcMetrics {}
+// Mirrors tvc::State in clover/src/ranger/tvc/tvc_control.h.
+enum TvcState {
+  TVC_STATE_STARTUP = 0;   // Waiting for both moteus controllers to reply.
+  TVC_STATE_CLEARING = 1;  // Stopping both controllers to clear faults/timeouts.
+  TVC_STATE_READY = 2;     // Not driving; enables automatically once enable_blockers is 0.
+  TVC_STATE_HOMING = 3;    // Setting the current (operator-centered) position as 0 rev.
+  TVC_STATE_ENABLED = 4;   // Driving both actuators in position mode.
+  TVC_STATE_FAULT = 5;     // Fault latched; holding center (or stopped) until re-homed.
+}
+
+// Measured state of one TVC actuator, from its moteus controller.
+message TvcActuatorStatus {
+  // Last cycle's reply arrived and decoded.
+  required bool responding = 1;
+  // moteus mode register (0 stopped, 1 fault, 10 position, 11 timeout, ...).
+  required int32 mode = 2;
+  // moteus home state (0 relative, 1 rotor, 2 output = homed).
+  required int32 home_state = 3;
+  required int32 fault_code = 4;
+  // moteus fault code captured when the fault latched.
+  required int32 latched_fault_code = 5;
+  // tvc::FaultBits: 1 no reply, 2 moteus fault, 4 moteus timeout, 8 unexpected mode, 16 position error.
+  required uint32 faults = 6;
+  required uint32 missed_replies = 7;
+  required float measured_position_rev = 8;
+  required float measured_velocity_rev_s = 9;
+  required float measured_torque_nm = 10;
+  // Back-computed from measured_position_rev; NaN until the axis config is complete.
+  required float measured_length_in = 11;
+  required float measured_angle_deg = 12;
+  // Commanded minus measured actuator length.
+  required float position_error_in = 13;
+  required float bus_voltage_v = 14;
+  required float temperature_c = 15;
+  // Last cycle's command-to-reply latency.
+  required float reply_latency_us = 16;
+}
+
+message RangerTvcMetrics {
+  required TvcState state = 1;
+  // tvc::EnableBlockers: 1 config incomplete, 2 no reply, 4 not homed, 8 not centered, 16 not stopped.
+  required uint32 enable_blockers = 2;
+  required bool homing_failed = 3;
+  // Latest command handed to the TVC loop, before clamping and slewing.
+  required float requested_pitch_deg = 4;
+  required float requested_yaw_deg = 5;
+  required TvcActuatorStatus pitch = 6;
+  required TvcActuatorStatus yaw = 7;
+  required uint32 loop_count = 8;
+  // Last measured loop period, and the worst |period - nominal| over the previous second.
+  required float loop_period_us = 9;
+  required float loop_jitter_max_us = 10;
+  // Wake-up to both replies collected.
+  required float cycle_time_us = 11;
+  // Timer expirations the loop missed entirely.
+  required uint32 loop_overruns = 12;
+  // CONFIG_RANGER_TVC_BENCH_SWEEP build: commands come from the bench sweep, not GNC.
+  required bool bench_sweep = 13;
+}
 
 message HornetTvcMetrics {}
 
