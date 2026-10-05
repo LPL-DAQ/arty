@@ -285,7 +285,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     }
 
     if (current_state == SystemState_STATE_TVC || current_state == SystemState_STATE_FLIGHT || current_state == SystemState_STATE_STATIC_FIRE) {
-#ifdef CONFIG_RANGER
+#ifdef CONFIG_RANGER_TVC
         if (!data.has_tvc_pitch_command_deg) {
             return std::unexpected(Error::from_cause("missing tvc pitch command"));
         }
@@ -351,6 +351,9 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 // TODO: from noah: i feel like something should be here, no?
 static void tick_abort(DataPacket& data)
 {
+#ifdef CONFIG_RANGER_TVC
+    RangerTvc::hold_center();
+#endif
 }
 
 /// Kicks off the controller workqueue. Last phase of initial setup in the main function.
@@ -539,7 +542,12 @@ static void step_control_loop(k_work*)
     data.lox_valve_status = LoxValve::status();
 #endif  // CONFIG_THROTTLE_VALVES
 
-    // TVC actuator statuses
+    // TVC actuator statuses. The TVC loop runs in its own thread; publish its latest state every tick. Its commands go
+    // through prev_*_actuator_command so the default-command block below picks them up.
+#ifdef CONFIG_RANGER_TVC
+    data.has_ranger_tvc_metrics = true;
+    std::tie(prev_pitch_actuator_command, prev_yaw_actuator_command, data.ranger_tvc_metrics) = RangerTvc::telemetry();
+#endif  // CONFIG_RANGER_TVC
 
     // Valve actuator statuses
 
@@ -631,9 +639,22 @@ static void step_control_loop(k_work*)
     }
 #endif  // CONFIG_THROTTLE_VALVES
 
-    case SystemState_STATE_CALIBRATE_TVC:
-        // TODO
+    case SystemState_STATE_CALIBRATE_TVC: {
+#ifdef CONFIG_RANGER_TVC
+        const auto homing = RangerTvc::homing_status();
+        if (homing == RangerTvc::HomingStatus::SUCCEEDED) {
+            LOG_INF("TVC calibration (homing) complete, entering IDLE");
+            current_state = SystemState_STATE_IDLE;
+        }
+        else if (homing == RangerTvc::HomingStatus::FAILED) {
+            LOG_ERR("TVC calibration (homing) failed, entering IDLE");
+            current_state = SystemState_STATE_IDLE;
+        }
+#else
+        current_state = SystemState_STATE_IDLE;
+#endif
         break;
+    }
     // Active control through traces.
     case SystemState_STATE_THROTTLE:
     case SystemState_STATE_TVC:
@@ -1023,9 +1044,13 @@ std::expected<void, Error> Controller::handle_calibrate_tvc(const CalibrateTvcRe
     MutexGuard guard{&controller_state_lock};
 
     if (current_state != SystemState_STATE_IDLE) {
-        return std::unexpected(Error::from_cause("tvc load sequence rejected unless system is idle"));
+        return std::unexpected(Error::from_cause("tvc calibration rejected unless system is idle"));
     }
-    // TODO
+
+#ifdef CONFIG_RANGER_TVC
+    // Homing: the operator must have mechanically centered the gimbal. The current position becomes 0 rev.
+    RangerTvc::request_home();
+#endif
 
     current_state = SystemState_STATE_CALIBRATE_TVC;
     LOG_INF("Calibrating TVC");
@@ -1080,6 +1105,12 @@ std::expected<void, Error> Controller::handle_start_tvc_sequence(const StartTvcS
     if (current_state != SystemState_STATE_TVC_PRIMED) {
         return std::unexpected(Error::from_cause("State must be TVC_PRIMED to enter TVC"));
     }
+
+#ifdef CONFIG_RANGER_TVC
+    if (auto tvc_ready = RangerTvc::ensure_ready(); !tvc_ready) {
+        return std::unexpected(tvc_ready.error().context("cannot enter TVC"));
+    }
+#endif
 
     trace_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_TVC;
@@ -1243,6 +1274,12 @@ std::expected<void, Error> Controller::handle_start_static_fire_sequence(const S
         return std::unexpected(Error::from_cause("State must be STATIC_FIRE_PRIMED to enter static fire"));
     }
 
+#ifdef CONFIG_RANGER_TVC
+    if (auto tvc_ready = RangerTvc::ensure_ready(); !tvc_ready) {
+        return std::unexpected(tvc_ready.error().context("cannot enter STATIC_FIRE"));
+    }
+#endif
+
     trace_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_STATIC_FIRE;
 
@@ -1312,6 +1349,12 @@ std::expected<void, Error> Controller::handle_start_flight_sequence(const StartF
     if (current_state != SystemState_STATE_FLIGHT_PRIMED) {
         return std::unexpected(Error::from_cause("State must be FLIGHT_PRIMED to enter FLIGHT"));
     }
+
+#ifdef CONFIG_RANGER_TVC
+    if (auto tvc_ready = RangerTvc::ensure_ready(); !tvc_ready) {
+        return std::unexpected(tvc_ready.error().context("cannot enter FLIGHT"));
+    }
+#endif
 
     trace_start_cycle = k_cycle_get_64();
     FlightController::reset();

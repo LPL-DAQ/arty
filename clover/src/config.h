@@ -4,6 +4,7 @@
 #include <limits>
 
 constexpr int CONTROLLER_STEP_WORK_Q_PRIORITY = -10;
+constexpr int TVC_THREAD_PRIORITY = -7;  // Below the controller workqueue, above sensor threads. See RangerTvc.cpp.
 constexpr int ANALOG_SENSORS_THREAD_PRIORITY = -5;
 constexpr int LIDAR_1_THREAD_PRIORITY = -5;
 constexpr int LIDAR_2_THREAD_PRIORITY = -5;

@@ -11,6 +11,7 @@
 #include "Controller.h"
 #include "ThrottleValve.h"
 #include "Valves.h"
+#include "ranger/RangerTvc.h"
 #include "sensors/AnalogSensors.h"
 #include "sensors/Gnss.h"
 #include "sensors/Lidar.h"
@@ -114,6 +115,14 @@ int main(void)
     LOG_INF("Initializing lox throttle valve");
     if (auto result = LoxValve::init(); !result) {
         LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
+        return 0;
+    }
+#endif
+
+#ifdef CONFIG_RANGER_TVC
+    LOG_INF("Initializing TVC");
+    if (auto result = RangerTvc::init(); !result) {
+        LOG_ERR("Failed to initialize TVC: %s", result.error().build_message().c_str());
         return 0;
     }
 #endif

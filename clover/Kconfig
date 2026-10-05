@@ -91,6 +91,16 @@ config RANGER_TVC
     default y if RANGER
     select TVC
 
+config RANGER_TVC_BENCH_SWEEP
+    bool "TVC bench test: ignore GNC and sweep each gimbal axis slowly"
+    depends on RANGER_TVC
+    default n
+    help
+      BENCH USE ONLY. Once the TVC enables, the actuators ignore every GNC/trace
+      command and sweep pitch, then yaw, through +/-TVC_BENCH_SWEEP_AMPLITUDE_DEG
+      (tvc_config.h) at TVC_BENCH_SWEEP_RATE_DEG_S, logging commanded vs measured
+      angle at 5 Hz. Never enable for a hotfire or flight build.
+
 config RANGER_RCS
     bool "Whether ranger-variant TVC is available"
     depends on RANGER
