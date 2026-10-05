@@ -41,6 +41,11 @@ namespace math_util
       return out;
   }
 
+  inline Vector3D unitX()
+  {
+      return createVector3D(1.0f, 0.0f, 0.0f);
+  }
+
   inline Vector3D unitZ()
   {
       return createVector3D(0.0f, 0.0f, 1.0f);
