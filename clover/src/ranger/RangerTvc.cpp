@@ -264,9 +264,12 @@ void tvc_loop(void*, void*, void*)
             }
             else if (inputs.home_request) {
                 // Rejected: the supervisor only homes once both controllers have replied and been stopped.
-                LOG_ERR("TVC homing rejected: controllers not up yet (state %d)", static_cast<int>(supervisor.state()));
                 shared.homing = RangerTvc::HomingStatus::FAILED;
             }
+        }
+        // Log outside the lock: immediate-mode logging can take milliseconds and the controller tick waits on it.
+        if (inputs.home_request && supervisor.state() != tvc::State::HOMING) {
+            LOG_ERR("TVC homing rejected: controllers not up yet (state %d)", static_cast<int>(supervisor.state()));
         }
 
         if (loop_count % STATS_LOG_CYCLES == 0) {
@@ -375,6 +378,9 @@ std::expected<void, Error> RangerTvc::ensure_ready()
 void RangerTvc::request_home()
 {
     MutexGuard guard{&shared_lock};
+    // The TVC enables right after homing; make it hold center rather than resume a stale trace command.
+    shared.pitch_command_deg = 0.0f;
+    shared.yaw_command_deg = 0.0f;
     shared.home_request = true;
     shared.homing = HomingStatus::IN_PROGRESS;
 }

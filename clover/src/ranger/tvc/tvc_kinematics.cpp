@@ -8,12 +8,25 @@ namespace {
 constexpr float DEG_TO_RAD = 0.017453292519943295f;
 constexpr float RAD_TO_DEG = 57.29577951308232f;
 
+/// Newton's-method square root usable in constant expressions. COS_B must be a compile-time constant: a dynamically
+/// initialized global here could still be 0 when another translation unit's static constructor (e.g. the global
+/// tvc::Supervisor, which precomputes the length clamp) calls length_in().
+constexpr double constexpr_sqrt(double x)
+{
+    double r = x > 1.0 ? x : 1.0;
+    for (int i = 0; i < 64; i++) {
+        r = 0.5 * (r + x / r);
+    }
+    return r;
+}
+
 // Law of cosines terms. Lts and Lre are fixed by the structure, so precompute:
 //     L^2 = A - B * cos(theta)   with   A = Lts^2 + Lre^2,   B = 2 * Lts * Lre
-constexpr float LTS_SQ = tvc::TVC_X_IN * tvc::TVC_X_IN + tvc::TVC_TE_IN * tvc::TVC_TE_IN;
-constexpr float LRE_SQ = tvc::TVC_E_IN * tvc::TVC_E_IN + tvc::TVC_ER_IN * tvc::TVC_ER_IN;
-constexpr float COS_A = LTS_SQ + LRE_SQ;
-const float COS_B = 2.0f * std::sqrt(LTS_SQ) * std::sqrt(LRE_SQ);
+constexpr double LTS_SQ = double(tvc::TVC_X_IN) * tvc::TVC_X_IN + double(tvc::TVC_TE_IN) * tvc::TVC_TE_IN;
+constexpr double LRE_SQ = double(tvc::TVC_E_IN) * tvc::TVC_E_IN + double(tvc::TVC_ER_IN) * tvc::TVC_ER_IN;
+constexpr float COS_A = static_cast<float>(LTS_SQ + LRE_SQ);
+constexpr float COS_B = static_cast<float>(2.0 * constexpr_sqrt(LTS_SQ) * constexpr_sqrt(LRE_SQ));
+static_assert(COS_B > 223.6f && COS_B < 223.7f, "2 * Lts * Lre should be ~223.65 in^2 for the current geometry");
 
 }  // namespace
 
