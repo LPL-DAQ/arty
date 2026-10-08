@@ -173,4 +173,3 @@ The basic direction is straightforward:
 
 This keeps the design modular and consistent with the rest of the codebase, while still leaving room for the exact event schema and runtime behavior to be finalized.
 
-test
