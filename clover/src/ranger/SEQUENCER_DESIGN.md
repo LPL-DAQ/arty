@@ -172,3 +172,5 @@ The basic direction is straightforward:
 - sample the sequence during control ticks and map each sample to the correct actuator output
 
 This keeps the design modular and consistent with the rest of the codebase, while still leaving room for the exact event schema and runtime behavior to be finalized.
+
+test
