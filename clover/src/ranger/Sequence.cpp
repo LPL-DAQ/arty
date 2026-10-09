@@ -1,3 +1,4 @@
+// Parses ignition logs, stores uploaded definitions, and schedules valve events.
 #include "Sequence.h"
 #include "MutexGuard.h"
 
@@ -13,7 +14,33 @@ constexpr std::string_view SEQUENCE_DIRECTORY = "/SD:/sequences/";
 
 K_MUTEX_DEFINE(sequence_file_lock);
 std::array<char, Sequence::MAX_FILE_SIZE + 1> sequence_file_buffer{};
+std::array<char, Sequence::MAX_FILE_NAME_SIZE + 1> uploaded_sequence_file_name{};
+std::array<char, Sequence::MAX_FILE_NAME_SIZE + 1> upload_staging_file_name{};
+size_t upload_received_size = 0;
+uint32_t upload_expected_size = 0;
+uint32_t uploaded_sequence_run_index = 0;
+uint32_t upload_run_index = 0;
+Sequence::Definition uploaded_sequence_definition{};
+bool uploaded_sequence_ready = false;
+bool upload_in_progress = false;
 
+/// Checks a sequence filename against the controller's accepted basename rules.
+/// Parameters: file_name is the name supplied by the client.
+/// Returns: true when the name is safe and uses the supported log extension.
+bool valid_file_name(std::string_view file_name)
+{
+    return !file_name.empty() && file_name.size() <= Sequence::MAX_FILE_NAME_SIZE &&
+           file_name.find("..") == std::string_view::npos &&
+           std::all_of(file_name.begin(), file_name.end(), [](char ch) {
+               return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+                      ch == '_' || ch == '-' || ch == '.';
+           }) &&
+           file_name.ends_with(".log");
+}
+
+/// Removes leading and trailing whitespace from a view.
+/// Parameters: value is the text to trim.
+/// Returns: a view of the trimmed text.
 std::string_view trim(std::string_view value)
 {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
@@ -25,6 +52,9 @@ std::string_view trim(std::string_view value)
     return value;
 }
 
+/// Parses an unsigned decimal integer.
+/// Parameters: text is the numeric token; value receives the result on success.
+/// Returns: true when text is a valid in-range integer.
 bool parse_uint_value(std::string_view text, uint32_t& value)
 {
     text = trim(text);
@@ -43,6 +73,9 @@ bool parse_uint_value(std::string_view text, uint32_t& value)
     return true;
 }
 
+/// Checks whether a token has a supported valve-name shape.
+/// Parameters: name is the valve token from the ignition log.
+/// Returns: true when the token matches a supported valve-name pattern.
 bool valid_valve_name(std::string_view name)
 {
     if (name.size() == 7 && name.starts_with("PBV-") &&
@@ -58,6 +91,9 @@ bool valid_valve_name(std::string_view name)
     return false;
 }
 
+/// Converts a decimal seconds token to milliseconds.
+/// Parameters: text is the seconds token; value receives milliseconds on success.
+/// Returns: true when text is a valid nonnegative timestamp.
 bool parse_seconds_ms(std::string_view text, uint32_t& value)
 {
     text = trim(text);
@@ -102,6 +138,9 @@ bool parse_seconds_ms(std::string_view text, uint32_t& value)
     return true;
 }
 
+/// Splits a line into whitespace-delimited tokens.
+/// Parameters: line is the source text; fields and count receive the tokens and count.
+/// Returns: true when the line fits in the token array.
 bool split_fields(std::string_view line, std::array<std::string_view, 8>& fields, size_t& count)
 {
     count = 0;
@@ -119,6 +158,9 @@ bool split_fields(std::string_view line, std::array<std::string_view, 8>& fields
     return true;
 }
 
+/// Parses an ignition valve event line.
+/// Parameters: line is the source; valve, target, and timestamp_ms receive parsed fields.
+/// Returns: true when all required fields are valid.
 bool parse_log_event(std::string_view line, std::string_view& valve, std::string_view& target, uint32_t& timestamp_ms)
 {
     std::array<std::string_view, 8> fields{};
@@ -128,10 +170,13 @@ bool parse_log_event(std::string_view line, std::string_view& valve, std::string
     }
     valve = fields[1];
     target = fields[4];
-    return valid_valve_name(valve) && (fields[2] == "OPEN" || fields[2] == "CLOSE") &&
+    return valid_valve_name(valve) && (fields[2] == "OPEN" || fields[2] == "CLOSE" || fields[2] == "CLOSED") &&
            (target == "OPEN" || target == "CLOSE") && parse_seconds_ms(fields[5], timestamp_ms);
 }
 
+/// Parses an ignition-start marker.
+/// Parameters: line is the source; timestamp_ms receives the marker time.
+/// Returns: true when the line is a valid start marker.
 bool parse_ignition_marker(std::string_view line, uint32_t& timestamp_ms)
 {
     std::array<std::string_view, 8> fields{};
@@ -140,6 +185,9 @@ bool parse_ignition_marker(std::string_view line, uint32_t& timestamp_ms)
            parse_seconds_ms(fields[2], timestamp_ms);
 }
 
+/// Parses an ignition-termination marker.
+/// Parameters: line is the source; timestamp_ms receives the marker time.
+/// Returns: true when the line is a valid termination marker.
 bool parse_terminated_marker(std::string_view line, uint32_t& timestamp_ms)
 {
     std::array<std::string_view, 8> fields{};
@@ -150,6 +198,9 @@ bool parse_terminated_marker(std::string_view line, uint32_t& timestamp_ms)
 
 }  // namespace
 
+/// Adds a validated valve event to the definition.
+/// Parameters: time_ms is relative event time; valve and state identify the target.
+/// Returns: success or an error if the event is invalid or capacity is exhausted.
 std::expected<void, Error> Sequence::Definition::append(uint32_t time_ms, std::string_view valve, std::string_view state)
 {
     if (event_count_ == events_.size()) {
@@ -179,6 +230,9 @@ std::expected<void, Error> Sequence::Definition::append(uint32_t time_ms, std::s
     return {};
 }
 
+/// Sets the duration after checking it does not precede the last event.
+/// Parameters: duration_ms is the requested sequence duration.
+/// Returns: success or an error when the requested duration is too short.
 std::expected<void, Error> Sequence::Definition::set_duration(uint32_t duration_ms)
 {
     if (duration_ms < duration_ms_) {
@@ -188,6 +242,9 @@ std::expected<void, Error> Sequence::Definition::set_duration(uint32_t duration_
     return {};
 }
 
+/// Parses the selected ignition run from a complete log.
+/// Parameters: text is the complete log; run_index selects a zero-based run.
+/// Returns: the selected definition or an error when the run is invalid or absent.
 std::expected<Sequence::Definition, Error> Sequence::Definition::parse_log(std::string_view text, uint32_t run_index)
 {
     if (text.empty() || text.size() > MAX_FILE_SIZE || run_index >= MAX_RUNS) {
@@ -267,19 +324,27 @@ std::expected<Sequence::Definition, Error> Sequence::Definition::parse_log(std::
     return selected;
 }
 
+/// Loads a previously uploaded definition or reads the named file from SD.
+/// Parameters: file_name identifies the sequence; run_index selects its ignition run.
+/// Returns: the selected definition or a loading/parsing error.
 std::expected<Sequence::Definition, Error> Sequence::Definition::load_file(std::string_view file_name, uint32_t run_index)
 {
-    if (file_name.empty() || file_name.size() > MAX_FILE_NAME_SIZE || file_name.find("..") != std::string_view::npos ||
-        !std::all_of(file_name.begin(), file_name.end(), [](char ch) {
-            return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.';
-        })) {
+    if (!valid_file_name(file_name)) {
         return std::unexpected(Error::from_cause("sequence file name is invalid"));
-    }
-    if (!file_name.ends_with(".log")) {
-        return std::unexpected(Error::from_cause("sequence file must end in .log"));
     }
 
     MutexGuard guard{&sequence_file_lock};
+    if (upload_in_progress &&
+        (!uploaded_sequence_ready || std::string_view{uploaded_sequence_file_name.data()} != file_name)) {
+        return std::unexpected(Error::from_cause("a sequence upload is in progress"));
+    }
+    if (uploaded_sequence_ready && std::string_view{uploaded_sequence_file_name.data()} == file_name) {
+        if (run_index != uploaded_sequence_run_index) {
+            return std::unexpected(Error::from_cause("uploaded sequence was prepared for run index %u", uploaded_sequence_run_index));
+        }
+        return uploaded_sequence_definition;
+    }
+
     std::array<char, 80> path{};
     const size_t required_path_size = SEQUENCE_DIRECTORY.size() + file_name.size() + 1;
     if (required_path_size > path.size()) {
@@ -310,26 +375,111 @@ std::expected<Sequence::Definition, Error> Sequence::Definition::load_file(std::
     return parse_log(content, run_index);
 }
 
+/// Adds one ordered upload chunk and validates the selected run when complete.
+/// Parameters: file_name, offset, total_size, data, final_chunk, and run_index describe the upload.
+/// Returns: success when accepted or an error for invalid, incomplete-order, or malformed input.
+std::expected<void, Error> Sequence::Definition::upload_chunk(
+    std::string_view file_name,
+    uint32_t offset,
+    uint32_t total_size,
+    std::string_view data,
+    bool final_chunk,
+    uint32_t run_index)
+{
+    if (!valid_file_name(file_name)) {
+        return std::unexpected(Error::from_cause("sequence file name is invalid"));
+    }
+    if (total_size == 0 || total_size > MAX_FILE_SIZE) {
+        return std::unexpected(Error::from_cause("sequence file size must be between 1 and %u bytes", static_cast<unsigned>(MAX_FILE_SIZE)));
+    }
+    if (data.empty() || data.size() > MAX_UPLOAD_CHUNK_SIZE) {
+        return std::unexpected(Error::from_cause("sequence upload chunk size must be between 1 and %u bytes", static_cast<unsigned>(MAX_UPLOAD_CHUNK_SIZE)));
+    }
+    if (data.find('\0') != std::string_view::npos) {
+        return std::unexpected(Error::from_cause("sequence upload chunk contains a null byte"));
+    }
+    if (offset > total_size) {
+        return std::unexpected(Error::from_cause("sequence upload offset exceeds the declared file size"));
+    }
+
+    MutexGuard guard{&sequence_file_lock};
+    if (offset == 0) {
+        upload_staging_file_name.fill('\0');
+        std::copy(file_name.begin(), file_name.end(), upload_staging_file_name.begin());
+        upload_received_size = 0;
+        upload_expected_size = total_size;
+        upload_run_index = run_index;
+        upload_in_progress = true;
+    }
+    else if (!upload_in_progress) {
+        return std::unexpected(Error::from_cause("sequence upload must start at offset 0"));
+    }
+
+    if (!upload_in_progress || std::string_view{upload_staging_file_name.data()} != file_name ||
+        upload_expected_size != total_size || upload_run_index != run_index || offset != upload_received_size) {
+        return std::unexpected(Error::from_cause("sequence upload chunk is out of order or does not match the active upload"));
+    }
+    if (data.size() > total_size - offset) {
+        return std::unexpected(Error::from_cause("sequence upload chunk exceeds the declared file size"));
+    }
+    const size_t next_size = upload_received_size + data.size();
+    if (final_chunk != (next_size == total_size)) {
+        return std::unexpected(Error::from_cause("sequence upload final-chunk flag does not match the declared file size"));
+    }
+
+    std::copy(data.begin(), data.end(), sequence_file_buffer.begin() + upload_received_size);
+    upload_received_size = next_size;
+    if (final_chunk) {
+        sequence_file_buffer[upload_received_size] = '\0';
+        auto definition = parse_log(std::string_view{sequence_file_buffer.data(), upload_received_size}, upload_run_index);
+        if (!definition) {
+            upload_in_progress = false;
+            return std::unexpected(definition.error().context("failed to validate uploaded sequence"));
+        }
+        std::copy(upload_staging_file_name.begin(), upload_staging_file_name.end(), uploaded_sequence_file_name.begin());
+        uploaded_sequence_definition = std::move(*definition);
+        uploaded_sequence_run_index = upload_run_index;
+        uploaded_sequence_ready = true;
+        upload_in_progress = false;
+    }
+    return {};
+}
+
+/// Returns one event by zero-based index.
+/// Parameters: index is the event position.
+/// Returns: a reference to the indexed event.
 const Sequence::Event& Sequence::Definition::event(size_t index) const
 {
     return events_[index];
 }
 
+/// Returns the number of events in the definition.
+/// Parameters: None.
+/// Returns: the event count.
 size_t Sequence::Definition::size() const
 {
     return event_count_;
 }
 
+/// Returns the total sequence duration.
+/// Parameters: None.
+/// Returns: duration in milliseconds.
 uint32_t Sequence::Definition::duration_ms() const
 {
     return duration_ms_;
 }
 
+/// Returns a non-owning view of events in time order.
+/// Parameters: None.
+/// Returns: a span over the parsed events.
 std::span<const Sequence::Event> Sequence::Definition::events() const
 {
     return {events_.data(), event_count_};
 }
 
+/// Loads a parsed sequence and resets scheduler progress.
+/// Parameters: definition is the validated sequence to schedule.
+/// Returns: success or an error when the sequence has no events.
 std::expected<void, Error> Sequence::Scheduler::load(Definition definition)
 {
     if (definition.size() == 0) {
@@ -338,12 +488,16 @@ std::expected<void, Error> Sequence::Scheduler::load(Definition definition)
     definition_ = std::move(definition);
     next_event_ = 0;
     last_elapsed_ms_ = 0;
+    event_pending_ = false;
     loaded_ = true;
     started_ = false;
     complete_ = false;
     return {};
 }
 
+/// Starts or restarts the loaded sequence.
+/// Parameters: None.
+/// Returns: success or an error when no sequence has been loaded.
 std::expected<void, Error> Sequence::Scheduler::start()
 {
     if (!loaded_) {
@@ -351,19 +505,27 @@ std::expected<void, Error> Sequence::Scheduler::start()
     }
     next_event_ = 0;
     last_elapsed_ms_ = 0;
+    event_pending_ = false;
     started_ = true;
     complete_ = false;
     return {};
 }
 
+/// Clears scheduler progress while retaining its loaded definition.
+/// Parameters: None.
+/// Returns: nothing.
 void Sequence::Scheduler::reset()
 {
     next_event_ = 0;
     last_elapsed_ms_ = 0;
+    event_pending_ = false;
     started_ = false;
     complete_ = false;
 }
 
+/// Reports the next due event without consuming it.
+/// Parameters: elapsed_ms is monotonic time since the sequence started.
+/// Returns: at most one due event and the completion status, or a scheduler error.
 std::expected<Sequence::Tick, Error> Sequence::Scheduler::advance(uint32_t elapsed_ms)
 {
     if (!started_) {
@@ -373,33 +535,58 @@ std::expected<Sequence::Tick, Error> Sequence::Scheduler::advance(uint32_t elaps
         return std::unexpected(Error::from_cause("sequence elapsed time must be monotonic"));
     }
 
-    const size_t first_due = next_event_;
-    while (next_event_ < definition_.size() && definition_.event(next_event_).time_ms <= elapsed_ms) {
-        ++next_event_;
+    if (!event_pending_ && next_event_ < definition_.size() && definition_.event(next_event_).time_ms <= elapsed_ms) {
+        event_pending_ = true;
     }
     last_elapsed_ms_ = elapsed_ms;
-    complete_ = next_event_ == definition_.size() && elapsed_ms >= definition_.duration_ms();
+    complete_ = !event_pending_ && next_event_ == definition_.size() && elapsed_ms >= definition_.duration_ms();
     return Tick{
-        .due_events = definition_.events().subspan(first_due, next_event_ - first_due),
+        .due_events = event_pending_ ? definition_.events().subspan(next_event_, 1) : std::span<const Event>{},
         .complete = complete_,
     };
 }
 
+/// Marks the pending due event consumed after the controller successfully issues it.
+/// Parameters: None.
+/// Returns: success or an error when no event is pending.
+std::expected<void, Error> Sequence::Scheduler::acknowledge_event()
+{
+    if (!started_ || !event_pending_) {
+        return std::unexpected(Error::from_cause("no due sequence event is awaiting acknowledgement"));
+    }
+    ++next_event_;
+    event_pending_ = false;
+    complete_ = next_event_ == definition_.size() && last_elapsed_ms_ >= definition_.duration_ms();
+    return {};
+}
+
+/// Reports whether a definition is loaded.
+/// Parameters: None.
+/// Returns: true when a definition is loaded.
 bool Sequence::Scheduler::is_loaded() const
 {
     return loaded_;
 }
 
+/// Reports whether the scheduler is active and incomplete.
+/// Parameters: None.
+/// Returns: true while the sequence is running.
 bool Sequence::Scheduler::is_running() const
 {
     return started_ && !complete_;
 }
 
+/// Reports whether all events were acknowledged and the duration elapsed.
+/// Parameters: None.
+/// Returns: true when the sequence is complete.
 bool Sequence::Scheduler::is_complete() const
 {
     return complete_;
 }
 
+/// Returns the loaded sequence duration.
+/// Parameters: None.
+/// Returns: duration in milliseconds, or zero before loading.
 uint32_t Sequence::Scheduler::duration_ms() const
 {
     return definition_.duration_ms();

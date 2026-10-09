@@ -1,3 +1,4 @@
+// Implements protobuf command/data socket servers and client connection tracking.
 #include <array>
 #include <cctype>
 #include <climits>
@@ -58,7 +59,9 @@ K_MUTEX_DEFINE(data_client_info_lock);
 /// done (i.e., when serve_connections() is called).
 K_SEM_DEFINE(allow_serve_connections_sem, 0, 2);
 
-/// Internal callback for pb_istream, used to read from socket to internal buffer and manage count.
+/// Writes a protobuf output buffer to the associated socket.
+/// Parameters: stream provides the socket; buf and count identify the output bytes.
+/// Returns: true when the entire buffer is sent.
 bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t count)
 {
     int sock = reinterpret_cast<int>(stream->state);
@@ -77,12 +80,17 @@ bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t c
     return true;
 }
 
+/// Creates a protobuf output stream for a socket.
+/// Parameters: sock is the connected socket descriptor.
+/// Returns: an output stream configured to write to sock.
 pb_ostream_t pb_ostream_from_socket(int sock)
 {
     return pb_ostream_t{.callback = pb_socket_write_callback, .state = reinterpret_cast<void*>(sock), .max_size = SIZE_MAX, .bytes_written = 0};
 }
 
-/// Internal callback for pb_istream, used to read from socket to internal buffer.
+/// Reads the requested protobuf input bytes from the associated socket.
+/// Parameters: stream provides the socket; buf and count identify the input buffer.
+/// Returns: true when the requested bytes are read.
 bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
 {
     int sock = reinterpret_cast<int>(stream->state);
@@ -109,12 +117,17 @@ bool pb_socket_read_callback(pb_istream_t* stream, uint8_t* buf, size_t count)
     return true;
 }
 
-/// Create a nanopb input stream from socket fd.
+/// Creates a nanopb input stream from a socket descriptor.
+/// Parameters: sock is the connected socket descriptor.
+/// Returns: an input stream configured to read from sock.
 pb_istream_t pb_istream_from_socket(int sock)
 {
     return pb_istream_t{.callback = pb_socket_read_callback, .state = reinterpret_cast<void*>(sock), .bytes_left = SIZE_MAX};
 }
 
+/// Records the identity and last-ping time of a connected client.
+/// Parameters: req identifies the client; thread_index identifies its server thread.
+/// Returns: success or an error for an unsupported client type.
 static std::expected<void, Error> handle_identify_client(const IdentifyClientRequest& req, int thread_index)
 {
     switch (req.client) {
@@ -133,13 +146,18 @@ static std::expected<void, Error> handle_identify_client(const IdentifyClientReq
     }
 }
 
-daq_client_status get_daq_client_status()
+/// Gets the current DAQ client connection and last-ping status.
+/// Parameters: None.
+/// Returns: connected status and elapsed milliseconds since the last ping.
+DaqClientStatus get_daq_client_status()
 {
     MutexGuard daq_status_guard{&daq_status_lock};
-    return daq_client_status{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
+    return DaqClientStatus{.connected = daq_thread_index != -1, .last_pinged_ms = daq_thread_index != -1 ? k_uptime_get() - daq_last_pinged_ms : 0};
 }
 
-/// Add an IP address to the list of data stream recipients.
+/// Adds a connected client to the data-stream recipient list.
+/// Parameters: req is the subscription request; client_thread_index identifies the thread; client_socket is its socket.
+/// Returns: success or an error if the peer address or recipient slot is unavailable.
 std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStreamRequest& req, int client_thread_index, int client_socket)
 {
     MutexGuard data_client_info_guard{&data_client_info_lock};
@@ -164,7 +182,9 @@ std::expected<void, Error> handle_subscribe_data_stream(const SubscribeDataStrea
     return std::unexpected(Error::from_cause("did not find a data client slot"));
 }
 
-/// Handles a client connection. Should run in its own thread.
+/// Processes length-delimited commands for one client connection.
+/// Parameters: p1_thread_index and p2_client_socket carry the thread index and socket; the third parameter is unused.
+/// Returns: nothing.
 static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 {
     int thread_index = reinterpret_cast<int>(p1_thread_index);
@@ -240,6 +260,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         case Request_run_autonomous_valve_sequence_tag: {
             LOG_INF("run_autonomous_valve_sequence command");
             cmd_result = Controller::handle_run_autonomous_valve_sequence(request.payload.run_autonomous_valve_sequence);
+            break;
+        }
+
+        case Request_upload_autonomous_valve_sequence_chunk_tag: {
+            cmd_result = Controller::handle_upload_autonomous_valve_sequence_chunk(request.payload.upload_autonomous_valve_sequence_chunk);
             break;
         }
 
@@ -406,6 +431,9 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 }
 
 /// Attempts to join connection handler threads, allowing the thread slots to be reused to service new connection.
+/// Reaps finished client threads and releases their connection slots.
+/// Parameters: the three thread parameters are unused.
+/// Returns: nothing; this thread runs for the lifetime of the server.
 [[noreturn]] static void reap_dead_connections(void*, void*, void*)
 {
     bool freed_threads[MAX_OPEN_CLIENTS] = {false};
@@ -472,6 +500,9 @@ K_THREAD_DEFINE(server_reaper, 1024, reap_dead_connections, nullptr, nullptr, nu
 
 /// Opens a TCP server, listens for incoming clients, and spawns new threads to serve these connections. This function
 /// blocks indefinitely.
+/// Accepts command connections and starts a handler thread for each client.
+/// Parameters: None.
+/// Returns: nothing; the server loop runs until a socket operation fails.
 void serve_command_connections()
 {
     k_sem_take(&allow_serve_connections_sem, K_FOREVER);
@@ -561,7 +592,9 @@ void serve_command_connections()
 
 K_THREAD_DEFINE(command_server, 8192, serve_command_connections, nullptr, nullptr, nullptr, 2, 0, 0);
 
-/// Broadcasts UDP data packets using a multicast IP.
+/// Accepts telemetry subscriptions and streams packets to registered clients.
+/// Parameters: None.
+/// Returns: nothing; the server loop runs until a socket operation fails.
 void serve_data_connections()
 {
     k_sem_take(&allow_serve_connections_sem, K_FOREVER);
@@ -616,8 +649,9 @@ void serve_data_connections()
 
 K_THREAD_DEFINE(data_server, 8192, serve_data_connections, nullptr, nullptr, nullptr, 3, 0, 0);
 
-/// Called at the end of startup, allowing the command and data server threads to initialize their respective sockets
-/// and serve connections.
+/// Releases command and data server threads after startup is complete.
+/// Parameters: None.
+/// Returns: nothing.
 void serve_connections()
 {
     data_client_slot_indexes.fill(-1);

@@ -1,9 +1,14 @@
+// Defines the controller command, telemetry, and system-state protocol.
 syntax = "proto2";
+import "nanopb.proto";
 
 //////////////////////////////////////////////////////////////////////
 // IMPORTANT:                                                       //
 // When changing this file, you MUST re-run the following:          //
-// protoc --python_out=scripts api/clover.proto --proto_path=api    //
+// protoc --python_out=scripts --proto_path=api                     //
+//   --proto_path=$ZEPHYR_BASE/../modules/lib/nanopb/generator/proto //
+//   api/clover.proto $ZEPHYR_BASE/../modules/lib/nanopb/generator/ //
+//   proto/nanopb.proto                                             //
 //////////////////////////////////////////////////////////////////////
 
 // Command stream.
@@ -12,7 +17,7 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 41
+// next tag: 42
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
@@ -30,6 +35,7 @@ message Request {
     ConfigureValvesRequest configure_valves = 5;
     ActuateValveRequest actuate_valve = 39;
     RunAutonomousValveSequenceRequest run_autonomous_valve_sequence = 40;
+    UploadAutonomousValveSequenceChunkRequest upload_autonomous_valve_sequence_chunk = 41;
 
     // Transitions any state -> ABORT
     AbortRequest abort = 10;
@@ -272,6 +278,17 @@ message UnprimeRequest {}
 message RunAutonomousValveSequenceRequest {
   required string sequence_file = 1 [(nanopb).max_size = 49];
   optional uint32 run_index = 2;
+  optional bool continue_valve_states = 3;
+}
+
+// Upload one ordered chunk of a sequence file. Uploading does not run the sequence.
+message UploadAutonomousValveSequenceChunkRequest {
+  required string sequence_file = 1 [(nanopb).max_size = 49];
+  required uint32 offset = 2;
+  required uint32 total_size = 3;
+  required string data = 4 [(nanopb).max_size = 513];
+  required bool final_chunk = 5;
+  required uint32 run_index = 6;
 }
 
 
@@ -485,6 +502,7 @@ enum SystemState {
   STATE_FLIGHT = 17;
   STATE_FLIGHT_PRIMED = 18;
   STATE_AUTONOMOUS_VALVE_SEQUENCE = 19;
+  STATE_AUTONOMOUS_VALVE_SEQUENCE_CONTINUE = 20;
 }
 
 // next tag: 94
@@ -831,4 +849,3 @@ message GnssReadings {
 
   required float sense_time_ns = 16;
 }
-
