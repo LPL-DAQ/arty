@@ -973,10 +973,6 @@ std::expected<void, Error> Controller::handle_throttle_reset_valve_position(cons
     return {};
 }
 
-namespace Controller {
-std::expected<void, Error> handle_run_autonomous_valve_sequence(const RunAutonomousValveSequenceRequest& req);
-}
-
 /// Load and immediately start a named autonomous valve sequence from IDLE.
 std::expected<void, Error> Controller::handle_run_autonomous_valve_sequence(const RunAutonomousValveSequenceRequest& req)
 {

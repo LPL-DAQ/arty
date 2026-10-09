@@ -26,8 +26,6 @@ struct Tick {
 
 class Definition {
 public:
-    static std::expected<Definition, Error> parse_json(std::string_view text);
-    static std::expected<Definition, Error> parse_yaml(std::string_view text);
     static std::expected<Definition, Error> parse_log(std::string_view text, uint32_t run_index);
     static std::expected<Definition, Error> load_file(std::string_view file_name, uint32_t run_index = 0);
 

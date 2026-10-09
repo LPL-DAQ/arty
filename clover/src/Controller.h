@@ -22,6 +22,7 @@ std::expected<void, Error> handle_throttle_reset_valve_position(const ThrottleRe
 std::expected<void, Error> handle_abort(const AbortRequest& req);
 std::expected<void, Error> handle_halt(const HaltRequest& req);
 std::expected<void, Error> handle_unprime(const UnprimeRequest& req);
+std::expected<void, Error> handle_run_autonomous_valve_sequence(const RunAutonomousValveSequenceRequest& req);
 
 // Throttle
 std::expected<void, Error> handle_calibrate_throttle_valve(const CalibrateThrottleValveRequest& req);

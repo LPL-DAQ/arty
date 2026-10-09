@@ -237,6 +237,12 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
             break;
         }
 
+        case Request_run_autonomous_valve_sequence_tag: {
+            LOG_INF("run_autonomous_valve_sequence command");
+            cmd_result = Controller::handle_run_autonomous_valve_sequence(request.payload.run_autonomous_valve_sequence);
+            break;
+        }
+
         case Request_throttle_reset_valve_position_tag: {
             cmd_result = Controller::handle_throttle_reset_valve_position(request.payload.throttle_reset_valve_position);
             break;

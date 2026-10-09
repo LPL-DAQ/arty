@@ -20,7 +20,10 @@ if(CONFIG_THROTTLE_VALVES)
 endif()
 
 if(CONFIG_VALVES)
-    target_sources(app PRIVATE Valves.cpp)
+    target_sources(app PRIVATE
+        Valves.cpp
+        ranger/Sequence.cpp
+    )
 endif()
 
 if(CONFIG_PWM_ACTUATORS)

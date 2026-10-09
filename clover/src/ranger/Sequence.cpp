@@ -9,7 +9,6 @@
 
 namespace {
 constexpr size_t MAX_RUNS = 64;
-constexpr uint32_t INVALID_TIME = std::numeric_limits<uint32_t>::max();
 constexpr std::string_view SEQUENCE_DIRECTORY = "/SD:/sequences/";
 
 K_MUTEX_DEFINE(sequence_file_lock);
@@ -149,69 +148,6 @@ bool parse_terminated_marker(std::string_view line, uint32_t& timestamp_ms)
            parse_seconds_ms(fields[2], timestamp_ms);
 }
 
-class JsonCursor {
-public:
-    explicit JsonCursor(std::string_view text) : text_(text) {}
-
-    void skip_whitespace()
-    {
-        while (position_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[position_]))) {
-            ++position_;
-        }
-    }
-
-    bool consume(char expected)
-    {
-        skip_whitespace();
-        if (position_ >= text_.size() || text_[position_] != expected) {
-            return false;
-        }
-        ++position_;
-        return true;
-    }
-
-    bool parse_string(std::string_view& value)
-    {
-        skip_whitespace();
-        if (position_ >= text_.size() || text_[position_++] != '"') {
-            return false;
-        }
-        const size_t start = position_;
-        while (position_ < text_.size() && text_[position_] != '"') {
-            const unsigned char ch = static_cast<unsigned char>(text_[position_]);
-            if (ch < 0x20 || ch == '\\') {
-                return false;
-            }
-            ++position_;
-        }
-        if (position_ == text_.size()) {
-            return false;
-        }
-        value = text_.substr(start, position_ - start);
-        ++position_;
-        return true;
-    }
-
-    bool parse_uint(uint32_t& value)
-    {
-        skip_whitespace();
-        const size_t start = position_;
-        while (position_ < text_.size() && text_[position_] >= '0' && text_[position_] <= '9') {
-            ++position_;
-        }
-        return parse_uint_value(text_.substr(start, position_ - start), value);
-    }
-
-    bool at_end()
-    {
-        skip_whitespace();
-        return position_ == text_.size();
-    }
-
-private:
-    std::string_view text_;
-    size_t position_ = 0;
-};
 }  // namespace
 
 std::expected<void, Error> Sequence::Definition::append(uint32_t time_ms, std::string_view valve, std::string_view state)
@@ -250,239 +186,6 @@ std::expected<void, Error> Sequence::Definition::set_duration(uint32_t duration_
     }
     duration_ms_ = duration_ms;
     return {};
-}
-
-std::expected<Sequence::Definition, Error> Sequence::Definition::parse_json(std::string_view text)
-{
-    if (text.empty() || text.size() > MAX_FILE_SIZE) {
-        return std::unexpected(Error::from_cause("sequence JSON is empty or exceeds %u bytes", static_cast<unsigned>(MAX_FILE_SIZE)));
-    }
-
-    JsonCursor cursor{text};
-    if (!cursor.consume('{')) {
-        return std::unexpected(Error::from_cause("invalid JSON sequence document"));
-    }
-
-    Definition definition;
-    bool has_events = false;
-    bool has_duration = false;
-    uint32_t declared_duration = 0;
-    bool first_field = true;
-    while (!cursor.consume('}')) {
-        if (!first_field && !cursor.consume(',')) {
-            return std::unexpected(Error::from_cause("invalid JSON sequence object separator"));
-        }
-        first_field = false;
-
-        std::string_view key;
-        if (!cursor.parse_string(key) || !cursor.consume(':')) {
-            return std::unexpected(Error::from_cause("invalid JSON sequence field"));
-        }
-        if (key == "name") {
-            std::string_view ignored_name;
-            if (!cursor.parse_string(ignored_name)) {
-                return std::unexpected(Error::from_cause("JSON sequence name must be a string"));
-            }
-        }
-        else if (key == "duration_ms") {
-            if (has_duration || !cursor.parse_uint(declared_duration)) {
-                return std::unexpected(Error::from_cause("invalid or duplicate JSON duration_ms"));
-            }
-            has_duration = true;
-        }
-        else if (key == "events") {
-            if (has_events || !cursor.consume('[')) {
-                return std::unexpected(Error::from_cause("invalid or duplicate JSON events array"));
-            }
-            has_events = true;
-            bool first_event = true;
-            while (!cursor.consume(']')) {
-                if (!first_event && !cursor.consume(',')) {
-                    return std::unexpected(Error::from_cause("invalid JSON event array separator"));
-                }
-                first_event = false;
-                if (!cursor.consume('{')) {
-                    return std::unexpected(Error::from_cause("each JSON event must be an object"));
-                }
-
-                uint32_t event_time = 0;
-                bool has_time = false;
-                bool has_valve = false;
-                bool has_state = false;
-                std::string_view valve;
-                std::string_view state;
-                bool first_event_field = true;
-                while (!cursor.consume('}')) {
-                    if (!first_event_field && !cursor.consume(',')) {
-                        return std::unexpected(Error::from_cause("invalid JSON event field separator"));
-                    }
-                    first_event_field = false;
-                    std::string_view event_key;
-                    if (!cursor.parse_string(event_key) || !cursor.consume(':')) {
-                        return std::unexpected(Error::from_cause("invalid JSON event field"));
-                    }
-                    if (event_key == "time_ms") {
-                        if (has_time || !cursor.parse_uint(event_time)) {
-                            return std::unexpected(Error::from_cause("invalid or duplicate JSON time_ms"));
-                        }
-                        has_time = true;
-                    }
-                    else if (event_key == "valve" || event_key == "action") {
-                        if (has_valve || !cursor.parse_string(valve)) {
-                            return std::unexpected(Error::from_cause("invalid or duplicate JSON valve"));
-                        }
-                        has_valve = true;
-                    }
-                    else if (event_key == "state" || event_key == "value") {
-                        if (has_state || !cursor.parse_string(state)) {
-                            return std::unexpected(Error::from_cause("invalid or duplicate JSON state"));
-                        }
-                        has_state = true;
-                    }
-                    else {
-                        return std::unexpected(Error::from_cause("unsupported JSON event field"));
-                    }
-                }
-                if (!has_time || !has_valve || !has_state) {
-                    return std::unexpected(Error::from_cause("JSON event is missing time_ms, valve, or state"));
-                }
-                if (auto result = definition.append(event_time, valve, state); !result) {
-                    return std::unexpected(result.error());
-                }
-            }
-        }
-        else {
-            return std::unexpected(Error::from_cause("unsupported JSON sequence field"));
-        }
-    }
-
-    if (!cursor.at_end() || !has_events || definition.size() == 0) {
-        return std::unexpected(Error::from_cause("invalid or empty JSON sequence"));
-    }
-    if (has_duration) {
-        if (auto result = definition.set_duration(declared_duration); !result) {
-            return std::unexpected(result.error());
-        }
-    }
-    return definition;
-}
-
-std::expected<Sequence::Definition, Error> Sequence::Definition::parse_yaml(std::string_view text)
-{
-    if (text.empty() || text.size() > MAX_FILE_SIZE) {
-        return std::unexpected(Error::from_cause("sequence YAML is empty or exceeds %u bytes", static_cast<unsigned>(MAX_FILE_SIZE)));
-    }
-
-    Definition definition;
-    bool in_events = false;
-    bool has_events = false;
-    bool has_duration = false;
-    bool has_time = false;
-    bool has_valve = false;
-    bool has_state = false;
-    uint32_t time_ms = 0;
-    uint32_t declared_duration = 0;
-    std::string_view valve;
-    std::string_view state;
-
-    auto finish_event = [&]() -> std::expected<void, Error> {
-        if (!has_time && !has_valve && !has_state) {
-            return {};
-        }
-        if (!has_time || !has_valve || !has_state) {
-            return std::unexpected(Error::from_cause("YAML sequence event is missing a required field"));
-        }
-        auto result = definition.append(time_ms, valve, state);
-        has_time = false;
-        has_valve = false;
-        has_state = false;
-        return result;
-    };
-
-    while (!text.empty()) {
-        const size_t newline = text.find('\n');
-        std::string_view line = trim(text.substr(0, newline));
-        text = newline == std::string_view::npos ? std::string_view{} : text.substr(newline + 1);
-        if (const size_t comment = line.find('#'); comment != std::string_view::npos) {
-            line = trim(line.substr(0, comment));
-        }
-        if (line.empty()) {
-            continue;
-        }
-        if (!in_events && line.starts_with("name:")) {
-            continue;
-        }
-        if (!in_events && line.starts_with("duration_ms:")) {
-            if (has_duration || !parse_uint_value(trim(line.substr(std::string_view{"duration_ms:"}.size())), declared_duration)) {
-                return std::unexpected(Error::from_cause("invalid or duplicate YAML duration_ms"));
-            }
-            has_duration = true;
-            continue;
-        }
-        if (line == "events:") {
-            if (has_events) {
-                return std::unexpected(Error::from_cause("duplicate YAML events collection"));
-            }
-            has_events = true;
-            in_events = true;
-            continue;
-        }
-        if (!in_events) {
-            return std::unexpected(Error::from_cause("unsupported YAML sequence field"));
-        }
-        if (line.starts_with("- ")) {
-            if (auto result = finish_event(); !result) {
-                return std::unexpected(result.error());
-            }
-            line.remove_prefix(2);
-        }
-
-        const size_t separator = line.find(':');
-        if (separator == std::string_view::npos) {
-            return std::unexpected(Error::from_cause("invalid YAML sequence field"));
-        }
-        const std::string_view key = trim(line.substr(0, separator));
-        std::string_view value = trim(line.substr(separator + 1));
-        if (value.size() >= 2 && ((value.front() == '"' && value.back() == '"') || (value.front() == '\'' && value.back() == '\''))) {
-            value = value.substr(1, value.size() - 2);
-        }
-        if (key == "time_ms") {
-            if (has_time || !parse_uint_value(value, time_ms)) {
-                return std::unexpected(Error::from_cause("invalid or duplicate YAML time_ms value"));
-            }
-            has_time = true;
-        }
-        else if (key == "valve" || key == "action") {
-            if (has_valve) {
-                return std::unexpected(Error::from_cause("duplicate YAML valve field"));
-            }
-            valve = value;
-            has_valve = true;
-        }
-        else if (key == "state" || key == "value") {
-            if (has_state) {
-                return std::unexpected(Error::from_cause("duplicate YAML state field"));
-            }
-            state = value;
-            has_state = true;
-        }
-        else {
-            return std::unexpected(Error::from_cause("unsupported YAML event field '%.*s'", static_cast<int>(key.size()), key.data()));
-        }
-    }
-
-    if (auto result = finish_event(); !result) {
-        return std::unexpected(result.error());
-    }
-    if (!has_events || !in_events || definition.size() == 0) {
-        return std::unexpected(Error::from_cause("YAML sequence has no events"));
-    }
-    if (has_duration) {
-        if (auto result = definition.set_duration(declared_duration); !result) {
-            return std::unexpected(result.error());
-        }
-    }
-    return definition;
 }
 
 std::expected<Sequence::Definition, Error> Sequence::Definition::parse_log(std::string_view text, uint32_t run_index)
@@ -572,12 +275,9 @@ std::expected<Sequence::Definition, Error> Sequence::Definition::load_file(std::
         })) {
         return std::unexpected(Error::from_cause("sequence file name is invalid"));
     }
-
-    const size_t extension_pos = file_name.find_last_of('.');
-    if (extension_pos == std::string_view::npos) {
-        return std::unexpected(Error::from_cause("sequence file must end in .json, .yaml, .yml, or .log"));
+    if (!file_name.ends_with(".log")) {
+        return std::unexpected(Error::from_cause("sequence file must end in .log"));
     }
-    const std::string_view extension = file_name.substr(extension_pos);
 
     MutexGuard guard{&sequence_file_lock};
     std::array<char, 80> path{};
@@ -607,17 +307,7 @@ std::expected<Sequence::Definition, Error> Sequence::Definition::load_file(std::
     }
     sequence_file_buffer[bytes_read] = '\0';
     const std::string_view content{sequence_file_buffer.data(), bytes_read};
-
-    if (extension == ".json") {
-        return parse_json(content);
-    }
-    if (extension == ".yaml" || extension == ".yml") {
-        return parse_yaml(content);
-    }
-    if (extension == ".log") {
-        return parse_log(content, run_index);
-    }
-    return std::unexpected(Error::from_cause("unsupported sequence file extension"));
+    return parse_log(content, run_index);
 }
 
 const Sequence::Event& Sequence::Definition::event(size_t index) const
