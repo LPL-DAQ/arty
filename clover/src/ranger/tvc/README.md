@@ -30,10 +30,14 @@ Then tune `TVC_SLEW_LIMIT_DEG_S`, `TVC_ACCEL_LIMIT_DEG_S2`, `TVC_POSITION_ERROR_
 moteus only knows where gimbal center is after a "set output exact" since it last powered up (home state register
 `0x00c` reads 2 = OUTPUT). The TVC checks this and will not enable otherwise.
 
-1. Power up. The TVC goes STARTUP -> CLEARING -> READY and reports `enable_blockers` (4 = not homed).
+1. Power up. The TVC goes STARTUP -> CLEARING -> READY. In the ground client (`scripts/client-new.py`), `tvc` shows a
+   live TVC dashboard: state, why it is not enabling, and per-axis commanded vs measured angle/length, moteus mode,
+   home state, faults, voltage, temperature and reply latency. The bottom toolbar also shows the TVC state.
 2. Mechanically center the gimbal (jig) and hold it there.
-3. Send `CalibrateTvcRequest` from IDLE. The TVC stops both controllers, sets the current position to 0 rev, verifies,
-   and the controller returns to IDLE. The TVC then enables and holds center.
+3. Run `caltvc` from IDLE (sends `CalibrateTvcRequest`). The TVC stops both controllers, sets the current position to
+   0 rev, verifies, and the controller returns to IDLE. The TVC then enables and holds center.
+
+TVC telemetry is also written to the client's CSV log (`tvc_*` sensors) for post-test plots.
 
 A Teensy reboot alone does not require re-homing as long as the gimbal is still within `TVC_HOMED_TOLERANCE_IN` of
 center.

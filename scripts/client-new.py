@@ -368,6 +368,37 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     #             'thrust_from_alpha': _opt(rtm, 'thrust_from_alpha_lbf'),
     #         }
     #     )
+    # Ranger TVC: commanded vs measured per axis, health, and loop timing. NaN (unconfigured axis) is dropped.
+    if _has(pkt, 'ranger_tvc_metrics'):
+        tm = pkt.ranger_tvc_metrics
+        row['tvc_state'] = float(tm.state)
+        row['tvc_enable_blockers'] = float(tm.enable_blockers)
+        row['tvc_requested_pitch_deg'] = _finite(tm.requested_pitch_deg)
+        row['tvc_requested_yaw_deg'] = _finite(tm.requested_yaw_deg)
+        row['tvc_loop_jitter_max_us'] = _finite(tm.loop_jitter_max_us)
+        row['tvc_cycle_time_us'] = _finite(tm.cycle_time_us)
+        row['tvc_loop_overruns'] = float(tm.loop_overruns)
+        for name, axis in (('pitch', tm.pitch), ('yaw', tm.yaw)):
+            row[f'tvc_{name}_measured_angle_deg'] = _finite(axis.measured_angle_deg)
+            row[f'tvc_{name}_measured_length_in'] = _finite(axis.measured_length_in)
+            row[f'tvc_{name}_measured_position_rev'] = _finite(axis.measured_position_rev)
+            row[f'tvc_{name}_position_error_in'] = _finite(axis.position_error_in)
+            row[f'tvc_{name}_torque_nm'] = _finite(axis.measured_torque_nm)
+            row[f'tvc_{name}_mode'] = float(axis.mode)
+            row[f'tvc_{name}_faults'] = float(axis.faults)
+            row[f'tvc_{name}_latched_fault_code'] = float(axis.latched_fault_code)
+            row[f'tvc_{name}_missed_replies'] = float(axis.missed_replies)
+            row[f'tvc_{name}_reply_latency_us'] = _finite(axis.reply_latency_us)
+            row[f'tvc_{name}_bus_voltage_v'] = _finite(axis.bus_voltage_v)
+            row[f'tvc_{name}_temperature_c'] = _finite(axis.temperature_c)
+        for name, field in (('pitch', 'pitch_actuator_command'), ('yaw', 'yaw_actuator_command')):
+            if _has(pkt, field):
+                c = getattr(pkt, field)
+                row[f'tvc_{name}_target_angle_deg'] = _finite(c.target_angle_deg)
+                row[f'tvc_{name}_target_length_in'] = _finite(c.target_length_in)
+                row[f'tvc_{name}_target_position_rev'] = _finite(c.target_position_rev)
+                row[f'tvc_{name}_driving'] = float(c.driving)
+
     if _has(pkt, 'ranger_throttle_metrics'):
         rtm = pkt.ranger_throttle_metrics
         row['throttle_thrust_command_lbf'] = _opt(pkt, 'throttle_thrust_command_lbf')
@@ -915,6 +946,251 @@ STATE_COLORS = {
 }
 
 
+# ── Ranger TVC ────────────────────────────────────────────────────────────────
+# Decoders mirror clover/src/ranger/tvc/tvc_control.h and the moteus register docs.
+_TVC_FAULT_BITS = [
+    (1, 'no reply'),
+    (2, 'moteus fault'),
+    (4, 'moteus timeout'),
+    (8, 'unexpected mode'),
+    (16, 'position error'),
+]
+_TVC_BLOCKER_BITS = [
+    (1, 'config incomplete (TODO placeholders in tvc_config.h)'),
+    (2, 'controller not replying'),
+    (4, 'not homed (run caltvc)'),
+    (8, 'not centered'),
+    (16, 'not stopped'),
+]
+_MOTEUS_MODES = {
+    -1: '—',
+    0: 'stopped',
+    1: 'FAULT',
+    2: 'preparing',
+    3: 'preparing',
+    4: 'preparing',
+    5: 'pwm',
+    6: 'voltage',
+    7: 'voltage foc',
+    8: 'voltage dq',
+    9: 'current',
+    10: 'position',
+    11: 'TIMEOUT',
+    12: 'zero velocity',
+    13: 'stay within',
+    14: 'measure ind',
+    15: 'brake',
+}
+_MOTEUS_HOME_STATES = {-1: '—', 0: 'relative', 1: 'rotor', 2: 'homed'}
+_MOTEUS_FAULT_CODES = {
+    32: 'calibration',
+    33: 'motor driver',
+    34: 'over voltage',
+    35: 'encoder',
+    36: 'motor not configured',
+    37: 'pwm cycle overrun',
+    38: 'over temperature',
+    39: 'outside limit',
+    40: 'under voltage',
+    41: 'config changed',
+    42: 'theta invalid',
+    43: 'position invalid',
+    44: 'driver enable',
+    45: 'stop position deprecated',
+    46: 'timing violation',
+    47: 'bemf ff no accel',
+    48: 'invalid limits',
+    49: 'position control error',
+    50: 'velocity control error',
+}
+_TVC_STATE_STYLES = {
+    'STARTUP': 'yellow',
+    'CLEARING': 'yellow',
+    'READY': 'cyan',
+    'HOMING': 'magenta',
+    'ENABLED': 'bold green',
+    'FAULT': 'bold red',
+}
+_TVC_TOOLBAR_TAGS = {
+    'STARTUP': 'ansiyellow',
+    'CLEARING': 'ansiyellow',
+    'READY': 'ansicyan',
+    'HOMING': 'ansimagenta',
+    'ENABLED': 'ansigreen',
+    'FAULT': 'ansired',
+}
+
+
+def _finite(v):
+    """float(v), or None for NaN/inf (unconfigured axes report NaN lengths/angles)."""
+    v = float(v)
+    return v if math.isfinite(v) else None
+
+
+def _decode_bits(value: int, table) -> list[str]:
+    return [name for bit, name in table if value & bit]
+
+
+def _tvc_state_name(metrics) -> str:
+    try:
+        return clover_pb2.TvcState.Name(metrics.state).removeprefix('TVC_STATE_')
+    except ValueError:
+        return f'UNKNOWN({metrics.state})'
+
+
+def _moteus_fault_str(code: int) -> str:
+    if code == 0:
+        return 'none'
+    return f'{code} {_MOTEUS_FAULT_CODES.get(code, "")}'.strip()
+
+
+def _build_tvc_renderable(pkt):
+    """TVC summary + per-axis table, or None if the packet carries no TVC metrics."""
+    if not _has(pkt, 'ranger_tvc_metrics'):
+        return None
+
+    t = THEME
+    muted = t['muted']
+    m = pkt.ranger_tvc_metrics
+    state = _tvc_state_name(m)
+    state_style = _TVC_STATE_STYLES.get(state, 'white')
+
+    def num(v, spec='.3f'):
+        v = _finite(v)
+        return f'{v:{spec}}' if v is not None else f'[{muted}]—[/{muted}]'
+
+    # Summary lines
+    lines = [Text.assemble(('State: ', 'bold white'), (state, state_style))]
+    if m.bench_sweep:
+        lines.append(Text('BENCH SWEEP BUILD: ignoring GNC commands', style='bold yellow'))
+    if state == 'READY' and m.enable_blockers:
+        lines.append(Text('Not enabling: ' + '; '.join(_decode_bits(m.enable_blockers, _TVC_BLOCKER_BITS)), style='yellow'))
+    if m.homing_failed:
+        lines.append(Text('Last homing FAILED', style='bold red'))
+    if state == 'FAULT':
+        for label, axis in (('Pitch', m.pitch), ('Yaw', m.yaw)):
+            if axis.faults:
+                detail = ', '.join(_decode_bits(axis.faults, _TVC_FAULT_BITS))
+                if axis.latched_fault_code:
+                    detail += f' (moteus {_moteus_fault_str(axis.latched_fault_code)})'
+                lines.append(Text(f'{label} FAULT: {detail}', style='bold red'))
+        lines.append(Text('Re-home (caltvc) to clear', style='red'))
+    lines.append(
+        Text(
+            f'Loop {m.loop_period_us / 1000:.2f} ms  jitter≤{m.loop_jitter_max_us:.0f} us  '
+            f'cycle {m.cycle_time_us:.0f} us  overruns {m.loop_overruns}  #{m.loop_count}',
+            style=muted,
+        )
+    )
+
+    # Per-axis table
+    table = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=t['primary'],
+        border_style=t['panel_border'],
+        padding=(0, 1),
+    )
+    table.add_column('TVC', style='bold white', no_wrap=True)
+    table.add_column('Pitch', style='white', justify='right', no_wrap=True)
+    table.add_column('Yaw', style='white', justify='right', no_wrap=True)
+    table.add_column('Unit', style=muted, no_wrap=True)
+
+    pc = pkt.pitch_actuator_command if _has(pkt, 'pitch_actuator_command') else None
+    yc = pkt.yaw_actuator_command if _has(pkt, 'yaw_actuator_command') else None
+    p, y = m.pitch, m.yaw
+
+    def cmd_field(c, field, spec='.3f'):
+        return num(getattr(c, field), spec) if c is not None else f'[{muted}]—[/{muted}]'
+
+    def angle_err(c, axis):
+        if c is None:
+            return f'[{muted}]—[/{muted}]'
+        tgt, meas = _finite(c.target_angle_deg), _finite(axis.measured_angle_deg)
+        return f'{tgt - meas:+.3f}' if tgt is not None and meas is not None else f'[{muted}]—[/{muted}]'
+
+    def yes_no(v, *, bad_when_false=True):
+        if v:
+            return '[green]yes[/green]'
+        return '[red]no[/red]' if bad_when_false else 'no'
+
+    def mode_str(mode):
+        name = _MOTEUS_MODES.get(mode, str(mode))
+        if name in ('FAULT', 'TIMEOUT'):
+            return f'[bold red]{name}[/bold red]'
+        return f'[green]{name}[/green]' if name == 'position' else name
+
+    def home_str(h):
+        name = _MOTEUS_HOME_STATES.get(h, str(h))
+        return f'[green]{name}[/green]' if h == 2 else f'[yellow]{name}[/yellow]'
+
+    def faults_str(axis):
+        if not axis.faults:
+            return 'none'
+        return f'[bold red]{", ".join(_decode_bits(axis.faults, _TVC_FAULT_BITS))}[/bold red]'
+
+    table.add_row('Requested', num(m.requested_pitch_deg), num(m.requested_yaw_deg), 'deg')
+    table.add_row('Target angle', cmd_field(pc, 'target_angle_deg'), cmd_field(yc, 'target_angle_deg'), 'deg')
+    table.add_row('Measured angle', num(p.measured_angle_deg), num(y.measured_angle_deg), 'deg')
+    table.add_row('Angle error', angle_err(pc, p), angle_err(yc, y), 'deg')
+    table.add_row('Target length', cmd_field(pc, 'target_length_in', '.4f'), cmd_field(yc, 'target_length_in', '.4f'), 'in')
+    table.add_row('Measured length', num(p.measured_length_in, '.4f'), num(y.measured_length_in, '.4f'), 'in')
+    table.add_row('Length error', num(p.position_error_in, '+.4f'), num(y.position_error_in, '+.4f'), 'in')
+    table.add_row('Target pos', cmd_field(pc, 'target_position_rev'), cmd_field(yc, 'target_position_rev'), 'rev')
+    table.add_row('Measured pos', num(p.measured_position_rev), num(y.measured_position_rev), 'rev')
+    table.add_row('Velocity', num(p.measured_velocity_rev_s), num(y.measured_velocity_rev_s), 'rev/s')
+    table.add_row('Torque', num(p.measured_torque_nm), num(y.measured_torque_nm), 'N·m')
+    table.add_row(
+        'Driving',
+        yes_no(pc.driving, bad_when_false=False) if pc is not None else '—',
+        yes_no(yc.driving, bad_when_false=False) if yc is not None else '—',
+        '',
+    )
+    table.add_row('Responding', yes_no(p.responding), yes_no(y.responding), '')
+    table.add_row('Missed replies', str(p.missed_replies), str(y.missed_replies), '')
+    table.add_row('moteus mode', mode_str(p.mode), mode_str(y.mode), '')
+    table.add_row('Home state', home_str(p.home_state), home_str(y.home_state), '')
+    table.add_row('moteus fault', _moteus_fault_str(p.fault_code), _moteus_fault_str(y.fault_code), '')
+    table.add_row('TVC faults', faults_str(p), faults_str(y), '')
+    table.add_row('Bus voltage', num(p.bus_voltage_v, '.1f'), num(y.bus_voltage_v, '.1f'), 'V')
+    table.add_row('Temperature', num(p.temperature_c, '.1f'), num(y.temperature_c, '.1f'), '°C')
+    table.add_row('Reply latency', num(p.reply_latency_us, '.0f'), num(y.reply_latency_us, '.0f'), 'us')
+
+    return Group(*lines, table)
+
+
+def _build_tvc_panel(pkt):
+    body = _build_tvc_renderable(pkt)
+    if body is None:
+        return None
+    border = 'bold red' if _tvc_state_name(pkt.ranger_tvc_metrics) == 'FAULT' else THEME['panel_border']
+    return Panel(body, title=f'[{THEME["primary"]}]TVC[/{THEME["primary"]}]', border_style=border)
+
+
+def _build_tvc_status_renderable():
+    """Standalone TVC view for the `tvc` command."""
+    with packet_lock:
+        pkt = latest_packet
+    t = THEME
+    title = f'[{t["primary"]}]{t["icon_live"]} TVC[/{t["primary"]}]'
+    if pkt is None:
+        return Panel(f'[{t["muted"]}]Waiting for telemetry...[/{t["muted"]}]', title=title, border_style=t['panel_border'])
+    panel = _build_tvc_panel(pkt)
+    if panel is None:
+        return Panel(
+            f'[{t["muted"]}]No TVC metrics in telemetry (firmware built without CONFIG_RANGER_TVC?)[/{t["muted"]}]',
+            title=title,
+            border_style=t['panel_border'],
+        )
+    state_name = clover_pb2.SystemState.Name(pkt.state)
+    header = Text.assemble(
+        ('System: ', 'bold white'),
+        (state_name, STATE_COLORS.get(state_name, 'white')),
+        (f'   t = {pkt.time_ns / 1e9:.3f} s   seq #{pkt.sequence_number}', t['muted']),
+    )
+    return Group(header, panel)
+
+
 def _build_status_renderable():
     """Build a rich renderable for the current telemetry snapshot."""
     with packet_lock:
@@ -1227,6 +1503,10 @@ def _build_status_renderable():
             border_style=t['panel_border'],
         ),)
 
+    tvc_panel = _build_tvc_panel(pkt)
+    if tvc_panel is not None:
+        bottom_columns.insert(1, tvc_panel)
+
     bottom = Columns(bottom_columns)
 
     return Group(header_panel, top, bottom)
@@ -1234,6 +1514,15 @@ def _build_status_renderable():
 
 def cmd_live_status():
     """Stream full telemetry panel at 5 Hz (200 ms). Press Enter to return to menu."""
+    _run_live_view(_build_status_renderable)
+
+
+def cmd_tvc_status():
+    """Stream the TVC panel at 5 Hz (200 ms). Press Enter to return to menu."""
+    _run_live_view(_build_tvc_status_renderable)
+
+
+def _run_live_view(build):
     stop = threading.Event()
 
     def _wait_for_enter():
@@ -1249,10 +1538,10 @@ def cmd_live_status():
     threading.Thread(target=_wait_for_enter, daemon=True).start()
 
     try:
-        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
+        with Live(build(), refresh_per_second=5, screen=False) as live:
             while not stop.is_set():
                 time.sleep(0.2)
-                live.update(_build_status_renderable())
+                live.update(build())
     except KeyboardInterrupt:
         pass
 
@@ -1306,6 +1595,18 @@ def get_toolbar():
         if ranger_parts:
             cmd_html = '  │  ' + '  '.join(ranger_parts)
 
+    tvc_html = ''
+    if _has(pkt, 'ranger_tvc_metrics'):
+        tm = pkt.ranger_tvc_metrics
+        tvc_state = _tvc_state_name(tm)
+        tvc_tag = _TVC_TOOLBAR_TAGS.get(tvc_state, 'ansiwhite')
+        tvc_html = f'  │  TVC <{tvc_tag}><b>{tvc_state}</b></{tvc_tag}>'
+        p_ang, y_ang = _finite(tm.pitch.measured_angle_deg), _finite(tm.yaw.measured_angle_deg)
+        if p_ang is not None and y_ang is not None:
+            tvc_html += f' p={p_ang:+.2f}° y={y_ang:+.2f}°'
+        if tvc_state == 'READY' and tm.enable_blockers & 4:
+            tvc_html += ' (not homed)'
+
     position_html = ''
     attitude_html = ''
     if _has_msg_field(pkt, 'estimated_state'):
@@ -1319,6 +1620,7 @@ def get_toolbar():
         f' 📡 <{tag}><b>{short}</b></{tag}>'
         f'  │  t={pkt.time_ns / 1e9:.2f}s  seq#{pkt.sequence_number}'
         + cmd_html
+        + tvc_html
         + position_html
         + attitude_html
         + sensor_html
@@ -1993,12 +2295,16 @@ def cmd_configure_flight_controller_gains():
         console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
 
 
-# TODO: is this all that's needed?
 def cmd_calibrate_tvc():
-    """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
+    """Home the TVC (IDLE → CALIBRATE_TVC → IDLE): the current gimbal position becomes center (0 rev)."""
     t = THEME
+    console.print(
+        f'\n  [{t["warning"]}]HOME TVC: the gimbal must be held mechanically centered (jig) right now.[/{t["warning"]}]\n'
+        f'  [{t["muted"]}]Both actuators are stopped, then their current position is set as center. '
+        f'Watch progress with `tvc`.[/{t["muted"]}]'
+    )
     confirmed = Confirm.ask(
-        f'\n  [{t["warning"]}]CALIBRATE TVC — enter calibration mode?[/{t["warning"]}]',
+        f'  [{t["warning"]}]Gimbal centered — home now?[/{t["warning"]}]',
         default=False,
     )
     if not confirmed:
@@ -2281,7 +2587,8 @@ MENU_ITEMS = [
         'Start throttle sequence (THROTTLE_PRIMED → THROTTLE)',
         cmd_start_throttle_sequence,
     ),
-    ('caltvc', 'caltvc', 'Calibrate TVC  (IDLE → CALIBRATE_TVC)', cmd_calibrate_tvc),
+    ('tvc', 'tvc', 'Live TVC dashboard (Enter to exit)', cmd_tvc_status),
+    ('caltvc', 'caltvc', 'Home TVC: hold gimbal centered first  (IDLE → CALIBRATE_TVC → IDLE)', cmd_calibrate_tvc),
     ('ltvcseq', 'loadtvc', 'Load TVC sequence  (IDLE → TVC_PRIMED)', cmd_load_tvc_sequence),
     ('stvcseq', 'starttvc', 'Start TVC sequence (TVC_PRIMED → TVC)', cmd_start_tvc_sequence),
     (
@@ -2360,6 +2667,7 @@ def print_menu():
         'svseq': THEME['icon_fire'],
         'ltseq': THEME['icon_loop'],
         'stseq': THEME['icon_fire'],
+        'tvc': THEME['icon_live'],
         'caltvc': '📐',
         'ltvcseq': THEME['icon_seq'],
         'stvcseq': THEME['icon_fire'],
