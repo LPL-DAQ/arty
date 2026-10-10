@@ -14,8 +14,22 @@ static float min_pulse = 0.10;
 static float deadzone = 0.15;
 static float hysteresis = 0.05;
 
+#if CONFIG_TEST
+static bool now_ms_override_set = false;
+static int64_t now_ms_override = 0;
+#endif
+
+static int64_t currentUptimeMs()
+{
+#if CONFIG_TEST
+    return now_ms_override_set ? now_ms_override : k_uptime_get();
+#else
+    return k_uptime_get();
+#endif
+}
+
 static int control(EstimatedState state, float desired_roll_position){
-    int64_t dt = k_uptime_get() - previous_timestamp;
+    int64_t dt = currentUptimeMs() - previous_timestamp;
 
     Quaternion q_wb = state.R_WB;
     q_wb = math_util::normalizeQuaternion(q_wb);
@@ -71,6 +85,9 @@ void HornetRcs::reset()
     min_pulse = 0.10;
     deadzone = 0.15;
     hysteresis = 0.05;
+#if CONFIG_TEST
+    now_ms_override_set = false;
+#endif
 }
 
 /// Generate a comomand for the cs and ccs RCS propellers.
@@ -87,3 +104,11 @@ std::expected<std::tuple<float, float, HornetRcsMetrics>, Error> HornetRcs::tick
 
     return {{cw_pulse_us, ccw_pulse_us, metrics}};
 }
+
+#if CONFIG_TEST
+void HornetRcs::set_now_ms_for_testing(int64_t ms)
+{
+    now_ms_override = ms;
+    now_ms_override_set = true;
+}
+#endif

@@ -53,8 +53,8 @@ TODO:
         pwms =
             <&flexpwm4_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_top    Pin 3   EMC_05    FlexPWM4.2 B */
             <&flexpwm2_pwm0 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* motor_bottom Pin 4   EMC_06    FlexPWM2.0 A */
-            <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_x      Pin 24  AD_B0_12  FlexPWM1.2 X */
-            <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* servo_y      Pin 25  AD_B0_13  FlexPWM1.2 X */
+            <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* tvc_pitch    Pin 24  AD_B0_12  FlexPWM1.2 X */
+            <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* tvc_yaw      Pin 25  AD_B0_13  FlexPWM1.2 X */
             <&flexpwm3_pwm1 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_top     Pin 28  EMC_32    FlexPWM3.1 B */
             <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_bottom  Pin 29  EMC_31    FlexPWM3.1 A */
             <&flexpwm2_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 36  EMC_38    FlexPWM1.3 B */
@@ -62,7 +62,7 @@ TODO:
 
 
         pwm-names = "motor_top", "motor_bottom",
-                    "servo_x", "servo_y",
+                    "tvc_pitch", "tvc_yaw",
                     "beta_top", "beta_bottom", "beta_cw", "beta_ccw";
     };
 
@@ -145,8 +145,8 @@ TODO:
         };
     };
 
-    /* AD_B0_12 -> FlexPWM1_PWMX2 (servo_x)
-       AD_B0_13 -> FlexPWM1_PWMX3 (servo_y) */
+    /* AD_B0_12 -> FlexPWM1_PWMX2 (tvc_pitch)
+       AD_B0_13 -> FlexPWM1_PWMX3 (tvc_yaw) */
     pinmux_flexpwm1_pwm2: pinmux_flexpwm1_pwm2 {
         group0 {
             pinmux = <&iomuxc_gpio_ad_b0_12_flexpwm1_pwmx2>;

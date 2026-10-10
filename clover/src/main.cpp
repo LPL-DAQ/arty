@@ -9,6 +9,7 @@
 
 #include "BlinkLed.h"
 #include "Controller.h"
+#include "PwmActuator.h"
 #include "ThrottleValve.h"
 #include "Valves.h"
 #include "sensors/AnalogSensors.h"
@@ -114,6 +115,56 @@ int main(void)
     LOG_INF("Initializing lox throttle valve");
     if (auto result = LoxValve::init(); !result) {
         LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
+        return 0;
+    }
+#endif
+
+#ifdef CONFIG_PWM_ACTUATORS
+    LOG_INF("Initializing tvc pitch");
+    if (auto result = TvcPitch::init(); !result) {
+        LOG_ERR("Failed to initialize tvc pitch: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing tvc yaw");
+    if (auto result = TvcYaw::init(); !result) {
+        LOG_ERR("Failed to initialize tvc yaw: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing beta top");
+    if (auto result = BetaTop::init(); !result) {
+        LOG_ERR("Failed to initialize beta top: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing beta bottom");
+    if (auto result = BetaBottom::init(); !result) {
+        LOG_ERR("Failed to initialize beta bottom: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing beta cw");
+    if (auto result = BetaCW::init(); !result) {
+        LOG_ERR("Failed to initialize beta cw: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing beta ccw");
+    if (auto result = BetaCCW::init(); !result) {
+        LOG_ERR("Failed to initialize beta ccw: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing motor top");
+    if (auto result = MotorTop::init(); !result) {
+        LOG_ERR("Failed to initialize motor top: %s", result.error().build_message().c_str());
+        return 0;
+    }
+
+    LOG_INF("Initializing motor bottom");
+    if (auto result = MotorBottom::init(); !result) {
+        LOG_ERR("Failed to initialize motor bottom: %s", result.error().build_message().c_str());
         return 0;
     }
 #endif
