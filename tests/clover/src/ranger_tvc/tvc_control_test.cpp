@@ -25,6 +25,13 @@ constexpr AxisConfig TEST_YAW = {
     .direction_sign = -1.0f,
     .moteus_id = 2,
 };
+constexpr AxisConfig not_installed(AxisConfig axis)
+{
+    axis.installed = false;
+    return axis;
+}
+constexpr AxisConfig TEST_PITCH_ABSENT = not_installed(TEST_PITCH);
+constexpr AxisConfig TEST_YAW_ABSENT = not_installed(TEST_YAW);
 constexpr float DT_S = TVC_LOOP_PERIOD_US * 1e-6f;
 
 /// Simulated moteus controller: reacts to the frames the supervisor sends and produces the next reply.
@@ -39,6 +46,8 @@ struct FakeMoteus {
     AxisFeedback apply(const AxisOutput& out)
     {
         switch (out.action) {
+        case Action::NONE:
+            return AxisFeedback{};  // Nothing was sent, so nothing comes back.
         case Action::QUERY:
             break;
         case Action::STOP:
@@ -76,7 +85,11 @@ struct FakeMoteus {
 };
 
 struct Harness {
-    Supervisor sup{TEST_PITCH, TEST_YAW, DT_S};
+    explicit Harness(const AxisConfig& pitch = TEST_PITCH, const AxisConfig& yaw = TEST_YAW) : sup{pitch, yaw, DT_S}
+    {
+    }
+
+    Supervisor sup;
     FakeMoteus motor[TVC_AXIS_COUNT];
     Inputs in;
     AxisOutput out[TVC_AXIS_COUNT];
@@ -428,6 +441,114 @@ ZTEST(TvcControl_tests, test_bench_sweep_shape)
         prev_p = p;
         prev_y = y;
     }
+}
+
+ZTEST(TvcControl_tests, test_axes_config_complete)
+{
+    zassert_true(axes_config_complete(TEST_PITCH, TEST_YAW));
+    zassert_true(axes_config_complete(TEST_PITCH, TEST_YAW_ABSENT));
+    zassert_true(axes_config_complete(TEST_PITCH_ABSENT, TEST_YAW));
+    zassert_false(axes_config_complete(TEST_PITCH_ABSENT, TEST_YAW_ABSENT), "no axis installed is not a valid config");
+
+    // A placeholder on the missing axis does not matter; on the installed one it does.
+    AxisConfig yaw_placeholder = TEST_YAW;
+    yaw_placeholder.turns_per_inch = 0.0f;
+    zassert_false(axes_config_complete(TEST_PITCH, yaw_placeholder));
+    zassert_true(axes_config_complete(TEST_PITCH, not_installed(yaw_placeholder)));
+}
+
+ZTEST(TvcControl_tests, test_pitch_only_starts_homes_and_enables)
+{
+    Harness h{TEST_PITCH, TEST_YAW_ABSENT};
+    h.motor[TVC_AXIS_YAW].responsive = false;  // Nothing plugged in.
+    h.enable();
+
+    zassert_false(h.sup.axis(TVC_AXIS_YAW).installed);
+    h.in.pitch_command_deg = 2.0f;
+    h.in.yaw_command_deg = 5.0f;  // Ignored: no yaw actuator.
+    for (int k = 0; k < 20; k++) {
+        h.cycle();
+        zassert_equal(h.out[TVC_AXIS_YAW].action, Action::NONE, "frame sent to an uninstalled axis");
+    }
+    zassert_equal(h.out[TVC_AXIS_PITCH].action, Action::POSITION);
+    zassert_within(h.sup.axis(TVC_AXIS_PITCH).target_angle_deg, 2.0f, 1e-5f);
+    zassert_within(h.sup.axis(TVC_AXIS_PITCH).measured_angle_deg, 2.0f, 5e-3f);
+}
+
+ZTEST(TvcControl_tests, test_pitch_only_never_sends_to_yaw_in_any_state)
+{
+    Harness h{TEST_PITCH, TEST_YAW_ABSENT};
+    h.motor[TVC_AXIS_YAW].responsive = false;
+    // STARTUP, CLEARING, READY, HOMING, ENABLED...
+    for (int k = 0; k < 5; k++) {
+        h.cycle();
+        zassert_equal(h.out[TVC_AXIS_YAW].action, Action::NONE);
+    }
+    h.in.home_request = true;
+    for (int k = 0; k < 10; k++) {
+        h.cycle();
+        zassert_equal(h.out[TVC_AXIS_YAW].action, Action::NONE);
+    }
+    // ...and FAULT.
+    h.motor[TVC_AXIS_PITCH].mode = static_cast<int8_t>(moteus::Mode::TIMEOUT);
+    for (int k = 0; k < 5; k++) {
+        h.cycle();
+        zassert_equal(h.out[TVC_AXIS_YAW].action, Action::NONE);
+    }
+    zassert_equal(h.sup.state(), State::FAULT);
+}
+
+ZTEST(TvcControl_tests, test_pitch_only_missing_yaw_never_faults)
+{
+    Harness h{TEST_PITCH, TEST_YAW_ABSENT};
+    h.motor[TVC_AXIS_YAW].responsive = false;
+    h.enable();
+    h.cycles(200);
+    zassert_equal(h.sup.state(), State::ENABLED);
+    zassert_equal(h.sup.axis(TVC_AXIS_YAW).faults, 0u);
+}
+
+ZTEST(TvcControl_tests, test_pitch_only_still_faults_on_pitch)
+{
+    Harness h{TEST_PITCH, TEST_YAW_ABSENT};
+    h.motor[TVC_AXIS_YAW].responsive = false;
+    h.enable();
+    h.motor[TVC_AXIS_PITCH].responsive = false;
+    h.cycles(TVC_MAX_MISSED_REPLIES + 1);
+    zassert_equal(h.sup.state(), State::FAULT);
+    zassert_true(h.sup.axis(TVC_AXIS_PITCH).faults & FAULT_NO_REPLY);
+    zassert_equal(h.out[TVC_AXIS_PITCH].action, Action::STOP);
+}
+
+ZTEST(TvcControl_tests, test_pitch_only_waits_for_pitch)
+{
+    Harness h{TEST_PITCH, TEST_YAW_ABSENT};
+    h.motor[TVC_AXIS_PITCH].responsive = false;
+    h.motor[TVC_AXIS_YAW].responsive = false;
+    h.cycles(20);
+    zassert_equal(h.sup.state(), State::STARTUP);
+}
+
+ZTEST(TvcControl_tests, test_yaw_only_enables_and_drives_yaw)
+{
+    Harness h{TEST_PITCH_ABSENT, TEST_YAW};
+    h.motor[TVC_AXIS_PITCH].responsive = false;
+    h.enable();
+    h.in.yaw_command_deg = -3.0f;
+    h.cycles(20);
+    zassert_equal(h.out[TVC_AXIS_PITCH].action, Action::NONE);
+    zassert_equal(h.out[TVC_AXIS_YAW].action, Action::POSITION);
+    zassert_within(h.sup.axis(TVC_AXIS_YAW).measured_angle_deg, -3.0f, 5e-3f);
+}
+
+ZTEST(TvcControl_tests, test_no_axis_installed_never_leaves_startup)
+{
+    Harness h{TEST_PITCH_ABSENT, TEST_YAW_ABSENT};
+    h.in.home_request = true;
+    h.cycles(50);
+    zassert_equal(h.sup.state(), State::STARTUP);
+    zassert_equal(h.out[0].action, Action::NONE);
+    zassert_equal(h.out[1].action, Action::NONE);
 }
 
 ZTEST_SUITE(TvcControl_tests, NULL, NULL, NULL, NULL, NULL);

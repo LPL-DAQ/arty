@@ -22,8 +22,8 @@ constexpr double constexpr_sqrt(double x)
 
 // Law of cosines terms. Lts and Lre are fixed by the structure, so precompute:
 //     L^2 = A - B * cos(theta)   with   A = Lts^2 + Lre^2,   B = 2 * Lts * Lre
-constexpr double LTS_SQ = double(tvc::TVC_X_IN) * tvc::TVC_X_IN + double(tvc::TVC_TE_IN) * tvc::TVC_TE_IN;
-constexpr double LRE_SQ = double(tvc::TVC_E_IN) * tvc::TVC_E_IN + double(tvc::TVC_ER_IN) * tvc::TVC_ER_IN;
+constexpr double LTS_SQ = double(tvc::TVC_X_IN) * double(tvc::TVC_X_IN) + double(tvc::TVC_TE_IN) * double(tvc::TVC_TE_IN);
+constexpr double LRE_SQ = double(tvc::TVC_E_IN) * double(tvc::TVC_E_IN) + double(tvc::TVC_ER_IN) * double(tvc::TVC_ER_IN);
 constexpr float COS_A = static_cast<float>(LTS_SQ + LRE_SQ);
 constexpr float COS_B = static_cast<float>(2.0 * constexpr_sqrt(LTS_SQ) * constexpr_sqrt(LRE_SQ));
 static_assert(COS_B > 223.6f && COS_B < 223.7f, "2 * Lts * Lre should be ~223.65 in^2 for the current geometry");

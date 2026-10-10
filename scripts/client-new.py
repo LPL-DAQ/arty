@@ -378,7 +378,10 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         row['tvc_loop_jitter_max_us'] = _finite(tm.loop_jitter_max_us)
         row['tvc_cycle_time_us'] = _finite(tm.cycle_time_us)
         row['tvc_loop_overruns'] = float(tm.loop_overruns)
+        installed = {'pitch': _axis_installed(tm.pitch), 'yaw': _axis_installed(tm.yaw)}
         for name, axis in (('pitch', tm.pitch), ('yaw', tm.yaw)):
+            if not installed[name]:
+                continue
             row[f'tvc_{name}_measured_angle_deg'] = _finite(axis.measured_angle_deg)
             row[f'tvc_{name}_measured_length_in'] = _finite(axis.measured_length_in)
             row[f'tvc_{name}_measured_position_rev'] = _finite(axis.measured_position_rev)
@@ -392,7 +395,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             row[f'tvc_{name}_bus_voltage_v'] = _finite(axis.bus_voltage_v)
             row[f'tvc_{name}_temperature_c'] = _finite(axis.temperature_c)
         for name, field in (('pitch', 'pitch_actuator_command'), ('yaw', 'yaw_actuator_command')):
-            if _has(pkt, field):
+            if installed[name] and _has(pkt, field):
                 c = getattr(pkt, field)
                 row[f'tvc_{name}_target_angle_deg'] = _finite(c.target_angle_deg)
                 row[f'tvc_{name}_target_length_in'] = _finite(c.target_length_in)
@@ -1027,6 +1030,11 @@ def _finite(v):
     return v if math.isfinite(v) else None
 
 
+def _axis_installed(axis) -> bool:
+    """False for the missing actuator in a single-actuator bench build. Older firmware omits the field: installed."""
+    return axis.installed if axis.HasField('installed') else True
+
+
 def _decode_bits(value: int, table) -> list[str]:
     return [name for bit, name in table if value & bit]
 
@@ -1054,6 +1062,7 @@ def _build_tvc_renderable(pkt):
     m = pkt.ranger_tvc_metrics
     state = _tvc_state_name(m)
     state_style = _TVC_STATE_STYLES.get(state, 'white')
+    p_installed, y_installed = _axis_installed(m.pitch), _axis_installed(m.yaw)
 
     def num(v, spec='.3f'):
         v = _finite(v)
@@ -1061,6 +1070,9 @@ def _build_tvc_renderable(pkt):
 
     # Summary lines
     lines = [Text.assemble(('State: ', 'bold white'), (state, state_style))]
+    if not p_installed or not y_installed:
+        missing = 'pitch' if not p_installed else 'yaw'
+        lines.append(Text(f'SINGLE-ACTUATOR BENCH BUILD: {missing} actuator not installed', style='bold yellow'))
     if m.bench_sweep:
         lines.append(Text('BENCH SWEEP BUILD: ignoring GNC commands', style='bold yellow'))
     if state == 'READY' and m.enable_blockers:
@@ -1092,8 +1104,12 @@ def _build_tvc_renderable(pkt):
         padding=(0, 1),
     )
     table.add_column('TVC', style='bold white', no_wrap=True)
-    table.add_column('Pitch', style='white', justify='right', no_wrap=True)
-    table.add_column('Yaw', style='white', justify='right', no_wrap=True)
+    table.add_column('Pitch' if p_installed else 'Pitch (not installed)', style='white', justify='right', no_wrap=True)
+    table.add_column('Yaw' if y_installed else 'Yaw (not installed)', style='white', justify='right', no_wrap=True)
+    absent = f'[{muted}]—[/{muted}]'
+
+    def add(label, pitch_val, yaw_val, unit):
+        table.add_row(label, pitch_val if p_installed else absent, yaw_val if y_installed else absent, unit)
     table.add_column('Unit', style=muted, no_wrap=True)
 
     pc = pkt.pitch_actuator_command if _has(pkt, 'pitch_actuator_command') else None
@@ -1129,32 +1145,32 @@ def _build_tvc_renderable(pkt):
             return 'none'
         return f'[bold red]{", ".join(_decode_bits(axis.faults, _TVC_FAULT_BITS))}[/bold red]'
 
-    table.add_row('Requested', num(m.requested_pitch_deg), num(m.requested_yaw_deg), 'deg')
-    table.add_row('Target angle', cmd_field(pc, 'target_angle_deg'), cmd_field(yc, 'target_angle_deg'), 'deg')
-    table.add_row('Measured angle', num(p.measured_angle_deg), num(y.measured_angle_deg), 'deg')
-    table.add_row('Angle error', angle_err(pc, p), angle_err(yc, y), 'deg')
-    table.add_row('Target length', cmd_field(pc, 'target_length_in', '.4f'), cmd_field(yc, 'target_length_in', '.4f'), 'in')
-    table.add_row('Measured length', num(p.measured_length_in, '.4f'), num(y.measured_length_in, '.4f'), 'in')
-    table.add_row('Length error', num(p.position_error_in, '+.4f'), num(y.position_error_in, '+.4f'), 'in')
-    table.add_row('Target pos', cmd_field(pc, 'target_position_rev'), cmd_field(yc, 'target_position_rev'), 'rev')
-    table.add_row('Measured pos', num(p.measured_position_rev), num(y.measured_position_rev), 'rev')
-    table.add_row('Velocity', num(p.measured_velocity_rev_s), num(y.measured_velocity_rev_s), 'rev/s')
-    table.add_row('Torque', num(p.measured_torque_nm), num(y.measured_torque_nm), 'N·m')
-    table.add_row(
+    add('Requested', num(m.requested_pitch_deg), num(m.requested_yaw_deg), 'deg')
+    add('Target angle', cmd_field(pc, 'target_angle_deg'), cmd_field(yc, 'target_angle_deg'), 'deg')
+    add('Measured angle', num(p.measured_angle_deg), num(y.measured_angle_deg), 'deg')
+    add('Angle error', angle_err(pc, p), angle_err(yc, y), 'deg')
+    add('Target length', cmd_field(pc, 'target_length_in', '.4f'), cmd_field(yc, 'target_length_in', '.4f'), 'in')
+    add('Measured length', num(p.measured_length_in, '.4f'), num(y.measured_length_in, '.4f'), 'in')
+    add('Length error', num(p.position_error_in, '+.4f'), num(y.position_error_in, '+.4f'), 'in')
+    add('Target pos', cmd_field(pc, 'target_position_rev'), cmd_field(yc, 'target_position_rev'), 'rev')
+    add('Measured pos', num(p.measured_position_rev), num(y.measured_position_rev), 'rev')
+    add('Velocity', num(p.measured_velocity_rev_s), num(y.measured_velocity_rev_s), 'rev/s')
+    add('Torque', num(p.measured_torque_nm), num(y.measured_torque_nm), 'N·m')
+    add(
         'Driving',
         yes_no(pc.driving, bad_when_false=False) if pc is not None else '—',
         yes_no(yc.driving, bad_when_false=False) if yc is not None else '—',
         '',
     )
-    table.add_row('Responding', yes_no(p.responding), yes_no(y.responding), '')
-    table.add_row('Missed replies', str(p.missed_replies), str(y.missed_replies), '')
-    table.add_row('moteus mode', mode_str(p.mode), mode_str(y.mode), '')
-    table.add_row('Home state', home_str(p.home_state), home_str(y.home_state), '')
-    table.add_row('moteus fault', _moteus_fault_str(p.fault_code), _moteus_fault_str(y.fault_code), '')
-    table.add_row('TVC faults', faults_str(p), faults_str(y), '')
-    table.add_row('Bus voltage', num(p.bus_voltage_v, '.1f'), num(y.bus_voltage_v, '.1f'), 'V')
-    table.add_row('Temperature', num(p.temperature_c, '.1f'), num(y.temperature_c, '.1f'), '°C')
-    table.add_row('Reply latency', num(p.reply_latency_us, '.0f'), num(y.reply_latency_us, '.0f'), 'us')
+    add('Responding', yes_no(p.responding), yes_no(y.responding), '')
+    add('Missed replies', str(p.missed_replies), str(y.missed_replies), '')
+    add('moteus mode', mode_str(p.mode), mode_str(y.mode), '')
+    add('Home state', home_str(p.home_state), home_str(y.home_state), '')
+    add('moteus fault', _moteus_fault_str(p.fault_code), _moteus_fault_str(y.fault_code), '')
+    add('TVC faults', faults_str(p), faults_str(y), '')
+    add('Bus voltage', num(p.bus_voltage_v, '.1f'), num(y.bus_voltage_v, '.1f'), 'V')
+    add('Temperature', num(p.temperature_c, '.1f'), num(y.temperature_c, '.1f'), '°C')
+    add('Reply latency', num(p.reply_latency_us, '.0f'), num(y.reply_latency_us, '.0f'), 'us')
 
     return Group(*lines, table)
 
@@ -1601,9 +1617,10 @@ def get_toolbar():
         tvc_state = _tvc_state_name(tm)
         tvc_tag = _TVC_TOOLBAR_TAGS.get(tvc_state, 'ansiwhite')
         tvc_html = f'  │  TVC <{tvc_tag}><b>{tvc_state}</b></{tvc_tag}>'
-        p_ang, y_ang = _finite(tm.pitch.measured_angle_deg), _finite(tm.yaw.measured_angle_deg)
-        if p_ang is not None and y_ang is not None:
-            tvc_html += f' p={p_ang:+.2f}° y={y_ang:+.2f}°'
+        for label, axis in (('p', tm.pitch), ('y', tm.yaw)):
+            ang = _finite(axis.measured_angle_deg)
+            if _axis_installed(axis) and ang is not None:
+                tvc_html += f' {label}={ang:+.2f}°'
         if tvc_state == 'READY' and tm.enable_blockers & 4:
             tvc_html += ' (not homed)'
 

@@ -67,7 +67,22 @@ struct AxisConfig {
     float direction_sign;
     /// moteus CAN ID (moteus `id.id`).
     uint8_t moteus_id;
+    /// False when this actuator is not connected (single-actuator bench builds). The supervisor then ignores the axis
+    /// entirely: no frames, no replies expected, no faults.
+    bool installed = true;
 };
+
+// Single-actuator bench builds (Kconfig RANGER_TVC_PITCH_ONLY / RANGER_TVC_YAW_ONLY). Both axes are required otherwise.
+#ifdef CONFIG_RANGER_TVC_PITCH_ONLY
+constexpr bool TVC_PITCH_INSTALLED = true;
+constexpr bool TVC_YAW_INSTALLED = false;
+#elif defined(CONFIG_RANGER_TVC_YAW_ONLY)
+constexpr bool TVC_PITCH_INSTALLED = false;
+constexpr bool TVC_YAW_INSTALLED = true;
+#else
+constexpr bool TVC_PITCH_INSTALLED = true;
+constexpr bool TVC_YAW_INSTALLED = true;
+#endif
 
 constexpr AxisConfig TVC_PITCH = {
     .name = "pitch",
@@ -78,6 +93,7 @@ constexpr AxisConfig TVC_PITCH = {
     // TODO(adit): direction (+1/-1). Do not guess.
     .direction_sign = 0.0f,
     .moteus_id = 1,  // Bench-tested ID from prabhu/moteusTest.
+    .installed = TVC_PITCH_INSTALLED,
 };
 
 constexpr AxisConfig TVC_YAW = {
@@ -89,6 +105,7 @@ constexpr AxisConfig TVC_YAW = {
     // TODO(adit): direction (+1/-1). Do not guess.
     .direction_sign = 0.0f,
     .moteus_id = 2,  // TODO(adit): set yaw moteus `id.id` to 2, or change this.
+    .installed = TVC_YAW_INSTALLED,
 };
 
 constexpr int TVC_AXIS_COUNT = 2;
@@ -161,9 +178,15 @@ constexpr bool axis_config_is_complete(const AxisConfig& axis)
     return axis.turns_per_inch > 0.0f && (axis.direction_sign == 1.0f || axis.direction_sign == -1.0f) && axis.moteus_id > 0 && axis.moteus_id < 0x80;
 }
 
+/// True when at least one axis is installed and every installed axis is fully configured.
+constexpr bool axes_config_complete(const AxisConfig& pitch, const AxisConfig& yaw)
+{
+    return (pitch.installed || yaw.installed) && (!pitch.installed || axis_config_is_complete(pitch)) && (!yaw.installed || axis_config_is_complete(yaw));
+}
+
 constexpr bool config_is_complete()
 {
-    return axis_config_is_complete(TVC_PITCH) && axis_config_is_complete(TVC_YAW);
+    return axes_config_complete(TVC_PITCH, TVC_YAW);
 }
 
 }  // namespace tvc

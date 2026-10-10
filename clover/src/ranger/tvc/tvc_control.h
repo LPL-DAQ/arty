@@ -58,6 +58,7 @@ enum class Action : uint8_t {
     STOP = 1,
     POSITION = 2,
     SET_OUTPUT_EXACT = 3,
+    NONE = 4,  // Send nothing (axis not installed).
 };
 
 /// Reply to last cycle's frame for one axis.
@@ -107,6 +108,8 @@ struct AxisStatus {
     int8_t latched_fault_code = 0;
     /// True if the latest reply parsed and contained every queried register. Unparseable replies count as missed.
     bool replied = false;
+    /// False for an axis that is not connected (single-actuator bench build); every other field is then meaningless.
+    bool installed = true;
 };
 
 class Supervisor {
@@ -146,6 +149,8 @@ private:
     void ingest(const Inputs& in);
     void detect_enabled_faults();
     uint32_t compute_enable_blockers() const;
+    bool all_installed_replied() const;
+    bool all_installed_stopped() const;
     void enter(State s);
     void command_axis(int i, float requested_deg, AxisOutput& out);
     void hold_or_stop(int i, AxisOutput& out);

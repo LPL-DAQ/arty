@@ -52,3 +52,18 @@ stopped. With `TVC_FAULT_ABORTS_CONTROLLER`, an active TVC/static fire/flight se
 
 Build with `-DCONFIG_RANGER_TVC_BENCH_SWEEP=y`: once enabled, each axis sweeps +/-2 deg at 0.5 deg/s (pitch, then yaw)
 and commanded vs measured angle is logged at 5 Hz. Never fly or fire this build.
+
+### One actuator only
+
+Add `-DCONFIG_RANGER_TVC_PITCH_ONLY=y` (or `_YAW_ONLY=y`) to bench a single actuator:
+
+```shell
+west build ~/arty/clover --pristine auto --board ranger_1/mimxrt1062 --build-dir ~/arty/clover/build -- \
+    -DCONFIG_RANGER_TVC_PITCH_ONLY=y -DCONFIG_RANGER_TVC_BENCH_SWEEP=y
+```
+
+The missing axis is ignored completely: no CAN frames, no replies expected, no faults, and only the installed axis'
+`turns_per_inch` / `direction_sign` must be filled in. Startup, homing (`caltvc`), enable checks, clamps, slew limit,
+watchdog and fault handling all still apply to the installed axis. With the bench sweep, the single actuator sweeps
+continuously. The firmware logs a warning at boot and the `tvc` dashboard shows the axis as "not installed".
+Never fly or fire a single-actuator build.

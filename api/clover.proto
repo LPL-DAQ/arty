@@ -813,6 +813,8 @@ message TvcActuatorStatus {
   required float temperature_c = 15;
   // Last cycle's command-to-reply latency.
   required float reply_latency_us = 16;
+  // False in a single-actuator bench build (CONFIG_RANGER_TVC_PITCH_ONLY / _YAW_ONLY) for the missing axis.
+  required bool installed = 17;
 }
 
 message RangerTvcMetrics {

@@ -69,6 +69,7 @@ TvcState to_proto(tvc::State s)
 
 void fill_status(TvcActuatorStatus& out, const tvc::AxisStatus& st, float latency_us)
 {
+    out.installed = st.installed;
     out.responding = st.replied;
     out.mode = st.mode;
     out.home_state = st.home_state;
@@ -106,6 +107,8 @@ size_t build_frame(const tvc::AxisOutput& out, uint8_t* buf)
         return moteus::make_position_frame(out.position, buf);
     case tvc::Action::SET_OUTPUT_EXACT:
         return moteus::make_set_output_exact_frame(0.0f, buf);
+    case tvc::Action::NONE:
+        return 0;  // Axis not installed: nothing is sent and no reply is awaited.
     }
     return 0;
 }
@@ -183,6 +186,14 @@ void tvc_loop(void*, void*, void*)
         if (supervisor.state() == tvc::State::ENABLED) {
             const float t_s = (loop_count - bench_start_cycle) * (tvc::TVC_LOOP_PERIOD_US * 1e-6f);
             tvc::bench_sweep(t_s, tvc::TVC_BENCH_SWEEP_AMPLITUDE_DEG, tvc::TVC_BENCH_SWEEP_RATE_DEG_S, inputs.pitch_command_deg, inputs.yaw_command_deg);
+            // The sweep alternates axes (only one is ever nonzero). With a single actuator, give it both halves so it
+            // sweeps continuously instead of sitting idle during the other axis' half.
+            if (!tvc::TVC_YAW.installed) {
+                inputs.pitch_command_deg += inputs.yaw_command_deg;
+            }
+            if (!tvc::TVC_PITCH.installed) {
+                inputs.yaw_command_deg += inputs.pitch_command_deg;
+            }
         }
         else {
             bench_start_cycle = loop_count + 1;
@@ -307,6 +318,9 @@ std::expected<void, Error> RangerTvc::init()
     LOG_WRN("CONFIG_RANGER_TVC_BENCH_SWEEP is set: TVC ignores GNC commands and sweeps +/-%d deg. BENCH USE ONLY.",
         static_cast<int>(tvc::TVC_BENCH_SWEEP_AMPLITUDE_DEG));
 #endif
+    if (!tvc::TVC_PITCH.installed || !tvc::TVC_YAW.installed) {
+        LOG_WRN("TVC single-actuator bench build: %s actuator NOT installed and ignored. BENCH USE ONLY.", tvc::TVC_PITCH.installed ? "yaw" : "pitch");
+    }
     if (!tvc::config_is_complete()) {
         LOG_WRN("TVC config has TODO(adit) placeholders (turns_per_inch / direction_sign): actuators will not enable");
     }

@@ -101,6 +101,23 @@ config RANGER_TVC_BENCH_SWEEP
       (tvc_config.h) at TVC_BENCH_SWEEP_RATE_DEG_S, logging commanded vs measured
       angle at 5 Hz. Never enable for a hotfire or flight build.
 
+config RANGER_TVC_PITCH_ONLY
+    bool "TVC bench test: only the pitch actuator is connected"
+    depends on RANGER_TVC
+    default n
+    help
+      BENCH USE ONLY. The TVC ignores the yaw actuator entirely (no CAN frames,
+      no replies expected, no faults) and starts, homes and enables with pitch
+      alone. Never enable for a hotfire or flight build.
+
+config RANGER_TVC_YAW_ONLY
+    bool "TVC bench test: only the yaw actuator is connected"
+    depends on RANGER_TVC
+    depends on !RANGER_TVC_PITCH_ONLY
+    default n
+    help
+      BENCH USE ONLY. Same as RANGER_TVC_PITCH_ONLY, for the yaw actuator.
+
 config RANGER_RCS
     bool "Whether ranger-variant TVC is available"
     depends on RANGER

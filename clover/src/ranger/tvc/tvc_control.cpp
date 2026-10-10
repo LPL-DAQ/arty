@@ -28,6 +28,11 @@ Supervisor::Supervisor(const AxisConfig& pitch, const AxisConfig& yaw, float dt_
         l_min_in_[i] = length_in(axes_[i], -TVC_ANGLE_LIMIT_DEG);
         l_max_in_[i] = length_in(axes_[i], TVC_ANGLE_LIMIT_DEG);
         last_target_length_in_[i] = axes_[i].l_center_in;
+        status_[i].installed = axes_[i].installed;
+        if (!axes_[i].installed) {
+            status_[i].measured_length_in = NAN;
+            status_[i].measured_angle_deg = NAN;
+        }
     }
 }
 
@@ -51,6 +56,9 @@ void Supervisor::ingest(const Inputs& in)
         const AxisFeedback& fb = in.feedback[i];
         AxisStatus& st = status_[i];
         const AxisConfig& axis = axes_[i];
+        if (!axis.installed) {
+            continue;
+        }
 
         // An unparseable or incomplete reply is as good as none.
         st.replied = fb.replied && fb.parsed && fb.query.complete();
@@ -88,6 +96,10 @@ void Supervisor::detect_enabled_faults()
 {
     for (int i = 0; i < TVC_AXIS_COUNT; i++) {
         AxisStatus& st = status_[i];
+        // Belt and braces: ingest() never counts misses for an uninstalled axis, so it could not fault anyway.
+        if (!axes_[i].installed) {
+            continue;
+        }
 
         if (st.missed_replies >= TVC_MAX_MISSED_REPLIES) {
             st.faults |= FAULT_NO_REPLY;
@@ -126,9 +138,15 @@ void Supervisor::detect_enabled_faults()
 uint32_t Supervisor::compute_enable_blockers() const
 {
     uint32_t blockers = 0;
+    if (!axes_[TVC_AXIS_PITCH].installed && !axes_[TVC_AXIS_YAW].installed) {
+        return BLOCKED_CONFIG_INCOMPLETE;
+    }
     for (int i = 0; i < TVC_AXIS_COUNT; i++) {
         const AxisStatus& st = status_[i];
         const AxisConfig& axis = axes_[i];
+        if (!axis.installed) {
+            continue;
+        }
 
         if (!axis_config_is_complete(axis)) {
             blockers |= BLOCKED_CONFIG_INCOMPLETE;
@@ -151,13 +169,33 @@ uint32_t Supervisor::compute_enable_blockers() const
     return blockers;
 }
 
+bool Supervisor::all_installed_replied() const
+{
+    for (int i = 0; i < TVC_AXIS_COUNT; i++) {
+        if (axes_[i].installed && !status_[i].replied) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Supervisor::all_installed_stopped() const
+{
+    for (int i = 0; i < TVC_AXIS_COUNT; i++) {
+        if (axes_[i].installed && !is_mode(status_[i].mode, moteus::Mode::STOPPED)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void Supervisor::enter(State s)
 {
     if (s == State::ENABLED) {
         for (int i = 0; i < TVC_AXIS_COUNT; i++) {
             // Start the slew limiter where the gimbal actually is (within tolerance of center), so enabling never
             // steps the setpoint.
-            slewed_deg_[i] = status_[i].measured_angle_deg;
+            slewed_deg_[i] = axes_[i].installed ? status_[i].measured_angle_deg : 0.0f;
             position_error_cycles_[i] = 0;
             wrong_mode_cycles_[i] = 0;
         }
@@ -233,19 +271,21 @@ void Supervisor::step(const Inputs& in, AxisOutput out[TVC_AXIS_COUNT])
         enter(State::CLEARING);
     }
 
-    const bool both_replied = status_[TVC_AXIS_PITCH].replied && status_[TVC_AXIS_YAW].replied;
+    // With a single-actuator bench build, "all" means every installed axis.
+    const bool all_replied = all_installed_replied();
 
     // 3. Transitions, judged on feedback. cycles_in_state_ counts frames already sent in the current state, so
     //    cycles_in_state_ >= 1 means this feedback answers a frame sent from this state.
     switch (state_) {
     case State::STARTUP:
-        if (both_replied) {
+        // all_replied is vacuously true with no installed axis; never leave STARTUP in that (misconfigured) case.
+        if (all_replied && (axes_[TVC_AXIS_PITCH].installed || axes_[TVC_AXIS_YAW].installed)) {
             enter(State::CLEARING);
         }
         break;
 
     case State::CLEARING:
-        if (cycles_in_state_ >= 1 && both_replied && is_mode(status_[0].mode, moteus::Mode::STOPPED) && is_mode(status_[1].mode, moteus::Mode::STOPPED)) {
+        if (cycles_in_state_ >= 1 && all_replied && all_installed_stopped()) {
             enter(State::READY);
         }
         break;
@@ -259,10 +299,12 @@ void Supervisor::step(const Inputs& in, AxisOutput out[TVC_AXIS_COUNT])
 
     case State::HOMING: {
         // Frames: cycle 0 STOP, cycle 1 SET_OUTPUT_EXACT (+query), then queries.
-        if (cycles_in_state_ >= 2 && both_replied) {
+        if (cycles_in_state_ >= 2 && all_replied) {
             bool homed = true;
-            for (const AxisStatus& st : status_) {
-                homed &= st.home_state == static_cast<int8_t>(moteus::HomeState::OUTPUT) && std::fabs(st.measured_rev) <= HOMING_ZERO_TOLERANCE_REV;
+            for (int i = 0; i < TVC_AXIS_COUNT; i++) {
+                const AxisStatus& st = status_[i];
+                homed &= !axes_[i].installed ||
+                    (st.home_state == static_cast<int8_t>(moteus::HomeState::OUTPUT) && std::fabs(st.measured_rev) <= HOMING_ZERO_TOLERANCE_REV);
             }
             if (homed) {
                 enter(State::READY);
@@ -294,6 +336,10 @@ void Supervisor::step(const Inputs& in, AxisOutput out[TVC_AXIS_COUNT])
     for (int i = 0; i < TVC_AXIS_COUNT; i++) {
         out[i] = AxisOutput{};
         last_sent_position_[i] = false;
+        if (!axes_[i].installed) {
+            out[i].action = Action::NONE;
+            continue;
+        }
 
         switch (state_) {
         case State::STARTUP:
