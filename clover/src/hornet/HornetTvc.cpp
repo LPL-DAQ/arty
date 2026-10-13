@@ -21,19 +21,10 @@ static constexpr float HORNET_MAX_GIMBLE_DEG    = 12.0f;
 static constexpr float HORNET_TVC_STROKE_MM        = 50.0f;
 static constexpr float HORNET_TVC_MAX_SPEED_MM_S   = 18.0f;
 
-// Gimbal linkage geometry. TODO: fill in real values -- none of these have been measured.
-// Actuator length follows the law of cosines about the universal joint:
-//   L(gimbal) = sqrt(LINK^2 + MOUNT^2 - 2*LINK*MOUNT*cos(NEUTRAL_ANGLE + gimbal))
-// LINK is the joint centre to the actuator's attachment point on the gimbaled body, MOUNT is the
-// joint centre to the actuator's fixed mounting point on the frame, and NEUTRAL_ANGLE is the angle
-// between those two at zero gimbal.
-static constexpr float HORNET_TVC_PIVOT_TO_LINK_MM  = -67.67f;
-static constexpr float HORNET_TVC_PIVOT_TO_MOUNT_MM = -67.67f;
-static constexpr float HORNET_TVC_NEUTRAL_ANGLE_DEG = -67.67f;
-
-// Delete this and its use in tick() once the three constants above carry real measurements.
-static constexpr bool HORNET_TVC_GEOMETRY_MEASURED = HORNET_TVC_PIVOT_TO_LINK_MM != -67.67f
-    && HORNET_TVC_PIVOT_TO_MOUNT_MM != -67.67f && HORNET_TVC_NEUTRAL_ANGLE_DEG != -67.67f;
+// Measured at zero deflection in the Gimbal Assembly CAD: U-joint centre to P16 rod-end eyelet, and to the CLAM_P16 clamp hole.
+static constexpr float HORNET_TVC_PIVOT_TO_LINK_MM  = 68.20f;
+static constexpr float HORNET_TVC_PIVOT_TO_MOUNT_MM = 128.25f;
+static constexpr float HORNET_TVC_NEUTRAL_ANGLE_DEG = 69.96f;
 
 // Extension at zero gimbal. Mid-stroke leaves equal travel in both directions, but the real value
 // depends on the geometry above. TODO: confirm once measured.
@@ -91,10 +82,6 @@ void HornetTvc::reset()
 /// and mapped onto the LAC's RC input range.
 std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick(float pitch_accel_rad_s2, float yaw_accel_rad_s2, float thrust_N)
 {
-    if constexpr (!HORNET_TVC_GEOMETRY_MEASURED) {
-        return std::unexpected(Error::from_cause("hornet TVC gimbal linkage geometry has not been measured"));
-    }
-
     MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
 
     float pitch_sin = (pitch_accel_rad_s2 * HORNET_PITCH_MOI) / (thrust_N * HORNET_PITCH_MOMENT_ARM);
