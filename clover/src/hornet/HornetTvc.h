@@ -2,11 +2,15 @@
 
 #include "../Error.h"
 #include "clover.pb.h"
+#include <cstdint>
 #include <expected>
 #include <tuple>
 
 namespace HornetTvc {
 void reset();
+uint32_t neutral_pulse_us();
+/// Takes pitch and yaw gimbal angles (deg) directly, bypassing thrust and MOI, for bench and trace driven TVC.
+std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> tick_gimbal_deg(float pitch_gimbal_deg, float yaw_gimbal_deg);
 /// Takes pitch and yaw angular acceleration commands (rad/s²) and thrust (N), converts to linear
 /// actuator extension internally using vehicle MOI, moment arm and gimbal linkage geometry, and
 /// returns the pitch and yaw RC pulse widths (µs) for the LAC boards.

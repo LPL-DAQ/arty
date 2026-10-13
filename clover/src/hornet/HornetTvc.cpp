@@ -26,9 +26,10 @@ static constexpr float HORNET_TVC_PIVOT_TO_LINK_MM  = 68.20f;
 static constexpr float HORNET_TVC_PIVOT_TO_MOUNT_MM = 128.25f;
 static constexpr float HORNET_TVC_NEUTRAL_ANGLE_DEG = 69.96f;
 
-// Extension at zero gimbal. Mid-stroke leaves equal travel in both directions, but the real value
-// depends on the geometry above. TODO: confirm once measured.
+// Extension at zero gimbal. Mid-stroke leaves equal travel in both directions.
 static constexpr float HORNET_TVC_NEUTRAL_EXTENSION_MM = HORNET_TVC_STROKE_MM / 2.0f;
+
+static constexpr float HORNET_TVC_MIN_THRUST_N = 1e-3f;
 
 static constexpr float PULSE_US_PER_MM = (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US) / HORNET_TVC_STROKE_MM;
 
@@ -76,23 +77,14 @@ void HornetTvc::reset()
     yaw_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
 }
 
-/// Convert angular acceleration command to actuator pulse width.
-/// Physics: alpha = (T * arm * sin(gimbal)) / MOI  =>  gimbal = arcsin(alpha * MOI / (T * arm))
-/// The gimbal angle is then converted to a linear extension via the linkage geometry, rate limited,
-/// and mapped onto the LAC's RC input range.
-std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick(float pitch_accel_rad_s2, float yaw_accel_rad_s2, float thrust_N)
+uint32_t HornetTvc::neutral_pulse_us()
 {
-    MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
+    return extension_mm_to_pulse_us(HORNET_TVC_NEUTRAL_EXTENSION_MM);
+}
 
-    float pitch_sin = (pitch_accel_rad_s2 * HORNET_PITCH_MOI) / (thrust_N * HORNET_PITCH_MOMENT_ARM);
-    float yaw_sin   = (yaw_accel_rad_s2   * HORNET_YAW_MOI)   / (thrust_N * HORNET_YAW_MOMENT_ARM);
-
-    pitch_sin = std::clamp(pitch_sin, -1.0f, 1.0f);
-    yaw_sin   = std::clamp(yaw_sin,   -1.0f, 1.0f);
-
-    float pitch_gimbal_deg = std::asin(pitch_sin) * RAD2DEG_F;
-    float yaw_gimbal_deg   = std::asin(yaw_sin)   * RAD2DEG_F;
-
+/// Clamp gimbal angles, convert to extension, rate limit and map to pulse width. Caller must hold hornet_tvc_lock.
+static std::tuple<float, float, HornetTvcMetrics> command_gimbal_deg(float pitch_gimbal_deg, float yaw_gimbal_deg)
+{
     pitch_gimbal_deg = std::clamp(pitch_gimbal_deg, -HORNET_MAX_GIMBLE_DEG, HORNET_MAX_GIMBLE_DEG);
     yaw_gimbal_deg   = std::clamp(yaw_gimbal_deg,   -HORNET_MAX_GIMBLE_DEG, HORNET_MAX_GIMBLE_DEG);
 
@@ -115,5 +107,31 @@ std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick
     metrics.pitch_pulse_us = pitch_pulse_us;
     metrics.yaw_pulse_us = yaw_pulse_us;
 
-    return {{pitch_pulse_us, yaw_pulse_us, metrics}};
+    return {pitch_pulse_us, yaw_pulse_us, metrics};
+}
+
+/// Convert angular acceleration command to actuator pulse width.
+/// Physics: alpha = (T * arm * sin(gimbal)) / MOI  =>  gimbal = arcsin(alpha * MOI / (T * arm))
+std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick(float pitch_accel_rad_s2, float yaw_accel_rad_s2, float thrust_N)
+{
+    // Written so that a NaN thrust also fails the check.
+    if (!(std::fabs(thrust_N) >= HORNET_TVC_MIN_THRUST_N)) {
+        return std::unexpected(Error::from_cause("thrust %f N is too small to compute a TVC gimbal angle", static_cast<double>(thrust_N)));
+    }
+
+    MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
+
+    float pitch_sin = (pitch_accel_rad_s2 * HORNET_PITCH_MOI) / (thrust_N * HORNET_PITCH_MOMENT_ARM);
+    float yaw_sin   = (yaw_accel_rad_s2   * HORNET_YAW_MOI)   / (thrust_N * HORNET_YAW_MOMENT_ARM);
+
+    pitch_sin = std::clamp(pitch_sin, -1.0f, 1.0f);
+    yaw_sin   = std::clamp(yaw_sin,   -1.0f, 1.0f);
+
+    return command_gimbal_deg(std::asin(pitch_sin) * RAD2DEG_F, std::asin(yaw_sin) * RAD2DEG_F);
+}
+
+std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> HornetTvc::tick_gimbal_deg(float pitch_gimbal_deg, float yaw_gimbal_deg)
+{
+    MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
+    return command_gimbal_deg(pitch_gimbal_deg, yaw_gimbal_deg);
 }

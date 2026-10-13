@@ -48,8 +48,8 @@ auto prev_yaw_actuator_command = TvcActuatorCommand{};
 float prev_main_propeller_command = 0.0f;
 float prev_rcs_propeller_cw_command = 0.0f;
 float prev_rcs_propeller_ccw_command = 0.0f;
-float prev_pitch_servo_command = 0.0f;
-float prev_yaw_servo_command = 0.0f;
+float prev_pitch_servo_command = HornetTvc::neutral_pulse_us();
+float prev_yaw_servo_command = HornetTvc::neutral_pulse_us();
 #endif
 
 // State-specific data. Each is only valid within their respective states.
@@ -302,10 +302,16 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.pitch_actuator_command, data.yaw_actuator_command, data.ranger_tvc_metrics) = *tvc_response;
 
 #elif CONFIG_HORNET
-        if (!data.has_flight_pitch_accel_rad_s2 || !data.has_flight_yaw_accel_rad_s2 || !data.has_hornet_throttle_metrics) {
+        const bool trace_driven = current_state == SystemState_STATE_TVC;
+        if (trace_driven && (!data.has_tvc_pitch_command_deg || !data.has_tvc_yaw_command_deg)) {
+            return std::unexpected(Error::from_cause("missing tvc trace commands"));
+        }
+        if (!trace_driven && (!data.has_flight_pitch_accel_rad_s2 || !data.has_flight_yaw_accel_rad_s2 || !data.has_hornet_throttle_metrics)) {
             return std::unexpected(Error::from_cause("missing flight acceleration commands for TVC"));
         }
-        auto tvc_response = HornetTvc::tick(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.hornet_throttle_metrics.thrust_N);
+        auto tvc_response = trace_driven
+            ? HornetTvc::tick_gimbal_deg(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg)
+            : HornetTvc::tick(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.hornet_throttle_metrics.thrust_N);
         if (!tvc_response.has_value()) {
             return std::unexpected(tvc_response.error().context("error in HornetTvc"));
         }
