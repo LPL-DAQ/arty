@@ -111,4 +111,14 @@ ZTEST(TvcKinematics_tests, test_axis_config_completeness)
     zassert_false(axis_config_is_complete(axis));
 }
 
+ZTEST(TvcKinematics_tests, test_screw_lead)
+{
+    zassert_within(TVC_SCREW_LEAD_IN_PER_REV, 0.15748f, 1e-5f, "4 mm lead");
+    // Direct drive: one output revolution per screw revolution -> 25.4 / 4 = 6.35 turns per inch.
+    zassert_within(1.0f / TVC_SCREW_LEAD_IN_PER_REV, 6.35f, 1e-4f);
+    // Full +/-12 deg travel at 6.35 turns/in, pitch axis: about -8.1 / +7.0 rev from center.
+    zassert_within(length_to_rev(length_in(TVC_PITCH, -12.0f), TVC_PITCH.l_center_in, 6.35f, 1.0f), -8.124f, 1e-2f);
+    zassert_within(length_to_rev(length_in(TVC_PITCH, 12.0f), TVC_PITCH.l_center_in, 6.35f, 1.0f), 7.045f, 1e-2f);
+}
+
 ZTEST_SUITE(TvcKinematics_tests, NULL, NULL, NULL, NULL, NULL);

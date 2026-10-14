@@ -54,6 +54,16 @@ constexpr float TVC_MAX_DL_DANGLE_IN_PER_DEG = 0.115f;
 // (moteus output revolutions per lead screw revolution) / (lead screw lead, in per rev).
 // ---------------------------------------------------------------------------------------------------------------------
 
+/// Lead screw lead: linear travel per screw revolution. 4 mm (from the actuator spec).
+constexpr float TVC_SCREW_LEAD_IN_PER_REV = 4.0f / 25.4f;  // 0.15748 in/rev
+/// moteus output revolutions per screw revolution: 1.0 if the motor drives the screw directly, or if moteus'
+/// motor_position.rotor_to_output_ratio is configured so that one output revolution is one screw revolution; otherwise
+/// the gear ratio. 0 = not configured.
+/// TODO(adit): confirm direct drive (1.0) or the gear ratio, and that the 4 mm screw is single-start (lead == pitch).
+constexpr float TVC_OUTPUT_REVS_PER_SCREW_REV = 0.0f;
+/// moteus output revolutions per inch of actuator travel (6.35 for direct drive). Both actuators are the same part.
+constexpr float TVC_TURNS_PER_INCH = TVC_OUTPUT_REVS_PER_SCREW_REV / TVC_SCREW_LEAD_IN_PER_REV;
+
 struct AxisConfig {
     const char* name;
     /// Center angle between Lts and Lre (phi0 or psi0).
@@ -88,8 +98,7 @@ constexpr AxisConfig TVC_PITCH = {
     .name = "pitch",
     .theta0_deg = TVC_PHI0_DEG,
     .l_center_in = 18.3582104f,
-    // TODO(adit): lead screw lead (in/rev) and gear ratio -> turns_per_inch. Do not guess.
-    .turns_per_inch = 0.0f,
+    .turns_per_inch = TVC_TURNS_PER_INCH,
     // TODO(adit): direction (+1/-1). Do not guess.
     .direction_sign = 0.0f,
     .moteus_id = 1,  // Bench-tested ID from prabhu/moteusTest.
@@ -100,8 +109,7 @@ constexpr AxisConfig TVC_YAW = {
     .name = "yaw",
     .theta0_deg = TVC_PSI0_DEG,
     .l_center_in = 18.7041255f,  // TODO(adit): 18.3582104 if psi0 is really 110.155 (see TVC_PSI0_DEG).
-    // TODO(adit): lead screw lead (in/rev) and gear ratio -> turns_per_inch. Do not guess.
-    .turns_per_inch = 0.0f,
+    .turns_per_inch = TVC_TURNS_PER_INCH,
     // TODO(adit): direction (+1/-1). Do not guess.
     .direction_sign = 0.0f,
     .moteus_id = 2,  // TODO(adit): set yaw moteus `id.id` to 2, or change this.
