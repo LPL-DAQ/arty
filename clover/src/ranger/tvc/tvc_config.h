@@ -99,8 +99,8 @@ constexpr AxisConfig TVC_PITCH = {
     .theta0_deg = TVC_PHI0_DEG,
     .l_center_in = 18.3582104f,
     .turns_per_inch = TVC_TURNS_PER_INCH,
-    // TODO(adit): direction (+1/-1). Do not guess.
-    .direction_sign = 0.0f,
+    // Confirmed: positive moteus rotation lengthens the pitch actuator.
+    .direction_sign = 1.0f,
     .moteus_id = 1,  // Bench-tested ID from prabhu/moteusTest.
     .installed = TVC_PITCH_INSTALLED,
 };
@@ -110,7 +110,8 @@ constexpr AxisConfig TVC_YAW = {
     .theta0_deg = TVC_PSI0_DEG,
     .l_center_in = 18.7041255f,  // TODO(adit): 18.3582104 if psi0 is really 110.155 (see TVC_PSI0_DEG).
     .turns_per_inch = TVC_TURNS_PER_INCH,
-    // TODO(adit): direction (+1/-1). Do not guess.
+    // TODO(adit): direction (+1/-1). Pitch is +1, but this depends on the yaw motor's wiring and moteus config, so
+    // confirm on the yaw actuator. Do not guess.
     .direction_sign = 0.0f,
     .moteus_id = 2,  // TODO(adit): set yaw moteus `id.id` to 2, or change this.
     .installed = TVC_YAW_INSTALLED,

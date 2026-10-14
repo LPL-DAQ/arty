@@ -195,7 +195,7 @@ ZTEST(TvcControl_tests, test_homing_sequence_then_enable)
 
 ZTEST(TvcControl_tests, test_shipped_config_never_enables)
 {
-    Supervisor sup;  // TVC_PITCH / TVC_YAW with TODO(adit) placeholders.
+    Supervisor sup;  // Shipped TVC_PITCH / TVC_YAW: yaw still has a TODO(adit) direction placeholder.
     FakeMoteus motor[TVC_AXIS_COUNT];
     for (FakeMoteus& m : motor) {
         m.home_state = static_cast<int8_t>(moteus::HomeState::OUTPUT);
@@ -549,6 +549,25 @@ ZTEST(TvcControl_tests, test_no_axis_installed_never_leaves_startup)
     zassert_equal(h.sup.state(), State::STARTUP);
     zassert_equal(h.out[0].action, Action::NONE);
     zassert_equal(h.out[1].action, Action::NONE);
+}
+
+ZTEST(TvcControl_tests, test_shipped_pitch_config_bench_ready)
+{
+    // The real pitch config (6.35 turns/in, direction +1) in a pitch-only bench arrangement.
+    Harness h{TVC_PITCH, not_installed(TVC_YAW)};
+    h.motor[TVC_AXIS_YAW].responsive = false;
+    h.enable();
+
+    h.in.pitch_command_deg = 2.0f;
+    h.cycles(20);
+    const AxisStatus& p = h.sup.axis(TVC_AXIS_PITCH);
+    // +2 deg -> actuator 0.1972 in longer -> +1.252 rev (positive rotation lengthens).
+    zassert_within(p.target_length_in - TVC_PITCH.l_center_in, 0.1972f, 1e-3f);
+    zassert_within(h.out[TVC_AXIS_PITCH].position.position_rev, 1.252f, 2e-3f);
+    zassert_within(p.measured_angle_deg, 2.0f, 5e-3f);
+    // moteus limits derived from the slew/accel limits at 6.35 turns/in.
+    zassert_within(h.out[TVC_AXIS_PITCH].position.velocity_limit_rev_s, 32.86f, 0.05f);
+    zassert_within(h.out[TVC_AXIS_PITCH].position.accel_limit_rev_s2, 219.1f, 0.5f);
 }
 
 ZTEST_SUITE(TvcControl_tests, NULL, NULL, NULL, NULL, NULL);
