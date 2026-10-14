@@ -298,13 +298,19 @@ void tvc_loop(void*, void*, void*)
 
 #ifdef CONFIG_RANGER_TVC_BENCH_SWEEP
         if (supervisor.state() == tvc::State::ENABLED && loop_count % BENCH_LOG_CYCLES == 0) {
-            const auto& p = supervisor.axis(tvc::TVC_AXIS_PITCH);
-            const auto& y = supervisor.axis(tvc::TVC_AXIS_YAW);
-            LOG_INF("TVC sweep mdeg: pitch cmd %d meas %d, yaw cmd %d meas %d",
-                static_cast<int>(p.target_angle_deg * 1000.0f),
-                static_cast<int>(p.measured_angle_deg * 1000.0f),
-                static_cast<int>(y.target_angle_deg * 1000.0f),
-                static_cast<int>(y.measured_angle_deg * 1000.0f));
+            // Converting NaN to int is undefined behavior, so map non-finite angles to 0 before logging.
+            auto mdeg = [](float deg) { return std::isfinite(deg) ? static_cast<int>(deg * 1000.0f) : 0; };
+            for (int i = 0; i < tvc::TVC_AXIS_COUNT; i++) {
+                const auto& st = supervisor.axis(i);
+                if (!st.installed) {
+                    continue;
+                }
+                LOG_INF("TVC sweep %s: cmd %d mdeg, meas %d mdeg, length err %d mil",
+                    tvc::TVC_AXES[i]->name,
+                    mdeg(st.target_angle_deg),
+                    mdeg(st.measured_angle_deg),
+                    std::isfinite(st.position_error_in) ? static_cast<int>(st.position_error_in * 1000.0f) : 0);
+            }
         }
 #endif
     }
