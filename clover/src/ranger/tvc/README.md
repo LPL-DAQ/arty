@@ -17,8 +17,7 @@ Unit tests: `tests/clover/src/ranger_tvc/` (run on `native_sim`).
 
 The TVC refuses to enable until these are filled in in `tvc_config.h`:
 
-1. `TVC_OUTPUT_REVS_PER_SCREW_REV`: 1.0 for direct drive, else the gear ratio. The 4 mm screw lead is already in
-   (`TVC_SCREW_LEAD_IN_PER_REV`), so direct drive gives 6.35 turns per inch.
+1. ~~Turns per inch~~ done: 4 mm single-start lead, 1:1 direct drive -> 6.35 turns per inch.
 2. `direction_sign` per axis: +1 if positive moteus revolutions lengthen the actuator, else -1.
 3. Confirm `moteus_id` (pitch 1, yaw 2) matches each controller's `id.id`.
 4. Confirm `TVC_PSI0_DEG`: the supplied `TVCyawnew.csv` was generated with 110.155 deg, the MATLAB script says 113.696 deg.
