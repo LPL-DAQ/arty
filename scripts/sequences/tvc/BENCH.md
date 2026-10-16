@@ -3,6 +3,7 @@
 ## Before you start
 
 - Hornet flashed from `akshay/hornet-build-fix`. At boot both actuators go to mid-stroke (1500 us).
+- LAC signal wires: pitch on Teensy pin 28, yaw on pin 29. Pins 24 and 25 produce no PWM output. Confirmed on this setup: the actuator centres at boot and tracks the bench trace.
 - Board reachable at `169.254.99.99`. The client connects at startup, so power the board first.
 - Keep clear of the gimbal. Each run moves one axis to +6 deg, back, then -6 deg, back.
 
