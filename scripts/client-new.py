@@ -121,7 +121,9 @@ _graph_lock = threading.Lock()
 def _make_tcp_socket() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
+    # macOS names the idle option TCP_KEEPALIVE.
+    keepidle = getattr(socket, "TCP_KEEPIDLE", None) or socket.TCP_KEEPALIVE
+    s.setsockopt(socket.IPPROTO_TCP, keepidle, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
     s.connect((ZEPHYR_IP, ZEPHYR_PORT))
