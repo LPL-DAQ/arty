@@ -82,6 +82,14 @@ uint32_t HornetTvc::neutral_pulse_us()
     return extension_mm_to_pulse_us(HORNET_TVC_NEUTRAL_EXTENSION_MM);
 }
 
+uint32_t HornetTvc::command_neutral()
+{
+    MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
+    pitch_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
+    yaw_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
+    return extension_mm_to_pulse_us(HORNET_TVC_NEUTRAL_EXTENSION_MM);
+}
+
 /// Clamp gimbal angles, convert to extension, rate limit and map to pulse width. Caller must hold hornet_tvc_lock.
 static std::tuple<float, float, HornetTvcMetrics> command_gimbal_deg(float pitch_gimbal_deg, float yaw_gimbal_deg)
 {

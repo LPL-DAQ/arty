@@ -354,9 +354,18 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     return {};
 }
 
-// TODO: from noah: i feel like something should be here, no?
 static void tick_abort(DataPacket& data)
 {
+#ifdef CONFIG_RANGER
+    // TODO: command Ranger valves to a safe state. That state depends on the fluid system, so it is not guessed here.
+#elif CONFIG_HORNET
+    const uint32_t tvc_neutral_pulse_us = HornetTvc::command_neutral();
+    data.pitch_servo_command = tvc_neutral_pulse_us;
+    data.yaw_servo_command = tvc_neutral_pulse_us;
+    data.main_propeller_command = MIN_PWM_PULSE_US;
+    data.rcs_propeller_cw_command = MIN_PWM_PULSE_US;
+    data.rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
+#endif
 }
 
 /// Kicks off the controller workqueue. Last phase of initial setup in the main function.
