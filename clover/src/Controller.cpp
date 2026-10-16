@@ -48,8 +48,8 @@ auto prev_yaw_actuator_command = TvcActuatorCommand{};
 float prev_main_propeller_command = 0.0f;
 float prev_rcs_propeller_cw_command = 0.0f;
 float prev_rcs_propeller_ccw_command = 0.0f;
-float prev_pitch_servo_command = 0.0f;
-float prev_yaw_servo_command = 0.0f;
+float prev_pitch_servo_command = HornetTvc::neutral_pulse_us();
+float prev_yaw_servo_command = HornetTvc::neutral_pulse_us();
 #endif
 
 // State-specific data. Each is only valid within their respective states.
@@ -302,10 +302,16 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         std::tie(data.pitch_actuator_command, data.yaw_actuator_command, data.ranger_tvc_metrics) = *tvc_response;
 
 #elif CONFIG_HORNET
-        if (!data.has_flight_pitch_accel_rad_s2 || !data.has_flight_yaw_accel_rad_s2 || !data.has_hornet_throttle_metrics) {
+        const bool trace_driven = current_state == SystemState_STATE_TVC;
+        if (trace_driven && (!data.has_tvc_pitch_command_deg || !data.has_tvc_yaw_command_deg)) {
+            return std::unexpected(Error::from_cause("missing tvc trace commands"));
+        }
+        if (!trace_driven && (!data.has_flight_pitch_accel_rad_s2 || !data.has_flight_yaw_accel_rad_s2 || !data.has_hornet_throttle_metrics)) {
             return std::unexpected(Error::from_cause("missing flight acceleration commands for TVC"));
         }
-        auto tvc_response = HornetTvc::tick(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.hornet_throttle_metrics.thrust_N);
+        auto tvc_response = trace_driven
+            ? HornetTvc::tick_gimbal_deg(data.tvc_pitch_command_deg, data.tvc_yaw_command_deg)
+            : HornetTvc::tick(data.flight_pitch_accel_rad_s2, data.flight_yaw_accel_rad_s2, data.hornet_throttle_metrics.thrust_N);
         if (!tvc_response.has_value()) {
             return std::unexpected(tvc_response.error().context("error in HornetTvc"));
         }
@@ -348,9 +354,18 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     return {};
 }
 
-// TODO: from noah: i feel like something should be here, no?
 static void tick_abort(DataPacket& data)
 {
+#ifdef CONFIG_RANGER
+    // TODO: command Ranger valves to a safe state. That state depends on the fluid system, so it is not guessed here.
+#elif CONFIG_HORNET
+    const uint32_t tvc_neutral_pulse_us = HornetTvc::command_neutral();
+    data.pitch_servo_command = tvc_neutral_pulse_us;
+    data.yaw_servo_command = tvc_neutral_pulse_us;
+    data.main_propeller_command = MIN_PWM_PULSE_US;
+    data.rcs_propeller_cw_command = MIN_PWM_PULSE_US;
+    data.rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
+#endif
 }
 
 /// Kicks off the controller workqueue. Last phase of initial setup in the main function.
@@ -685,14 +700,14 @@ static void step_control_loop(k_work*)
 #endif  // CONFIG_THROTTLE_VALVES
 
 #ifdef CONFIG_PWM_ACTUATORS
-    auto servo_x_status = ServoX::tick(data.pitch_servo_command);
-    if (!servo_x_status) {
-        LOG_ERR("Error while ticking servo x: %s", servo_x_status.error().build_message().c_str());
+    auto tvc_pitch_status = TvcPitch::tick(data.pitch_servo_command);
+    if (!tvc_pitch_status) {
+        LOG_ERR("Error while ticking tvc pitch: %s", tvc_pitch_status.error().build_message().c_str());
     }
 
-    auto servo_y_status = ServoY::tick(data.yaw_servo_command);
-    if (!servo_y_status) {
-        LOG_ERR("Error while ticking servo y: %s", servo_y_status.error().build_message().c_str());
+    auto tvc_yaw_status = TvcYaw::tick(data.yaw_servo_command);
+    if (!tvc_yaw_status) {
+        LOG_ERR("Error while ticking tvc yaw: %s", tvc_yaw_status.error().build_message().c_str());
     }
 
     // RCS

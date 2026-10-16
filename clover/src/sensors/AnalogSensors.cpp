@@ -5,6 +5,7 @@
 #include "../lut/tc_t_type_v_to_deg_c_lut.h"
 #include "clover.pb.h"
 #include <array>
+#include <limits>
 #include <optional>
 #include <tuple>
 #include <zephyr/device.h>
@@ -29,6 +30,18 @@ static constexpr int NUM_ANALOG_CHANNELS = DT_PROP_LEN(DT_PATH(zephyr_user), io_
 // For some ungodly reason we cannot use a std::array here.
 static constexpr adc_dt_spec adc_channels[NUM_ANALOG_CHANNELS] = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), io_channels, LAMBDA, (, ))};
 #undef LAMBDA
+
+// Tamura Hall-effect current sensors, expecting a raw (volts) channel config. TODO: fill in from the datasheets. NaN
+// until then so unscaled readings cannot pass for real ones.
+static constexpr float EDF_CURRENT_ZERO_OFFSET_V = std::numeric_limits<float>::quiet_NaN();  // L37S400S05M
+static constexpr float EDF_CURRENT_MV_PER_A = std::numeric_limits<float>::quiet_NaN();
+static constexpr float BUS_CURRENT_ZERO_OFFSET_V = std::numeric_limits<float>::quiet_NaN();  // L37S200S05M
+static constexpr float BUS_CURRENT_MV_PER_A = std::numeric_limits<float>::quiet_NaN();
+
+static float hall_volts_to_amps(float volts, float zero_offset_v, float mv_per_a)
+{
+    return (volts - zero_offset_v) / (mv_per_a * 1e-3f);
+}
 
 // Spec and buffers used for ADC reads.
 
@@ -339,6 +352,16 @@ static void sense()
                     case AnalogSensor_BATTERY_VOLTAGE: {
                         sensor_readings.has_battery_voltage = true;
                         sensor_readings.battery_voltage = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_EDF_CURRENT: {
+                        sensor_readings.has_edf_current = true;
+                        sensor_readings.edf_current = hall_volts_to_amps(curr_reading, EDF_CURRENT_ZERO_OFFSET_V, EDF_CURRENT_MV_PER_A);
+                        break;
+                    }
+                    case AnalogSensor_BUS_CURRENT: {
+                        sensor_readings.has_bus_current = true;
+                        sensor_readings.bus_current = hall_volts_to_amps(curr_reading, BUS_CURRENT_ZERO_OFFSET_V, BUS_CURRENT_MV_PER_A);
                         break;
                     }
 

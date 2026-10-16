@@ -11,7 +11,7 @@
 
 #ifdef CONFIG_PWM_ACTUATORS
 
-enum class PwmKind { SERVO_X, SERVO_Y, BETA_TOP, BETA_BOTTOM, BETA_CW, BETA_CCW, MOTOR_TOP, MOTOR_BOTTOM };
+enum class PwmKind { TVC_PITCH, TVC_YAW, BETA_TOP, BETA_BOTTOM, BETA_CW, BETA_CCW, MOTOR_TOP, MOTOR_BOTTOM };
 
 // -----------------------------------------------------------------------------
 // PwmActuator
@@ -30,10 +30,10 @@ protected:
     static consteval const char* kind_to_prefix(PwmKind k)
     {
         switch (k) {
-        case PwmKind::SERVO_X:
-            return "[servo_x]";
-        case PwmKind::SERVO_Y:
-            return "[servo_y]";
+        case PwmKind::TVC_PITCH:
+            return "[tvc_pitch]";
+        case PwmKind::TVC_YAW:
+            return "[tvc_yaw]";
         case PwmKind::BETA_TOP:
             return "[beta_top]";
         case PwmKind::BETA_BOTTOM:
@@ -81,7 +81,7 @@ public:
 
         auto result = write_pulse_us(static_cast<uint32_t>(k_min_pulse_us));
         if (!result) {
-            LOG_ERR("%s Failed to set initial pulse width: err %d", kind_to_prefix(Kind), result);
+            LOG_ERR("%s Failed to set initial pulse width: %s", kind_to_prefix(Kind), result.error().build_message().c_str());
             return result;
         }
 
@@ -106,9 +106,9 @@ public:
     }
 };
 
-typedef PwmActuator<PwmKind::SERVO_X, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_x)> ServoX;
+typedef PwmActuator<PwmKind::TVC_PITCH, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), tvc_pitch)> TvcPitch;
 
-typedef PwmActuator<PwmKind::SERVO_Y, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), servo_y)> ServoY;
+typedef PwmActuator<PwmKind::TVC_YAW, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), tvc_yaw)> TvcYaw;
 
 typedef PwmActuator<PwmKind::BETA_TOP, PWM_DT_SPEC_GET_BY_NAME(DT_PATH(zephyr_user), beta_top)> BetaTop;
 

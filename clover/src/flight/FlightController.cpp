@@ -1,4 +1,5 @@
 #include "FlightController.h"
+#include "../Controller.h"
 #include "../MutexGuard.h"
 #include "../PID.h"
 #include "../math_util.h"
@@ -26,7 +27,7 @@ static PID pidZVelocity(FLIGHT_PID_Z_VEL_KP, FLIGHT_PID_Z_VEL_KI, FLIGHT_PID_Z_V
 
 static uint32_t loopCount = 0;
 
-static float dt = 0.01; // TODO: make this an actual DT measurement ( or at least research if i should)
+static float dt = Controller::SEC_PER_CONTROL_TICK;
 
 static FlightControllerDesiredState des_state = FlightControllerDesiredState_init_default;
 
@@ -114,7 +115,9 @@ static float verticalPID(EstimatedState state, FlightControllerMetrics& metrics)
     // outerloop on position
     if (loopCount % FLIGHT_OUTER_LOOP_DIVISOR == 0)
     {
-        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, dt);
+        float outer_dt = FLIGHT_OUTER_LOOP_DIVISOR * dt;
+
+        des_state.vz_m_s = pidZ.calculate(des_state.position.z, state.position.z, outer_dt);
     }
 
     metrics.desired_vertical_velocity_m_s = des_state.vz_m_s;
