@@ -176,6 +176,8 @@ enum AnalogSensor {
 
   // Hornet
   BATTERY_VOLTAGE = 22;
+  EDF_CURRENT = 23;
+  BUS_CURRENT = 24;
 }
 
 // Configure GPIOs as valves.
@@ -638,6 +640,8 @@ message AnalogSensorReadings {
 
   // Hornet
   optional float battery_voltage = 22;
+  optional float edf_current = 23;
+  optional float bus_current = 24;
 }
 
 message Vector3D {
