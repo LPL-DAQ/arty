@@ -1,0 +1,20 @@
+# Vehicle PT table. Template: cfgana only lists *.textproto, so this file can't be sent by accident.
+# To use: copy to s_vehicle_pts.textproto, replace every CH with the AIN number the PT is wired to,
+# then zero each PT (vent to atmosphere, read it, set pt_bias_psig = -(that reading)).
+#
+# Ranges are from Noah's calibrated cold-flow profile (#229, 9a558d9, 2026-05-02), = PX319 rated psi.
+# His biases (shown in comments) were zeroed on the OLD Teensy-internal-ADC board and mostly reflect that
+# board's offset, not the sensor's, so they are NOT used here. Re-zero on Ranger 1, per sensor, per pin.
+#
+# channel = AIN number (NOT the J5 pad). Usable U7: AIN1-7, AIN10-15.
+#   AIN1=pad20  AIN2=pad2   AIN3=pad21  AIN4=pad3   AIN5=pad22  AIN6=pad4   AIN7=pad23
+#   AIN10=pad6  AIN11=pad25 AIN12=pad7  AIN13=pad26 AIN14=pad8  AIN15=pad27
+
+configs { channel: CH  assignment: PT004   pt_range_psig: 2000  pt_bias_psig: 0 }  # old bias -40
+configs { channel: CH  assignment: PT006   pt_range_psig: 2000  pt_bias_psig: 0 }  # old bias -33
+configs { channel: CH  assignment: PT103   pt_range_psig: 2000  pt_bias_psig: 0 }  # old bias -39
+configs { channel: CH  assignment: PT203   pt_range_psig: 3000  pt_bias_psig: 0 }  # old bias -43
+configs { channel: CH  assignment: PTF401  pt_range_psig: 2000  pt_bias_psig: 0 }  # old bias -45
+configs { channel: CH  assignment: PTO401  pt_range_psig: 1000  pt_bias_psig: 0 }  # old bias -15
+configs { channel: CH  assignment: PTC401  pt_range_psig: 1000  pt_bias_psig: 0 }  # old bias -15
+configs { channel: CH  assignment: PTC402  pt_range_psig: 1000  pt_bias_psig: 0 }  # old bias -13.8

@@ -73,6 +73,7 @@ RCS_VALVE_SEQ_DIR = pathlib.Path('sequences/rcs_valve')
 RCS_SEQ_DIR = pathlib.Path('sequences/rcs')
 STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
+SENSOR_CONFIG_DIR = pathlib.Path('sensor_configs')
 
 # Network
 ZEPHYR_IP = '169.254.99.99'  # real board
@@ -1407,19 +1408,43 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 # ── Command implementations ──────────────────────────────────────────────────
 
 
+def _print_sensor_configs(configs):
+    """Show what is about to be sent, so a wrong channel or range is caught before it reaches the board."""
+    table = Table(box=box.SIMPLE_HEAD, header_style=THEME['primary'], border_style=THEME['panel_border'], padding=(0, 2))
+    for col in ('Channel', 'Sensor', 'Type', 'Range', 'Bias'):
+        table.add_column(col)
+    for c in configs:
+        if c.HasField('pt_range_psig'):
+            kind, rng, bias = 'PT (psig)', c.pt_range_psig, c.pt_bias_psig
+        elif c.HasField('raw_range_v'):
+            kind, rng, bias = 'raw (V)', c.raw_range_v, c.raw_bias_v
+        else:
+            kind, rng, bias = f'TC {clover_pb2.TCType.Name(c.tc_type)}', '-', '-'
+        table.add_row(f'AIN{c.channel}', clover_pb2.AnalogSensor.Name(c.assignment), kind, str(rng), str(bias))
+    console.print(table)
+
+
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
     
     console.print('    Profile:')
-    console.print('      [1] Default  (actual vehicle)')
+    console.print(f'      [1] Sensor table (from {SENSOR_CONFIG_DIR}/)')
     console.print('      [2] Test     (assigns channels 0-21)')
     console.print('      [3] Test 2   (assigns channels 22-31)')
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
-    
+
     if profile == '1':
-        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
-        configs = []
-        
+        if not _list_saved_sequences(SENSOR_CONFIG_DIR):
+            console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
+            return
+        try:
+            configs = list(_pick_and_load_sequence(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest).configs)
+        except text_format.ParseError as e:
+            # A typo in a table file must not crash the client (and stop logging) mid-test
+            console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
+            return
+        _print_sensor_configs(configs)
+
     elif profile == '2':
         configs = []
         
