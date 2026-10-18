@@ -159,6 +159,10 @@ static void sense()
             sense_time_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
             has_reading = true;
 
+            // Only sensors read this tick carry a value: a removed sensor or one on a failed ADC drops out instead of
+            // repeating its last reading as if it were fresh.
+            sensor_readings = AnalogSensorReadings_init_default;
+
             for (int i = 0; i < NUM_ADCS; ++i) {
                 // A failed or skipped read leaves stale samples (possibly in an old plan's layout), don't publish them
                 if (!adc_read_ok[i]) {
@@ -420,7 +424,7 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             return std::unexpected(Error::from_cause("invalid sensor assignment %d", config.assignment));
         }
         if (assigned_sensors[config.assignment]) {
-            return std::unexpected(Error::from_cause("sensor %d is assigned multiple times", config.channel));
+            return std::unexpected(Error::from_cause("sensor %d is assigned multiple times", config.assignment));
         }
         assigned_sensors[config.assignment] = true;
 
@@ -481,9 +485,6 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         // Only read configured channels, starting with the next sense
         pending_read_plan = build_adc_read_plan<NUM_ADCS, MAX_CHANNELS_PER_ADC>(input_channel_adc, input_channel_id, assigned_channels);
         read_plan_changed = true;
-
-        // Drop readings of sensors that are no longer configured
-        sensor_readings = AnalogSensorReadings_init_default;
     }
 
     return {};
