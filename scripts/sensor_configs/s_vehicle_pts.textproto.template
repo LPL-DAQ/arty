@@ -25,3 +25,11 @@ configs { channel: CH  assignment: PTF401  pt_range_psig: 1000  pt_bias_psig: 0 
 configs { channel: CH  assignment: PTO401  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 bias -15
 configs { channel: CH  assignment: PTC401  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 bias -15
 configs { channel: CH  assignment: PTC402  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 bias -13.8
+
+# TCs (May 26 config types). U7 has only 13 usable pins, all taken by the PTs above, so TCs need U8 fixed
+# or PTs dropped. TC reading (°C) = K/T lookup of the AD8495 output + tc_bias_deg_c. Zero: compare to a
+# reference (ice water ~0 °C), set new tc_bias_deg_c = old tc_bias_deg_c + (reference - reading).
+# configs { channel: CH  assignment: TC002   tc_type: K_TYPE  tc_bias_deg_c: 0 }
+# configs { channel: CH  assignment: TCF401  tc_type: K_TYPE  tc_bias_deg_c: 0 }
+# configs { channel: CH  assignment: TC102   tc_type: T_TYPE  tc_bias_deg_c: 0 }  # T-type on an AD8495: amp choice unconfirmed
+# configs { channel: CH  assignment: TCO401  tc_type: T_TYPE  tc_bias_deg_c: 0 }  # T-type on an AD8495: amp choice unconfirmed

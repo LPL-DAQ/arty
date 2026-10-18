@@ -1419,7 +1419,7 @@ def _print_sensor_configs(configs):
         elif c.HasField('raw_range_v'):
             kind, rng, bias = 'raw (V)', c.raw_range_v, c.raw_bias_v
         else:
-            kind, rng, bias = f'TC {clover_pb2.TCType.Name(c.tc_type)}', '-', '-'
+            kind, rng, bias = f'TC {clover_pb2.TCType.Name(c.tc_type)} (°C)', '-', c.tc_bias_deg_c
         table.add_row(f'AIN{c.channel}', clover_pb2.AnalogSensor.Name(c.assignment), kind, str(rng), str(bias))
     console.print(table)
 

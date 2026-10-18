@@ -123,6 +123,8 @@ message AnalogSensorConfig {
   optional float pt_bias_psig = 4;
 
   optional TCType tc_type = 5;
+  // Added to the TC reading after conversion, for per-sensor calibration. Requires tc_type.
+  optional float tc_bias_deg_c = 8;
 
   optional float raw_range_v = 6;
   optional float raw_bias_v = 7;

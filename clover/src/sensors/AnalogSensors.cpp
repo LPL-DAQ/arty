@@ -218,6 +218,9 @@ static void sense()
                             break;
                         }
                         }
+                        if (config.has_tc_bias_deg_c) {
+                            curr_reading += config.tc_bias_deg_c;
+                        }
                     }
 
                     // Sensor is raw
@@ -422,7 +425,7 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         assigned_sensors[config.assignment] = true;
 
         bool has_pt_config = config.has_pt_bias_psig || config.has_pt_range_psig;
-        bool has_tc_config = config.has_tc_type;
+        bool has_tc_config = config.has_tc_type || config.has_tc_bias_deg_c;
         bool has_raw_config = config.has_raw_range_v || config.has_raw_bias_v;
 
         // Only one sensor type should be set
@@ -442,7 +445,11 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
 
         // Check TC config
         if (has_tc_config) {
-            if (config.tc_type < _TCType_MIN || config.tc_type > _TCType_MAX) {
+            if (!config.has_tc_type) {
+                return std::unexpected(Error::from_cause("tc bias requires a tc type"));
+            }
+            // UNKNOWN_TC_TYPE is in range but has no conversion, it would read -9999 and log every tick
+            if (config.tc_type <= TCType_UNKNOWN_TC_TYPE || config.tc_type > _TCType_MAX) {
                 return std::unexpected(Error::from_cause("invalid tc type %d", config.tc_type));
             }
         }
