@@ -13,6 +13,7 @@
 #   Zero: vent to atmosphere, average ~5 s of the reading, set new pt_bias_psig = old pt_bias_psig - average.
 #   Zero with the final table loaded (neighbouring channels can shift a reading). Per sensor, per pin.
 
-# Bench wiring 2026-10-15: PT-103 on pad 4, PT-203 on pad 23
-configs { channel: 6  assignment: PT103  pt_range_psig: 2000  pt_bias_psig: 0 }
-configs { channel: 7  assignment: PT203  pt_range_psig: 2000  pt_bias_psig: 0 }
+# Bench wiring 2026-10-15: PTs on pad 4 (AIN6) and pad 23 (AIN7). Names/ranges follow the May 26 Atlas config
+# (see s_vehicle_pts.textproto.template); confirm the part number on each PT body matches the range.
+configs { channel: 6  assignment: PT103  pt_range_psig: 1000  pt_bias_psig: 0 }
+configs { channel: 7  assignment: PT203  pt_range_psig: 3000  pt_bias_psig: 0 }
