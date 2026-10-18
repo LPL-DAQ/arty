@@ -1,3 +1,9 @@
+# WARNING: sensor names here are the firmware enum's Atlas-style names, NOT the Ranger 1 P&ID (9/21/2026).
+# The same name can be a different physical sensor: Ranger PT-003 = Jet-A tank (Atlas PT-004), Ranger PT-004 =
+# LOx tank (Atlas PT-006); the P&ID has no PT103/PT203/PT005/PT006 and adds PT-303, TC-101, TC-103.
+# A range belongs to the physical PT: check each one against the part number on its body (PX319-xKG5V).
+# Canonical Ranger names are a pending team decision; the firmware enum and this table follow it.
+#
 # Vehicle PT table. Template: cfgana only lists *.textproto, so this file can't be sent by accident.
 # To use: copy to s_vehicle_pts.textproto, replace every CH with the AIN number the PT is wired to,
 # then zero each PT: vent to atmosphere, average ~5 s, set new pt_bias_psig = old pt_bias_psig - average.
