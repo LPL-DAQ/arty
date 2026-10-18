@@ -1,6 +1,7 @@
 # Vehicle PT table. Template: cfgana only lists *.textproto, so this file can't be sent by accident.
 # To use: copy to s_vehicle_pts.textproto, replace every CH with the AIN number the PT is wired to,
-# then zero each PT (vent to atmosphere, read it, set pt_bias_psig = -(that reading)).
+# then zero each PT: vent to atmosphere, average ~5 s, set new pt_bias_psig = old pt_bias_psig - average.
+# Zero with this final table loaded (neighbouring channels can shift a reading).
 #
 # Ranges are from Noah's calibrated cold-flow profile (#229, 9a558d9, 2026-05-02), = PX319 rated psi.
 # His biases (shown in comments) were zeroed on the OLD Teensy-internal-ADC board and mostly reflect that

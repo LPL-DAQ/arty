@@ -137,6 +137,7 @@ static void sense()
 
         // Read from all ADCs concurrently
         uint64_t start_read_cycle = k_cycle_get_64();
+        std::array<bool, NUM_ADCS> adc_read_ok{};
         for (int i = 0; i < NUM_ADCS; ++i) {
             // ADC has no configured channels, the driver rejects an empty sequence.
             if (adc_read_seqs[i].channels == 0) {
@@ -147,6 +148,7 @@ static void sense()
             if (err) {
                 LOG_ERR("Error initiating read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
+            adc_read_ok[i] = !err;
             // LOG_INF("Read adc num %d", i);
         }
 
@@ -158,6 +160,10 @@ static void sense()
             has_reading = true;
 
             for (int i = 0; i < NUM_ADCS; ++i) {
+                // A failed or skipped read leaves stale samples (possibly in an old plan's layout), don't publish them
+                if (!adc_read_ok[i]) {
+                    continue;
+                }
                 // Iter through each ADC sequence reading
                 for (int j = 0; j < static_cast<int>(adc_read_seqs[i].buffer_size / sizeof(uint16_t)); ++j) {
                     int input_channel = active_read_plan.reading_to_input_channel[i][j];

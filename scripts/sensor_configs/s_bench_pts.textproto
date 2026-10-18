@@ -10,7 +10,8 @@
 # PT reading (psig) = counts / 4096 * pt_range_psig + pt_bias_psig
 #   Omega PX319-xKG5V (0-5 V out, needs 9-30 V excitation): pt_range_psig = rated psi
 #   PX319-3KG5V: 3000   PX319-2KG5V: 2000   PX319-1KG5V: 1000
-#   Calibrate: vent to atmosphere, read it, set pt_bias_psig = -(that reading). Per sensor, per pin.
+#   Zero: vent to atmosphere, average ~5 s of the reading, set new pt_bias_psig = old pt_bias_psig - average.
+#   Zero with the final table loaded (neighbouring channels can shift a reading). Per sensor, per pin.
 
 # Bench wiring 2026-10-15: PT-103 on pad 4, PT-203 on pad 23
 configs { channel: 6  assignment: PT103  pt_range_psig: 2000  pt_bias_psig: 0 }

@@ -1437,12 +1437,17 @@ def cmd_configure_analog_sensors():
         if not _list_saved_sequences(SENSOR_CONFIG_DIR):
             console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
             return
+        # A bad table file must not crash the client (and stop logging) mid-test
         try:
-            configs = list(_pick_and_load_sequence(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest).configs)
+            table = _pick_and_load_sequence(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
         except text_format.ParseError as e:
-            # A typo in a table file must not crash the client (and stop logging) mid-test
             console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
             return
+        # channel and assignment are required; a row missing one parses fine but fails to serialize
+        if missing := table.FindInitializationErrors():
+            console.print(f'  [{THEME["danger"]}]Sensor table is missing {", ".join(missing)}, nothing sent[/{THEME["danger"]}]')
+            return
+        configs = list(table.configs)
         _print_sensor_configs(configs)
 
     elif profile == '2':
