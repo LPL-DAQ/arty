@@ -1,0 +1,3 @@
+# Bench 2026-10-18: one K-type TC on an Adafruit AD8495 breakout, OUT -> AIN10 (J5 pad 6).
+# Room temp should read ~20-25 C (~1.375 V on the pin). Calibrate vs the big DAQ box, then set tc_bias_deg_c.
+configs { channel: 10  assignment: TC002  tc_type: K_TYPE  tc_bias_deg_c: 0 }
