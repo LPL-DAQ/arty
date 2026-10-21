@@ -46,6 +46,12 @@ namespace math_util
       return createVector3D(0.0f, 0.0f, 1.0f);
   }
 
+  inline Vector3D unitX()
+  {
+      return createVector3D(1.0f, 0.0f, 0.0f);
+  }
+
+
   inline Vector3D quaternionToEulerAngles(const Quaternion& q)
   {
       // Convert quaternion to euler angles (yaw, pitch, roll)
