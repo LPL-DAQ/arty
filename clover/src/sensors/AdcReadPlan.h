@@ -6,8 +6,7 @@
 #include <cstdint>
 
 /// Which channels each ADC reads, and which input channel each reading belongs to.
-template <int NUM_ADCS, int MAX_CHANNELS_PER_ADC>
-struct AdcReadPlan {
+template <int NUM_ADCS, int MAX_CHANNELS_PER_ADC> struct AdcReadPlan {
     /// Channel bitmask passed to each ADC's sequence. 0 means the ADC is not read.
     std::array<uint32_t, NUM_ADCS> masks{};
     /// Maps each ADC's reading index to an input channel, -1 past the last reading.
@@ -23,9 +22,8 @@ struct AdcReadPlan {
 /// channel input_channel_id[i]. ADCs return readings in ascending channel order, so the map follows that order
 /// rather than the input channel order.
 template <int NUM_ADCS, int MAX_CHANNELS_PER_ADC, size_t NUM_INPUTS>
-constexpr AdcReadPlan<NUM_ADCS, MAX_CHANNELS_PER_ADC> build_adc_read_plan(const std::array<int, NUM_INPUTS>& input_adc,
-                                                                         const std::array<int, NUM_INPUTS>& input_channel_id,
-                                                                         const std::array<bool, NUM_INPUTS>& configured)
+constexpr AdcReadPlan<NUM_ADCS, MAX_CHANNELS_PER_ADC> build_adc_read_plan(
+    const std::array<int, NUM_INPUTS>& input_adc, const std::array<int, NUM_INPUTS>& input_channel_id, const std::array<bool, NUM_INPUTS>& configured)
 {
     AdcReadPlan<NUM_ADCS, MAX_CHANNELS_PER_ADC> plan;
     for (int adc = 0; adc < NUM_ADCS; ++adc) {
