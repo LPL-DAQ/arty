@@ -1,11 +1,12 @@
 #include "AnalogSensors.h"
 #include "../MutexGuard.h"
-#include "AdcReadPlan.h"
 #include "../config.h"
 #include "../lut/tc_k_type_v_to_deg_c_lut.h"
 #include "../lut/tc_t_type_v_to_deg_c_lut.h"
+#include "AdcReadPlan.h"
 #include "clover.pb.h"
 #include <array>
+#include <cmath>
 #include <optional>
 #include <tuple>
 #include <zephyr/device.h>
@@ -419,8 +420,8 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         }
         assigned_channels[config.channel] = true;
 
-        // Check assignment
-        if (config.assignment < _AnalogSensor_MIN || config.assignment > _AnalogSensor_MAX) {
+        // Check assignment. UNKNOWN is in range but has no reading field, it would log every tick
+        if (config.assignment <= AnalogSensor_UNKNOWN_ANALOG_SENSOR || config.assignment > _AnalogSensor_MAX) {
             return std::unexpected(Error::from_cause("invalid sensor assignment %d", config.assignment));
         }
         if (assigned_sensors[config.assignment]) {
@@ -445,6 +446,9 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             if (config.pt_range_psig == 0.0f) {
                 return std::unexpected(Error::from_cause("pt range cannot be 0"));
             }
+            if (!std::isfinite(config.pt_range_psig) || !std::isfinite(config.pt_bias_psig)) {
+                return std::unexpected(Error::from_cause("pt config fields must be finite"));
+            }
         }
 
         // Check TC config
@@ -456,6 +460,9 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             if (config.tc_type <= TCType_UNKNOWN_TC_TYPE || config.tc_type > _TCType_MAX) {
                 return std::unexpected(Error::from_cause("invalid tc type %d", config.tc_type));
             }
+            if (config.has_tc_bias_deg_c && !std::isfinite(config.tc_bias_deg_c)) {
+                return std::unexpected(Error::from_cause("tc bias must be finite"));
+            }
         }
 
         // Check raw config
@@ -465,6 +472,9 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             }
             if (config.raw_range_v == 0.0f) {
                 return std::unexpected(Error::from_cause("raw range cannot be 0"));
+            }
+            if (!std::isfinite(config.raw_range_v) || !std::isfinite(config.raw_bias_v)) {
+                return std::unexpected(Error::from_cause("raw config fields must be finite"));
             }
         }
     }
