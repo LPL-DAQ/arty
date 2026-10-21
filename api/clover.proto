@@ -107,13 +107,14 @@ enum ClientType {
   DAQ = 3;
 }
 
-// Configure analog inputs as PTs or TCs. Should be called early in
+// Configure analog inputs as PTs, TCs or raw volts. Should be called early in
 // program lifetime to ensure analog sensor readings get populated.
+// Only the channels listed here are read; every other ADC channel is skipped until the next configure.
 message ConfigureAnalogSensorsRequest {
   repeated AnalogSensorConfig configs = 1;
 }
 
-// Either all pt_* fields must be set, or all tc_* fields must be set, or all raw_* fields must be set.
+// Set exactly one group: all pt_* fields, or tc_type (tc_bias_deg_c optional), or all raw_* fields.
 message AnalogSensorConfig {
   // Sensor input number, corresponds to an ADC and its channel. Set in devicetree.
   required uint32 channel = 1;

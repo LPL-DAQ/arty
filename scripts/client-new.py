@@ -479,7 +479,7 @@ _USEFUL_SENSORS: dict[str, str] = {
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
     'tc002': 'TC-002 (°C)',
-    'battery_voltage': 'AIN raw (V)',
+    'battery_voltage': 'Battery voltage (V)',
     'tc102': 'TC-102 (°C)',
     'tc102_5': 'TC-102.5 (°C)',
     'tcf401': 'TCF-401 (°C)',
