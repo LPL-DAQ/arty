@@ -1,3 +1,6 @@
-# Bench 2026-10-18: one K-type TC on an Adafruit AD8495 breakout, OUT -> AIN10 (J5 pad 6).
-# Room temp should read ~20-25 C (~1.375 V on the pin). Calibrate vs the big DAQ box, then set tc_bias_deg_c.
+# Bench: one K-type TC on an Adafruit AD8495 breakout, OUT -> AIN10 (J5 pad 6), Vin -> J2 pad 1, GND -> J5 GND.
+# 2026-10-20 boil read 95.3 C vs 99.8, BUT the TC plug reached the amp through breadboard + copper jumpers,
+# which moves the cold junction to the plug (steam-warmed) -> that +4.48 was mostly wiring error. Reset to 0.
+# Re-calibrate only with K wire / K socket all the way into the amp's screw terminals.
+# Probe: K-TEST (bench test probe, no serial, not a flight sensor). Any bias here is NOT a flight calibration.
 configs { channel: 10  assignment: TC002  tc_type: K_TYPE  tc_bias_deg_c: 0 }
