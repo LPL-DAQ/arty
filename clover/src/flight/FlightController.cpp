@@ -88,8 +88,8 @@ static std::pair<float, float> lateralPID(EstimatedState state, FlightController
     // TODO: find angular rates to feed to derivative
 
     // Feed body-axis error
-    output_accelerations.first  = pidPitchTilt.calculate(0.0f, axis_error_b.x, dt);
-    output_accelerations.second = pidYawTilt.calculate(0.0f, axis_error_b.y, dt);
+    output_accelerations.first  = pidPitchTilt.calculate(0.0f, -axis_error_b.x, dt);
+    output_accelerations.second = pidYawTilt.calculate(0.0f, -axis_error_b.y, dt);
 
     metrics.desired_world_tilt_x_rad = des_state.world_tilt_x;
     metrics.desired_world_tilt_y_rad = des_state.world_tilt_y;
