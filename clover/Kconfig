@@ -118,6 +118,18 @@ config RANGER_TVC_YAW_ONLY
     help
       BENCH USE ONLY. Same as RANGER_TVC_PITCH_ONLY, for the yaw actuator.
 
+config RANGER_TVC_BENCH_AUTO_HOME
+    bool "TVC bench test: home automatically at boot"
+    depends on RANGER_TVC
+    default n
+    help
+      BENCH USE ONLY. For benches with no ground-station link (no caltvc) and
+      no USB-CAN adapter (no `d exact 0`). The first time the TVC reaches READY
+      and moteus reports no position reference, it runs the normal homing
+      sequence once: wherever the actuator is at that moment becomes center
+      (0 rev). Put the actuator at center BEFORE booting the Teensy. Never
+      enable for a hotfire or flight build.
+
 config RANGER_RCS
     bool "Whether ranger-variant TVC is available"
     depends on RANGER

@@ -156,6 +156,7 @@ void tvc_loop(void*, void*, void*)
     float stats_max_latency_us = 0.0f;
     float stats_max_cycle_us = 0.0f;
     [[maybe_unused]] uint32_t bench_start_cycle = 0;
+    [[maybe_unused]] bool auto_home_done = false;
 
     k_timer_start(&tvc_period_timer, K_USEC(tvc::TVC_LOOP_PERIOD_US), K_USEC(tvc::TVC_LOOP_PERIOD_US));
 
@@ -180,6 +181,16 @@ void tvc_loop(void*, void*, void*)
             inputs.home_request = shared.home_request;
             shared.home_request = false;
         }
+
+#ifdef CONFIG_RANGER_TVC_BENCH_AUTO_HOME
+        // Bench only: home once per boot, the first time READY is blocked because moteus has no position reference.
+        // Uses the normal homing sequence (stop, set output exact = 0, verify), so the "homed" invariant still holds.
+        if (!auto_home_done && supervisor.state() == tvc::State::READY && (supervisor.enable_blockers() & tvc::BLOCKED_NOT_HOMED)) {
+            auto_home_done = true;
+            inputs.home_request = true;
+            LOG_WRN("TVC bench auto-home: the current actuator position becomes center");
+        }
+#endif
 
 #ifdef CONFIG_RANGER_TVC_BENCH_SWEEP
         // Bench mode ignores GNC entirely and sweeps each axis slowly through +/-amplitude while enabled.
@@ -320,6 +331,9 @@ void tvc_loop(void*, void*, void*)
 
 std::expected<void, Error> RangerTvc::init()
 {
+#ifdef CONFIG_RANGER_TVC_BENCH_AUTO_HOME
+    LOG_WRN("CONFIG_RANGER_TVC_BENCH_AUTO_HOME is set: TVC homes itself at boot wherever the actuator is. BENCH USE ONLY.");
+#endif
 #ifdef CONFIG_RANGER_TVC_BENCH_SWEEP
     LOG_WRN("CONFIG_RANGER_TVC_BENCH_SWEEP is set: TVC ignores GNC commands and sweeps +/-%d deg. BENCH USE ONLY.",
         static_cast<int>(tvc::TVC_BENCH_SWEEP_AMPLITUDE_DEG));

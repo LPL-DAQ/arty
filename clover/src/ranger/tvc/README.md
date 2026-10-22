@@ -87,3 +87,9 @@ initialize fine without the stepper drivers attached.
 Wiring: Teensy pin 31 (CTX3) -> transceiver TXD, pin 30 (CRX3) <- transceiver RXD. Use a CAN-FD transceiver with
 3.3 V logic I/O (Teensy 4.x pins are not 5 V tolerant), standby/silent pin tied for normal mode. CANH/CANL/GND to
 the moteus CAN JST PH-3 (CAN_H, CAN_L, GND), twisted, 120 ohm at both ends (moteus has no termination).
+
+### No ground link and no USB-CAN adapter: auto-home
+
+Add `-DCONFIG_RANGER_TVC_BENCH_AUTO_HOME=y`. The first time the TVC reaches READY without a moteus position reference,
+it runs the normal homing sequence once, so wherever the actuator is when the Teensy boots becomes center. Put the
+actuator at center before plugging in the Teensy. Never fly or fire this build.
