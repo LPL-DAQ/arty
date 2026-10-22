@@ -25,6 +25,7 @@ Ranger 1 board.
 
         // // RFM95W LoRa tranceiver
         // lora-tranceiver = &sx1276;
+        lora = &lora_radio;
 
         // Throttle motor driver hardware timers, controls PUL/DIR signals.
         fuel-valve-stepper-pulse-counter = &pit0_channel0;
@@ -153,6 +154,20 @@ Ranger 1 board.
 &lpuart3 {
     status = "okay";
     current-speed = <115200>; // Is this right?
+};
+
+// RFM9x LoRa lora_radio
+&lpspi1 {
+    status = "okay";
+
+    // Define the Chip Select (CS) pin handled automatically by Zephyr's SPI driver
+    cs-gpios = <&gpio1 10 GPIO_ACTIVE_LOW>;
+
+    lora_radio: lora@0 {
+        compatible = "vnd,spi-device"; // Generic SPI
+        reg = <0>;                     // CS line index (corresponds to index 0 in cs-gpios)
+        spi-max-frequency = <8000000>; // 8 MHz maximum SPI clock for RFM9x 
+    };
 };
 
 &lpspi3 {
