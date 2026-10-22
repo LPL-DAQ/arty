@@ -453,8 +453,10 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
     {
         MutexGuard analog_sensors_guard{&analog_sensors_mutex};
 
-        // Reset config assignments
+        // Reset config assignments and discard readings from the previous mapping.
         sensor_configs.fill(std::nullopt);
+        sensor_readings = AnalogSensorReadings_init_default;
+        has_reading = false;
 
         // For assigned channels, put the provided config
         for (int i = 0; i < req.configs_count; ++i) {
