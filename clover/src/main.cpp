@@ -16,9 +16,9 @@
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
+#include "LoRaRadio.h"
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
-
 int main(void)
 {
 #ifdef CONFIG_USB_LOGGING
@@ -50,73 +50,88 @@ int main(void)
 #warning "No logging backend set -- should use either CONFIG_USB_LOGGING or CONFIG_UART_LOGGING"
 #endif
 
-#ifdef CONFIG_BLINK_LED
-    if (auto result = BlinkLed::init(); !result) {
-        LOG_ERR("Failed to initialize blink LED: %s", result.error().build_message().c_str());
-        return 1;
-    }
-#endif
 
-#ifdef CONFIG_LIDAR
-    LOG_INF("Initializing Lidar 1");
-    if (auto result = Lidar1::init(); !result) {
-        LOG_ERR("Failed to initialize Lidar 1: %s", result.error().build_message().c_str());
-        return 0;
-    }
+    // Initialize SPI and verify LoRa radio chip presence
+    // auto result = LoRaRadio::init();
+    // if (!result) {
+    //     LOG_ERR("LoRa Radio initialization failed with error code: %d", result.error());
+    //     // Handle failure (e.g., retry loop, fault state, or system reboot)
+    //     return result.error();
+    // }
 
-    LOG_INF("Initializing Lidar 2");
-    if (auto result = Lidar2::init(); !result) {
-        LOG_ERR("Failed to initialize Lidar 2: %s", result.error().build_message().c_str());
-        return 0;
-    }
-#endif
+    // LOG_INF("LoRa Radio successfully initialized!");
+    
 
-#ifdef CONFIG_IMU
-    LOG_INF("Initializing IMU");
-    if (auto result = VectornavImu::init(); !result) {
-        LOG_ERR("Failed to initialize IMU: %s", result.error().build_message().c_str());
-        return 0;
-    }
-#endif
 
-#ifdef CONFIG_GNSS
-    LOG_INF("Initializing GNSS");
-    if (auto result = Gnss::init(); !result) {
-        LOG_ERR("Failed to initialize GNSS: %s", result.error().build_message().c_str());
-        return 0;
-    }
-    Gnss::start_sense();
-#endif
 
-#ifdef CONFIG_ANALOG_SENSORS
-    LOG_INF("Initializing analog sensors");
-    if (auto result = AnalogSensors::init(); !result) {
-        LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
-        return 0;
-    }
-#endif
 
-#ifdef CONFIG_VALVES
-    LOG_INF("Initializing general valves");
-    if (auto result = Valves::init(); !result) {
-        LOG_ERR("Failed to initialize general valves: %s", result.error().build_message().c_str());
-        return 0;
-    }
-#endif
+// #ifdef CONFIG_BLINK_LED
+//     if (auto result = BlinkLed::init(); !result) {
+//         LOG_ERR("Failed to initialize blink LED: %s", result.error().build_message().c_str());
+//         return 1;
+//     }
+// #endif
 
-#ifdef CONFIG_THROTTLE_VALVES
-    LOG_INF("Initializing fuel throttle valve");
-    if (auto result = FuelValve::init(); !result) {
-        LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
+// #ifdef CONFIG_LIDAR
+//     LOG_INF("Initializing Lidar 1");
+//     if (auto result = Lidar1::init(); !result) {
+//         LOG_ERR("Failed to initialize Lidar 1: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
 
-    LOG_INF("Initializing lox throttle valve");
-    if (auto result = LoxValve::init(); !result) {
-        LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
-        return 0;
-    }
-#endif
+//     LOG_INF("Initializing Lidar 2");
+//     if (auto result = Lidar2::init(); !result) {
+//         LOG_ERR("Failed to initialize Lidar 2: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+// #endif
+
+// #ifdef CONFIG_IMU
+//     LOG_INF("Initializing IMU");
+//     if (auto result = VectornavImu::init(); !result) {
+//         LOG_ERR("Failed to initialize IMU: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+// #endif
+
+// #ifdef CONFIG_GNSS
+//     LOG_INF("Initializing GNSS");
+//     if (auto result = Gnss::init(); !result) {
+//         LOG_ERR("Failed to initialize GNSS: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+//     Gnss::start_sense();
+// #endif
+
+// #ifdef CONFIG_ANALOG_SENSORS
+//     LOG_INF("Initializing analog sensors");
+//     if (auto result = AnalogSensors::init(); !result) {
+//         LOG_ERR("Failed to initialize analog sensors: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+// #endif
+
+// #ifdef CONFIG_VALVES
+//     LOG_INF("Initializing general valves");
+//     if (auto result = Valves::init(); !result) {
+//         LOG_ERR("Failed to initialize general valves: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+// #endif
+
+// #ifdef CONFIG_THROTTLE_VALVES
+//     LOG_INF("Initializing fuel throttle valve");
+//     if (auto result = FuelValve::init(); !result) {
+//         LOG_ERR("Failed to initialize fuel throttle valve: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+
+//     LOG_INF("Initializing lox throttle valve");
+//     if (auto result = LoxValve::init(); !result) {
+//         LOG_ERR("Failed to initialize lox throttle valve: %s", result.error().build_message().c_str());
+//         return 0;
+//     }
+// #endif
 
     LOG_INF("Initializing Controller");
     if (auto result = Controller::init(); !result) {

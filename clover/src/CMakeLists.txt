@@ -6,6 +6,7 @@ target_sources(app PRIVATE
     MutexGuard.cpp
     Trace.cpp
     util.cpp
+    LoRaRadio.cpp
 )
 
 add_subdirectory(sensors)
