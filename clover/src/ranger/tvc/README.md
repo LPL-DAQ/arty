@@ -68,3 +68,22 @@ The missing axis is ignored completely: no CAN frames, no replies expected, no f
 watchdog and fault handling all still apply to the installed axis. With the bench sweep, the single actuator sweeps
 continuously. The firmware logs a warning at boot and the `tvc` dashboard shows the axis as "not installed".
 Never fly or fire a single-actuator build.
+
+### Bare Teensy (no Ranger carrier board)
+
+`main()` stops before starting the TVC if any earlier peripheral fails to initialize. On a bare Teensy the I2C GPIO
+expanders (valves) and SPI ADCs (analog sensors) are missing, so turn those off, along with the sensors that are not
+connected:
+
+```shell
+west build ~/arty/clover --pristine auto --board ranger_1/mimxrt1062 --build-dir ~/arty/clover/build -- \
+    -DCONFIG_RANGER_TVC_PITCH_ONLY=y -DCONFIG_RANGER_TVC_BENCH_SWEEP=y \
+    -DCONFIG_VALVES=n -DCONFIG_ANALOG_SENSORS=n -DCONFIG_LIDAR=n -DCONFIG_IMU=n -DCONFIG_GNSS=n
+```
+
+Keep `CONFIG_THROTTLE_VALVES` on: `Controller.cpp` does not build without it on Ranger, and its native Teensy GPIOs
+initialize fine without the stepper drivers attached.
+
+Wiring: Teensy pin 31 (CTX3) -> transceiver TXD, pin 30 (CRX3) <- transceiver RXD. Use a CAN-FD transceiver with
+3.3 V logic I/O (Teensy 4.x pins are not 5 V tolerant), standby/silent pin tied for normal mode. CANH/CANL/GND to
+the moteus CAN JST PH-3 (CAN_H, CAN_L, GND), twisted, 120 ohm at both ends (moteus has no termination).
