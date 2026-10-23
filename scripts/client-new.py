@@ -124,11 +124,17 @@ def _make_tcp_socket() -> socket.socket:
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
+    s.settimeout(2.0)  # never block forever on a dead board
     s.connect((ZEPHYR_IP, ZEPHYR_PORT))
     return s
 
 
 sock = _make_tcp_socket()
+
+_sock_lock = threading.Lock()
+_HEARTBEAT_TIME_S = 1.0
+_resubscribe_on_reconnect = False
+
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 
@@ -445,26 +451,6 @@ def _write_csv_on_exit():
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
-
-_STREAM_TIMEOUT = 5.0  # seconds without a packet before we re-subscribe
-
-
-def _reconnect_and_resubscribe():
-    """Reconnect the TCP socket and re-issue a subscribe request."""
-    global sock
-    try:
-        sock.close()
-    except Exception:
-        pass
-    try:
-        sock = _make_tcp_socket()
-        cmd_subscribe_data_stream()
-        console.print(
-            f'  [{THEME["warning"]}]Reconnected and re-subscribed to data stream.[/{THEME["warning"]}]'
-        )
-    except Exception as e:
-        console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
-
 
 _USEFUL_SENSORS: dict[str, str] = {
     'pt004': 'PT-004',
@@ -1353,49 +1339,72 @@ def _recv_response() -> clover_pb2.Response:
     return resp
 
 
-def send_request(req: clover_pb2.Request, label: str) -> bool:
-    global sock
-    """Serialize and send a Request over TCP, then read and display the Response."""
-    raw = req.SerializeToString()
-    payload = _VarintBytes(len(raw)) + raw
-    for attempt in range(2):
-        try:
-            sock.sendall(payload)
-            break
-        except Exception as e:
-            if attempt == 0:
-                console.print(
-                    f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]Connection lost, reconnecting...[/{THEME["warning"]}]'
-                )
-                try:
-                    sock = _make_tcp_socket()
-                except Exception as re:
-                    console.print(
-                        f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Reconnect failed: {re}[/{THEME["danger"]}]\n'
-                    )
-                    return False
-            else:
-                console.print(
-                    f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Failed to send {label}: {e}[/{THEME["danger"]}]\n'
-                )
-                return False
+def _transact(req: clover_pb2.Request) -> clover_pb2.Response:
+    """Send one request and read its response. Caller must hold _sock_lock.
 
+    On any error the socket is dropped, so a late response can never be read as the reply to a later request.
+    """
+    global sock
+    if sock is None:
+        raise ConnectionError('not connected (reconnecting in background)')
+    raw = req.SerializeToString()
     try:
-        resp = _recv_response()
-        if resp.HasField('err'):
-            console.print(
-                f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]{label} rejected: {resp.err}[/{THEME["danger"]}]\n'
-            )
-            return False
-        console.print(
-            f'\n  {THEME["icon_ok"]} [{THEME["success"]}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME["success"]}]\n'
-        )
-        return True
+        sock.sendall(_VarintBytes(len(raw)) + raw)
+        return _recv_response()
+    except Exception:
+        sock.close()
+        sock = None
+        raise
+
+
+def send_request(req: clover_pb2.Request, label: str) -> bool:
+    """Serialize and send a Request over TCP, then read and display the Response.
+
+    Never retried: if the link drops the command fails and must be re-issued, so nothing stale runs after a reconnect.
+    """
+    try:
+        with _sock_lock:
+            resp = _transact(req)
     except Exception as e:
         console.print(
-            f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]{label} sent but no response: {e}[/{THEME["warning"]}]\n'
+            f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Failed to send {label}: {e}[/{THEME["danger"]}]\n'
         )
-        return True
+        return False
+
+    if resp.HasField('err'):
+        console.print(
+            f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]{label} rejected: {resp.err}[/{THEME["danger"]}]\n'
+        )
+        return False
+    console.print(
+        f'\n  {THEME["icon_ok"]} [{THEME["success"]}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME["success"]}]\n'
+    )
+    return True
+
+
+def _heartbeat_loop():
+    global sock
+    heartbeat = clover_pb2.Request()
+    heartbeat.identify_client.client = clover_pb2.GNC
+
+    subscribe = clover_pb2.Request()
+    subscribe.subscribe_data_stream.SetInParent()
+    while True:
+        time.sleep(_HEARTBEAT_TIME_S)
+        with _sock_lock:
+            was_connected = sock is not None
+            try:
+                if sock is None:
+                    sock = _make_tcp_socket()
+                    if _resubscribe_on_reconnect:
+                        _transact(subscribe)
+                    console.print(f'\n  [{THEME["warning"]}]Reconnected to {ZEPHYR_IP}:{ZEPHYR_PORT}.[/{THEME["warning"]}]')
+                _transact(heartbeat)
+            except Exception as e:
+                if was_connected:
+                    console.print(
+                        f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Connection lost ({e}), reconnecting...[/{THEME["danger"]}]'
+                    )
 
 
 # comment out to test in terminal without real data
@@ -2427,6 +2436,10 @@ def main():
         help='Skip binding the UDP telemetry port (for second instances)',
     )
     args = parser.parse_args()
+
+    global _resubscribe_on_reconnect
+    _resubscribe_on_reconnect = not args.no_data
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
 
     telemetry_info = f'Listen port: {DATA_PORT}' if not args.no_data else 'Telemetry: disabled'
     console.print(
