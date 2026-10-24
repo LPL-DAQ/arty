@@ -78,6 +78,9 @@ GSE_PORT = int(os.environ.get('GSE_PORT', 19690))
 DATA_IP = '0.0.0.0' 
 DATA_PORT = int(os.environ.get('DATA_PORT', 19691))
 
+HEARTBEAT_TIME_S = 1.0
+MAX_COMMAND_AGE_S = 1.0
+
 try:
     import clover_pb2
     HAS_CLOVER = True
@@ -194,11 +197,18 @@ class ValveManager:
         resp.ParseFromString(data)
         return resp
 
-    def send_request(self, req, label: str, board: str = "VEHICLE"):
+    def send_request(self, req, label: str, board: str = "VEHICLE", quiet: bool = False):
         if not HAS_CLOVER: return False
+        queued_at = time.monotonic()
         # FIX #4: Use per-board lock so VEHICLE and GSE don't block each other
         lock = self.tcp_lock_vehicle if board == "VEHICLE" else self.tcp_lock_gse
         with lock:
+            age_s = time.monotonic() - queued_at
+            if age_s > MAX_COMMAND_AGE_S and req.WhichOneof("payload") != "abort":
+                if not quiet: 
+                    self._safe_print(f"DROP [{board}] [{label}]: stale after waiting {age_s:.1f}s for link")
+                return False
+
             # Pick the right socket
             if board == "VEHICLE" and not self.tcp_sock_vehicle: self._connect_tcp("VEHICLE")
             if board == "GSE" and not self.tcp_sock_gse: self._connect_tcp("GSE")
@@ -211,7 +221,7 @@ class ValveManager:
                 payload = _VarintBytes(len(raw)) + raw
                 
                 start_t = time.perf_counter()
-                self._safe_print(f"TX [{board}] >> [{label}]")
+                if not quiet: self._safe_print(f"TX [{board}] >> [{label}]")
                 active_sock.sendall(payload)
                 
                 resp = self._recv_response(active_sock)
@@ -219,10 +229,12 @@ class ValveManager:
                 if resp.HasField("err"):
                     self._safe_print(f"RX [{board}] << [{label}] REJECTED ({dt_ms:.1f}ms): {resp.err}")
                     return False
-                self._safe_print(f"RX [{board}] << [{label}] ACK ({dt_ms:.1f}ms)")
+                if not quiet: self._safe_print(f"RX [{board}] << [{label}] ACK ({dt_ms:.1f}ms)")
                 return True
             except Exception as e:
                 self._safe_print(f"TCP ERROR: [{board}] [{label}] failed: {e}")
+                # Drop the socket so a late response can't be read as the reply to a later command.
+                active_sock.close()
                 if board == "VEHICLE": self.tcp_sock_vehicle = None
                 else: self.tcp_sock_gse = None
                 return False
@@ -288,6 +300,16 @@ class ValveManager:
             raise
 
 manager = ValveManager()
+
+def heartbeat_loop():
+    if not HAS_CLOVER: 
+        return
+    req = clover_pb2.Request()
+    req.identify_client.client = clover_pb2.GNC
+    while True:
+        time.sleep(HEARTBEAT_TIME_S)
+        if manager.tcp_sock_vehicle: manager.send_request(req, "HEARTBEAT", "VEHICLE", quiet=True)
+        if manager.tcp_sock_gse: manager.send_request(req, "HEARTBEAT", "GSE", quiet=True)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -464,6 +486,7 @@ def listen_for_telemetry(loop):
 async def startup_event():
     loop = asyncio.get_running_loop()
     threading.Thread(target=listen_for_telemetry, args=(loop,), daemon=True).start()
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
 
 if __name__ == "__main__":
     # Note: Binding to 0.0.0.0 so external UI devices can reach your laptop
