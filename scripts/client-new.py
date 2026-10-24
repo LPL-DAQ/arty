@@ -1390,6 +1390,7 @@ def _heartbeat_loop():
     subscribe = clover_pb2.Request()
     subscribe.subscribe_data_stream.SetInParent()
     while True:
+        
         time.sleep(_HEARTBEAT_TIME_S)
         with _sock_lock:
             was_connected = sock is not None
@@ -1401,10 +1402,10 @@ def _heartbeat_loop():
                     console.print(f'\n  [{THEME["warning"]}]Reconnected to {ZEPHYR_IP}:{ZEPHYR_PORT}.[/{THEME["warning"]}]')
                 _transact(heartbeat)
             except Exception as e:
-                if was_connected:
-                    console.print(
-                        f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Connection lost ({e}), reconnecting...[/{THEME["danger"]}]'
-                    )
+                sock = None
+                console.print(
+                    f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Connection lost ({e}), reconnecting...[/{THEME["danger"]}]'
+                )
 
 
 # comment out to test in terminal without real data
@@ -2436,6 +2437,7 @@ def main():
         help='Skip binding the UDP telemetry port (for second instances)',
     )
     args = parser.parse_args()
+
 
     global _resubscribe_on_reconnect
     _resubscribe_on_reconnect = not args.no_data
