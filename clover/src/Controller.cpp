@@ -1,5 +1,4 @@
-// Implements controller state transitions, control ticks, and actuator sequencing.
-#include "Controller.h" 
+#include "Controller.h"
 #include "MutexGuard.h"
 #include "config.h"
 #include "flight/FlightController.h"
@@ -22,20 +21,14 @@
 #include "hornet/HornetThrottle.h"
 #include "hornet/HornetTvc.h"
 #include "ranger/RangerRcs.h"
-#include "ranger/Sequence.h"
 #include "ranger/RangerThrottle.h"
 #include "ranger/RangerTvc.h"
-
-#include <array>
-#include <optional>
-#include <string_view>
-#include <utility>
 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 5, 1);
 
-// Controller tick workqueue thread.
+// Controller tick workqueue thread
 K_THREAD_STACK_DEFINE(controller_step_thread_stack, 4096);
 k_work_q controller_step_work_q;
 
@@ -99,116 +92,12 @@ static Trace throttle_lox_valve_trace_deg;
 static Trace rcs_cw_valve_trace;
 static Trace rcs_ccw_valve_trace;
 
-#ifdef CONFIG_VALVES
-static Sequence::Scheduler autonomous_valve_sequence;
-static uint64_t autonomous_valve_sequence_start_cycle = 0;
-static std::array<Valve, Sequence::MAX_EVENTS> autonomous_valves{};
-static std::array<ValveState, Sequence::MAX_EVENTS> autonomous_valve_safe_states{};
-static size_t autonomous_valve_count = 0;
-
-/// Maps a sequence valve token to the controller valve enum.
-/// Parameters: name is the normalized valve token in the event.
-/// Returns: the matching valve or Valve_UNKNOWN_VALVE.
-static Valve valve_from_sequence_name(std::string_view name)
-{
-    if (name == "PBV001") return Valve_PBV001;
-    if (name == "PBV002") return Valve_PBV002;
-    if (name == "PBV003") return Valve_PBV003;
-    if (name == "PBV004") return Valve_PBV004;
-    if (name == "PBV005") return Valve_PBV005;
-    if (name == "PBV006") return Valve_PBV006;
-    if (name == "PBV101") return Valve_PBV101;
-    if (name == "PBV201") return Valve_PBV201;
-    if (name == "PBV301") return Valve_PBV301;
-    if (name == "PBV302") return Valve_PBV302;
-    if (name == "SV001") return Valve_SV001;
-    if (name == "SV002") return Valve_SV002;
-    if (name == "SV003") return Valve_SV003;
-    if (name == "SV004") return Valve_SV004;
-    if (name == "SV005") return Valve_SV005;
-    if (name == "SV301") return Valve_SV301;
-    if (name == "SVR001") return Valve_SVR001;
-    if (name == "SVR002") return Valve_SVR002;
-    if (name == "SVR003") return Valve_SVR003;
-    if (name == "SVR004") return Valve_SVR004;
-    return Valve_UNKNOWN_VALVE;
-}
-
-/// Reads the reported state for one configured valve.
-/// Parameters: states contains the telemetry snapshot; valve identifies the requested valve.
-/// Returns: the reported state or an error if it is unavailable.
-static std::expected<ValveState, Error> get_packet_valve_state(const ValveStates& states, Valve valve)
-{
-    switch (valve) {
-    case Valve_PBV001: if (states.has_pbv001) return states.pbv001; break;
-    case Valve_PBV002: if (states.has_pbv002) return states.pbv002; break;
-    case Valve_PBV003: if (states.has_pbv003) return states.pbv003; break;
-    case Valve_PBV004: if (states.has_pbv004) return states.pbv004; break;
-    case Valve_PBV005: if (states.has_pbv005) return states.pbv005; break;
-    case Valve_PBV006: if (states.has_pbv006) return states.pbv006; break;
-    case Valve_PBV101: if (states.has_pbv101) return states.pbv101; break;
-    case Valve_PBV201: if (states.has_pbv201) return states.pbv201; break;
-    case Valve_PBV301: if (states.has_pbv301) return states.pbv301; break;
-    case Valve_PBV302: if (states.has_pbv302) return states.pbv302; break;
-    case Valve_SV001: if (states.has_sv001) return states.sv001; break;
-    case Valve_SV002: if (states.has_sv002) return states.sv002; break;
-    case Valve_SV003: if (states.has_sv003) return states.sv003; break;
-    case Valve_SV004: if (states.has_sv004) return states.sv004; break;
-    case Valve_SV005: if (states.has_sv005) return states.sv005; break;
-    case Valve_SV301: if (states.has_sv301) return states.sv301; break;
-    case Valve_SVR001: if (states.has_svr001) return states.svr001; break;
-    case Valve_SVR002: if (states.has_svr002) return states.svr002; break;
-    case Valve_SVR003: if (states.has_svr003) return states.svr003; break;
-    case Valve_SVR004: if (states.has_svr004) return states.svr004; break;
-    default: break;
-    }
-    return std::unexpected(Error::from_cause("valve %d is not configured or has no reported state", valve));
-}
-
-/// Maps a logical open/closed position to a command using valve polarity.
-/// Parameters: safe_state is the captured unpowered state; open is the requested position.
-/// Returns: the corresponding powered/unpowered valve state or an error.
-static std::expected<ValveState, Error> valve_state_for_position(ValveState safe_state, bool open)
-{
-    if (safe_state == ValveState_UNPOWERED_CLOSED) {
-        return open ? ValveState_POWERED_OPEN : ValveState_UNPOWERED_CLOSED;
-    }
-    if (safe_state == ValveState_UNPOWERED_OPEN) {
-        return open ? ValveState_UNPOWERED_OPEN : ValveState_POWERED_CLOSED;
-    }
-    return std::unexpected(Error::from_cause("valve safe state must be unpowered, got %d", safe_state));
-}
-
-/// Restores the captured unpowered states for valves referenced by the active sequence.
-/// Parameters: None; the controller state lock must be held.
-/// Returns: success or the first valve-command error.
-static std::expected<void, Error> restore_autonomous_valve_safe_states()
-{
-    std::optional<Error> first_error;
-    for (size_t index = 0; index < autonomous_valve_count; ++index) {
-        ActuateValveRequest request = ActuateValveRequest_init_default;
-        request.valve = autonomous_valves[index];
-        request.state = autonomous_valve_safe_states[index];
-        auto result = Valves::handle_actuate_valve(request);
-        if (!result && !first_error) {
-            first_error = result.error();
-        }
-    }
-    if (first_error) {
-        return std::unexpected(std::move(*first_error));
-    }
-    return {};
-}
-#endif  // CONFIG_VALVES
-
 /// This lock must be acquired for anything reliant on Controller state.
 K_MUTEX_DEFINE(controller_state_lock);
 
-/// Parameters: None; the controller state lock must be held.
-/// Returns: nothing.
-/// Sets actuator commands and packet state for an idle control tick.
-/// Parameters: None.
-/// Returns: nothing.
+/// Sets up a few actuators during idle state transitions. Specifically required when just holding the previous
+/// state is not desirable (e.g., valves that would keep venting, or motors that'd keep spinning). Must be called
+/// when state lock is held.
 static void setup_idle()
 {
 #ifdef CONFIG_RANGER
@@ -220,12 +109,11 @@ static void setup_idle()
 #endif
 }
 
+/// Work item for each control loop tick
 static void step_control_loop(k_work*);
 K_WORK_DEFINE(step_control_loop_work, step_control_loop);
 
-/// Submits one controller work item when the periodic timer fires.
-/// Parameters: timer is the timer that triggered the callback.
-/// Returns: nothing.
+/// ISR that schedules a control iteration in the work queue.
 static void control_loop_schedule(k_timer* timer)
 {
     k_work_submit_to_queue(&controller_step_work_q, &step_control_loop_work);
@@ -235,9 +123,9 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 // TODO roll control. the module should not accept a position as that is active control
 
-/// Advances the active control state and populates the telemetry command fields.
-/// Parameters: data is the packet populated for this control tick.
-/// Returns: success or an error from the active controller/trace.
+/// Transform Trace input into actuator commands, modifying the data pcket in-place.
+/// If an abort is necessary, an Error is returned. This is called for all active control
+/// states. trace_time_msec must be pre-populated.
 static std::expected<void, Error> tick_active_control(DataPacket& data)
 {
     // Throttle and RCS valves have traces which direct control the actuator.
@@ -461,17 +349,11 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 }
 
 // TODO: from noah: i feel like something should be here, no?
-/// Advances abort behavior and updates the outgoing telemetry packet.
-/// Parameters: data is the packet populated for this control tick.
-/// Returns: nothing.
 static void tick_abort(DataPacket& data)
 {
 }
 
 /// Kicks off the controller workqueue. Last phase of initial setup in the main function.
-/// Initializes controller timing, work queues, and dependent subsystems.
-/// Parameters: None.
-/// Returns: success or an initialization error.
 std::expected<void, Error> Controller::init()
 {
 
@@ -520,9 +402,6 @@ std::expected<void, Error> Controller::init()
 static uint64_t packet_number = 0;
 
 /// Execute one tick of the top-level controller.
-/// Executes one control-loop iteration in the controller work queue.
-/// Parameters: work is the submitted work item.
-/// Returns: nothing.
 static void step_control_loop(k_work*)
 {
     MutexGuard current_state_guard{&controller_state_lock};
@@ -713,97 +592,6 @@ static void step_control_loop(k_work*)
         break;
     }
 
-    case SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE:
-    case SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE_CONTINUE: {
-#ifdef CONFIG_VALVES
-        const uint32_t elapsed_ms = static_cast<uint32_t>(nsec_since_cycle(autonomous_valve_sequence_start_cycle) / 1'000'000);
-        data.trace_time_msec = static_cast<float>(elapsed_ms);
-        data.has_trace_time_msec = true;
-
-        auto tick = autonomous_valve_sequence.advance(elapsed_ms);
-        if (!tick) {
-            LOG_ERR("Autonomous valve sequence scheduler failed: %s", tick.error().build_message().c_str());
-            auto safe_result = restore_autonomous_valve_safe_states();
-            if (!safe_result) {
-                LOG_ERR("Failed to restore autonomous valve safe states: %s", safe_result.error().build_message().c_str());
-            }
-            autonomous_valve_sequence.reset();
-            abort_start_cycle = k_cycle_get_64();
-            current_state = SystemState_STATE_ABORT;
-            break;
-        }
-
-        bool command_failed = false;
-        for (const auto& event : tick->due_events) {
-            const Valve valve = valve_from_sequence_name(event.valve.data());
-            size_t safe_state_index = 0;
-            while (safe_state_index < autonomous_valve_count && autonomous_valves[safe_state_index] != valve) {
-                ++safe_state_index;
-            }
-            if (valve == Valve_UNKNOWN_VALVE || safe_state_index == autonomous_valve_count) {
-                LOG_ERR("Autonomous valve sequence contains an unmapped valve");
-                command_failed = true;
-                break;
-            }
-
-            auto target_state = valve_state_for_position(autonomous_valve_safe_states[safe_state_index], event.open);
-            if (!target_state) {
-                LOG_ERR("Cannot map autonomous valve sequence state: %s", target_state.error().build_message().c_str());
-                command_failed = true;
-                break;
-            }
-            ActuateValveRequest request = ActuateValveRequest_init_default;
-            request.valve = valve;
-            request.state = *target_state;
-            auto result = Valves::handle_actuate_valve(request);
-            if (!result) {
-                LOG_ERR("Autonomous valve command failed: %s", result.error().build_message().c_str());
-                command_failed = true;
-                break;
-            }
-            auto acknowledged = autonomous_valve_sequence.acknowledge_event();
-            if (!acknowledged) {
-                LOG_ERR("Failed to acknowledge autonomous valve event: %s", acknowledged.error().build_message().c_str());
-                command_failed = true;
-                break;
-            }
-        }
-
-        if (command_failed) {
-            auto safe_result = restore_autonomous_valve_safe_states();
-            if (!safe_result) {
-                LOG_ERR("Failed to restore autonomous valve safe states: %s", safe_result.error().build_message().c_str());
-            }
-            autonomous_valve_sequence.reset();
-            abort_start_cycle = k_cycle_get_64();
-            current_state = SystemState_STATE_ABORT;
-        }
-        else if (autonomous_valve_sequence.is_complete()) {
-            if (current_state == SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE) {
-                auto safe_result = restore_autonomous_valve_safe_states();
-                if (!safe_result) {
-                    LOG_ERR("Failed to restore autonomous valve safe states: %s", safe_result.error().build_message().c_str());
-                    autonomous_valve_sequence.reset();
-                    abort_start_cycle = k_cycle_get_64();
-                    current_state = SystemState_STATE_ABORT;
-                    break;
-                }
-                LOG_INF("Autonomous valve sequence completed; valves returned to configured starting safe states");
-            }
-            else {
-                LOG_INF("Autonomous valve sequence completed; final commanded valve states were retained");
-            }
-            autonomous_valve_sequence.reset();
-            autonomous_valve_count = 0;
-            current_state = SystemState_STATE_IDLE;
-        }
-#else
-        LOG_ERR("Autonomous valve sequence state entered without CONFIG_VALVES");
-        current_state = SystemState_STATE_IDLE;
-#endif
-        break;
-    }
-
     // Commands all actuators back to nominal states.
     case SystemState_STATE_ABORT: {
         // TODO
@@ -963,9 +751,7 @@ static void step_control_loop(k_work*)
 #endif  // CONFIG_ANALOG_SENSORS
 }
 
-/// Retrieves the next telemetry packet from the controller queue.
-/// Parameters: None.
-/// Returns: the next queued packet.
+/// Retrieves a data packet from the telemetry message queue.
 DataPacket Controller::get_next_data_packet()
 {
     DataPacket packet;
@@ -979,9 +765,7 @@ DataPacket Controller::get_next_data_packet()
 
 // Request handlers.
 
-/// Resets a Ranger throttle valve's reported position.
-/// Parameters: req identifies the valve and requested position.
-/// Returns: success or a configuration/actuator error.
+/// Reset valve position
 std::expected<void, Error> Controller::handle_throttle_reset_valve_position(const ThrottleResetValvePositionRequest& req)
 {
     ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
@@ -1013,128 +797,18 @@ std::expected<void, Error> Controller::handle_throttle_reset_valve_position(cons
     return {};
 }
 
-/// Loads and starts an autonomous sequence from IDLE in safe-return or continue mode.
-/// Parameters: req identifies the file, run, and successful-completion valve behavior.
-/// Returns: success or a parsing, state, valve, or scheduler error.
-std::expected<void, Error> Controller::handle_run_autonomous_valve_sequence(const RunAutonomousValveSequenceRequest& req)
-{
-    ENSURE_CONFIG(CONFIG_VALVES);
-
-#ifndef CONFIG_VALVES
-    return std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
-#else
-    if (req.sequence_file[0] == '\0') {
-        return std::unexpected(Error::from_cause("sequence_file is required"));
-    }
-    auto definition = Sequence::Definition::load_file(req.sequence_file, req.has_run_index ? req.run_index : 0);
-    if (!definition) {
-        return std::unexpected(definition.error().context("failed to load autonomous valve sequence"));
-    }
-
-    MutexGuard guard{&controller_state_lock};
-    if (current_state != SystemState_STATE_IDLE) {
-        return std::unexpected(Error::from_cause("autonomous valve sequence can only start while idle"));
-    }
-
-    auto reported_states = Valves::get_valve_states();
-    if (!reported_states) {
-        return std::unexpected(reported_states.error().context("failed to read valve states before sequence"));
-    }
-
-    std::array<Valve, Sequence::MAX_EVENTS> sequence_valves{};
-    std::array<ValveState, Sequence::MAX_EVENTS> safe_states{};
-    size_t valve_count = 0;
-    for (const auto& event : definition->events()) {
-        const Valve valve = valve_from_sequence_name(event.valve.data());
-        if (valve == Valve_UNKNOWN_VALVE) {
-            return std::unexpected(Error::from_cause("unsupported valve in autonomous sequence"));
-        }
-
-        size_t index = 0;
-        while (index < valve_count && sequence_valves[index] != valve) {
-            ++index;
-        }
-        if (index < valve_count) {
-            continue;
-        }
-
-        auto state = get_packet_valve_state(*reported_states, valve);
-        if (!state) {
-            return std::unexpected(state.error());
-        }
-        if (*state != ValveState_UNPOWERED_OPEN && *state != ValveState_UNPOWERED_CLOSED) {
-            return std::unexpected(Error::from_cause("valve %d must be in its configured unpowered safe state before sequence start", valve));
-        }
-        sequence_valves[valve_count] = valve;
-        safe_states[valve_count] = *state;
-        ++valve_count;
-    }
-
-    Sequence::Scheduler scheduler;
-    if (auto result = scheduler.load(std::move(*definition)); !result) {
-        return std::unexpected(result.error());
-    }
-    if (auto result = scheduler.start(); !result) {
-        return std::unexpected(result.error());
-    }
-
-    autonomous_valves = sequence_valves;
-    autonomous_valve_safe_states = safe_states;
-    autonomous_valve_count = valve_count;
-    autonomous_valve_sequence = std::move(scheduler);
-    autonomous_valve_sequence_start_cycle = k_cycle_get_64();
-    current_state = req.has_continue_valve_states && req.continue_valve_states
-                        ? SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE_CONTINUE
-                        : SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE;
-    LOG_INF("Starting autonomous valve sequence from %s", req.sequence_file);
-    return {};
-#endif
-}
-
-/// Accepts one sequence upload chunk while the controller is IDLE.
-/// Parameters: req contains the file name, chunk data, ordering, and selected run.
-/// Returns: success or an upload/state/validation error.
-std::expected<void, Error> Controller::handle_upload_autonomous_valve_sequence_chunk(const UploadAutonomousValveSequenceChunkRequest& req)
-{
-    ENSURE_CONFIG(CONFIG_VALVES);
-
-#ifndef CONFIG_VALVES
-    return std::unexpected(ERROR_FROM_KCONFIG(CONFIG_VALVES));
-#else
-    MutexGuard guard{&controller_state_lock};
-    if (current_state != SystemState_STATE_IDLE) {
-        return std::unexpected(Error::from_cause("sequence files can only be uploaded while idle"));
-    }
-    return Sequence::Definition::upload_chunk(
-        req.sequence_file, req.offset, req.total_size, req.data, req.final_chunk, req.run_index);
-#endif
-}
-
-/// Transitions the controller to ABORT and restores sequence safe states when active.
-/// Parameters: req is the abort request.
-/// Returns: success after requesting abort.
+/// Abort, returning the system to a safe state.
 std::expected<void, Error> Controller::handle_abort(const AbortRequest& req)
 {
     LOG_WRN("CLIENT TRIGGERED ABORT");
     MutexGuard guard{&controller_state_lock};
 
-#ifdef CONFIG_VALVES
-    if (current_state == SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE) {
-        autonomous_valve_sequence.reset();
-        auto safe_result = restore_autonomous_valve_safe_states();
-        if (!safe_result) {
-            LOG_ERR("Failed to restore autonomous valve safe states during abort: %s", safe_result.error().build_message().c_str());
-        }
-    }
-#endif
     abort_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_ABORT;
     return {};
 }
 
-/// Halts an active control sequence and returns the controller to IDLE.
-/// Parameters: req is the halt request.
-/// Returns: success or an error if the state is inactive or restoration fails.
+/// Client-triggered transition from any active control state to IDLE.
 std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
 {
     MutexGuard guard{&controller_state_lock};
@@ -1147,26 +821,11 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
     case SystemState_STATE_STATIC_FIRE:
     case SystemState_STATE_THROTTLE_VALVE:
     case SystemState_STATE_RCS_VALVE:
-    case SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE:
-    case SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE_CONTINUE:
         break;
     default:
         return std::unexpected(Error::from_cause("must be in an active control state to halt"));
     }
 
-#ifdef CONFIG_VALVES
-    if (current_state == SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE ||
-        current_state == SystemState_STATE_AUTONOMOUS_VALVE_SEQUENCE_CONTINUE) {
-        autonomous_valve_sequence.reset();
-        auto safe_result = restore_autonomous_valve_safe_states();
-        if (!safe_result) {
-            abort_start_cycle = k_cycle_get_64();
-            current_state = SystemState_STATE_ABORT;
-            return std::unexpected(safe_result.error().context("halted autonomous valve sequence but safe-state command failed"));
-        }
-        autonomous_valve_count = 0;
-    }
-#endif
     current_state = SystemState_STATE_IDLE;
     setup_idle();
     LOG_INF("Halting sequence");
@@ -1174,9 +833,7 @@ std::expected<void, Error> Controller::handle_halt(const HaltRequest& req)
     return {};
 }
 
-/// Cancels a primed sequence and returns the controller to IDLE.
-/// Parameters: req is the unprime request.
-/// Returns: success or an error when the controller is not primed.
+/// Client-triggered transition from any PRIMED state to IDLE.
 std::expected<void, Error> Controller::handle_unprime(const UnprimeRequest& req)
 {
     MutexGuard guard{&controller_state_lock};
@@ -1201,9 +858,7 @@ std::expected<void, Error> Controller::handle_unprime(const UnprimeRequest& req)
     return {};
 }
 
-/// Starts throttle-valve calibration for the selected valve.
-/// Parameters: req identifies the valve to calibrate.
-/// Returns: success or a state/configuration/calibration error.
+/// Client-triggered transition from IDLE to CALIBRATE_THROTTLE_VALVE.
 std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const CalibrateThrottleValveRequest& req)
 {
     ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
@@ -1234,9 +889,7 @@ std::expected<void, Error> Controller::handle_calibrate_throttle_valve(const Cal
     return {};
 }
 
-/// Loads throttle-valve traces and primes the controller.
-/// Parameters: req contains the fuel and oxidizer traces.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to THROTTLE_VALVE_PRIMED
 std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const LoadThrottleValveSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
@@ -1295,9 +948,7 @@ std::expected<void, Error> Controller::handle_load_throttle_valve_sequence(const
     return {};
 }
 
-/// Starts a previously primed throttle-valve sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from THROTTLE_VALVE_PRIMED to THROTTLE_VALVE
 std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(const StartThrottleValveSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_THROTTLE_VALVES);
@@ -1316,9 +967,7 @@ std::expected<void, Error> Controller::handle_start_throttle_valve_sequence(cons
     return {};
 }
 
-/// Loads the thrust trace and primes the throttle controller.
-/// Parameters: req contains the thrust trace.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to THROTTLE_PRIMED
 std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadThrottleSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_THROTTLE);
@@ -1342,9 +991,7 @@ std::expected<void, Error> Controller::handle_load_throttle_sequence(const LoadT
     return {};
 }
 
-/// Starts a previously primed throttle sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from THROTTLE_PRIMED to THROTTLE
 std::expected<void, Error> Controller::handle_start_throttle_sequence(const StartThrottleSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_THROTTLE);
@@ -1369,9 +1016,6 @@ std::expected<void, Error> Controller::handle_start_throttle_sequence(const Star
 }
 
 // Client-triggered transition from IDLE to CALIRBATE_TVC
-/// Starts TVC calibration.
-/// Parameters: req is the calibration request.
-/// Returns: success or a state/configuration/calibration error.
 std::expected<void, Error> Controller::handle_calibrate_tvc(const CalibrateTvcRequest& req)
 {
     ENSURE_CONFIG(CONFIG_TVC_ACTUATORS);
@@ -1389,9 +1033,7 @@ std::expected<void, Error> Controller::handle_calibrate_tvc(const CalibrateTvcRe
     return {};
 }
 
-/// Loads pitch and yaw traces and primes the TVC controller.
-/// Parameters: req contains the pitch and yaw traces.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to TVC_PRIMED
 std::expected<void, Error> Controller::handle_load_tvc_sequence(const LoadTvcSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_TVC);
@@ -1428,9 +1070,7 @@ std::expected<void, Error> Controller::handle_load_tvc_sequence(const LoadTvcSeq
     return {};
 }
 
-/// Starts a previously primed TVC sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from TVC_PRIMED to TVC
 std::expected<void, Error> Controller::handle_start_tvc_sequence(const StartTvcSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_TVC);
@@ -1449,9 +1089,7 @@ std::expected<void, Error> Controller::handle_start_tvc_sequence(const StartTvcS
     return {};
 }
 
-/// Loads clockwise and counterclockwise RCS-valve traces and primes the controller.
-/// Parameters: req contains the two valve traces.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to RCS_VALVE_PRIMED
 std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const LoadRcsValveSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_RCS);
@@ -1490,9 +1128,7 @@ std::expected<void, Error> Controller::handle_load_rcs_valve_sequence(const Load
     return {};
 }
 
-/// Starts a previously primed RCS-valve sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from RCS_VALVE_PRIMED to RCS_VALVE
 std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const StartRcsValveSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_RCS);
@@ -1511,9 +1147,7 @@ std::expected<void, Error> Controller::handle_start_rcs_valve_sequence(const Sta
     return {};
 }
 
-/// Loads the RCS roll trace and primes the RCS controller.
-/// Parameters: req contains the roll trace.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to RCS_PRIMED
 std::expected<void, Error> Controller::handle_load_rcs_sequence(const LoadRcsSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_RCS);
@@ -1535,9 +1169,7 @@ std::expected<void, Error> Controller::handle_load_rcs_sequence(const LoadRcsSeq
     return {};
 }
 
-/// Starts a previously primed RCS sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from RCS_PRIMED to RCS
 std::expected<void, Error> Controller::handle_start_rcs_sequence(const StartRcsSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_RCS);
@@ -1556,9 +1188,7 @@ std::expected<void, Error> Controller::handle_start_rcs_sequence(const StartRcsS
     return {};
 }
 
-/// Loads static-fire thrust and TVC traces and primes the controller.
-/// Parameters: req contains all required static-fire traces.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to STATIC_FIRE_PRIMED
 std::expected<void, Error> Controller::handle_load_static_fire_sequence(const LoadStaticFireSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_STATIC_FIRE);
@@ -1602,9 +1232,7 @@ std::expected<void, Error> Controller::handle_load_static_fire_sequence(const Lo
     return {};
 }
 
-/// Starts a previously primed static-fire sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from STATIC_FIRE_PRIMED to STATIC_FIRE
 std::expected<void, Error> Controller::handle_start_static_fire_sequence(const StartStaticFireSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_STATIC_FIRE);
@@ -1623,9 +1251,7 @@ std::expected<void, Error> Controller::handle_start_static_fire_sequence(const S
     return {};
 }
 
-/// Loads flight position and attitude traces and primes the flight controller.
-/// Parameters: req contains the flight reference traces.
-/// Returns: success or a state/trace error.
+/// Client-triggered transition from IDLE to FLIGHT_PRIMED
 std::expected<void, Error> Controller::handle_load_flight_sequence(const LoadFlightSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_FLIGHT);
@@ -1676,9 +1302,7 @@ std::expected<void, Error> Controller::handle_load_flight_sequence(const LoadFli
     return {};
 }
 
-/// Starts a previously primed flight sequence.
-/// Parameters: req is the start request.
-/// Returns: success or an error if the controller is not primed.
+/// Client-triggered transition from FLIGHT_PRIMED to FLIGHT
 std::expected<void, Error> Controller::handle_start_flight_sequence(const StartFlightSequenceRequest& req)
 {
     ENSURE_CONFIG(CONFIG_FLIGHT);

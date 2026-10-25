@@ -1,0 +1,20 @@
+source "Kconfig.zephyr"
+
+# Board defconfig settings normally supplied by Clover.
+config RANGER
+    bool "Ranger board defaults"
+config RF
+    bool "RF board defaults (unused by this test)"
+
+config VALVE_TEST_AUTOMATIC
+    bool "Automatically pulse a valve after boot"
+    default n
+
+config VALVE_TEST_EMBEDDED_SEQUENCE
+    bool "Run the embedded JSON sequence once after boot"
+    default n
+
+config VALVE_TEST_CHANNEL
+    int "Zero-based valve channel to pulse"
+    default 0
+    range 0 31
