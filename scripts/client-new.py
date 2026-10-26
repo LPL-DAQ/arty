@@ -2031,7 +2031,6 @@ def cmd_configure_flight_controller_gains():
         console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
 
 
-# TODO: is this all that's needed?
 def cmd_toggle_recording():
     """Start/stop CSV recording regardless of state, e.g. to log sensor cal points while IDLE."""
     global _manual_recording
@@ -2043,6 +2042,7 @@ def cmd_toggle_recording():
         console.print(f'  [{t["muted"]}]Recording stopped, file closes within ~1 s.[/{t["muted"]}]')
 
 
+# TODO: is this all that's needed?
 def cmd_calibrate_tvc():
     """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
     t = THEME
