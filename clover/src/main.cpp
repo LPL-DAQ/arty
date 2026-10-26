@@ -16,7 +16,7 @@
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
-#include "LoRaRadio.h"
+//#include "LoRaRadio.h"
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 int main(void)
@@ -56,7 +56,7 @@ int main(void)
     // if (!result) {
     //     LOG_ERR("LoRa Radio initialization failed with error code: %d", result.error());
     //     // Handle failure (e.g., retry loop, fault state, or system reboot)
-    //     return result.error();
+    //     return 0; // result.error();
     // }
 
     // LOG_INF("LoRa Radio successfully initialized!");
