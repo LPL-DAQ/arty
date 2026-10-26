@@ -271,3 +271,34 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
 
     return {};
 }
+
+/// ONLY USE FOR WATCHDOG: RESETS ALL OUTPUTS TO LOW WITHOUT CONSIDERING THREADS, ETC
+std::expected<void Error> Valves::watchdog_reset()
+{
+    // Ensure underlying I2C/GPIO driver is ready before issuing writes
+    if (NUM_VALVE_GPIOS > 0 && !device_is_ready(VALVE_GPIOS[0].port)) {
+        return std::unexpected(Error::from_cause("MCP23017 I2C driver not ready on startup"));
+    }
+
+    LOG_INF("Resetting %d valve GPIOs to LOW output", NUM_VALVE_GPIOS);
+
+    for (int i = 0; i < NUM_VALVE_GPIOS; ++i) {
+        const auto& gpio_cfg = VALVE_GPIOS[i];
+
+        // Switch direction to OUTPUT and drive physical level LOW in a single atomic driver call.
+        // Handles routing across both MCP23017 chips automatically via gpio_cfg.port.
+        if (int err = gpio_pin_configure_dt(&gpio_cfg, GPIO_OUTPUT_INACTIVE); err != 0) {
+            return std::unexpected(
+                Error::from_code(err).context(
+                    "failed to reset valve gpio %s (channel %d) to LOW output", gpio_cfg.port->name, i
+                )
+            );
+        }
+    }    
+    
+    // State Tracking 
+    valve_states.fill(ValveState_UNKNOWN_VALVE_STATE);
+
+    LOG_INF("All valve GPIO outputs successfully driven LOW.");    
+    return {};
+}

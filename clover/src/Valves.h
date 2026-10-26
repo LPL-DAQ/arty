@@ -12,6 +12,8 @@ std::expected<ValveStates, Error> get_valve_states();
 
 std::expected<void, Error> handle_configure_valves(const ConfigureValvesRequest& req);
 std::expected<void, Error> handle_actuate_valve(const ActuateValveRequest& req);
+
+std::expected<void, Error> watchdog_reset();
 }  // namespace Valves
 
 #endif  // CONFIG_VALVES
