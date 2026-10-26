@@ -1457,6 +1457,9 @@ def cmd_configure_analog_sensors():
             return
         configs = list(table.configs)
         _print_sensor_configs(configs)
+        if not Confirm.ask('  Send this table?', default=True):
+            console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+            return
 
     elif profile == '2':
         configs = []

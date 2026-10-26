@@ -43,17 +43,17 @@ def fit(points: list[tuple[float, float]], old_bias: float) -> dict:
 def selftest():
     # Pure offset: Ranger reads 1.5 C high everywhere -> bias -1.5, slope 1, zero hold-out error
     r = fit([(20, 21.5), (50, 51.5), (80, 81.5)], 0.0)
-    assert (
+    assert (  # noqa: S101
         abs(r['slope'] - 1) < 1e-9
         and abs(r['new_bias'] + 1.5) < 1e-9
         and r['worst_holdout_c'] < 1e-9
     ), r
-    assert r['slope_ok']
+    assert r['slope_ok']  # noqa: S101
     # Old bias is carried: readings already had +2 applied and are still 1.5 high -> 0.5
-    assert abs(fit([(20, 21.5), (50, 51.5)], 2.0)['new_bias'] - 0.5) < 1e-9
+    assert abs(fit([(20, 21.5), (50, 51.5)], 2.0)['new_bias'] - 0.5) < 1e-9  # noqa: S101
     # Gain error (Ranger reads 5% low) is flagged, and hold-out shows the offset can't cover it
     r = fit([(20, 19), (50, 47.5), (80, 76)], 0.0)
-    assert not r['slope_ok'] and r['worst_holdout_c'] > 1, r
+    assert not r['slope_ok'] and r['worst_holdout_c'] > 1, r  # noqa: S101
     print('selftest ok')
 
 
@@ -82,7 +82,11 @@ def main():
         if len(pts) < 2:
             print(f'{serial} / {amp}: need >= 2 points, have {len(pts)}')
             continue
-        r = fit(pts, a.old_bias)
+        try:
+            r = fit(pts, a.old_bias)
+        except statistics.StatisticsError:
+            print(f'{serial} / {amp}: ranger_c all equal, need points at different temps')
+            continue
         verdict = (
             'offset only is fine'
             if r['slope_ok']
