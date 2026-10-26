@@ -355,6 +355,8 @@ static int ads79xx_read(const struct device* dev, const struct adc_sequence* seq
 
 static void ads79xx_fail(struct ads79xx_data* data, int err)
 {
+    /* callers hold the bus; U7 and U8 share it, so keeping it would block every later read */
+    ads79xx_spi_release(data->dev);
     /* device may be in an undefined state - ensure device mode is re-programmed */
     data->auto1_mask = 0;
     if (data->ctx.sequence.options && data->ctx.sequence.options->interval_us != 0U) {
