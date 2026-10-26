@@ -1,0 +1,41 @@
+# WARNING: sensor names here are the firmware enum's Atlas-style names, NOT the Ranger 1 P&ID (9/21/2026).
+# The same name can be a different physical sensor: Ranger PT-003 = Jet-A tank (Atlas PT-004), Ranger PT-004 =
+# LOx tank (Atlas PT-006); the P&ID has no PT103/PT203/PT005/PT006 and adds PT-303, TC-101, TC-103.
+# A range belongs to the physical PT: check each one against the part number on its body (PX319-xKG5V).
+# Canonical Ranger names are a pending team decision; the firmware enum and this table follow it.
+#
+# Vehicle PT table. Template: cfgana only lists *.textproto, so this file can't be sent by accident.
+# To use: copy to s_vehicle_pts.textproto, replace every CH with the AIN number the PT is wired to,
+# then zero each PT: vent to atmosphere, average ~5 s, set new pt_bias_psig = old pt_bias_psig - average.
+# Zero with this final table loaded (neighbouring channels can shift a reading).
+#
+# Ranges from the May 26 Atlas super-hotfire LabJack config (LPL-DAQ/DAC branch May26_Atlas_Nomad_Heatsink_Round6,
+# configFiles/may26_atlas_super_hotfire/PTconfig.ini): range = LabJack slope (psi/V) x 5. LabJack ports/offsets don't transfer.
+# PT103 and PTF401 are 1000 there; Noah's older #229 profile had 2000. Noah's #229 biases (shown in comments) were zeroed on the OLD Teensy-internal-ADC board and mostly reflect that
+# board's offset, not the sensor's, so they are NOT used here. Re-zero on Ranger 1, per sensor, per pin.
+#
+# channel = AIN number (NOT the J5 pad). Usable U7: AIN1-7, AIN10-15.
+#   AIN1=pad20  AIN2=pad2   AIN3=pad21  AIN4=pad3   AIN5=pad22  AIN6=pad4   AIN7=pad23
+#   AIN10=pad6  AIN11=pad25 AIN12=pad7  AIN13=pad26 AIN14=pad8  AIN15=pad27
+
+configs { channel: CH  assignment: PT001   pt_range_psig: 3000  pt_bias_psig: 0 }
+configs { channel: CH  assignment: PT002   pt_range_psig: 3000  pt_bias_psig: 0 }
+configs { channel: CH  assignment: PT003   pt_range_psig: 2000  pt_bias_psig: 0 }
+configs { channel: CH  assignment: PT004   pt_range_psig: 2000  pt_bias_psig: 0 }  # #229 bias -40
+configs { channel: CH  assignment: PT005   pt_range_psig: 2000  pt_bias_psig: 0 }
+configs { channel: CH  assignment: PT006   pt_range_psig: 2000  pt_bias_psig: 0 }  # #229 bias -33
+configs { channel: CH  assignment: PT103   pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 had 2000/-39
+configs { channel: CH  assignment: PT203   pt_range_psig: 3000  pt_bias_psig: 0 }  # #229 bias -43
+configs { channel: CH  assignment: PT301   pt_range_psig: 3000  pt_bias_psig: 0 }
+configs { channel: CH  assignment: PTF401  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 had 2000/-45
+configs { channel: CH  assignment: PTO401  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 bias -15
+configs { channel: CH  assignment: PTC401  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 bias -15
+configs { channel: CH  assignment: PTC402  pt_range_psig: 1000  pt_bias_psig: 0 }  # #229 bias -13.8
+
+# TCs (May 26 config types). U7 has only 13 usable pins, all taken by the PTs above, so TCs need U8 fixed
+# or PTs dropped. TC reading (°C) = K/T lookup of the AD8495 output + tc_bias_deg_c. Zero: compare to a
+# reference (ice water ~0 °C), set new tc_bias_deg_c = old tc_bias_deg_c + (reference - reading).
+# configs { channel: CH  assignment: TC002   tc_type: K_TYPE  tc_bias_deg_c: 0 }
+# configs { channel: CH  assignment: TCF401  tc_type: K_TYPE  tc_bias_deg_c: 0 }
+# configs { channel: CH  assignment: TC102   tc_type: T_TYPE  tc_bias_deg_c: 0 }  # T-type on an AD8495: amp choice unconfirmed
+# configs { channel: CH  assignment: TCO401  tc_type: T_TYPE  tc_bias_deg_c: 0 }  # T-type on an AD8495: amp choice unconfirmed

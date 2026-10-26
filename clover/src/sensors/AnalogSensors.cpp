@@ -5,6 +5,7 @@
 #include "../lut/tc_t_type_v_to_deg_c_lut.h"
 #include "clover.pb.h"
 #include <array>
+#include <cmath>
 #include <optional>
 #include <tuple>
 #include <zephyr/device.h>
@@ -197,7 +198,7 @@ static void sense()
                             break;
                         }
                         case TCType_T_TYPE: {
-                            // Reading is from -200 to 50 deg C
+                            // Reading is from -200 to 400 deg C. AD8495 is a K amp; ADI: AD8495 Interface to Type T Thermocouples
                             curr_reading = TcTTypeVToDegCLut::sample(unamplified_v);
                             break;
                         }
@@ -207,6 +208,9 @@ static void sense()
                             curr_reading = -9999.0f;
                             break;
                         }
+                        }
+                        if (config.has_tc_bias_deg_c) {
+                            curr_reading += config.tc_bias_deg_c;
                         }
                     }
 
@@ -402,17 +406,17 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         }
         assigned_channels[config.channel] = true;
 
-        // Check assignment
-        if (config.assignment < _AnalogSensor_MIN || config.assignment > _AnalogSensor_MAX) {
+        // Check assignment. UNKNOWN is in range but has no reading field, it would log every tick
+        if (config.assignment <= AnalogSensor_UNKNOWN_ANALOG_SENSOR || config.assignment > _AnalogSensor_MAX) {
             return std::unexpected(Error::from_cause("invalid sensor assignment %d", config.assignment));
         }
         if (assigned_sensors[config.assignment]) {
-            return std::unexpected(Error::from_cause("sensor %d is assigned multiple times", config.channel));
+            return std::unexpected(Error::from_cause("sensor %d is assigned multiple times", config.assignment));
         }
         assigned_sensors[config.assignment] = true;
 
         bool has_pt_config = config.has_pt_bias_psig || config.has_pt_range_psig;
-        bool has_tc_config = config.has_tc_type;
+        bool has_tc_config = config.has_tc_type || config.has_tc_bias_deg_c;
         bool has_raw_config = config.has_raw_range_v || config.has_raw_bias_v;
 
         // Only one sensor type should be set
@@ -428,12 +432,22 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             if (config.pt_range_psig == 0.0f) {
                 return std::unexpected(Error::from_cause("pt range cannot be 0"));
             }
+            if (!std::isfinite(config.pt_range_psig) || !std::isfinite(config.pt_bias_psig)) {
+                return std::unexpected(Error::from_cause("pt config fields must be finite"));
+            }
         }
 
         // Check TC config
         if (has_tc_config) {
-            if (config.tc_type < _TCType_MIN || config.tc_type > _TCType_MAX) {
+            if (!config.has_tc_type) {
+                return std::unexpected(Error::from_cause("tc bias requires a tc type"));
+            }
+            // UNKNOWN_TC_TYPE is in range but has no conversion, it would read -9999 and log every tick
+            if (config.tc_type <= TCType_UNKNOWN_TC_TYPE || config.tc_type > _TCType_MAX) {
                 return std::unexpected(Error::from_cause("invalid tc type %d", config.tc_type));
+            }
+            if (config.has_tc_bias_deg_c && !std::isfinite(config.tc_bias_deg_c)) {
+                return std::unexpected(Error::from_cause("tc bias must be finite"));
             }
         }
 
@@ -444,6 +458,9 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             }
             if (config.raw_range_v == 0.0f) {
                 return std::unexpected(Error::from_cause("raw range cannot be 0"));
+            }
+            if (!std::isfinite(config.raw_range_v) || !std::isfinite(config.raw_bias_v)) {
+                return std::unexpected(Error::from_cause("raw config fields must be finite"));
             }
         }
     }

@@ -1,0 +1,5 @@
+# Raw volts on AIN10 (J5 pad 6) instead of the TC conversion: same pin, so it's one or the other.
+# Shows as BATTERYVOLTAGE (V) in status / battery_voltage in the CSV (BATTERY_VOLTAGE is just an unused key here).
+# volts = counts / 4096 * raw_range_v + raw_bias_v. 4.984 = measured ADC full scale, so this should match a meter;
+# the TC conversion in firmware assumes 5.0. AD8495: degC ~= (V - 1.25) / 0.005.
+configs { channel: 10  assignment: BATTERY_VOLTAGE  raw_range_v: 4.984  raw_bias_v: 0 }

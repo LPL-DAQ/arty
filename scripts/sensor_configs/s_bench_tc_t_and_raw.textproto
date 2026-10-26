@@ -1,0 +1,6 @@
+# T-type TC and its raw amp volts at the same time: one extra jumper, amp OUT -> AIN4 (J5 pad 3) AND AIN10 (J5 pad 6).
+# The amp output is low impedance, so driving two ADC pins is fine. CSV: tc002 = degC, battery_voltage = pin volts
+# (BATTERY_VOLTAGE is just an unused key here). AD8495 at room ~1.36 V; 100 C T-type ~1.775 V.
+# volts = counts / 4096 * 4.984 (measured full scale); the TC conversion in firmware assumes 5.0.
+configs { channel: 4   assignment: TC002            tc_type: T_TYPE  tc_bias_deg_c: 0 }
+configs { channel: 10  assignment: BATTERY_VOLTAGE  raw_range_v: 4.984  raw_bias_v: 0 }
