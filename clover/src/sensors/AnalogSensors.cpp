@@ -212,7 +212,7 @@ static void sense()
                             break;
                         }
                         case TCType_T_TYPE: {
-                            // Reading is from -200 to 50 deg C
+                            // Reading is from -200 to 400 deg C. AD8495 is a K amp; ADI: AD8495 Interface to Type T Thermocouples
                             curr_reading = TcTTypeVToDegCLut::sample(unamplified_v);
                             break;
                         }
