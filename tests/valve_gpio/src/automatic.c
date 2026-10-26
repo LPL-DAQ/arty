@@ -30,7 +30,7 @@ int main(void)
         trace_event("STOP: initialization failed");
         return -ENODEV;
     }
-
+ 
     const struct gpio_dt_spec *valve = &valves[CONFIG_VALVE_TEST_CHANNEL];
     trace_event("Waiting 15 seconds before channel %d pulse", CONFIG_VALVE_TEST_CHANNEL);
     k_sleep(K_SECONDS(15));
