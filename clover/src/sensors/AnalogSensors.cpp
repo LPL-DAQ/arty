@@ -31,6 +31,23 @@ static constexpr int NUM_ANALOG_CHANNELS = DT_PROP_LEN(DT_PATH(zephyr_user), io_
 static constexpr adc_dt_spec adc_channels[NUM_ANALOG_CHANNELS] = {DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), io_channels, LAMBDA, (, ))};
 #undef LAMBDA
 
+// The read plan maps channels by (ADC index, channel id); an entry outside analog-sensor-adcs or past the max id would be
+// silently read from the wrong ADC or never read.
+static_assert(
+    []() consteval {
+        for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
+            bool on_listed_adc = false;
+            for (int i = 0; i < NUM_ADCS; ++i) {
+                on_listed_adc |= adc_channels[j].dev == adc_devices[i];
+            }
+            if (!on_listed_adc || adc_channels[j].channel_id >= MAX_CHANNELS_PER_ADC) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "every io-channels entry must be on an analog-sensor-adcs ADC with channel id < analog-sensor-max-adc-channels");
+
 // Spec and buffers used for ADC reads.
 
 /// Buffer into which raw readings are written. Only accessed by the analog_sensors thread.
