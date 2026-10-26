@@ -3,6 +3,7 @@
 #include "../config.h"
 #include "../lut/tc_k_type_v_to_deg_c_lut.h"
 #include "../lut/tc_t_type_v_to_deg_c_lut.h"
+#include "AdcReadPlan.h"
 #include "clover.pb.h"
 #include <array>
 #include <optional>
@@ -32,43 +33,41 @@ static constexpr adc_dt_spec adc_channels[NUM_ANALOG_CHANNELS] = {DT_FOREACH_PRO
 
 // Spec and buffers used for ADC reads.
 
-// Generates an ADC channel bitmask from the devicetree config.
-static consteval uint32_t channels_bitmask(const device* adc_dev)
-{
-    uint32_t mask = 0;
-    for (int i = 0; i < NUM_ANALOG_CHANNELS; ++i) {
-        const auto& channel = adc_channels[i];
-        if (channel.dev == adc_dev) {
-            mask |= (1 << channel.channel_id);
-        }
-    }
-    return mask;
-}
-
 /// Buffer into which raw readings are written. Only accessed by the analog_sensors thread.
 static std::array<std::array<uint16_t, MAX_CHANNELS_PER_ADC>, NUM_ADCS> raw_readings;
 
-/// Maps ADC and ADC channel into overall channel index
-static std::array<std::array<int, MAX_CHANNELS_PER_ADC>, NUM_ADCS> adc_reading_index_to_input_channel = []() consteval {
-    std::array<std::array<int, MAX_CHANNELS_PER_ADC>, NUM_ADCS> out;
-    for (int i = 0; i < NUM_ADCS; ++i) {
-        const device* adc_dev = adc_devices[i];
-        int reading_index = 0;
-
-        for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
-            const auto& channel = adc_channels[j];
-            if (channel.dev == adc_dev) {
-                out[i][reading_index] = j;
-                ++reading_index;
+/// Index into adc_devices of each input channel's ADC.
+static constexpr std::array<int, NUM_ANALOG_CHANNELS> input_channel_adc = []() consteval {
+    std::array<int, NUM_ANALOG_CHANNELS> out{};
+    for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
+        for (int i = 0; i < NUM_ADCS; ++i) {
+            if (adc_channels[j].dev == adc_devices[i]) {
+                out[j] = i;
             }
-        }
-
-        for (; reading_index < MAX_CHANNELS_PER_ADC; ++reading_index) {
-            out[i][reading_index] = -1;
         }
     }
     return out;
 }();
+
+/// ADC channel id of each input channel.
+static constexpr std::array<int, NUM_ANALOG_CHANNELS> input_channel_id = []() consteval {
+    std::array<int, NUM_ANALOG_CHANNELS> out{};
+    for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
+        out[j] = adc_channels[j].channel_id;
+    }
+    return out;
+}();
+
+using ReadPlan = AdcReadPlan<NUM_ADCS, MAX_CHANNELS_PER_ADC>;
+
+/// Plan the current read uses. Empty until sensors are configured, so no channel is read. Only accessed by the
+/// analog_sensors thread.
+static ReadPlan active_read_plan;
+
+/// Plan built from the latest sensor configs, picked up by the sense loop before its next read. Protected by
+/// analog_sensors_mutex.
+static ReadPlan pending_read_plan;
+static bool read_plan_changed = false;
 
 /// Sequence read options
 static adc_sequence_options adc_read_options = {
@@ -76,28 +75,16 @@ static adc_sequence_options adc_read_options = {
     .extra_samplings = 0,  // No multi-sampling
 };
 
-/// Sequence spec used to read from ADC. Only accessed by the analog_sensors thread.
+/// Sequence spec used to read from ADC. Channels and buffer size are set from active_read_plan. Only accessed by the
+/// analog_sensors thread.
 static std::array<adc_sequence, NUM_ADCS> adc_read_seqs = []() consteval {
     std::array<adc_sequence, NUM_ADCS> out;
     for (int i = 0; i < NUM_ADCS; ++i) {
-        const device* adc_dev = adc_devices[i];
-
-        // Determine ADC channels we want to read from
-        size_t used_channels = 0;
-        uint32_t mask = 0;
-        for (int j = 0; j < NUM_ANALOG_CHANNELS; ++j) {
-            const auto& channel = adc_channels[j];
-            if (channel.dev == adc_dev) {
-                mask |= (1 << channel.channel_id);
-                used_channels++;
-            }
-        }
-
         out[i] = {
             .options = &adc_read_options,
-            .channels = mask,
+            .channels = 0,
             .buffer = raw_readings[i].data(),
-            .buffer_size = used_channels * sizeof(uint16_t),
+            .buffer_size = 0,
             .resolution = RESOLUTION,
             .oversampling = OVERSAMPLING};
     }
@@ -135,14 +122,33 @@ static void sense()
         // Single read is allowed at the end of a controller tick.
         k_sem_take(&allow_sense_sem, K_FOREVER);
 
+        // Pick up a new read plan if sensors were reconfigured
+        {
+            MutexGuard analog_sensors_guard{&analog_sensors_mutex};
+            if (read_plan_changed) {
+                active_read_plan = pending_read_plan;
+                read_plan_changed = false;
+                for (int i = 0; i < NUM_ADCS; ++i) {
+                    adc_read_seqs[i].channels = active_read_plan.masks[i];
+                    adc_read_seqs[i].buffer_size = active_read_plan.num_readings(i) * sizeof(uint16_t);
+                }
+            }
+        }
+
         // Read from all ADCs concurrently
         uint64_t start_read_cycle = k_cycle_get_64();
+        std::array<bool, NUM_ADCS> adc_read_ok{};
         for (int i = 0; i < NUM_ADCS; ++i) {
+            // ADC has no configured channels, the driver rejects an empty sequence.
+            if (adc_read_seqs[i].channels == 0) {
+                continue;
+            }
             // LOG_INF("Starting read of adc num %d", i);
             int err = adc_read(adc_devices[i], &adc_read_seqs[i]);
             if (err) {
                 LOG_ERR("Error initiating read of ADC %s: %s", adc_devices[i]->name, Error::from_code(err).build_message().c_str());
             }
+            adc_read_ok[i] = !err;
             // LOG_INF("Read adc num %d", i);
         }
 
@@ -153,10 +159,18 @@ static void sense()
             sense_time_ns = static_cast<float>(k_cycle_get_64() - start_read_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
             has_reading = true;
 
+            // Only sensors read this tick carry a value: a removed sensor or one on a failed ADC drops out instead of
+            // repeating its last reading as if it were fresh.
+            sensor_readings = AnalogSensorReadings_init_default;
+
             for (int i = 0; i < NUM_ADCS; ++i) {
+                // A failed or skipped read leaves stale samples (possibly in an old plan's layout), don't publish them
+                if (!adc_read_ok[i]) {
+                    continue;
+                }
                 // Iter through each ADC sequence reading
                 for (int j = 0; j < static_cast<int>(adc_read_seqs[i].buffer_size / sizeof(uint16_t)); ++j) {
-                    int input_channel = adc_reading_index_to_input_channel[i][j];
+                    int input_channel = active_read_plan.reading_to_input_channel[i][j];
 
                     if (input_channel == -1) {
                         // No more reading left for this ADC
@@ -460,6 +474,10 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         for (int i = 0; i < req.configs_count; ++i) {
             sensor_configs[req.configs[i].channel] = std::make_optional(req.configs[i]);
         }
+
+        // Only read configured channels, starting with the next sense
+        pending_read_plan = build_adc_read_plan<NUM_ADCS, MAX_CHANNELS_PER_ADC>(input_channel_adc, input_channel_id, assigned_channels);
+        read_plan_changed = true;
     }
 
     return {};
