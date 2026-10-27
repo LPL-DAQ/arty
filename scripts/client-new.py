@@ -276,7 +276,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             #'throttle_thrust_command_lbf': _opt(pkt, 'throttle_thrust_command_lbf'),
             #'tvc_pitch_command_deg': _opt(pkt, 'tvc_pitch_command_deg'),
             #'tvc_yaw_command_deg': _opt(pkt, 'tvc_yaw_command_deg'),
-            #'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
+            'rcs_roll_command_deg': _opt(pkt, 'rcs_roll_command_deg'),
             #'flight_x_command_m': _opt(pkt, 'flight_x_command_m'),
             #'flight_y_command_m': _opt(pkt, 'flight_y_command_m'),
             #'flight_z_command_m': _opt(pkt, 'flight_z_command_m'),
@@ -286,8 +286,8 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             #'main_propeller_command_us': _opt(pkt, 'main_propeller_command'),
             #'pitch_servo_command_us': _opt(pkt, 'pitch_servo_command'),
             #'yaw_servo_command_us': _opt(pkt, 'yaw_servo_command'),
-            #'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
-            #'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
+            'rcs_propeller_cw_command_us': _opt(pkt, 'rcs_propeller_cw_command'),
+            'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
         }
     )
 
