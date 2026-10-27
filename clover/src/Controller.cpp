@@ -254,8 +254,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     }
 
     if (current_state == SystemState_STATE_RCS) {
-        // Sample TVC trace
-        auto roll_sample = tvc_pitch_trace_deg.sample(data.trace_time_msec);
+        auto roll_sample = rcs_roll_trace_deg.sample(data.trace_time_msec);
         if (!roll_sample.has_value()) {
             return std::unexpected(roll_sample.error().context("failed to sample rcs roll trace"));
         }
