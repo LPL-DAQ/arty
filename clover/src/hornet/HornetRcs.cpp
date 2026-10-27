@@ -2,6 +2,8 @@
 #include "../MutexGuard.h"
 #include "../PID.h"
 #include "../config.h"
+#include <algorithm>
+#include <cmath>
 #include <zephyr/kernel.h>
 
 K_MUTEX_DEFINE(hornet_rcs_lock);
@@ -88,6 +90,12 @@ void HornetRcs::reset()
 #if CONFIG_TEST
     now_ms_override_set = false;
 #endif
+}
+
+uint32_t HornetRcs::bench_throttle_percent_to_pulse_us(float throttle_percent)
+{
+    const float percent = throttle_percent > 0.0f ? std::min(throttle_percent, HORNET_RCS_BENCH_MAX_THROTTLE_PERCENT) : 0.0f;
+    return static_cast<uint32_t>(std::lround(MIN_PWM_PULSE_US + percent / 100.0f * (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US)));
 }
 
 /// Generate a comomand for the cs and ccs RCS propellers.

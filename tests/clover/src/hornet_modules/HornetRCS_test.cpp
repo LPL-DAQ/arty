@@ -1,5 +1,6 @@
 #include "../../../../clover/src/hornet/HornetRcs.h"
 #include <zephyr/ztest.h>
+#include <cmath>
 
 // RCS bang-bang controller with PID and hysteresis.
 // control() returns p_valve: -1 (CW), 0 (neutral), or 1 (CCW).
@@ -248,6 +249,19 @@ ZTEST(HornetRcs_tests, test_reset_then_large_error_activates_thruster_cleanly)
     auto [cw, ccw, metrics] = *result;
     zassert_equal(cw,  THRUSTER_ON,  "CW should fire on first tick after reset with large negative error");
     zassert_equal(ccw, THRUSTER_OFF, "CCW should not fire for negative error");
+}
+
+ZTEST(HornetRcs_tests, test_bench_percent_maps_to_pulse_and_caps)
+{
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(0.0f), 1000);
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(5.0f), 1050);
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(10.0f), 1100);
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(12.34f), 1123);
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(12.36f), 1124, "should round, not truncate");
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(15.0f), 1150);
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(100.0f), 1150, "should cap at the bench limit");
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(-20.0f), 1000);
+    zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(NAN), 1000);
 }
 
 ZTEST_SUITE(HornetRcs_tests, NULL, NULL, NULL, NULL, NULL);

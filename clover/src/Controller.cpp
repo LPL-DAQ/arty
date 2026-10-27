@@ -153,13 +153,21 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         if (!cw_sample.has_value()) {
             return std::unexpected(cw_sample.error().context("failed to sample rcs cw valve trace"));
         }
-        // TODO -- command RCS valve
 
         auto ccw_sample = rcs_ccw_valve_trace.sample(data.trace_time_msec);
         if (!ccw_sample.has_value()) {
             return std::unexpected(ccw_sample.error().context("failed to sample rcs ccw valve trace"));
         }
-        // TODO -- command RCS valve
+
+#ifdef CONFIG_HORNET
+        // Open-loop bench path: the traces are throttle percent.
+        data.has_rcs_propeller_cw_command = true;
+        data.rcs_propeller_cw_command = HornetRcs::bench_throttle_percent_to_pulse_us(*cw_sample);
+        data.has_rcs_propeller_ccw_command = true;
+        data.rcs_propeller_ccw_command = HornetRcs::bench_throttle_percent_to_pulse_us(*ccw_sample);
+#else
+        // TODO -- command RCS valves
+#endif
 
         return {};
     }
