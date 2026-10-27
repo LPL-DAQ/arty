@@ -17,7 +17,7 @@ enum class PwmKind { TVC_PITCH, TVC_YAW, BETA_TOP, BETA_BOTTOM, BETA_CW, BETA_CC
 // PwmActuator
 // -----------------------------------------------------------------------------
 // Stateless PWM base with last-commanded pulse tracking.
-// init() verifies hardware and writes the low/min pulse.
+// init() verifies hardware and writes initial_pulse_us, the min pulse by default.
 // tick() clamps and writes a pulse. Requires init() to have succeeded first.
 // -----------------------------------------------------------------------------
 template <PwmKind Kind, const pwm_dt_spec PwmDt, int MinPulseUs = 1000, int MaxPulseUs = 2000> class PwmActuator {
@@ -69,7 +69,7 @@ protected:
     }
 
 public:
-    static std::expected<void, Error> init()
+    static std::expected<void, Error> init(uint32_t initial_pulse_us = static_cast<uint32_t>(MinPulseUs))
     {
         LOG_MODULE_DECLARE(pwm_actuator);
         LOG_INF("%s Initializing... pulse range [%d, %d] us", kind_to_prefix(Kind), MinPulseUs, MaxPulseUs);
@@ -79,7 +79,7 @@ public:
             return std::unexpected(Error::from_device_not_ready(pwm_gpio.dev).context("PWM not ready on %s", kind_to_prefix(Kind)));
         }
 
-        auto result = write_pulse_us(static_cast<uint32_t>(k_min_pulse_us));
+        auto result = write_pulse_us(clamp_pulse_us(initial_pulse_us));
         if (!result) {
             LOG_ERR("%s Failed to set initial pulse width: %s", kind_to_prefix(Kind), result.error().build_message().c_str());
             return result;

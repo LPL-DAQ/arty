@@ -12,6 +12,7 @@
 #include "PwmActuator.h"
 #include "ThrottleValve.h"
 #include "Valves.h"
+#include "config.h"
 #include "hornet/HornetTvc.h"
 #include "sensors/AnalogSensors.h"
 #include "sensors/Gnss.h"
@@ -121,29 +122,24 @@ int main(void)
 #endif
 
 #ifdef CONFIG_PWM_ACTUATORS
+#ifdef CONFIG_HORNET
+    // Full retract is past the gimbal limit, so the TVC actuators start at neutral.
+    const uint32_t tvc_initial_pulse_us = HornetTvc::neutral_pulse_us();
+#else
+    const uint32_t tvc_initial_pulse_us = MIN_PWM_PULSE_US;
+#endif
+
     LOG_INF("Initializing tvc pitch");
-    if (auto result = TvcPitch::init(); !result) {
+    if (auto result = TvcPitch::init(tvc_initial_pulse_us); !result) {
         LOG_ERR("Failed to initialize tvc pitch: %s", result.error().build_message().c_str());
         return 0;
     }
 
     LOG_INF("Initializing tvc yaw");
-    if (auto result = TvcYaw::init(); !result) {
+    if (auto result = TvcYaw::init(tvc_initial_pulse_us); !result) {
         LOG_ERR("Failed to initialize tvc yaw: %s", result.error().build_message().c_str());
         return 0;
     }
-
-#ifdef CONFIG_HORNET
-    // init() parks at full retract, which is past the gimbal limit.
-    if (auto result = TvcPitch::tick(HornetTvc::neutral_pulse_us()); !result) {
-        LOG_ERR("Failed to centre tvc pitch: %s", result.error().build_message().c_str());
-        return 0;
-    }
-    if (auto result = TvcYaw::tick(HornetTvc::neutral_pulse_us()); !result) {
-        LOG_ERR("Failed to centre tvc yaw: %s", result.error().build_message().c_str());
-        return 0;
-    }
-#endif
 
     LOG_INF("Initializing beta top");
     if (auto result = BetaTop::init(); !result) {
