@@ -123,6 +123,18 @@ K_TIMER_DEFINE(control_loop_schedule_timer, control_loop_schedule, nullptr);
 
 // TODO roll control. the module should not accept a position as that is active control
 
+static void update_estimated_state(DataPacket& data)
+{
+    auto estimated_state = StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.gnss);
+    if (estimated_state) {
+        data.has_estimated_state = true;
+        data.estimated_state = *estimated_state;
+    }
+    else {
+        // TODO: handle estimate failure; leaving defaults for now
+    }
+}
+
 /// Transform Trace input into actuator commands, modifying the data pcket in-place.
 /// If an abort is necessary, an Error is returned. This is called for all active control
 /// states. trace_time_msec must be pre-populated.
@@ -174,14 +186,7 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
 
     // Sample flight trace and run flight controller
     if (current_state == SystemState_STATE_FLIGHT) {
-        auto estimated_state = StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.gnss);
-        if (estimated_state) {
-            data.has_estimated_state = true;
-            data.estimated_state = *estimated_state;
-        }
-        else {
-            // TODO: handle estimate failure; leaving defaults for now
-        }
+        update_estimated_state(data);
 
         // Sample flight traces
         auto x_sample = flight_x_trace_m.sample(data.trace_time_msec);
@@ -254,6 +259,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
     }
 
     if (current_state == SystemState_STATE_RCS) {
+        update_estimated_state(data);
+
         auto roll_sample = rcs_roll_trace_deg.sample(data.trace_time_msec);
         if (!roll_sample.has_value()) {
             return std::unexpected(roll_sample.error().context("failed to sample rcs roll trace"));
