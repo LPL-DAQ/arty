@@ -13,8 +13,15 @@ def load_sequence(path):
     if not isinstance(steps, list) or not steps:
         raise ValueError("sequence must be a nonempty JSON array")
     for index, step in enumerate(steps, 1):
-        if not isinstance(step, dict) or set(step) != {"duration_ms", "channels"}:
-            raise ValueError(f"step {index}: expected duration_ms and channels")
+        if (not isinstance(step, dict) or
+                not {"duration_ms", "channels"} <= set(step) or
+                set(step) - {"duration_ms", "channels", "comment"}):
+            raise ValueError(f"step {index}: expected duration_ms, channels, and optional comment")
+        comment = step.get("comment", "")
+        if (not isinstance(comment, str) or
+                any(not char.isprintable() for char in comment) or
+                len(comment.encode("utf-8")) > 100):
+            raise ValueError(f"step {index}: comment must be printable text of at most 100 UTF-8 bytes")
         duration, channels = step["duration_ms"], step["channels"]
         if type(duration) is not int or not 1 <= duration <= 10000:
             raise ValueError(f"step {index}: duration_ms must be 1..10000")
@@ -55,6 +62,8 @@ def main():
         if args.dry_run:
             for index, step in enumerate(steps, 1):
                 print(f"{index}: {step['duration_ms']} ms, channels {step['channels']}")
+                if step.get("comment"):
+                    print(f"  NEXT: {step['comment']}")
             return
         if not args.port:
             parser.error("--port is required unless --dry-run is used")

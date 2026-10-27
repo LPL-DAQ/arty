@@ -59,6 +59,9 @@ int main(void)
     }
 
     for (size_t step = 0; step < ARRAY_SIZE(sequence_steps); ++step) {
+        if (sequence_steps[step].comment[0]) {
+            trace_event("NEXT: %s", sequence_steps[step].comment);
+        }
         trace_event("STEP %u/%u mask=0x%08x duration=%u ms",
                     (unsigned)step + 1, (unsigned)ARRAY_SIZE(sequence_steps),
                     (unsigned)sequence_steps[step].mask,

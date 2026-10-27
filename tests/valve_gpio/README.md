@@ -166,6 +166,13 @@ not confirm that this sequence firmware is running.
 
 ## Execution logging
 
+Each JSON step may include an optional `"comment"` string, for example
+`"comment": "Energizing valves 0 and 1 for 10 seconds"`. Embedded firmware logs
+`NEXT: <comment>` before that step's GPIO writes or inactive wait. Comments must
+be printable text, at most 100 UTF-8 bytes, with no newlines or control characters.
+Steps without comments still work. Rebuild and flash after editing comments.
+The host runner also accepts comments and includes them in its terminal output.
+
 Embedded-sequence and automatic single-channel firmware enable USB CDC and emit
 Zephyr INFO logs to the USB shell. Connect a serial terminal on the Mac's actual
 `/dev/cu.usbmodem...` port at 115200 baud. No terminal connection is required to
