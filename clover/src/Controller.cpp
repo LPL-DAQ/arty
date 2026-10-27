@@ -46,8 +46,8 @@ auto prev_pitch_actuator_command = TvcActuatorCommand{};
 auto prev_yaw_actuator_command = TvcActuatorCommand{};
 #elif CONFIG_HORNET
 float prev_main_propeller_command = 0.0f;
-float prev_rcs_propeller_cw_command = 0.0f;
-float prev_rcs_propeller_ccw_command = 0.0f;
+float prev_rcs_propeller_cw_command = MIN_PWM_PULSE_US;
+float prev_rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
 float prev_pitch_servo_command = HornetTvc::neutral_pitch_pulse_us();
 float prev_yaw_servo_command = HornetTvc::neutral_yaw_pulse_us();
 #endif
@@ -104,8 +104,8 @@ static void setup_idle()
     // TODO -- kill RCS actuators.
 #elif CONFIG_HORNET
     prev_main_propeller_command = 0.0f;
-    prev_rcs_propeller_cw_command = 0.0f;
-    prev_rcs_propeller_ccw_command = 0.0f;
+    prev_rcs_propeller_cw_command = MIN_PWM_PULSE_US;
+    prev_rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
 #endif
 }
 
