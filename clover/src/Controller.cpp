@@ -359,7 +359,8 @@ static void tick_abort(DataPacket& data)
 #ifdef CONFIG_RANGER
     // TODO: command Ranger valves to a safe state. That state depends on the fluid system, so it is not guessed here.
 #elif CONFIG_HORNET
-    std::tie(data.pitch_servo_command, data.yaw_servo_command) = HornetTvc::command_neutral();
+    data.has_hornet_tvc_metrics = true;
+    std::tie(data.pitch_servo_command, data.yaw_servo_command, data.hornet_tvc_metrics) = HornetTvc::command_neutral();
     data.main_propeller_command = MIN_PWM_PULSE_US;
     data.rcs_propeller_cw_command = MIN_PWM_PULSE_US;
     data.rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
@@ -707,6 +708,11 @@ static void step_control_loop(k_work*)
     if (!tvc_yaw_status) {
         LOG_ERR("Error while ticking tvc yaw: %s", tvc_yaw_status.error().build_message().c_str());
     }
+
+    data.has_pitch_servo_output_us = true;
+    data.pitch_servo_output_us = TvcPitch::get_pulse_us();
+    data.has_yaw_servo_output_us = true;
+    data.yaw_servo_output_us = TvcYaw::get_pulse_us();
 
     // RCS
     // TODO: Check which actually corresponds to what

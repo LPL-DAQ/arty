@@ -23,7 +23,7 @@ void reset();
 uint32_t neutral_pitch_pulse_us();
 uint32_t neutral_yaw_pulse_us();
 /// Moves the held extensions to neutral without rate limiting and returns the pitch and yaw neutral pulses.
-std::tuple<uint32_t, uint32_t> command_neutral();
+std::tuple<uint32_t, uint32_t, HornetTvcMetrics> command_neutral();
 /// Takes pitch and yaw gimbal angles (deg) directly, bypassing thrust and MOI, for bench and trace driven TVC.
 std::expected<std::tuple<float, float, HornetTvcMetrics>, Error> tick_gimbal_deg(float pitch_gimbal_deg, float yaw_gimbal_deg);
 /// Takes pitch and yaw angular acceleration commands (rad/s²) and thrust (N), converts to linear

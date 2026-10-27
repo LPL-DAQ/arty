@@ -995,6 +995,8 @@ def _build_status_renderable():
     for field, label in [
         ('pitch_servo_command', 'Pitch servo'),
         ('yaw_servo_command', 'Yaw servo'),
+        ('pitch_servo_output_us', 'Pitch servo out'),
+        ('yaw_servo_output_us', 'Yaw servo out'),
         ('rcs_propeller_cw_command', 'RCS CW PWM'),
         ('rcs_propeller_ccw_command', 'RCS CCW PWM'),
     ]:

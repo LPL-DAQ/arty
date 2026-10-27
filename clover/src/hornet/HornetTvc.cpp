@@ -112,12 +112,25 @@ uint32_t HornetTvc::neutral_yaw_pulse_us()
     return extension_mm_to_pulse_us(YAW_CALIBRATION.neutral_extension_mm, YAW_CALIBRATION);
 }
 
-std::tuple<uint32_t, uint32_t> HornetTvc::command_neutral()
+std::tuple<uint32_t, uint32_t, HornetTvcMetrics> HornetTvc::command_neutral()
 {
     MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
     pitch_extension_mm = PITCH_CALIBRATION.neutral_extension_mm;
     yaw_extension_mm = YAW_CALIBRATION.neutral_extension_mm;
-    return {neutral_pitch_pulse_us(), neutral_yaw_pulse_us()};
+    const uint32_t pitch_pulse_us = neutral_pitch_pulse_us();
+    const uint32_t yaw_pulse_us = neutral_yaw_pulse_us();
+
+    HornetTvcMetrics metrics = HornetTvcMetrics_init_default;
+    metrics.commanded_pitch_gimbal_deg = 0.0f;
+    metrics.commanded_yaw_gimbal_deg = 0.0f;
+    metrics.target_pitch_extension_mm = pitch_extension_mm;
+    metrics.target_yaw_extension_mm = yaw_extension_mm;
+    metrics.commanded_pitch_extension_mm = pitch_extension_mm;
+    metrics.commanded_yaw_extension_mm = yaw_extension_mm;
+    metrics.pitch_pulse_us = pitch_pulse_us;
+    metrics.yaw_pulse_us = yaw_pulse_us;
+
+    return {pitch_pulse_us, yaw_pulse_us, metrics};
 }
 
 /// Clamp gimbal angles, convert to extension, rate limit and map to pulse width. Caller must hold hornet_tvc_lock.

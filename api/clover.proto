@@ -573,6 +573,8 @@ message DataPacket {
   optional int32 main_propeller_command = 64; // 1000-2000ms
   optional int32 pitch_servo_command = 67;  // 1000-2000ms
   optional int32 yaw_servo_command = 68;  // 1000-2000ms
+  optional uint32 pitch_servo_output_us = 94;  // Pulse written to the pitch PWM after the actuator clamp
+  optional uint32 yaw_servo_output_us = 95;  // Pulse written to the yaw PWM after the actuator clamp
   optional int32 rcs_propeller_cw_command = 65; // 1000-2000ms
   optional int32 rcs_propeller_ccw_command = 66; //  1000-2000ms
 }
