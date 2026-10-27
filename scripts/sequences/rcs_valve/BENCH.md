@@ -42,4 +42,4 @@ The other channel stays at 1000 us throughout.
 
 ## Stop
 
-`halt` and `abort` both command both channels back to 1000 us. When a trace ends on its own, the channels hold the last trace value, which is 0 percent in both sequences. Quitting the client does not stop a running trace. For a hard stop, disconnect the battery.
+`halt`, `abort` and the end of the trace all command both channels back to 1000 us. Quitting the client does not stop a running trace. For a hard stop, disconnect the battery.

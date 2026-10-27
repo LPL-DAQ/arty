@@ -687,6 +687,12 @@ static void step_control_loop(k_work*)
         else {
             // Transition to IDLE upon completion.
             if (data.trace_time_msec > trace_total_time_msec) {
+#ifdef CONFIG_HORNET
+                if (current_state == SystemState_STATE_RCS || current_state == SystemState_STATE_RCS_VALVE) {
+                    data.rcs_propeller_cw_command = MIN_PWM_PULSE_US;
+                    data.rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
+                }
+#endif
                 LOG_INF("Trace finished, entering IDLE");
                 current_state = SystemState_STATE_IDLE;
             }
