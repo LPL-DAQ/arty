@@ -88,7 +88,7 @@ DATA_PORT = 19691
 #   sensor — field name string       (ClickHouse 'sensor')
 #   value  — Float64 reading         (ClickHouse 'value')
 #   event  — state label for gnc_state rows, else ''  (ClickHouse 'event')
-#   system — always 'atlas'          (ClickHouse 'system')
+#   system — always 'ranger'         (ClickHouse 'system')
 #   source — always 'gnc'            (ClickHouse 'source')
 # PROTO CHANGE: time is now time_ns (nanoseconds), updated comment above.
 CSV_COLUMNS = ['time', 'sensor', 'value', 'event', 'system', 'source']
@@ -242,20 +242,22 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     row.update(
         {
             'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
-            #'pt001': _opt(pkt.analog_sensors, 'pt001'),
-            #'pt002': _opt(pkt.analog_sensors, 'pt002'),
-            #'pt003': _opt(pkt.analog_sensors, 'pt003'),
+            'pt001': _opt(pkt.analog_sensors, 'pt001'),
+            'pt002': _opt(pkt.analog_sensors, 'pt002'),
+            'pt003': _opt(pkt.analog_sensors, 'pt003'),
             'pt004': _opt(pkt.analog_sensors, 'pt004'),
             'pt005': _opt(pkt.analog_sensors, 'pt005'),
             'pt006': _opt(pkt.analog_sensors, 'pt006'),
             'pt103': _opt(pkt.analog_sensors, 'pt103'),
             'pt203': _opt(pkt.analog_sensors, 'pt203'),
-            #'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            'pt303': _opt(pkt.analog_sensors, 'pt303'),
             'ptf401': _opt(pkt.analog_sensors, 'ptf401'),
             'pto401': _opt(pkt.analog_sensors, 'pto401'),
             'ptc401': _opt(pkt.analog_sensors, 'ptc401'),
             'ptc402': _opt(pkt.analog_sensors, 'ptc402'),
             'tc002': _opt(pkt.analog_sensors, 'tc002'),
+            'tc101': _opt(pkt.analog_sensors, 'tc101'),
             'tc102': _opt(pkt.analog_sensors, 'tc102'),
             'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
             'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
@@ -408,7 +410,7 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
                 'sensor': sensor,
                 'value': value,
                 'event': event,
-                'system': 'atlas',  # change if not atlas
+                'system': 'ranger',  # vehicle; sensor names mean different sensors on atlas vs ranger
                 'source': 'gnc',  # leave as all GNC for now
             }
         )
@@ -469,17 +471,23 @@ def _reconnect_and_resubscribe():
 
 
 _USEFUL_SENSORS: dict[str, str] = {
+    'pt001': 'PT-001',
+    'pt002': 'PT-002',
+    'pt003': 'PT-003',
     'pt004': 'PT-004',
     'pt005': 'PT-005',
     'pt006': 'PT-006',
     'pt103': 'PT-103',
     'pt203': 'PT-203',
+    'pt301': 'PT-301',
+    'pt303': 'PT-303',
     'ptf401': 'PTF-401',
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
     'tc002': 'TC-002 (°C)',
     'battery_voltage': 'Battery voltage (V)',
+    'tc101': 'TC-101 (°C)',
     'tc102': 'TC-102 (°C)',
     'tc102_5': 'TC-102.5 (°C)',
     'tcf401': 'TCF-401 (°C)',
@@ -779,126 +787,67 @@ def _build_lox_valve_graph() -> Panel:
     return _plotext_panel('🔴 LOX Valve')
 
 
+def _plot_sensors(history, t0: float, sensors) -> list[float]:
+    """Plot each (field, label, color) over the samples that carry it, so a sensor not read reads as a gap, not 0."""
+    plotted = []
+    for field, label, color in sensors:
+        pts = [(p.time_ns / 1e9 - t0, getattr(p.analog_sensors, field)) for p in history if _has(p.analog_sensors, field)]
+        if pts:
+            plt.plot([t for t, _ in pts], [v for _, v in pts], label=label, color=color, marker='braille')
+            plotted += [v for _, v in pts]
+    return plotted
+
+
 def _build_fuel_graph() -> Panel:
-    """Fuel-side pressure sensors (200-series + PTC) over time."""
+    """Fuel-side pressure sensors (Jet-A tank, fuel injector, chamber) over time."""
     with _graph_lock:
         history = list(_graph_history)
     if len(history) < 2:
         return _waiting_panel('🟡 Fuel Sensors')
 
-    t0 = history[0].time_ns / 1e9
-    times = [p.time_ns / 1e9 - t0 for p in history]
-
     plt.clf()
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
-    plt.plot(
-        times,
-        [p.analog_sensors.pt006 for p in history],
-        label='PT-006',
-        color=(255, 220, 0),
-        marker='braille',
+    fuel_vals = _plot_sensors(
+        history,
+        history[0].time_ns / 1e9,
+        [
+            ('pt003', 'PT-003', (255, 220, 0)),
+            ('ptf401', 'PTF-401', (255, 140, 0)),
+            ('ptc401', 'PTC-401', (0, 200, 220)),
+            ('ptc402', 'PTC-402', (200, 50, 200)),
+        ],
     )
-    plt.plot(
-        times,
-        [p.analog_sensors.pt203 for p in history],
-        label='PT-203',
-        color=(50, 200, 50),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptf401 for p in history],
-        label='PTF-401',
-        color=(255, 140, 0),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc401 for p in history],
-        label='PTC-401',
-        color=(0, 200, 220),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc402 for p in history],
-        label='PTC-402',
-        color=(200, 50, 200),
-        marker='braille',
-    )
-    fuel_vals = (
-        [p.analog_sensors.pt006 for p in history]
-        + [p.analog_sensors.pt203 for p in history]
-        + [p.analog_sensors.ptf401 for p in history]
-        + [p.analog_sensors.ptc401 for p in history]
-        + [p.analog_sensors.ptc402 for p in history]
-    )
-    plt.ylim(30, max(fuel_vals) * 1.05 if max(fuel_vals) > 30 else 60)
+    plt.ylim(30, max(fuel_vals) * 1.05 if fuel_vals and max(fuel_vals) > 30 else 60)
     plt.xlabel('t (s)')
     plt.ylabel('psi')
-    return _plotext_panel('🟡 Fuel Sensors (200s + PTC)')
+    return _plotext_panel('🟡 Fuel Sensors (tank, injector, PTC)')
 
 
 def _build_lox_graph() -> Panel:
-    """LOX-side pressure sensors (100-series + PTC) over time."""
+    """LOX-side pressure sensors (LOx tank, LOx injector, chamber) over time."""
     with _graph_lock:
         history = list(_graph_history)
     if len(history) < 2:
         return _waiting_panel('🔴 LOX Sensors')
 
-    t0 = history[0].time_ns / 1e9
-    times = [p.time_ns / 1e9 - t0 for p in history]
-
     plt.clf()
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
-    plt.plot(
-        times,
-        [p.analog_sensors.pt006 for p in history],
-        label='PT-006',
-        color=(255, 220, 0),
-        marker='braille',
+    lox_vals = _plot_sensors(
+        history,
+        history[0].time_ns / 1e9,
+        [
+            ('pt004', 'PT-004', (255, 220, 0)),
+            ('pto401', 'PTO-401', (255, 140, 0)),
+            ('ptc401', 'PTC-401', (0, 200, 220)),
+            ('ptc402', 'PTC-402', (200, 50, 200)),
+        ],
     )
-    plt.plot(
-        times,
-        [p.analog_sensors.pt103 for p in history],
-        label='PT-103',
-        color=(50, 200, 50),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.pto401 for p in history],
-        label='PTO-401',
-        color=(255, 140, 0),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc401 for p in history],
-        label='PTC-401',
-        color=(0, 200, 220),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc402 for p in history],
-        label='PTC-402',
-        color=(200, 50, 200),
-        marker='braille',
-    )
-    lox_vals = (
-        [p.analog_sensors.pt006 for p in history]
-        + [p.analog_sensors.pt103 for p in history]
-        + [p.analog_sensors.pto401 for p in history]
-        + [p.analog_sensors.ptc401 for p in history]
-        + [p.analog_sensors.ptc402 for p in history]
-    )
-    plt.ylim(30, max(lox_vals) * 1.05 if max(lox_vals) > 30 else 60)
+    plt.ylim(30, max(lox_vals) * 1.05 if lox_vals and max(lox_vals) > 30 else 60)
     plt.xlabel('t (s)')
     plt.ylabel('psi')
-    return _plotext_panel('🔴 LOX Sensors (100s + PTC)')
+    return _plotext_panel('🔴 LOX Sensors (tank, injector, PTC)')
 
 
 STATE_COLORS = {
@@ -1294,7 +1243,7 @@ def get_toolbar():
 
     sensors = pkt.analog_sensors
     sensor_parts = []
-    for field, label in [('tc101', 'TC-101'), ('tc102', 'TC-102'), ('pt101', 'PT-101')]:
+    for field, label in [('tc101', 'TC-101'), ('tc102', 'TC-102'), ('pt004', 'PT-004')]:
         if _has_msg_field(sensors, field):
             val = getattr(sensors, field)
             if abs(val) > 1e-6:

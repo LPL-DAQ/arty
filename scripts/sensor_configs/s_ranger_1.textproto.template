@@ -1,0 +1,47 @@
+# Ranger 1 sensor table. Names and positions follow the Ranger 1 P&ID (10/20/2026).
+# Template: cfgana only lists *.textproto, so this file can't be sent by accident.
+# To use: copy to s_ranger_1.textproto, replace every CH with the AIN number the sensor is wired to and every RANGE
+# with the PT's rated psi, then zero each sensor with this final table loaded (neighbouring channels can shift a reading).
+# Only channels listed here are read. Each send replaces the whole config, and the board forgets it on reboot:
+# resend after every power cycle.
+#
+# channel = AIN number (NOT the J5 pad). U7 = AIN0-15 (16 pins, all 15 sensors fit), U8 = AIN16-31 (broken, don't use).
+#   AIN1=pad20  AIN2=pad2   AIN3=pad21  AIN4=pad3   AIN5=pad22  AIN6=pad4   AIN7=pad23
+#   AIN10=pad6  AIN11=pad25 AIN12=pad7  AIN13=pad26 AIN14=pad8  AIN15=pad27   (AIN0, AIN8, AIN9 pads not recorded)
+#
+# PT reading (psig) = counts / 4096 * pt_range_psig + pt_bias_psig
+#   Omega PX319-xKG5V (0-5 V out): pt_range_psig = rated psi (3KG5V: 3000, 2KG5V: 2000, 1KG5V: 1000).
+#   A range belongs to the physical PT: check each one against the part number on its body.
+#   Ranges are from the May 26 Atlas super-hotfire LabJack config (LPL-DAQ/DAC branch May26_Atlas_Nomad_Heatsink_Round6,
+#   configFiles/may26_atlas_super_hotfire/PTconfig.ini), matched by position: Ranger PT-003 = Atlas PT-004,
+#   Ranger PT-004 = Atlas PT-006. PT-303 is new on Ranger, so its range is unknown.
+#   Zero: vent to atmosphere, average ~5 s, set new pt_bias_psig = old pt_bias_psig - average. Per sensor, per pin.
+#
+# TC reading (°C) = K/T lookup of the AD8495 output + tc_bias_deg_c. LOx side is T-type, fuel side K-type.
+#   T-type (LOx, cryogenic): zero in fresh LN2, new tc_bias_deg_c = old tc_bias_deg_c + (-195.8 - reading).
+#   K-type (fuel): zero in ice water, new tc_bias_deg_c = old tc_bias_deg_c + (0 - reading).
+#   A bias over ~3 C means a wrong tc_type, swapped polarity (T: blue +, red -; K: yellow +, red -) or the cold
+#   junction not at the amp. Fix the cause instead of calibrating it away.
+
+# Pressurant
+configs { channel: CH  assignment: PT001   pt_range_psig: 3000   pt_bias_psig: 0 }  # GN2 bottle. MEOP 4300 > 3000: check part
+configs { channel: CH  assignment: PT002   pt_range_psig: 3000   pt_bias_psig: 0 }  # upstream of REG-002, sees bottle pressure: check part
+configs { channel: CH  assignment: PT301   pt_range_psig: 3000   pt_bias_psig: 0 }  # REG-301 outlet
+configs { channel: CH  assignment: PT303   pt_range_psig: RANGE  pt_bias_psig: 0 }  # REG-302 outlet
+
+# Tanks
+configs { channel: CH  assignment: PT003   pt_range_psig: 2000   pt_bias_psig: 0 }  # Jet-A tank, MEOP 900
+configs { channel: CH  assignment: PT004   pt_range_psig: 2000   pt_bias_psig: 0 }  # LOx tank, MEOP 800
+
+# Engine
+configs { channel: CH  assignment: PTO401  pt_range_psig: 1000   pt_bias_psig: 0 }  # LOx injector
+configs { channel: CH  assignment: PTF401  pt_range_psig: 1000   pt_bias_psig: 0 }  # fuel injector
+configs { channel: CH  assignment: PTC401  pt_range_psig: 1000   pt_bias_psig: 0 }  # chamber
+configs { channel: CH  assignment: PTC402  pt_range_psig: 1000   pt_bias_psig: 0 }  # chamber
+
+# TCs
+configs { channel: CH  assignment: TC101   tc_type: T_TYPE  tc_bias_deg_c: 0 }  # LOx tank
+configs { channel: CH  assignment: TC102   tc_type: T_TYPE  tc_bias_deg_c: 0 }  # LOx line, before TV-101
+configs { channel: CH  assignment: TC102_5 tc_type: T_TYPE  tc_bias_deg_c: 0 }  # LOx line, after TV-101
+configs { channel: CH  assignment: TCO401  tc_type: T_TYPE  tc_bias_deg_c: 0 }  # LOx injector
+configs { channel: CH  assignment: TCF401  tc_type: K_TYPE  tc_bias_deg_c: 0 }  # fuel injector

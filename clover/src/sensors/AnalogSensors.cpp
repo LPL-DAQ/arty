@@ -276,6 +276,12 @@ static void sense()
                         sensor_readings.pt301 = curr_reading;
                         break;
                     }
+                    // REG-302 outlet
+                    case AnalogSensor_PT303: {
+                        sensor_readings.has_pt303 = true;
+                        sensor_readings.pt303 = curr_reading;
+                        break;
+                    }
                     // Engine
                     case AnalogSensor_PTF401: {
                         sensor_readings.has_ptf401 = true;
@@ -301,6 +307,11 @@ static void sense()
                     case AnalogSensor_TC002: {
                         sensor_readings.has_tc002 = true;
                         sensor_readings.tc002 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TC101: {
+                        sensor_readings.has_tc101 = true;
+                        sensor_readings.tc101 = curr_reading;
                         break;
                     }
                     case AnalogSensor_TC102: {

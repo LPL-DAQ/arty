@@ -1,13 +1,16 @@
 """
 Fit a TC's Ranger readings against a reference (big DAQ box) and print the tc_bias_deg_c to set.
 
+For TCs used around 0..100 C (ice, room, boil points). The bias is averaged over the points, so it only holds
+across their span. For cryogenic TCs, set the bias from a single LN2 point by hand: bias = -195.8 - reading.
+
 Input CSV, one row per point, same TC:
     serial,amp,ref_c,ranger_c
     K-01,amp1,22.4,23.1
 ref_c = reference reading (average the DAQ readings taken before and after the Ranger one).
 ranger_c = TC reading on Ranger `status`, taken with the tc_bias_deg_c given by --old-bias loaded.
 
-Usage: python tc_fit.py points.csv [--old-bias 0]    |    python tc_fit.py --selftest
+Usage: python tc_fit_0_to_100c.py points.csv [--old-bias 0]    |    python tc_fit_0_to_100c.py --selftest
 """
 
 import argparse

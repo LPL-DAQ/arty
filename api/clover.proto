@@ -156,6 +156,9 @@ enum AnalogSensor {
   // Purge
   PT301 = 9;
 
+  // REG-302 outlet
+  PT303 = 23;
+
   // Engine
   PTF401 = 10;
   PTO401 = 11;
@@ -164,6 +167,7 @@ enum AnalogSensor {
 
   // TCs
   TC002 = 14;
+  TC101 = 24;
   TC102 = 15;
   TC102_5 = 16;
   TCF401 = 17;
@@ -618,6 +622,9 @@ message AnalogSensorReadings {
   // Purge
   optional float pt301 = 9;
 
+  // REG-302 outlet
+  optional float pt303 = 23;
+
   // Engine
   optional float ptf401 = 10;
   optional float pto401 = 11;
@@ -626,6 +633,7 @@ message AnalogSensorReadings {
 
   // TCs
   optional float tc002 = 14;
+  optional float tc101 = 24;
   optional float tc102 = 15;
   optional float tc102_5 = 16;
   optional float tcf401 = 17;

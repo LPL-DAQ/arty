@@ -1,4 +1,0 @@
-# TC and raw volts at the same time: needs a second wire, amp OUT -> J5 pad 6 (AIN10) AND pad 25 (AIN11).
-# The amp output is low impedance, so driving two ADC pins is fine. Bias as in s_bench_tc (0, see the note there).
-configs { channel: 10  assignment: TC002            tc_type: K_TYPE  tc_bias_deg_c: 0 }
-configs { channel: 11  assignment: BATTERY_VOLTAGE  raw_range_v: 4.984  raw_bias_v: 0 }
