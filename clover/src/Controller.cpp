@@ -344,8 +344,8 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         // ?? VALVES
         // TODO
         data.has_ranger_rcs_metrics = true;
-        // TODO BELOW IS MEGA PLACEHOLDER
-        std::tie(data.has_pitch_servo_command, data.has_pitch_servo_command, data.ranger_rcs_metrics) = *rcs_response;
+        // TODO: DataPacket has no RCS valve command fields yet, so the cw and ccw commands are dropped.
+        std::tie(std::ignore, std::ignore, data.ranger_rcs_metrics) = *rcs_response;
 
 #elif CONFIG_HORNET
         auto rcs_response = HornetRcs::tick(data.estimated_state, data.rcs_roll_command_deg);
