@@ -25,6 +25,8 @@ constexpr uint32_t MAX_PWM_PULSE_US = 2000;
 constexpr float HORNET_RCS_THROTTLE_PERCENT = 1.0f; // 100% throttle corresponds to 2000 µs pulse
 // Highest throttle (percent) the open-loop RCS_VALVE bench trace may command.
 constexpr float HORNET_RCS_BENCH_MAX_THROTTLE_PERCENT = 15.0f;
+// When false, the RCS and FLIGHT states hold both RCS propellers at MIN_PWM_PULSE_US. Enable only after the roll gains are reviewed.
+constexpr bool HORNET_RCS_CLOSED_LOOP_ENABLED = false;
 
 // Flight controller outer loop runs every Nth inner-loop tick
 constexpr uint32_t FLIGHT_OUTER_LOOP_DIVISOR = 3;

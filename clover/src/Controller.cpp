@@ -362,6 +362,10 @@ static std::expected<void, Error> tick_active_control(DataPacket& data)
         data.has_rcs_propeller_ccw_command = true;
         data.has_hornet_rcs_metrics = true;
         std::tie(data.rcs_propeller_cw_command, data.rcs_propeller_ccw_command, data.hornet_rcs_metrics) = *rcs_response;
+        if (!HORNET_RCS_CLOSED_LOOP_ENABLED) {
+            data.rcs_propeller_cw_command = MIN_PWM_PULSE_US;
+            data.rcs_propeller_ccw_command = MIN_PWM_PULSE_US;
+        }
 #endif
     }
 
@@ -737,9 +741,15 @@ static void step_control_loop(k_work*)
     // RCS
     // TODO: Check which actually corresponds to what
     // err = BetaTop::tick(data.rcs_propeller_cw_command);
-    // err = BetaCW::tick(data.rcs_propeller_cw_command);
+    auto rcs_cw_status = BetaCW::tick(data.rcs_propeller_cw_command);
+    if (!rcs_cw_status) {
+        LOG_ERR("Error while ticking rcs cw: %s", rcs_cw_status.error().build_message().c_str());
+    }
     // err = BetaBottom::tick(data.rcs_propeller_ccw_command);
-    // err = BetaCCW::tick(data.rcs_propeller_ccw_command);
+    auto rcs_ccw_status = BetaCCW::tick(data.rcs_propeller_ccw_command);
+    if (!rcs_ccw_status) {
+        LOG_ERR("Error while ticking rcs ccw: %s", rcs_ccw_status.error().build_message().c_str());
+    }
 
     // err = MotorTop::tick(data.main_propeller_command);
     // err = MotorBottom::tick(data.main_propeller_command);

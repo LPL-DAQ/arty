@@ -4,9 +4,11 @@ Spins one RCS propeller at a time from a throttle trace, with no roll control in
 
 Closed-loop RCS (the RCS and FLIGHT states) is a separate path. Its roll gains and thresholds have not been tested in degree units, so it should not run on the vehicle until they are reviewed. When it fires, it commands `HORNET_RCS_THROTTLE_PERCENT` from `config.h`, which is currently full throttle (2000 us), with no bench cap.
 
+Closed-loop RCS output is disabled until the gains are reviewed: with `HORNET_RCS_CLOSED_LOOP_ENABLED = false` in `config.h`, the RCS and FLIGHT states hold both propellers at 1000 us while the controller and its metrics keep running. Only this RCS valve sequence drives the ESCs.
+
 ## Before you start
 
-- The `BetaCW::tick` and `BetaCCW::tick` writes in `clover/src/Controller.cpp` must be enabled first. Until then this test only changes telemetry and nothing spins.
+- This firmware drives the BetaCW and BetaCCW pins. Confirm the ESC signal wiring before connecting the battery.
 - Props off.
 - Motors clamped to the bench.
 - Power the ESCs from the 4S LiPo only, not a bench supply.
