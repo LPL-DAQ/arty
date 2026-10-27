@@ -16,8 +16,7 @@ static constexpr float HORNET_PITCH_MOMENT_ARM  = -67.67f;  // TODO: fill in rea
 static constexpr float HORNET_MAX_GIMBLE_DEG    = 12.0f;
 
 // Actuonix P16-50-64-12-P behind a LAC board. The LAC closes the position loop and maps its RC
-// input pulse width linearly across the stroke, so MIN_PWM_PULSE_US is fully retracted and
-// MAX_PWM_PULSE_US is fully extended.
+// input pulse width linearly across the stroke, between each axis's retract and extend pulses below.
 static constexpr float HORNET_TVC_STROKE_MM        = 50.0f;
 static constexpr float HORNET_TVC_MAX_SPEED_MM_S   = 18.0f;
 
@@ -26,21 +25,40 @@ static constexpr float HORNET_TVC_PIVOT_TO_LINK_MM  = 68.20f;
 static constexpr float HORNET_TVC_PIVOT_TO_MOUNT_MM = 128.25f;
 static constexpr float HORNET_TVC_NEUTRAL_ANGLE_DEG = 69.96f;
 
-// Extension at zero gimbal. Mid-stroke leaves equal travel in both directions.
-static constexpr float HORNET_TVC_NEUTRAL_EXTENSION_MM = HORNET_TVC_STROKE_MM / 2.0f;
-
 static constexpr float HORNET_TVC_MIN_THRUST_N = 1e-3f;
 
-static constexpr float PULSE_US_PER_MM = (MAX_PWM_PULSE_US - MIN_PWM_PULSE_US) / HORNET_TVC_STROKE_MM;
+// Per-axis calibration. Set these from bench measurements; the logic below does not need to change.
+// Direction +1 means a positive gimbal angle extends the actuator, -1 means it retracts.
+static constexpr float HORNET_TVC_PITCH_NEUTRAL_EXTENSION_MM = 25.0f;
+static constexpr float HORNET_TVC_YAW_NEUTRAL_EXTENSION_MM   = 25.0f;
+static constexpr uint32_t HORNET_TVC_PITCH_RETRACT_PULSE_US  = 1000;
+static constexpr uint32_t HORNET_TVC_PITCH_EXTEND_PULSE_US   = 2000;
+static constexpr uint32_t HORNET_TVC_YAW_RETRACT_PULSE_US    = 1000;
+static constexpr uint32_t HORNET_TVC_YAW_EXTEND_PULSE_US     = 2000;
+static constexpr float HORNET_TVC_PITCH_DIRECTION            = 1.0f;
+static constexpr float HORNET_TVC_YAW_DIRECTION              = 1.0f;
+
+static constexpr HornetTvc::AxisCalibration PITCH_CALIBRATION{
+    HORNET_TVC_PITCH_NEUTRAL_EXTENSION_MM, HORNET_TVC_PITCH_RETRACT_PULSE_US, HORNET_TVC_PITCH_EXTEND_PULSE_US, HORNET_TVC_PITCH_DIRECTION};
+static constexpr HornetTvc::AxisCalibration YAW_CALIBRATION{
+    HORNET_TVC_YAW_NEUTRAL_EXTENSION_MM, HORNET_TVC_YAW_RETRACT_PULSE_US, HORNET_TVC_YAW_EXTEND_PULSE_US, HORNET_TVC_YAW_DIRECTION};
+
+static constexpr bool calibration_is_valid(const HornetTvc::AxisCalibration& cal)
+{
+    const auto pulse_ok = [](uint32_t pulse_us) { return pulse_us >= MIN_PWM_PULSE_US && pulse_us <= MAX_PWM_PULSE_US; };
+    return cal.neutral_extension_mm >= 0.0f && cal.neutral_extension_mm <= HORNET_TVC_STROKE_MM && pulse_ok(cal.retract_pulse_us) &&
+           pulse_ok(cal.extend_pulse_us) && cal.retract_pulse_us != cal.extend_pulse_us && (cal.direction == 1.0f || cal.direction == -1.0f);
+}
+static_assert(calibration_is_valid(PITCH_CALIBRATION));
+static_assert(calibration_is_valid(YAW_CALIBRATION));
 
 // Furthest the extension command may move in one tick without exceeding the actuator's no-load speed.
 static constexpr float MAX_EXTENSION_STEP_MM = HORNET_TVC_MAX_SPEED_MM_S * Controller::SEC_PER_CONTROL_TICK;
 
-static float pitch_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
-static float yaw_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
+static float pitch_extension_mm = PITCH_CALIBRATION.neutral_extension_mm;
+static float yaw_extension_mm = YAW_CALIBRATION.neutral_extension_mm;
 
-/// Actuator extension required to hold a gimbal angle, from the linkage geometry above.
-static float gimbal_deg_to_extension_mm(float gimbal_deg)
+float HornetTvc::gimbal_deg_to_extension_mm(float gimbal_deg, const AxisCalibration& cal)
 {
     const float link = HORNET_TVC_PIVOT_TO_LINK_MM;
     const float mount = HORNET_TVC_PIVOT_TO_MOUNT_MM;
@@ -49,10 +67,11 @@ static float gimbal_deg_to_extension_mm(float gimbal_deg)
     const float squares = link * link + mount * mount;
     const float cross = 2.0f * link * mount;
 
-    const float length_mm = std::sqrt(squares - cross * std::cos(neutral_rad + gimbal_deg * DEG2RAD_F));
+    const float linkage_deg = cal.direction * gimbal_deg;
+    const float length_mm = std::sqrt(squares - cross * std::cos(neutral_rad + linkage_deg * DEG2RAD_F));
     const float neutral_length_mm = std::sqrt(squares - cross * std::cos(neutral_rad));
 
-    return HORNET_TVC_NEUTRAL_EXTENSION_MM + (length_mm - neutral_length_mm);
+    return cal.neutral_extension_mm + (length_mm - neutral_length_mm);
 }
 
 /// Advance a held extension toward its target, capped by the actuator's maximum speed.
@@ -63,31 +82,42 @@ static float rate_limit_extension_mm(float target_mm, float& held_mm)
     return held_mm;
 }
 
-static uint32_t extension_mm_to_pulse_us(float extension_mm)
+uint32_t HornetTvc::extension_mm_to_pulse_us(float extension_mm, const AxisCalibration& cal)
 {
     const float clamped_mm = std::clamp(extension_mm, 0.0f, HORNET_TVC_STROKE_MM);
-    return static_cast<uint32_t>(std::lround(MIN_PWM_PULSE_US + (clamped_mm * PULSE_US_PER_MM)));
+    const float retract_us = static_cast<float>(cal.retract_pulse_us);
+    const float extend_us = static_cast<float>(cal.extend_pulse_us);
+    const float pulse_us = retract_us + clamped_mm * ((extend_us - retract_us) / HORNET_TVC_STROKE_MM);
+
+    const long low_us = std::max<long>(std::min(cal.retract_pulse_us, cal.extend_pulse_us), MIN_PWM_PULSE_US);
+    const long high_us = std::min<long>(std::max(cal.retract_pulse_us, cal.extend_pulse_us), MAX_PWM_PULSE_US);
+    return static_cast<uint32_t>(std::clamp(std::lround(pulse_us), low_us, high_us));
 }
 
 /// Reset internal state before an active control trace
 void HornetTvc::reset()
 {
     MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
-    pitch_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
-    yaw_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
+    pitch_extension_mm = PITCH_CALIBRATION.neutral_extension_mm;
+    yaw_extension_mm = YAW_CALIBRATION.neutral_extension_mm;
 }
 
-uint32_t HornetTvc::neutral_pulse_us()
+uint32_t HornetTvc::neutral_pitch_pulse_us()
 {
-    return extension_mm_to_pulse_us(HORNET_TVC_NEUTRAL_EXTENSION_MM);
+    return extension_mm_to_pulse_us(PITCH_CALIBRATION.neutral_extension_mm, PITCH_CALIBRATION);
 }
 
-uint32_t HornetTvc::command_neutral()
+uint32_t HornetTvc::neutral_yaw_pulse_us()
+{
+    return extension_mm_to_pulse_us(YAW_CALIBRATION.neutral_extension_mm, YAW_CALIBRATION);
+}
+
+std::tuple<uint32_t, uint32_t> HornetTvc::command_neutral()
 {
     MutexGuard hornet_tvc_guard{&hornet_tvc_lock};
-    pitch_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
-    yaw_extension_mm = HORNET_TVC_NEUTRAL_EXTENSION_MM;
-    return extension_mm_to_pulse_us(HORNET_TVC_NEUTRAL_EXTENSION_MM);
+    pitch_extension_mm = PITCH_CALIBRATION.neutral_extension_mm;
+    yaw_extension_mm = YAW_CALIBRATION.neutral_extension_mm;
+    return {neutral_pitch_pulse_us(), neutral_yaw_pulse_us()};
 }
 
 /// Clamp gimbal angles, convert to extension, rate limit and map to pulse width. Caller must hold hornet_tvc_lock.
@@ -96,14 +126,14 @@ static std::tuple<float, float, HornetTvcMetrics> command_gimbal_deg(float pitch
     pitch_gimbal_deg = std::clamp(pitch_gimbal_deg, -HORNET_MAX_GIMBLE_DEG, HORNET_MAX_GIMBLE_DEG);
     yaw_gimbal_deg   = std::clamp(yaw_gimbal_deg,   -HORNET_MAX_GIMBLE_DEG, HORNET_MAX_GIMBLE_DEG);
 
-    const float pitch_target_mm = gimbal_deg_to_extension_mm(pitch_gimbal_deg);
-    const float yaw_target_mm   = gimbal_deg_to_extension_mm(yaw_gimbal_deg);
+    const float pitch_target_mm = HornetTvc::gimbal_deg_to_extension_mm(pitch_gimbal_deg, PITCH_CALIBRATION);
+    const float yaw_target_mm   = HornetTvc::gimbal_deg_to_extension_mm(yaw_gimbal_deg, YAW_CALIBRATION);
 
     const float pitch_command_mm = rate_limit_extension_mm(pitch_target_mm, pitch_extension_mm);
     const float yaw_command_mm   = rate_limit_extension_mm(yaw_target_mm, yaw_extension_mm);
 
-    const uint32_t pitch_pulse_us = extension_mm_to_pulse_us(pitch_command_mm);
-    const uint32_t yaw_pulse_us   = extension_mm_to_pulse_us(yaw_command_mm);
+    const uint32_t pitch_pulse_us = HornetTvc::extension_mm_to_pulse_us(pitch_command_mm, PITCH_CALIBRATION);
+    const uint32_t yaw_pulse_us   = HornetTvc::extension_mm_to_pulse_us(yaw_command_mm, YAW_CALIBRATION);
 
     HornetTvcMetrics metrics = HornetTvcMetrics_init_default;
     metrics.commanded_pitch_gimbal_deg = pitch_gimbal_deg;

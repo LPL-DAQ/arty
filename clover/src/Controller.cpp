@@ -48,8 +48,8 @@ auto prev_yaw_actuator_command = TvcActuatorCommand{};
 float prev_main_propeller_command = 0.0f;
 float prev_rcs_propeller_cw_command = 0.0f;
 float prev_rcs_propeller_ccw_command = 0.0f;
-float prev_pitch_servo_command = HornetTvc::neutral_pulse_us();
-float prev_yaw_servo_command = HornetTvc::neutral_pulse_us();
+float prev_pitch_servo_command = HornetTvc::neutral_pitch_pulse_us();
+float prev_yaw_servo_command = HornetTvc::neutral_yaw_pulse_us();
 #endif
 
 // State-specific data. Each is only valid within their respective states.
@@ -359,9 +359,7 @@ static void tick_abort(DataPacket& data)
 #ifdef CONFIG_RANGER
     // TODO: command Ranger valves to a safe state. That state depends on the fluid system, so it is not guessed here.
 #elif CONFIG_HORNET
-    const uint32_t tvc_neutral_pulse_us = HornetTvc::command_neutral();
-    data.pitch_servo_command = tvc_neutral_pulse_us;
-    data.yaw_servo_command = tvc_neutral_pulse_us;
+    std::tie(data.pitch_servo_command, data.yaw_servo_command) = HornetTvc::command_neutral();
     data.main_propeller_command = MIN_PWM_PULSE_US;
     data.rcs_propeller_cw_command = MIN_PWM_PULSE_US;
     data.rcs_propeller_ccw_command = MIN_PWM_PULSE_US;

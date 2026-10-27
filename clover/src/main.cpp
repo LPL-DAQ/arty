@@ -124,19 +124,21 @@ int main(void)
 #ifdef CONFIG_PWM_ACTUATORS
 #ifdef CONFIG_HORNET
     // Full retract is past the gimbal limit, so the TVC actuators start at neutral.
-    const uint32_t tvc_initial_pulse_us = HornetTvc::neutral_pulse_us();
+    const uint32_t tvc_pitch_initial_pulse_us = HornetTvc::neutral_pitch_pulse_us();
+    const uint32_t tvc_yaw_initial_pulse_us = HornetTvc::neutral_yaw_pulse_us();
 #else
-    const uint32_t tvc_initial_pulse_us = MIN_PWM_PULSE_US;
+    const uint32_t tvc_pitch_initial_pulse_us = MIN_PWM_PULSE_US;
+    const uint32_t tvc_yaw_initial_pulse_us = MIN_PWM_PULSE_US;
 #endif
 
     LOG_INF("Initializing tvc pitch");
-    if (auto result = TvcPitch::init(tvc_initial_pulse_us); !result) {
+    if (auto result = TvcPitch::init(tvc_pitch_initial_pulse_us); !result) {
         LOG_ERR("Failed to initialize tvc pitch: %s", result.error().build_message().c_str());
         return 0;
     }
 
     LOG_INF("Initializing tvc yaw");
-    if (auto result = TvcYaw::init(tvc_initial_pulse_us); !result) {
+    if (auto result = TvcYaw::init(tvc_yaw_initial_pulse_us); !result) {
         LOG_ERR("Failed to initialize tvc yaw: %s", result.error().build_message().c_str());
         return 0;
     }
