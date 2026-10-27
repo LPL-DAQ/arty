@@ -1,0 +1,54 @@
+rcs_cw_valve_trace {
+  total_time_ms: 15000
+  segments {
+    start_ms: 0
+    length_ms: 15000
+    linear {
+      start_val: 0.0
+      end_val: 0.0
+    }
+  }
+}
+rcs_ccw_valve_trace {
+  total_time_ms: 15000
+  segments {
+    start_ms: 0
+    length_ms: 3000
+    linear {
+      start_val: 0.0
+      end_val: 0.0
+    }
+  }
+  segments {
+    start_ms: 3000
+    length_ms: 3000
+    linear {
+      start_val: 0.0
+      end_val: 10.0
+    }
+  }
+  segments {
+    start_ms: 6000
+    length_ms: 3000
+    linear {
+      start_val: 10.0
+      end_val: 10.0
+    }
+  }
+  segments {
+    start_ms: 9000
+    length_ms: 3000
+    linear {
+      start_val: 10.0
+      end_val: 0.0
+    }
+  }
+  segments {
+    start_ms: 12000
+    length_ms: 3000
+    linear {
+      start_val: 0.0
+      end_val: 0.0
+    }
+  }
+}
