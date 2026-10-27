@@ -1,4 +1,4 @@
-# HornetTVC and HornetThrottle test expectations are stale and are expected to fail.
+# HornetThrottle test expectations are stale and are expected to fail.
 target_sources(app PRIVATE
     HornetRCS_test.cpp
     HornetTVC_test.cpp
