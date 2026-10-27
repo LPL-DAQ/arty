@@ -73,6 +73,7 @@ RCS_VALVE_SEQ_DIR = pathlib.Path('sequences/rcs_valve')
 RCS_SEQ_DIR = pathlib.Path('sequences/rcs')
 STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
+SENSOR_CONFIG_DIR = pathlib.Path('sensor_configs')
 
 # Network
 ZEPHYR_IP = '169.254.99.99'  # real board
@@ -87,7 +88,7 @@ DATA_PORT = 19691
 #   sensor — field name string       (ClickHouse 'sensor')
 #   value  — Float64 reading         (ClickHouse 'value')
 #   event  — state label for gnc_state rows, else ''  (ClickHouse 'event')
-#   system — always 'atlas'          (ClickHouse 'system')
+#   system — always 'ranger'         (ClickHouse 'system')
 #   source — always 'gnc'            (ClickHouse 'source')
 # PROTO CHANGE: time is now time_ns (nanoseconds), updated comment above.
 CSV_COLUMNS = ['time', 'sensor', 'value', 'event', 'system', 'source']
@@ -109,6 +110,7 @@ _csv_fh = None  # open file handle
 _csv_writer = None  # csv.DictWriter bound to _csv_fh
 _csv_rows_written: int = 0
 _seq_recording: bool = False
+_manual_recording: bool = False  # `rec` toggles it: record while IDLE (sensor cal)
 
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
@@ -162,7 +164,7 @@ def listen_for_telemetry():
                     elif lock is _csv_store_lock:
                         if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE' and 'PRIMED' not in clover_pb2.SystemState.Name(packet.state):
                             _seq_recording = True
-                        if _seq_recording:
+                        if _seq_recording or _manual_recording:
                             _csv_store.append((recv_time, packet))
                     else:
                         _graph_history.append(packet)
@@ -239,25 +241,27 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     # Common analog/estimate data.
     row.update(
         {
-            #'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
-            #'pt001': _opt(pkt.analog_sensors, 'pt001'),
-            #'pt002': _opt(pkt.analog_sensors, 'pt002'),
-            #'pt003': _opt(pkt.analog_sensors, 'pt003'),
+            'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
+            'pt001': _opt(pkt.analog_sensors, 'pt001'),
+            'pt002': _opt(pkt.analog_sensors, 'pt002'),
+            'pt003': _opt(pkt.analog_sensors, 'pt003'),
             'pt004': _opt(pkt.analog_sensors, 'pt004'),
             'pt005': _opt(pkt.analog_sensors, 'pt005'),
             'pt006': _opt(pkt.analog_sensors, 'pt006'),
             'pt103': _opt(pkt.analog_sensors, 'pt103'),
             'pt203': _opt(pkt.analog_sensors, 'pt203'),
-            #'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            'pt303': _opt(pkt.analog_sensors, 'pt303'),
             'ptf401': _opt(pkt.analog_sensors, 'ptf401'),
             'pto401': _opt(pkt.analog_sensors, 'pto401'),
             'ptc401': _opt(pkt.analog_sensors, 'ptc401'),
             'ptc402': _opt(pkt.analog_sensors, 'ptc402'),
-            #'tc002': _opt(pkt.analog_sensors, 'tc002'),
-            #'tc102': _opt(pkt.analog_sensors, 'tc102'),
-            #'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
-            #'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
-            #'tco401': _opt(pkt.analog_sensors, 'tco401'),
+            'tc002': _opt(pkt.analog_sensors, 'tc002'),
+            'tc101': _opt(pkt.analog_sensors, 'tc101'),
+            'tc102': _opt(pkt.analog_sensors, 'tc102'),
+            'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
+            'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
+            'tco401': _opt(pkt.analog_sensors, 'tco401'),
             #'ptg001': _opt(pkt.analog_sensors, 'ptg001'),
             #'ptg002': _opt(pkt.analog_sensors, 'ptg002'),
             #'ptg101': _opt(pkt.analog_sensors, 'ptg101'),
@@ -406,7 +410,7 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
                 'sensor': sensor,
                 'value': value,
                 'event': event,
-                'system': 'atlas',  # change if not atlas
+                'system': 'ranger',  # vehicle; sensor names mean different sensors on atlas vs ranger
                 'source': 'gnc',  # leave as all GNC for now
             }
         )
@@ -467,15 +471,27 @@ def _reconnect_and_resubscribe():
 
 
 _USEFUL_SENSORS: dict[str, str] = {
+    'pt001': 'PT-001',
+    'pt002': 'PT-002',
+    'pt003': 'PT-003',
     'pt004': 'PT-004',
     'pt005': 'PT-005',
     'pt006': 'PT-006',
     'pt103': 'PT-103',
     'pt203': 'PT-203',
+    'pt301': 'PT-301',
+    'pt303': 'PT-303',
     'ptf401': 'PTF-401',
     'pto401': 'PTO-401',
     'ptc401': 'PTC-401',
     'ptc402': 'PTC-402',
+    'tc002': 'TC-002 (°C)',
+    'battery_voltage': 'Battery voltage (V)',
+    'tc101': 'TC-101 (°C)',
+    'tc102': 'TC-102 (°C)',
+    'tc102_5': 'TC-102.5 (°C)',
+    'tcf401': 'TCF-401 (°C)',
+    'tco401': 'TCO-401 (°C)',
 }
 
 _MOTOR_SENSORS: dict[str, str] = {
@@ -651,7 +667,7 @@ def _flush_loop():
 
         if csv_batch:
             global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
-            if _csv_fh is None and _seq_recording:
+            if _csv_fh is None and (_seq_recording or _manual_recording):
                 _csv_path = (
                     pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
                 )
@@ -674,7 +690,8 @@ def _flush_loop():
         if _seq_recording and pkt is not None:
             if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
                 _seq_recording = False
-                _close_csv()
+        if _csv_fh is not None and not (_seq_recording or _manual_recording):
+            _close_csv()
 
 
 # ── Live status display ──────────────────────────────────────────────────────
@@ -770,126 +787,67 @@ def _build_lox_valve_graph() -> Panel:
     return _plotext_panel('🔴 LOX Valve')
 
 
+def _plot_sensors(history, t0: float, sensors) -> list[float]:
+    """Plot each (field, label, color) over the samples that carry it, so a sensor not read reads as a gap, not 0."""
+    plotted = []
+    for field, label, color in sensors:
+        pts = [(p.time_ns / 1e9 - t0, getattr(p.analog_sensors, field)) for p in history if _has(p.analog_sensors, field)]
+        if pts:
+            plt.plot([t for t, _ in pts], [v for _, v in pts], label=label, color=color, marker='braille')
+            plotted += [v for _, v in pts]
+    return plotted
+
+
 def _build_fuel_graph() -> Panel:
-    """Fuel-side pressure sensors (200-series + PTC) over time."""
+    """Fuel-side pressure sensors (Jet-A tank, fuel injector, chamber) over time."""
     with _graph_lock:
         history = list(_graph_history)
     if len(history) < 2:
         return _waiting_panel('🟡 Fuel Sensors')
 
-    t0 = history[0].time_ns / 1e9
-    times = [p.time_ns / 1e9 - t0 for p in history]
-
     plt.clf()
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
-    plt.plot(
-        times,
-        [p.analog_sensors.pt006 for p in history],
-        label='PT-006',
-        color=(255, 220, 0),
-        marker='braille',
+    fuel_vals = _plot_sensors(
+        history,
+        history[0].time_ns / 1e9,
+        [
+            ('pt003', 'PT-003', (255, 220, 0)),
+            ('ptf401', 'PTF-401', (255, 140, 0)),
+            ('ptc401', 'PTC-401', (0, 200, 220)),
+            ('ptc402', 'PTC-402', (200, 50, 200)),
+        ],
     )
-    plt.plot(
-        times,
-        [p.analog_sensors.pt203 for p in history],
-        label='PT-203',
-        color=(50, 200, 50),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptf401 for p in history],
-        label='PTF-401',
-        color=(255, 140, 0),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc401 for p in history],
-        label='PTC-401',
-        color=(0, 200, 220),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc402 for p in history],
-        label='PTC-402',
-        color=(200, 50, 200),
-        marker='braille',
-    )
-    fuel_vals = (
-        [p.analog_sensors.pt006 for p in history]
-        + [p.analog_sensors.pt203 for p in history]
-        + [p.analog_sensors.ptf401 for p in history]
-        + [p.analog_sensors.ptc401 for p in history]
-        + [p.analog_sensors.ptc402 for p in history]
-    )
-    plt.ylim(30, max(fuel_vals) * 1.05 if max(fuel_vals) > 30 else 60)
+    plt.ylim(30, max(fuel_vals) * 1.05 if fuel_vals and max(fuel_vals) > 30 else 60)
     plt.xlabel('t (s)')
     plt.ylabel('psi')
-    return _plotext_panel('🟡 Fuel Sensors (200s + PTC)')
+    return _plotext_panel('🟡 Fuel Sensors (tank, injector, PTC)')
 
 
 def _build_lox_graph() -> Panel:
-    """LOX-side pressure sensors (100-series + PTC) over time."""
+    """LOX-side pressure sensors (LOx tank, LOx injector, chamber) over time."""
     with _graph_lock:
         history = list(_graph_history)
     if len(history) < 2:
         return _waiting_panel('🔴 LOX Sensors')
 
-    t0 = history[0].time_ns / 1e9
-    times = [p.time_ns / 1e9 - t0 for p in history]
-
     plt.clf()
     plt.plotsize(_half_width(), 15)
     plt.theme('dark')
-    plt.plot(
-        times,
-        [p.analog_sensors.pt006 for p in history],
-        label='PT-006',
-        color=(255, 220, 0),
-        marker='braille',
+    lox_vals = _plot_sensors(
+        history,
+        history[0].time_ns / 1e9,
+        [
+            ('pt004', 'PT-004', (255, 220, 0)),
+            ('pto401', 'PTO-401', (255, 140, 0)),
+            ('ptc401', 'PTC-401', (0, 200, 220)),
+            ('ptc402', 'PTC-402', (200, 50, 200)),
+        ],
     )
-    plt.plot(
-        times,
-        [p.analog_sensors.pt103 for p in history],
-        label='PT-103',
-        color=(50, 200, 50),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.pto401 for p in history],
-        label='PTO-401',
-        color=(255, 140, 0),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc401 for p in history],
-        label='PTC-401',
-        color=(0, 200, 220),
-        marker='braille',
-    )
-    plt.plot(
-        times,
-        [p.analog_sensors.ptc402 for p in history],
-        label='PTC-402',
-        color=(200, 50, 200),
-        marker='braille',
-    )
-    lox_vals = (
-        [p.analog_sensors.pt006 for p in history]
-        + [p.analog_sensors.pt103 for p in history]
-        + [p.analog_sensors.pto401 for p in history]
-        + [p.analog_sensors.ptc401 for p in history]
-        + [p.analog_sensors.ptc402 for p in history]
-    )
-    plt.ylim(30, max(lox_vals) * 1.05 if max(lox_vals) > 30 else 60)
+    plt.ylim(30, max(lox_vals) * 1.05 if lox_vals and max(lox_vals) > 30 else 60)
     plt.xlabel('t (s)')
     plt.ylabel('psi')
-    return _plotext_panel('🔴 LOX Sensors (100s + PTC)')
+    return _plotext_panel('🔴 LOX Sensors (tank, injector, PTC)')
 
 
 STATE_COLORS = {
@@ -1187,7 +1145,7 @@ def _build_status_renderable():
                 unit = '°C'
             else:
                 unit = 'V'
-            table.add_row(sensor.upper(), f'{reading:.2f}', unit)
+            table.add_row(sensor.upper(), f'{reading:.3f}' if unit == 'V' else f'{reading:.2f}', unit)
 
         bottom_columns.append(
             Panel(
@@ -1285,7 +1243,7 @@ def get_toolbar():
 
     sensors = pkt.analog_sensors
     sensor_parts = []
-    for field, label in [('tc101', 'TC-101'), ('tc102', 'TC-102'), ('pt101', 'PT-101')]:
+    for field, label in [('tc101', 'TC-101'), ('tc102', 'TC-102'), ('pt004', 'PT-004')]:
         if _has_msg_field(sensors, field):
             val = getattr(sensors, field)
             if abs(val) > 1e-6:
@@ -1407,19 +1365,51 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 # ── Command implementations ──────────────────────────────────────────────────
 
 
+def _print_sensor_configs(configs):
+    """Show what is about to be sent, so a wrong channel or range is caught before it reaches the board."""
+    table = Table(box=box.SIMPLE_HEAD, header_style=THEME['primary'], border_style=THEME['panel_border'], padding=(0, 2))
+    for col in ('Channel', 'Sensor', 'Type', 'Range', 'Bias'):
+        table.add_column(col)
+    for c in configs:
+        if c.HasField('pt_range_psig'):
+            kind, rng, bias = 'PT (psig)', c.pt_range_psig, c.pt_bias_psig
+        elif c.HasField('raw_range_v'):
+            kind, rng, bias = 'raw (V)', c.raw_range_v, c.raw_bias_v
+        else:
+            kind, rng, bias = f'TC {clover_pb2.TCType.Name(c.tc_type)} (°C)', '-', c.tc_bias_deg_c
+        table.add_row(f'AIN{c.channel}', clover_pb2.AnalogSensor.Name(c.assignment), kind, str(rng), str(bias))
+    console.print(table)
+
+
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
     
     console.print('    Profile:')
-    console.print('      [1] Default  (actual vehicle)')
+    console.print(f'      [1] Sensor table (from {SENSOR_CONFIG_DIR}/)')
     console.print('      [2] Test     (assigns channels 0-21)')
     console.print('      [3] Test 2   (assigns channels 22-31)')
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
-    
+
     if profile == '1':
-        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
-        configs = []
-        
+        if not _list_saved_sequences(SENSOR_CONFIG_DIR):
+            console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
+            return
+        # A bad table file must not crash the client (and stop logging) mid-test
+        try:
+            table = _pick_and_load_sequence(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
+        except text_format.ParseError as e:
+            console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
+            return
+        # channel and assignment are required; a row missing one parses fine but fails to serialize
+        if missing := table.FindInitializationErrors():
+            console.print(f'  [{THEME["danger"]}]Sensor table is missing {", ".join(missing)}, nothing sent[/{THEME["danger"]}]')
+            return
+        configs = list(table.configs)
+        _print_sensor_configs(configs)
+        if not Confirm.ask('  Send this table?', default=True):
+            console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+            return
+
     elif profile == '2':
         configs = []
         
@@ -1993,6 +1983,17 @@ def cmd_configure_flight_controller_gains():
         console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
 
 
+def cmd_toggle_recording():
+    """Start/stop CSV recording regardless of state, e.g. to log sensor cal points while IDLE."""
+    global _manual_recording
+    _manual_recording = not _manual_recording
+    t = THEME
+    if _manual_recording:
+        console.print(f'  [{t["success"]}]Recording to data/raw_sensors_*.csv. `rec` again to stop.[/{t["success"]}]')
+    else:
+        console.print(f'  [{t["muted"]}]Recording stopped, file closes within ~1 s.[/{t["muted"]}]')
+
+
 # TODO: is this all that's needed?
 def cmd_calibrate_tvc():
     """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
@@ -2245,6 +2246,7 @@ MENU_ITEMS = [
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
     ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('rec', 'record', 'Start/stop CSV recording (works while IDLE)', cmd_toggle_recording),
     ('cfgv', 'cfgv', 'Configure regular valves', cmd_configure_valves),
     ('v', 'v', 'Actuate valve', cmd_actuate_valve),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),

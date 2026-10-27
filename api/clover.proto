@@ -114,7 +114,7 @@ message ConfigureAnalogSensorsRequest {
   repeated AnalogSensorConfig configs = 1;
 }
 
-// Either all pt_* fields must be set, or all tc_* fields must be set, or all raw_* fields must be set.
+// Set exactly one group: all pt_* fields, or tc_type (tc_bias_deg_c optional), or all raw_* fields.
 message AnalogSensorConfig {
   // Sensor input number, corresponds to an ADC and its channel. Set in devicetree.
   required uint32 channel = 1;
@@ -124,6 +124,8 @@ message AnalogSensorConfig {
   optional float pt_bias_psig = 4;
 
   optional TCType tc_type = 5;
+  // Added to the TC reading after conversion, for per-sensor calibration. Requires tc_type.
+  optional float tc_bias_deg_c = 8;
 
   optional float raw_range_v = 6;
   optional float raw_bias_v = 7;
@@ -155,6 +157,9 @@ enum AnalogSensor {
   // Purge
   PT301 = 9;
 
+  // REG-302 outlet
+  PT303 = 23;
+
   // Engine
   PTF401 = 10;
   PTO401 = 11;
@@ -163,6 +168,7 @@ enum AnalogSensor {
 
   // TCs
   TC002 = 14;
+  TC101 = 24;
   TC102 = 15;
   TC102_5 = 16;
   TCF401 = 17;
@@ -617,6 +623,9 @@ message AnalogSensorReadings {
   // Purge
   optional float pt301 = 9;
 
+  // REG-302 outlet
+  optional float pt303 = 23;
+
   // Engine
   optional float ptf401 = 10;
   optional float pto401 = 11;
@@ -625,6 +634,7 @@ message AnalogSensorReadings {
 
   // TCs
   optional float tc002 = 14;
+  optional float tc101 = 24;
   optional float tc102 = 15;
   optional float tc102_5 = 16;
   optional float tcf401 = 17;

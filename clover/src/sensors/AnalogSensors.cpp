@@ -6,6 +6,7 @@
 #include "AdcReadPlan.h"
 #include "clover.pb.h"
 #include <array>
+#include <cmath>
 #include <optional>
 #include <tuple>
 #include <zephyr/device.h>
@@ -228,7 +229,8 @@ static void sense()
                             break;
                         }
                         case TCType_T_TYPE: {
-                            // Reading is from -200 to 50 deg C
+                            // Reading is from -200 to 400 deg C. The AD8495 is a K amp but works with T using the NIST T table
+                            // (ADI, "AD8495 Interface to Type T Thermocouples").
                             curr_reading = TcTTypeVToDegCLut::sample(unamplified_v);
                             break;
                         }
@@ -238,6 +240,9 @@ static void sense()
                             curr_reading = -9999.0f;
                             break;
                         }
+                        }
+                        if (config.has_tc_bias_deg_c) {
+                            curr_reading += config.tc_bias_deg_c;
                         }
                     }
 
@@ -302,6 +307,12 @@ static void sense()
                         sensor_readings.pt301 = curr_reading;
                         break;
                     }
+                    // REG-302 outlet
+                    case AnalogSensor_PT303: {
+                        sensor_readings.has_pt303 = true;
+                        sensor_readings.pt303 = curr_reading;
+                        break;
+                    }
                     // Engine
                     case AnalogSensor_PTF401: {
                         sensor_readings.has_ptf401 = true;
@@ -327,6 +338,11 @@ static void sense()
                     case AnalogSensor_TC002: {
                         sensor_readings.has_tc002 = true;
                         sensor_readings.tc002 = curr_reading;
+                        break;
+                    }
+                    case AnalogSensor_TC101: {
+                        sensor_readings.has_tc101 = true;
+                        sensor_readings.tc101 = curr_reading;
                         break;
                     }
                     case AnalogSensor_TC102: {
@@ -433,17 +449,17 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
         }
         assigned_channels[config.channel] = true;
 
-        // Check assignment
-        if (config.assignment < _AnalogSensor_MIN || config.assignment > _AnalogSensor_MAX) {
+        // Check assignment. UNKNOWN is in range but has no reading field, it would log every tick
+        if (config.assignment <= AnalogSensor_UNKNOWN_ANALOG_SENSOR || config.assignment > _AnalogSensor_MAX) {
             return std::unexpected(Error::from_cause("invalid sensor assignment %d", config.assignment));
         }
         if (assigned_sensors[config.assignment]) {
-            return std::unexpected(Error::from_cause("sensor %d is assigned multiple times", config.channel));
+            return std::unexpected(Error::from_cause("sensor %d is assigned multiple times", config.assignment));
         }
         assigned_sensors[config.assignment] = true;
 
         bool has_pt_config = config.has_pt_bias_psig || config.has_pt_range_psig;
-        bool has_tc_config = config.has_tc_type;
+        bool has_tc_config = config.has_tc_type || config.has_tc_bias_deg_c;
         bool has_raw_config = config.has_raw_range_v || config.has_raw_bias_v;
 
         // Only one sensor type should be set
@@ -459,12 +475,22 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             if (config.pt_range_psig == 0.0f) {
                 return std::unexpected(Error::from_cause("pt range cannot be 0"));
             }
+            if (!std::isfinite(config.pt_range_psig) || !std::isfinite(config.pt_bias_psig)) {
+                return std::unexpected(Error::from_cause("pt config fields must be finite"));
+            }
         }
 
         // Check TC config
         if (has_tc_config) {
-            if (config.tc_type < _TCType_MIN || config.tc_type > _TCType_MAX) {
+            if (!config.has_tc_type) {
+                return std::unexpected(Error::from_cause("tc bias requires a tc type"));
+            }
+            // UNKNOWN_TC_TYPE is in range but has no conversion, it would read -9999 and log every tick
+            if (config.tc_type <= TCType_UNKNOWN_TC_TYPE || config.tc_type > _TCType_MAX) {
                 return std::unexpected(Error::from_cause("invalid tc type %d", config.tc_type));
+            }
+            if (config.has_tc_bias_deg_c && !std::isfinite(config.tc_bias_deg_c)) {
+                return std::unexpected(Error::from_cause("tc bias must be finite"));
             }
         }
 
@@ -475,6 +501,9 @@ std::expected<void, Error> AnalogSensors::handle_configure_analog_sensors(const 
             }
             if (config.raw_range_v == 0.0f) {
                 return std::unexpected(Error::from_cause("raw range cannot be 0"));
+            }
+            if (!std::isfinite(config.raw_range_v) || !std::isfinite(config.raw_bias_v)) {
+                return std::unexpected(Error::from_cause("raw config fields must be finite"));
             }
         }
     }

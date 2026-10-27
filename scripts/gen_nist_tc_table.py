@@ -8,7 +8,7 @@ uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py <k or t> <mi
 Existing clover LUTs were generated as follows:
 ```
 uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py k -200 400 200
-uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py t -200 50 100
+uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py t -200 400 240
 ```
 """
 
