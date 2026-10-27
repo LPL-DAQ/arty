@@ -57,8 +57,8 @@ TODO:
             <&flexpwm3_pwm1 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* tvc_yaw      Pin 29  EMC_31    FlexPWM3.1 A */
             <&flexpwm1_pwm2 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_top     no output: pin 24 is muxed to X, which pwm_mcux cannot drive */
             <&flexpwm1_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_bottom  no output: pin 25 is muxed to X, which pwm_mcux cannot drive */
-            <&flexpwm2_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 36  EMC_38    FlexPWM1.3 B */
-            <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* beta_ccw     Pin 37  EMC_39    FlexPWM1.3 A */
+            <&flexpwm2_pwm3 1 PWM_USEC(20000) PWM_POLARITY_NORMAL>,  /* beta_cw      Pin 37  B1_03     FlexPWM2.3 B */
+            <&flexpwm2_pwm3 0 PWM_USEC(20000) PWM_POLARITY_NORMAL>;  /* beta_ccw     Pin 36  B1_02     FlexPWM2.3 A */
 
 
         pwm-names = "motor_top", "motor_bottom",
@@ -145,8 +145,8 @@ TODO:
         };
     };
 
-    /* AD_B0_12 -> FlexPWM1_PWMX2 (tvc_pitch)
-       AD_B0_13 -> FlexPWM1_PWMX3 (tvc_yaw) */
+    /* AD_B0_12 -> FlexPWM1_PWMX2 (beta_top, no output)
+       AD_B0_13 -> FlexPWM1_PWMX3 (beta_bottom, no output) */
     pinmux_flexpwm1_pwm2: pinmux_flexpwm1_pwm2 {
         group0 {
             pinmux = <&iomuxc_gpio_ad_b0_12_flexpwm1_pwmx2>;
@@ -167,8 +167,8 @@ TODO:
         };
     };
 
-    /* EMC_32 -> FlexPWM3_PWMB1 (beta_top)
-       EMC_31 -> FlexPWM3_PWMA1 (beta_bottom) */
+    /* EMC_32 -> FlexPWM3_PWMB1 (tvc_pitch)
+       EMC_31 -> FlexPWM3_PWMA1 (tvc_yaw) */
     pinmux_flexpwm3_pwm1: pinmux_flexpwm3_pwm1 {
         group0 {
             pinmux = <&iomuxc_gpio_emc_32_flexpwm3_pwmb1>,
@@ -180,8 +180,8 @@ TODO:
         };
     };
 
-    /* EMC_38 -> FlexPWM1_PWMA3 (beta_cw)
-       EMC_39 -> FlexPWM1_PWMB3 (beta_ccw) */
+    /* B1_02 -> FlexPWM2_PWMA3 (beta_ccw)
+       B1_03 -> FlexPWM2_PWMB3 (beta_cw) */
     pinmux_flexpwm2_pwm3: pinmux_flexpwm2_pwm3 {
         group0 {
             pinmux = <&iomuxc_gpio_b1_02_flexpwm2_pwma3>,
