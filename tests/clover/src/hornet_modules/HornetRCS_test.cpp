@@ -2,253 +2,211 @@
 #include <zephyr/ztest.h>
 #include <cmath>
 
-// RCS bang-bang controller with PID and hysteresis.
-// control() returns p_valve: -1 (CW), 0 (neutral), or 1 (CCW).
-// tick() returns tuple<float, float, HornetRcsMetrics> where the floats
-// represent CW and CCW thruster pulse widths in microseconds:
-//   1000.0f = off (0% throttle)
-//   2000.0f = on  (100% throttle)
-//
-// Use THRUSTER_OFF / THRUSTER_ON constants for clear assertions.
-static constexpr float THRUSTER_OFF = 1000.0f;
-static constexpr float THRUSTER_ON  = 2000.0f;
+// Bang-bang roll control: effort = Kp * (command - measured roll), Kp = 2, both in degrees.
+// A closed valve opens when |effort| > 0.15 and closes when |effort| < 0.10, and stays open
+// for at least 0.10 s once opened.
+static constexpr uint32_t THRUSTER_OFF = 1000;
+static constexpr uint32_t THRUSTER_ON = 2000;
 
-static EstimatedState make_identity_state()
+// Far from zero so that dt measured as time since boot would be obvious.
+static constexpr int64_t T0_US = 10'000'000;
+static constexpr int64_t TICK_US = 1'500;
+
+struct Output {
+    uint32_t cw;
+    uint32_t ccw;
+};
+
+static EstimatedState rolled_state(float roll_deg)
 {
     EstimatedState state = EstimatedState_init_default;
-    state.R_WB.qw = 1.0f;
-    state.R_WB.qx = 0.0f;
+    const float half_rad = roll_deg * static_cast<float>(M_PI) / 360.0f;
+    state.R_WB.qw = std::cos(half_rad);
+    state.R_WB.qx = std::sin(half_rad);
     state.R_WB.qy = 0.0f;
     state.R_WB.qz = 0.0f;
-    state.position.x = 0.0f;
-    state.position.y = 0.0f;
-    state.position.z = 0.0f;
-    state.velocity.x = 0.0f;
-    state.velocity.y = 0.0f;
-    state.velocity.z = 0.0f;
     return state;
 }
 
-ZTEST(HornetRcs_tests, test_tick_returns_value_for_zero_roll_error)
+static Output tick_at(int64_t now_us, float command_deg, float roll_deg = 0.0f)
 {
-    HornetRcs::reset();
-
-    EstimatedState state = make_identity_state();
-    // Identity quaternion -> roll = 0, command = 0 -> no control effort
-    auto result = HornetRcs::tick(state, 0.0f);
-
-    zassert_true(result.has_value(), "tick should succeed for zero roll error");
-}
-
-ZTEST(HornetRcs_tests, test_tick_returns_value_for_positive_roll_command)
-{
-    HornetRcs::reset();
-
-    EstimatedState state = make_identity_state();
-    // Command 30 deg CCW roll with zero actual roll -> positive error
-    auto result = HornetRcs::tick(state, 30.0f);
-
-    zassert_true(result.has_value(), "tick should succeed for positive roll command");
-    auto [cw, ccw, metrics] = *result;
-    // With roll error > deadzone (0.15), CCW thruster should fire on first tick
-    zassert_equal(ccw, THRUSTER_ON,  "CCW thruster should be commanded for positive roll error");
-    zassert_equal(cw,  THRUSTER_OFF, "CW thruster should not be commanded for positive roll error");
-}
-
-ZTEST(HornetRcs_tests, test_tick_returns_value_for_negative_roll_command)
-{
-    HornetRcs::reset();
-
-    EstimatedState state = make_identity_state();
-    // Command -30 deg CW roll with zero actual roll -> negative error
-    auto result = HornetRcs::tick(state, -30.0f);
-
-    zassert_true(result.has_value(), "tick should succeed for negative roll command");
-    auto [cw, ccw, metrics] = *result;
-    // With roll error < -deadzone (-0.15), CW thruster should fire on first tick
-    zassert_equal(cw,  THRUSTER_ON,  "CW thruster should be commanded for negative roll error");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW thruster should not be commanded for negative roll error");
-}
-
-ZTEST(HornetRcs_tests, test_reset_clears_pid_and_valve_state)
-{
-    // Fire a command then reset, verify subsequent neutral command produces no thrust
-    EstimatedState state = make_identity_state();
-    HornetRcs::tick(state, 30.0f);  // activate CCW thruster
-    HornetRcs::reset();
-
-    // After reset, no roll error -> valve should be off (p_valve = 0)
-    auto result = HornetRcs::tick(state, 0.0f);
-    zassert_true(result.has_value(), "tick after reset should succeed");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_OFF, "CW should be off after reset with zero error");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW should be off after reset with zero error");
-}
-
-ZTEST(HornetRcs_tests, test_hysteresis_keeps_valve_on_when_error_reduces_slightly)
-{
-    HornetRcs::reset();
-
-    EstimatedState state = make_identity_state();
-
-    // Activate the CCW thruster with a large positive error
-    HornetRcs::tick(state, 30.0f);
-
-    // Reduce error but stay above (deadzone - hysteresis) = 0.10 deg
-    // p_valve should remain 1 (CCW) due to hysteresis
-    auto result = HornetRcs::tick(state, 0.12f);  // 0.12 > 0.10 threshold
-
+    HornetRcs::set_now_us_for_testing(now_us);
+    auto result = HornetRcs::tick(rolled_state(roll_deg), command_deg);
     zassert_true(result.has_value(), "tick should succeed");
     auto [cw, ccw, metrics] = *result;
-    zassert_equal(ccw, THRUSTER_ON,  "CCW thruster should remain on within hysteresis band");
-    zassert_equal(cw,  THRUSTER_OFF, "CW thruster should stay off within hysteresis band");
+    return {static_cast<uint32_t>(cw), static_cast<uint32_t>(ccw)};
 }
 
-ZTEST(HornetRcs_tests, test_valve_turns_off_when_error_below_hysteresis_threshold)
+static int64_t ms(double t)
 {
-    HornetRcs::reset();
-
-    EstimatedState state = make_identity_state();
-
-    // Activate the CCW thruster
-    HornetRcs::tick(state, 30.0f);
-
-    // Drop error below (deadzone - hysteresis) = 0.10 deg -> valve should turn off
-    auto result = HornetRcs::tick(state, 0.05f);  // 0.05 < 0.10 threshold
-
-    zassert_true(result.has_value(), "tick should succeed");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_OFF, "CW thruster should be off after error drops below threshold");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW thruster should turn off after error drops below threshold");
+    return T0_US + static_cast<int64_t>(t * 1000.0);
 }
 
-// --- Reset-specific tests ---
-
-ZTEST(HornetRcs_tests, test_reset_clears_cw_valve_state)
+static void before_each(void*)
 {
-    // Activate CW, then verify reset brings both thrusters to idle
-    EstimatedState state = make_identity_state();
     HornetRcs::reset();
-    HornetRcs::tick(state, -30.0f);  // activate CW
-    HornetRcs::reset();
-
-    auto result = HornetRcs::tick(state, 0.0f);
-    zassert_true(result.has_value(), "tick after reset should succeed");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_OFF, "CW should be off after reset with zero error");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW should be off after reset with zero error");
 }
 
-ZTEST(HornetRcs_tests, test_reset_allows_cw_after_ccw_session)
+ZTEST(HornetRcs_tests, test_zero_error_keeps_both_off)
 {
-    // After a CCW session, reset must allow CW to fire normally (no leftover p_valve=1)
-    EstimatedState state = make_identity_state();
-    HornetRcs::reset();
-    HornetRcs::tick(state, 30.0f);   // activate CCW (p_valve = 1)
-    HornetRcs::reset();
-
-    auto result = HornetRcs::tick(state, -30.0f);  // large CW command
-    zassert_true(result.has_value(), "tick should succeed");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_ON,  "CW thruster should fire after reset with large negative error");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW thruster should not fire for negative error after reset");
+    const auto out = tick_at(T0_US, 0.0f);
+    zassert_equal(out.cw, THRUSTER_OFF);
+    zassert_equal(out.ccw, THRUSTER_OFF);
 }
 
-ZTEST(HornetRcs_tests, test_reset_allows_ccw_after_cw_session)
+ZTEST(HornetRcs_tests, test_positive_command_fires_ccw)
 {
-    // After a CW session, reset must allow CCW to fire normally (no leftover p_valve=-1)
-    EstimatedState state = make_identity_state();
-    HornetRcs::reset();
-    HornetRcs::tick(state, -30.0f);  // activate CW (p_valve = -1)
-    HornetRcs::reset();
-
-    auto result = HornetRcs::tick(state, 30.0f);  // large CCW command
-    zassert_true(result.has_value(), "tick should succeed");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(ccw, THRUSTER_ON,  "CCW thruster should fire after reset with large positive error");
-    zassert_equal(cw,  THRUSTER_OFF, "CW thruster should not fire for positive error after reset");
+    const auto out = tick_at(T0_US, 30.0f);
+    zassert_equal(out.ccw, THRUSTER_ON);
+    zassert_equal(out.cw, THRUSTER_OFF);
 }
 
-ZTEST(HornetRcs_tests, test_reset_clears_min_pulse_timer)
+ZTEST(HornetRcs_tests, test_negative_command_fires_cw)
 {
-    // p_timer is set to min_pulse when a thruster fires. Reset must clear it so
-    // a sub-deadzone error on the very next tick does NOT keep the thruster on.
-    EstimatedState state = make_identity_state();
-    HornetRcs::reset();
-
-    // Fire CCW to set p_timer = min_pulse
-    HornetRcs::tick(state, 30.0f);
-
-    // Reset immediately (before timer would expire) and tick with sub-deadzone error
-    HornetRcs::reset();
-    auto result = HornetRcs::tick(state, 0.05f);  // well below deadzone=0.15
-
-    zassert_true(result.has_value(), "tick should succeed after reset");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_OFF, "CW should be off: timer was cleared by reset");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW should be off: timer cleared, error below deadzone");
+    const auto out = tick_at(T0_US, -30.0f);
+    zassert_equal(out.cw, THRUSTER_ON);
+    zassert_equal(out.ccw, THRUSTER_OFF);
 }
 
-ZTEST(HornetRcs_tests, test_consecutive_resets_are_idempotent)
+ZTEST(HornetRcs_tests, test_measured_roll_is_in_degrees)
 {
-    // Two consecutive resets should behave identically to a single reset
-    EstimatedState state = make_identity_state();
-    HornetRcs::reset();
-    HornetRcs::tick(state, 30.0f);
-    HornetRcs::reset();
-    HornetRcs::reset();  // second reset must not corrupt state
+    auto out = tick_at(T0_US, 10.0f, 10.0f);
+    zassert_equal(out.cw, THRUSTER_OFF, "10 deg command at 10 deg roll is zero error");
+    zassert_equal(out.ccw, THRUSTER_OFF, "10 deg command at 10 deg roll is zero error");
 
-    auto result = HornetRcs::tick(state, 0.0f);
-    zassert_true(result.has_value(), "tick after double reset should succeed");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_OFF, "CW should be off after double reset");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW should be off after double reset");
+    HornetRcs::reset();
+    out = tick_at(T0_US, 0.0f, 10.0f);
+    zassert_equal(out.cw, THRUSTER_ON, "0 deg command at 10 deg roll should fire CW");
+    zassert_equal(out.ccw, THRUSTER_OFF);
+}
+
+ZTEST(HornetRcs_tests, test_min_on_time_holds_for_100_ms)
+{
+    zassert_equal(tick_at(ms(0), 30.0f).ccw, THRUSTER_ON);
+    zassert_equal(tick_at(ms(50), 0.0f).ccw, THRUSTER_ON, "held at 50 ms");
+    zassert_equal(tick_at(ms(99), 0.0f).ccw, THRUSTER_ON, "held at 99 ms");
+    zassert_equal(tick_at(ms(101), 0.0f).ccw, THRUSTER_ON, "timer expires on this tick, valve not re-evaluated yet");
+
+    const auto out = tick_at(ms(102.5), 0.0f);
+    zassert_equal(out.ccw, THRUSTER_OFF, "closes once the minimum on-time has passed");
+    zassert_equal(out.cw, THRUSTER_OFF);
+}
+
+ZTEST(HornetRcs_tests, test_min_on_time_at_control_rate)
+{
+    zassert_equal(tick_at(T0_US, 30.0f).ccw, THRUSTER_ON);
+
+    int ticks_on = 0;
+    for (int i = 1; i <= 200; ++i) {
+        if (tick_at(T0_US + i * TICK_US, 0.0f).ccw == THRUSTER_ON) {
+            ticks_on = i;
+        }
+    }
+    // 0.10 s at 1.5 ms per tick is 66.7 ticks, plus the tick that sees the timer at zero.
+    zassert_true(ticks_on >= 67 && ticks_on <= 69, "valve stayed on for %d ticks", ticks_on);
+}
+
+ZTEST(HornetRcs_tests, test_dt_is_per_tick_delta)
+{
+    zassert_equal(tick_at(T0_US, 30.0f).ccw, THRUSTER_ON);
+    for (int i = 0; i < 100; ++i) {
+        zassert_equal(tick_at(T0_US, 0.0f).ccw, THRUSTER_ON, "no time has passed, so the timer must not advance");
+    }
+    zassert_equal(tick_at(ms(99), 0.0f).ccw, THRUSTER_ON);
+    tick_at(ms(101), 0.0f);
+    zassert_equal(tick_at(ms(102.5), 0.0f).ccw, THRUSTER_OFF);
+}
+
+ZTEST(HornetRcs_tests, test_min_on_time_holds_against_reversed_command)
+{
+    tick_at(ms(0), 30.0f);
+    auto out = tick_at(ms(50), -30.0f);
+    zassert_equal(out.ccw, THRUSTER_ON, "CCW held during minimum on-time");
+    zassert_equal(out.cw, THRUSTER_OFF, "CW may not fire while CCW is held");
+
+    tick_at(ms(101), -30.0f);
+    out = tick_at(ms(102.5), -30.0f);
+    zassert_equal(out.ccw, THRUSTER_OFF, "CCW closes after the minimum on-time");
+    out = tick_at(ms(104), -30.0f);
+    zassert_equal(out.cw, THRUSTER_ON, "CW fires on the next tick");
+}
+
+ZTEST(HornetRcs_tests, test_hysteresis_band_after_min_on_time)
+{
+    tick_at(ms(0), 30.0f);
+    tick_at(ms(101), 0.06f);
+    zassert_equal(tick_at(ms(150), 0.06f).ccw, THRUSTER_ON, "effort 0.12 is inside the band, valve stays open");
+    zassert_equal(tick_at(ms(151.5), 0.04f).ccw, THRUSTER_OFF, "effort 0.08 is below the band, valve closes");
+}
+
+ZTEST(HornetRcs_tests, test_band_does_not_open_closed_valve)
+{
+    const auto out = tick_at(T0_US, 0.06f);
+    zassert_equal(out.ccw, THRUSTER_OFF, "effort 0.12 is below the 0.15 opening threshold");
+    zassert_equal(out.cw, THRUSTER_OFF);
+}
+
+ZTEST(HornetRcs_tests, test_reset_clears_valve_and_timer)
+{
+    tick_at(ms(0), 30.0f);
+    HornetRcs::reset();
+    const auto out = tick_at(ms(10), 0.05f);
+    zassert_equal(out.cw, THRUSTER_OFF);
+    zassert_equal(out.ccw, THRUSTER_OFF, "reset must clear the open valve and its timer");
+}
+
+ZTEST(HornetRcs_tests, test_reset_allows_opposite_direction)
+{
+    tick_at(ms(0), 30.0f);
+    HornetRcs::reset();
+    auto out = tick_at(ms(10), -30.0f);
+    zassert_equal(out.cw, THRUSTER_ON);
+    zassert_equal(out.ccw, THRUSTER_OFF);
+
+    HornetRcs::reset();
+    out = tick_at(ms(20), 30.0f);
+    zassert_equal(out.ccw, THRUSTER_ON);
+    zassert_equal(out.cw, THRUSTER_OFF);
 }
 
 ZTEST(HornetRcs_tests, test_reset_mid_hysteresis_disables_valve)
 {
-    // While p_valve=1 is held open by hysteresis, reset must bring it to neutral.
-    // After reset, an error in the hysteresis band should NOT fire the thruster
-    // because p_valve was cleared (the valve needs a fresh deadzone cross).
-    //
-    // With Kp=2, the control effort = 2 * error. For this test to be meaningful:
-    //   - error = 0.06 -> control_effort = 0.12
-    //   - 0.12 > (deadzone - hysteresis) = 0.10  -> valve stays ON if p_valve=1
-    //   - 0.12 < deadzone = 0.15               -> valve does NOT fire from p_valve=0
-    EstimatedState state = make_identity_state();
+    tick_at(ms(0), 30.0f);
+    tick_at(ms(101), 0.06f);
+    zassert_equal(tick_at(ms(150), 0.06f).ccw, THRUSTER_ON);
     HornetRcs::reset();
-
-    HornetRcs::tick(state, 30.0f);      // open CCW (p_valve = 1)
-    HornetRcs::tick(state, 0.06f);      // control_effort=0.12 in hysteresis band, CCW stays on
-    HornetRcs::reset();                 // reset while still in hysteresis region
-
-    // From clean p_valve=0 state: control_effort=0.12 < deadzone=0.15 -> no fire
-    auto result = HornetRcs::tick(state, 0.06f);
-    zassert_true(result.has_value(), "tick should succeed after reset mid-hysteresis");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_OFF, "CW should be off: error in hysteresis band after reset");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW should be off: reset cleared p_valve, error below deadzone");
+    zassert_equal(tick_at(ms(160), 0.06f).ccw, THRUSTER_OFF, "after reset the valve needs a fresh deadzone cross");
 }
 
-ZTEST(HornetRcs_tests, test_reset_then_large_error_activates_thruster_cleanly)
+static HornetRcsMetrics metrics_at(int64_t now_us, float command_deg, float roll_deg = 0.0f)
 {
-    // After many ticks in one direction followed by reset, the very first tick
-    // with a large error in the opposite direction should activate the correct thruster.
-    // This validates both p_valve and PID (prev_meas) are cleared.
-    EstimatedState state = make_identity_state();
-    HornetRcs::reset();
+    HornetRcs::set_now_us_for_testing(now_us);
+    auto result = HornetRcs::tick(rolled_state(roll_deg), command_deg);
+    zassert_true(result.has_value(), "tick should succeed");
+    return std::get<2>(*result);
+}
 
-    for (int i = 0; i < 10; i++) {
-        HornetRcs::tick(state, 30.0f);  // accumulate PID history in CCW direction
-    }
-    HornetRcs::reset();
+ZTEST(HornetRcs_tests, test_metrics_report_controller_state)
+{
+    auto m = metrics_at(ms(0), 30.0f, 5.0f);
+    zassert_within(m.measured_roll_deg, 5.0f, 1e-3f);
+    zassert_within(m.control_effort, 2.0f * (30.0f - 5.0f), 1e-3f);
+    zassert_equal(m.valve_state, 1);
+    zassert_within(m.remaining_on_time_s, 0.10f, 1e-6f);
 
-    // First tick after reset with large negative error must activate CW cleanly
-    auto result = HornetRcs::tick(state, -30.0f);
-    zassert_true(result.has_value(), "tick should succeed after session reset");
-    auto [cw, ccw, metrics] = *result;
-    zassert_equal(cw,  THRUSTER_ON,  "CW should fire on first tick after reset with large negative error");
-    zassert_equal(ccw, THRUSTER_OFF, "CCW should not fire for negative error");
+    m = metrics_at(ms(50), 30.0f, 5.0f);
+    zassert_equal(m.valve_state, 1);
+    zassert_within(m.remaining_on_time_s, 0.05f, 1e-4f);
+
+    metrics_at(ms(101), 5.0f, 5.0f);
+    m = metrics_at(ms(102.5), 5.0f, 5.0f);
+    zassert_equal(m.valve_state, 0);
+    zassert_equal(m.remaining_on_time_s, 0.0f);
+    zassert_within(m.control_effort, 0.0f, 1e-3f);
+
+    HornetRcs::reset();
+    m = metrics_at(ms(200), -30.0f);
+    zassert_equal(m.valve_state, -1);
 }
 
 ZTEST(HornetRcs_tests, test_bench_percent_maps_to_pulse_and_caps)
@@ -264,4 +222,4 @@ ZTEST(HornetRcs_tests, test_bench_percent_maps_to_pulse_and_caps)
     zassert_equal(HornetRcs::bench_throttle_percent_to_pulse_us(NAN), 1000);
 }
 
-ZTEST_SUITE(HornetRcs_tests, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(HornetRcs_tests, NULL, NULL, NULL, before_each, NULL);

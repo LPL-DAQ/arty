@@ -790,7 +790,13 @@ message HornetTvcMetrics {
 
 message RangerRcsMetrics {}
 
-message HornetRcsMetrics {}
+message HornetRcsMetrics {
+  required float measured_roll_deg = 1;
+  required float control_effort = 2;
+  // -1 CW open, 0 closed, 1 CCW open
+  required int32 valve_state = 3;
+  required float remaining_on_time_s = 4;
+}
 
 // GNSS sensor readings from GREIS protocol messages [mp], [VE], [SG], [ST], [~~].
 message GnssReadings {

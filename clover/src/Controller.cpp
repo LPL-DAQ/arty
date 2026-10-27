@@ -1207,6 +1207,9 @@ std::expected<void, Error> Controller::handle_start_rcs_sequence(const StartRcsS
         return std::unexpected(Error::from_cause("State must be RCS_PRIMED to enter RCS"));
     }
 
+#ifdef CONFIG_HORNET_RCS
+    HornetRcs::reset();
+#endif
     trace_start_cycle = k_cycle_get_64();
     current_state = SystemState_STATE_RCS;
 
@@ -1342,6 +1345,9 @@ std::expected<void, Error> Controller::handle_start_flight_sequence(const StartF
 
     trace_start_cycle = k_cycle_get_64();
     FlightController::reset();
+#ifdef CONFIG_HORNET_RCS
+    HornetRcs::reset();
+#endif
     current_state = SystemState_STATE_FLIGHT;
 
     LOG_INF("Starting flight sequence");

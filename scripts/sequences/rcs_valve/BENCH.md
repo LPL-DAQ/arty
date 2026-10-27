@@ -2,6 +2,8 @@
 
 Spins one RCS propeller at a time from a throttle trace, with no roll control in the loop. Trace values are throttle percent (0-100). The firmware caps them at `HORNET_RCS_BENCH_MAX_THROTTLE_PERCENT` (15 percent, 1150 us) in `clover/src/config.h`.
 
+Closed-loop RCS (the RCS and FLIGHT states) is a separate path. Its roll gains and thresholds have not been tested in degree units, so it should not run on the vehicle until they are reviewed. When it fires, it commands `HORNET_RCS_THROTTLE_PERCENT` from `config.h`, which is currently full throttle (2000 us), with no bench cap.
+
 ## Before you start
 
 - The `BetaCW::tick` and `BetaCCW::tick` writes in `clover/src/Controller.cpp` must be enabled first. Until then this test only changes telemetry and nothing spins.
