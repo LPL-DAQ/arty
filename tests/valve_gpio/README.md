@@ -113,58 +113,89 @@ and failed off writes still require independent removal of valve power. Test
 with loads disconnected first. This tests standalone GPIO firmware, not Clover's
 production valve API.
 
-## Embed the sequence (no serial connection)
+## Store named sequences in firmware (manual start over USB)
 
-This mode reads `sequence.example.json` at build time and compiles the steps into
-firmware. It needs no pyserial, USB terminal, or serial forwarding. The JSON
-format and per-step behavior are the same as the host runner above.
+Put separate JSON files in `tests/valve_gpio/sequences/`. Each filename without
+`.json` becomes its command name. Included examples are `single_valve` and
+`multi_valve`. Steps use the same JSON format as the host runner, with optional
+comments. Names must be 1–48 characters: letters, digits, underscores, dots or
+hyphens; the first character must be a letter, digit or underscore.
 
-From the repository root:
+Build and flash from the repository root:
 
 ```sh
-west build -s tests/valve_gpio -b ranger_1/mimxrt1062 \
+west build -p always -s tests/valve_gpio -b ranger_1/mimxrt1062 \
   -d tests/valve_gpio/build-sequence -- -DEXTRA_CONF_FILE=sequence.conf
 west flash -d tests/valve_gpio/build-sequence
 ```
 
-Every successful boot initializes all outputs inactive, immediately executes
-the sequence once, then leaves the outputs inactive.
-An empty channel list adds an inactive wait. Power cycling runs the sequence
-again; the Teensy Program button enters its bootloader rather than starting a
-normal reset. Flashing may start the sequence immediately when firmware boots.
+If reusing a build configured with the old `VALVE_SEQUENCE_FILE` setting, clear
+that override by adding `-UVALVE_SEQUENCE_FILE` after `--`, or use a fresh build
+directory. The normal build embeds every `*.json` directly in `sequences/`.
+`sequence.example.json` remains an example for the host runner; editing it does
+not change the named sequences in the default firmware build.
 
-With the current example, measured after GPIO initialization:
+Boot initializes all outputs inactive and waits; it never automatically runs a
+sequence. Open the USB serial monitor at 115200 baud, press Enter, and use:
 
-| Time | Energized channels |
-| --- | --- |
-| 0–1 seconds | None (first JSON wait) |
-| 1–11 seconds | 0 |
-| 11–16 seconds | None |
-| 16–26 seconds | 0 and 1 |
-| After 26 seconds | None |
+```text
+sequence list
+sequence status
+sequence run single_valve
+sequence run multi_valve
+trace
+```
 
-GPIO writes add small delays. Group edges use sequential I2C writes, not hardware
-synchronization. All outputs are commanded inactive between steps. If any GPIO
-fails initialization, the sequence does not run. An activation or deactivation
-write failure stops the sequence after attempting to deactivate all outputs.
+Wait for completion before starting another run. The shell remains responsive
+while the main thread executes the sequence. `sequence status` reports
+`initializing`, `ready`, `running`, `complete`, or `faulted`, plus the selected
+name. Both `ready` and `complete` allow another run. A second start while running
+is rejected. Unknown names do not activate any output. `trace` retrieves recent
+logs if you connected after startup. Use a generic USB serial terminal if your
+monitor does not recognize the board's USB CDC device.
 
-Edit the JSON and rebuild/reflash to change the sequence. CMake tracks the JSON
-as a build dependency and regenerates the embedded header when it changes.
-To select another file, supply an absolute path:
+An initialization, activation, or deactivation error prevents further runs until
+reset. After an activation or deactivation error the firmware attempts to turn
+every output off. Disconnecting the monitor does not cancel a running sequence:
+it completes on the board. There is no stop command. Firmware crashes and failed
+I2C off writes still require independent removal of valve power.
+
+Switching among embedded sequences needs no flash or reset. Adding, removing or
+editing a JSON file requires rebuilding and flashing; CMake tracks directory
+membership and file changes. To embed files from another directory:
 
 ```sh
 west build -d tests/valve_gpio/build-sequence -- \
-  -DVALVE_SEQUENCE_FILE=/absolute/path/to/my-sequence.json
+  -DVALVE_SEQUENCE_DIR=/absolute/path/to/sequences
 ```
 
-The build rejects invalid JSON steps, duplicate/out-of-range channels, and
-channels absent from the board. Keep `automatic.conf` for the separate old
-single-channel test; use `sequence.conf` for this mode. Disconnect loads for the
-first verification and restore normal firmware after testing. Firmware timing
-cannot guarantee shutdown after a crash or failed I2C write. A failed flash does
-not confirm that this sequence firmware is running.
+For a single-file build, the explicit `-DVALVE_SEQUENCE_FILE=/absolute/path/test.json`
+override is still supported; its command name is `test`. Clear it with
+`-UVALVE_SEQUENCE_FILE` to return to directory mode.
+
+Each step energizes its channels, waits, then commands every output inactive.
+An empty channel list waits with outputs inactive. Group edges use sequential
+I2C writes, not hardware synchronization. Comments and logs add timing overhead.
+The build rejects invalid steps, names, and channels absent from the board.
+Keep `automatic.conf` for the separate old automatic single-channel test;
+`sequence.conf` now selects named sequences with manual start. Verify first with
+loads disconnected and restore normal Clover firmware after testing.
+
+Host validation and mocked firmware behavior tests (no board required):
+
+```sh
+python -m unittest discover -s tests/valve_gpio/test -v
+```
+
+These exercise the actual C control flow with mock GPIO, shell and timing; they
+do not verify physical outputs, USB enumeration, or real scheduling on hardware.
 
 ## Execution logging
+
+The test's `app.overlay` routes the shell and its log backend to USB CDC ACM.
+Setting only `zephyr,console` leaves the inherited Teensy shell on hardware UART.
+When updating an existing build created before this overlay was added, rebuild
+with `west build -p always` so CMake discovers the new overlay.
 
 Each JSON step may include an optional `"comment"` string, for example
 `"comment": "Energizing valves 0 and 1 for 10 seconds"`. Embedded firmware logs
@@ -173,10 +204,11 @@ be printable text, at most 100 UTF-8 bytes, with no newlines or control characte
 Steps without comments still work. Rebuild and flash after editing comments.
 The host runner also accepts comments and includes them in its terminal output.
 
-Embedded-sequence and automatic single-channel firmware enable USB CDC and emit
+Named-sequence and automatic single-channel firmware enable USB CDC and emit
 Zephyr INFO logs to the USB shell. Connect a serial terminal on the Mac's actual
-`/dev/cu.usbmodem...` port at 115200 baud. No terminal connection is required to
-start execution, so early live logs may be missed. Enter `trace` to retrieve the
+`/dev/cu.usbmodem...` port at 115200 baud. Named sequences wait for an explicit
+run command. Early startup logs may be missed if the monitor connects after boot.
+Enter `trace` to retrieve the
 latest 128 retained events, with milliseconds since boot. This includes the mode,
 USB initialization result, each GPIO's device/pin and configuration result,
 activation, deactivation failures, and sequence completion or failure.

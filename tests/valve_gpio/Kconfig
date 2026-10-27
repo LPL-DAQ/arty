@@ -11,7 +11,7 @@ config VALVE_TEST_AUTOMATIC
     default n
 
 config VALVE_TEST_EMBEDDED_SEQUENCE
-    bool "Run the embedded JSON sequence once after boot"
+    bool "Run named embedded JSON sequences on USB command"
     default n
 
 config VALVE_TEST_CHANNEL

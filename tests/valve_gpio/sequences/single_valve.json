@@ -1,0 +1,10 @@
+[
+  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
+  {"duration_ms": 5000, "channels": [0], "comment": "Energizing valve 0 for 5 seconds"},
+  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
+  {"duration_ms": 5000, "channels": [1], "comment": "Energizing valve 1 for 5 seconds"},
+  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
+  {"duration_ms": 5000, "channels": [2], "comment": "Energizing valve 2 for 5 seconds"},
+  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
+  {"duration_ms": 5000, "channels": [3], "comment": "Energizing valve 3 for 5 seconds"}
+]

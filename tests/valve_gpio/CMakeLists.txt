@@ -6,14 +6,21 @@ if(CONFIG_VALVE_TEST_EMBEDDED_SEQUENCE AND CONFIG_VALVE_TEST_AUTOMATIC)
     message(FATAL_ERROR "Select embedded sequence or automatic single-channel test, not both")
 endif()
 if(CONFIG_VALVE_TEST_EMBEDDED_SEQUENCE)
-    set(VALVE_SEQUENCE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sequence.example.json" CACHE FILEPATH "JSON valve sequence")
-    get_filename_component(VALVE_SEQUENCE_FILE "${VALVE_SEQUENCE_FILE}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(VALVE_SEQUENCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/sequences" CACHE PATH "Directory of named JSON sequences")
+    # Preserve explicit single-file builds; the normal build embeds the directory.
+    if(VALVE_SEQUENCE_FILE)
+        get_filename_component(sequence_input "${VALVE_SEQUENCE_FILE}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+        set(sequence_files "${sequence_input}")
+    else()
+        get_filename_component(sequence_input "${VALVE_SEQUENCE_DIR}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+        file(GLOB sequence_files CONFIGURE_DEPENDS "${sequence_input}/*.json")
+    endif()
     set(sequence_header "${CMAKE_CURRENT_BINARY_DIR}/generated/valve_sequence.h")
     add_custom_command(
         OUTPUT "${sequence_header}"
         COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/generate_sequence.py"
-                "${VALVE_SEQUENCE_FILE}" "${sequence_header}"
-        DEPENDS "${VALVE_SEQUENCE_FILE}"
+                "${sequence_input}" "${sequence_header}"
+        DEPENDS ${sequence_files}
                 "${CMAKE_CURRENT_SOURCE_DIR}/generate_sequence.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/run_sequence.py"
         VERBATIM)
