@@ -66,7 +66,7 @@ static float rate_limit_extension_mm(float target_mm, float& held_mm)
 static uint32_t extension_mm_to_pulse_us(float extension_mm)
 {
     const float clamped_mm = std::clamp(extension_mm, 0.0f, HORNET_TVC_STROKE_MM);
-    return static_cast<uint32_t>(MIN_PWM_PULSE_US + (clamped_mm * PULSE_US_PER_MM));
+    return static_cast<uint32_t>(std::lround(MIN_PWM_PULSE_US + (clamped_mm * PULSE_US_PER_MM)));
 }
 
 /// Reset internal state before an active control trace
