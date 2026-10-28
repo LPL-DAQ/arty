@@ -6,6 +6,7 @@ target_sources(app PRIVATE
     MutexGuard.cpp
     Trace.cpp
     util.cpp
+    watchdog.cpp
 )
 
 add_subdirectory(sensors)

@@ -13,6 +13,9 @@ Ranger 1 board.
     model = "Ranger 1";
 
     aliases {
+        // Watchdog 
+        watchdog0 = &wdog1;
+
         // VN-300 IMU
         imu-uart = &lpuart6; // TX: Pin 1 (AD_B0_02), RX: Pin 0 (AD_B0_03)
 
@@ -124,6 +127,11 @@ Ranger 1 board.
         // zephyr,console = &lpuart2;
         zephyr,console = &cdc_acm_uart0;
     };
+};
+
+// Watchdog
+&wdog1 {
+    status = "okay";
 };
 
 // Debug logging

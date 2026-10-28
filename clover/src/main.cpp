@@ -16,6 +16,7 @@
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
+#include "watchdog.h"
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -49,6 +50,11 @@ int main(void)
 #else
 #warning "No logging backend set -- should use either CONFIG_USB_LOGGING or CONFIG_UART_LOGGING"
 #endif
+
+    if (!Watchdog::init(3000)) {
+        LOG_ERR("Failed to initialize Watchdog. Aborting boot.");
+        return 0;
+    }
 
 #ifdef CONFIG_BLINK_LED
     if (auto result = BlinkLed::init(); !result) {

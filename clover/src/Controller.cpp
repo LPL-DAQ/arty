@@ -13,6 +13,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h> // can be removed later
 
 #include "PwmActuator.h"
 #include "ThrottleValve.h"
@@ -24,6 +25,8 @@
 #include "ranger/RangerThrottle.h"
 #include "ranger/RangerTvc.h"
 
+#include "watchdog.h"
+uint32_t loop_counter = 0; 
 LOG_MODULE_REGISTER(Controller, CONFIG_LOG_DEFAULT_LEVEL);
 
 K_MSGQ_DEFINE(telemetry_msgq, sizeof(DataPacket), 5, 1);
@@ -749,6 +752,29 @@ static void step_control_loop(k_work*)
 #ifdef CONFIG_ANALOG_SENSORS
     AnalogSensors::start_sense();
 #endif  // CONFIG_ANALOG_SENSORS
+
+    
+    //MUST BE REMOVED: INDUCE WATCHDOG RESET 
+    // loop_counter++;
+    // if (loop_counter > 5000) {
+    //     LOG_WRN("Watchdog test hang triggered! HW RESET EXPECTED IN 3 SECONDS");
+    //     LOG_INF("WDOG1 WCR (Control): 0x%04X", (uint16_t)WDOG1->WCR);
+    //     LOG_INF("WDOG1 WSR (Service): 0x%04X", (uint16_t)WDOG1->WSR);
+    //     LOG_INF("WDOG1 WRSR (Reset Status): 0x%04X", (uint16_t)WDOG1->WRSR);
+    //     log_panic();
+    //     k_msleep(100);
+    //     while(1){
+    //         // LOG_WRN("Waiting for Watchdog reset...");
+    //         // k_msleep(100);
+    //         __asm__ volatile("nop");
+    //     }
+    // }
+    // if (loop_counter % 1000 == 0) {
+    //     LOG_INF("Loop Counter %d", loop_counter);
+    // }
+    
+    // Reset the watchdog timer
+    Watchdog::feed();
 }
 
 /// Retrieves a data packet from the telemetry message queue.
