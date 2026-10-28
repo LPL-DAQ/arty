@@ -65,6 +65,78 @@ The timeout runs in firmware and still completes if the serial terminal closes;
 it cannot guarantee deactivation after a firmware crash or an I2C write failure.
 Restore the normal Clover firmware after testing.
 
+## Valve-name mapping
+
+`valve_map.json` maps valve names to zero-based channels in
+`ranger_1.dts`'s `valve-gpios` list. **These are provisional sequential
+assignments requested for setup, not verified physical wiring.**
+
+**12 V valves**
+
+| Valve | Channel | Expander | GPIO pin |
+| --- | --- | --- | --- |
+| SV001 | 0 | mcp23017_1 | 8 / GPB0 |
+| SV002 | 1 | mcp23017_1 | 9 / GPB1 |
+| PBV002 | 5 | mcp23017_1 | 13 / GPB5 |
+| PBV001 | 4 | mcp23017_1 | 12 / GPB4 |
+
+**24 V valves**
+
+| Valve | Channel | Expander | GPIO pin |
+| --- | --- | --- | --- |
+| SV003 | 2 | mcp23017_1 | 10 / GPB2 |
+| SV004 | 3 | mcp23017_1 | 11 / GPB3 |
+| SV201 | 6 | mcp23017_1 | 14 / GPB6 |
+| SV301 | 7 | mcp23017_1 | 15 / GPB7 |
+| PBV101 | 8 | mcp23017_1 | 0 / GPA0 |
+
+The mapping file lists the 12 V group first, then the 24 V group, separated
+by a blank line. Channel assignments are unchanged. These voltage labels
+describe the valve supplies; GPIO commands do not select the supply voltage.
+
+Edit the channel numbers in this one file when the wiring is confirmed. The
+mapping is specific to standalone valve tests; it does not configure Clover's
+valve-assignment API or require its valve enum names.
+
+Sequence steps can now use names:
+
+```json
+[
+  {"duration_ms": 1000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101"},
+  {"duration_ms": 1000, "valves": [], "comment": "All outputs off"}
+]
+```
+
+`"channels": ["SV001", "PBV101"]` also accepts names. Existing numeric channels
+still work. Use either `valves` or `channels` per step. `valves` accepts only
+names; an empty list waits with all outputs inactive. Names are case sensitive.
+The loader validates every referenced name and resolves it to a GPIO channel
+before running or generating firmware. Unknown/unassigned names, duplicate
+resolved channels, invalid channel numbers and duplicate mapping assignments
+are rejected. Set an unknown assignment to `null` to prevent its use.
+
+The included `sequences/single_valve.json` and `sequences/multi_valve.json` use
+names now, with their existing durations and provisional channel selections
+preserved. `sequence.named.example.json` is another example outside the compiled
+sequence directory. The host runner supports names through the same loader:
+
+```sh
+python tests/valve_gpio/run_sequence.py tests/valve_gpio/sequences/multi_valve.json --dry-run
+```
+
+Embedded builds track mapping changes automatically. After editing the mapping
+or a sequence, rebuild and flash:
+
+```sh
+west build -d tests/valve_gpio/build-sequence
+west flash -d tests/valve_gpio/build-sequence
+```
+
+A custom mapping can be selected with `--valve-map /path/map.json` in the host
+runner/generator, or `-DVALVE_MAP_FILE=/path/map.json` in the CMake arguments.
+The board still executes compiled channel masks; its USB/Ethernet `vlvseq`
+commands and timing behavior are unchanged.
+
 ## Run a sequence file
 
 `run_sequence.py` reads a JSON array of steps; see `sequence.example.json`.
@@ -118,7 +190,7 @@ production valve API.
 Put separate JSON files in `tests/valve_gpio/sequences/`. Each filename without
 `.json` becomes its command name. Included examples are `single_valve` and
 `multi_valve`. Steps use the same JSON format as the host runner, with optional
-comments. Names must be 1–48 characters: letters, digits, underscores, dots or
+comments. Up to 16 files are supported. Names must be 1–48 characters: letters, digits, underscores, dots or
 hyphens; the first character must be a letter, digit or underscore.
 
 Build and flash from the repository root:
@@ -143,13 +215,15 @@ sequence list
 sequence status
 sequence run single_valve
 sequence run multi_valve
+sequence stop
 trace
 ```
 
 Wait for completion before starting another run. The shell remains responsive
 while the main thread executes the sequence. `sequence status` reports
-`initializing`, `ready`, `running`, `complete`, or `faulted`, plus the selected
-name. Both `ready` and `complete` allow another run. A second start while running
+`initializing`, `ready`, `running`, `stopping`, `stopped`, `complete`, or `faulted`,
+plus the selected name, current step, total steps, comment and error code.
+`ready`, `complete` and `stopped` allow another run. A second start while running
 is rejected. Unknown names do not activate any output. `trace` retrieves recent
 logs if you connected after startup. Use a generic USB serial terminal if your
 monitor does not recognize the board's USB CDC device.
@@ -157,8 +231,10 @@ monitor does not recognize the board's USB CDC device.
 An initialization, activation, or deactivation error prevents further runs until
 reset. After an activation or deactivation error the firmware attempts to turn
 every output off. Disconnecting the monitor does not cancel a running sequence:
-it completes on the board. There is no stop command. Firmware crashes and failed
-I2C off writes still require independent removal of valve power.
+it completes on the board. `sequence stop` interrupts the timed wait and requests
+outputs off; wait for `stopped` or `faulted` in status before starting again.
+Firmware crashes and failed I2C off writes still require independent removal
+of valve power.
 
 Switching among embedded sequences needs no flash or reset. Adding, removing or
 editing a JSON file requires rebuilding and flashing; CMake tracks directory
@@ -187,8 +263,89 @@ Host validation and mocked firmware behavior tests (no board required):
 python -m unittest discover -s tests/valve_gpio/test -v
 ```
 
-These exercise the actual C control flow with mock GPIO, shell and timing; they
-do not verify physical outputs, USB enumeration, or real scheduling on hardware.
+These exercise the actual C control flow with mock GPIO and timing, plus the C
+TCP server and nanopb encoding over real localhost sockets with the Python client.
+The Ethernet tests require a west workspace with nanopb and permission to open
+loopback sockets. They do not verify physical outputs, USB enumeration, Ethernet
+hardware, or real scheduling on the board.
+
+## Ethernet connection
+
+The test firmware enables Ethernet with Clover's direct-connection settings:
+static IPv4 `169.254.99.99`, netmask `255.255.0.0`. Connect the Ethernet cable
+and give your computer's Ethernet adapter a different address on the same subnet
+(for example `169.254.99.1` with that netmask). Check connectivity from the host:
+
+```sh
+ping 169.254.99.99
+```
+
+The test overlay selects a device-derived unicast MAC instead of the board's
+fixed multicast MAC. If flashing fails while requesting a reset, press the
+Teensy Program button to enter its bootloader, then retry `west flash`. A failed
+upload does not confirm the new firmware is running.
+
+In the USB shell, `net iface` and `net ipv4` show interface and IPv4 state.
+Networking initialization does not wait for a cable before starting the USB
+shell. Valve sequences still require an explicit USB command.
+
+The named-sequence build (`sequence.conf`) also runs a TCP command server on
+port **19690**, with Clover's length-prefixed protobuf Request/Response framing.
+It accepts only the new named-sequence request; ordinary Clover control and
+telemetry requests return an explicit unsupported-command error. USB and TCP
+share one sequence engine, so they cannot start overlapping tests. Up to two
+TCP clients can connect at once. A disconnected client does not cancel a run.
+
+Flash the named-sequence build, then from the repository root run:
+
+```sh
+python scripts/client-new.py --no-data --host 169.254.99.99
+```
+
+At `CMD>` enter:
+
+```text
+vlvseq
+```
+
+Inside the `VLVSEQ>` prompt, use `list`, `run single_valve`, `status`, `stop`,
+or `run multi_valve`. `back` or `exit` returns to the main client prompt without
+stopping the board. Ctrl+C shows a reminder to use `stop`; it does not send a
+stop automatically.
+
+The mode displays sequence names in a table and timestamped state/step changes
+with the current JSON comment. Progress is polled every 200 ms and printed above
+the prompt while it remains available for commands. Unchanged status is not
+repeated. This reads status snapshots, so steps shorter than the polling interval
+may not appear; full retained GPIO events remain available through USB `trace`.
+No firmware change or reflash is needed for this client mode.
+
+Or send a single command and exit, without subscribing to telemetry:
+
+```sh
+python scripts/client-new.py --host 169.254.99.99 --command "sequence list"
+python scripts/client-new.py --host 169.254.99.99 --command "sequence run single_valve"
+python scripts/client-new.py --host 169.254.99.99 --command "sequence status"
+python scripts/client-new.py --host 169.254.99.99 --command "sequence stop"
+```
+
+RUN acknowledges queuing, not sequence completion. The `vlvseq` mode automatically
+shows progress; one-shot commands can poll status manually. STOP acknowledges
+the request; confirm `stopped` or
+`faulted` before another run. GPIO faults require reset. Sequence commands are
+never automatically resent after a lost acknowledgement; reconnect and check
+status before attempting another run. `--port` overrides the TCP port if needed.
+Sequence names are case sensitive.
+
+The wire extension is in `api/clover.proto` (`Request.named_sequence`, tag 40;
+`Response.named_sequence`, tag 2). Existing field numbers are unchanged. This
+implements Ethernet commands in the standalone bench firmware, not production
+Clover's controller or valve-assignment API. The client can continue to use its
+existing commands with normal Clover firmware; named sequences need this test
+firmware. Integrating them into production Clover remains separate work.
+
+For a routed/DAQ network, change the IPv4 address, netmask and gateway settings
+in `prj.conf` to match that network, then rebuild and flash.
 
 ## Execution logging
 

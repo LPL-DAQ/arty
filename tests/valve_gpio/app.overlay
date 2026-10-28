@@ -3,3 +3,10 @@
         zephyr,shell-uart = &cdc_acm_uart0;
     };
 };
+
+/* The board's fixed 67:... address has the multicast bit set. Use a
+ * device-derived unicast address for the test's Ethernet interface. */
+&enet_mac {
+    /delete-property/ local-mac-address;
+    nxp,unique-mac;
+};

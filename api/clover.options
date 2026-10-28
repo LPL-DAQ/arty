@@ -5,3 +5,8 @@ ControlTrace.segments max_count:30
 
 Response.err max_size:1024
 
+NamedSequenceRequest.name max_size:49
+NamedSequenceInfo.names max_count:16 max_size:49
+NamedSequenceInfo.state max_size:16
+NamedSequenceInfo.name max_size:49
+NamedSequenceInfo.comment max_size:101

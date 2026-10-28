@@ -202,6 +202,10 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         // Handle request
         switch (request.which_payload) {
+        case Request_named_sequence_tag: {
+            cmd_result = std::unexpected(Error::from_cause("Named GPIO sequences require the standalone valve test firmware"));
+            break;
+        }
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
             cmd_result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_socket);

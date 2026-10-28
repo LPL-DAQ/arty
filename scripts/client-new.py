@@ -34,6 +34,8 @@ from rich.rule import Rule
 from rich.columns import Columns
 from rich import box
 import clover_pb2
+import named_sequences
+from valve_sequence_cli import ValveSequenceMode
 from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
 from prompt_toolkit import PromptSession
@@ -124,11 +126,17 @@ def _make_tcp_socket() -> socket.socket:
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
-    s.connect((ZEPHYR_IP, ZEPHYR_PORT))
+    s.settimeout(5)
+    try:
+        s.connect((ZEPHYR_IP, ZEPHYR_PORT))
+    except OSError:
+        s.close()
+        raise
+    s.settimeout(None)
     return s
 
 
-sock = _make_tcp_socket()
+sock = None
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 
@@ -2240,7 +2248,12 @@ def cmd_start_flight_sequence():
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
 
+def cmd_valve_sequences():
+    ValveSequenceMode(sock, console).run()
+
+
 MENU_ITEMS = [
+    ('vlvseq', 'vlvseq', 'Enter named valve sequence mode', cmd_valve_sequences),
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
@@ -2384,9 +2397,37 @@ def print_menu():
     console.print(table)
 
 
+def cmd_named_sequence(command):
+    try:
+        request = named_sequences.make_request(command)
+        previous_timeout = sock.gettimeout()
+        try:
+            sock.settimeout(5)
+            info = named_sequences.exchange(sock, request)
+        finally:
+            sock.settimeout(previous_timeout)
+        if request.named_sequence.operation == clover_pb2.NamedSequenceRequest.LIST:
+            console.print("Stored sequences: " + ", ".join(info.names), markup=False)
+        console.print(f"{info.state}; sequence={info.name or 'none'}; "
+                      f"step={info.step}/{info.total_steps}; error={info.error}", markup=False)
+        if info.comment:
+            console.print(info.comment, markup=False)
+        if request.named_sequence.operation == clover_pb2.NamedSequenceRequest.STOP:
+            console.print("Stop requested; use sequence status to confirm stopped or faulted.")
+        return True
+    except Exception as exc:
+        console.print(f"Sequence request failed: {exc}. No automatic retry. "
+                      "Reconnect and check sequence status before running again.", markup=False)
+        return False
+
+
 def route_command(cmd: str) -> bool:
     """Route a typed command. Returns False if user wants to quit."""
-    cmd = cmd.strip().lower()
+    cmd = cmd.strip()
+    if cmd.split() and cmd.split()[0].lower() == 'sequence':
+        cmd_named_sequence(cmd)
+        return True
+    cmd = cmd.lower()
 
     if cmd in ('quit', 'exit', 'q'):
         console.print(
@@ -2417,7 +2458,7 @@ def route_command(cmd: str) -> bool:
 
 
 def main():
-    global data_sock
+    global data_sock, sock, ZEPHYR_IP, ZEPHYR_PORT
     t = THEME
 
     parser = argparse.ArgumentParser(description='Clover ground station CLI')
@@ -2426,7 +2467,26 @@ def main():
         action='store_true',
         help='Skip binding the UDP telemetry port (for second instances)',
     )
+    parser.add_argument('--host', default=ZEPHYR_IP, help='Board IPv4 address')
+    parser.add_argument('--port', type=int, default=ZEPHYR_PORT, help='TCP command port')
+    parser.add_argument('--command', help='Run one named-sequence command and exit')
     args = parser.parse_args()
+    ZEPHYR_IP, ZEPHYR_PORT = args.host, args.port
+    if args.command:
+        try:
+            named_sequences.make_request(args.command)
+        except ValueError as exc:
+            parser.error(str(exc))
+    try:
+        sock = _make_tcp_socket()
+    except OSError as exc:
+        parser.exit(1, f'Cannot connect to {ZEPHYR_IP}:{ZEPHYR_PORT}: {exc}\n')
+    if args.command:
+        try:
+            success = cmd_named_sequence(args.command)
+        finally:
+            sock.close()
+        raise SystemExit(0 if success else 1)
 
     telemetry_info = f'Listen port: {DATA_PORT}' if not args.no_data else 'Telemetry: disabled'
     console.print(

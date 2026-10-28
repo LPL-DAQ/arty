@@ -4,6 +4,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 #include "valve_sequence.h"
+#include "sequence_engine.h"
 #include "test_trace.h"
 
 static const struct gpio_dt_spec valves[] = {
@@ -37,16 +38,57 @@ static int all_off(void)
     return first_error;
 }
 
-enum sequence_state { INITIALIZING, READY, RUNNING, COMPLETE, FAULTED };
+enum sequence_state { INITIALIZING, READY, RUNNING, COMPLETE, FAULTED, STOPPED };
 static enum sequence_state state = INITIALIZING;
 static const struct valve_sequence *selected;
 K_MUTEX_DEFINE(state_lock);
 K_SEM_DEFINE(run_requested, 0, 1);
+K_SEM_DEFINE(stop_wakeup, 0, 1);
+static bool stopping;
+static uint32_t current_step;
+static int last_error;
+
+size_t sequence_count(void) { return ARRAY_SIZE(sequences); }
+const char *sequence_name(size_t index) { return index < sequence_count() ? sequences[index].name : NULL; }
+
+struct sequence_snapshot sequence_status(void)
+{
+    static const char *const names[] = {"initializing", "ready", "running", "complete", "faulted", "stopped"};
+    k_mutex_lock(&state_lock, K_FOREVER);
+    struct sequence_snapshot out = {
+        .state = stopping && state == RUNNING ? "stopping" : names[state],
+        .name = selected ? selected->name : "",
+        .comment = selected && current_step ? selected->steps[current_step - 1].comment : "",
+        .step = current_step,
+        .total_steps = selected ? selected->count : 0,
+        .error = last_error,
+    };
+    k_mutex_unlock(&state_lock);
+    return out;
+}
+
+int sequence_stop(void)
+{
+    k_mutex_lock(&state_lock, K_FOREVER);
+    if (state == RUNNING) {
+        stopping = true;
+        k_sem_give(&stop_wakeup);
+    }
+    k_mutex_unlock(&state_lock);
+    return 0;
+}
 
 static int run_sequence(const struct valve_sequence *sequence)
 {
     trace_event("START sequence=%s", sequence->name);
     for (size_t step = 0; step < sequence->count; ++step) {
+        k_mutex_lock(&state_lock, K_FOREVER);
+        if (stopping) {
+            k_mutex_unlock(&state_lock);
+            int off_err = all_off();
+            return off_err;
+        }
+        current_step = step + 1;
         if (sequence->steps[step].comment[0]) {
             trace_event("NEXT: %s", sequence->steps[step].comment);
         }
@@ -66,14 +108,23 @@ static int run_sequence(const struct valve_sequence *sequence)
                 }
             }
         }
+        k_mutex_unlock(&state_lock);
         if (!err) {
-            k_msleep(sequence->steps[step].duration_ms);
+            /* STOP wakes this wait; timing and cleanup remain owned by this thread. */
+            k_sem_take(&stop_wakeup, K_MSEC(sequence->steps[step].duration_ms));
         }
         int off_err = all_off();
         trace_event("STEP %u OFF result=%d", (unsigned)step + 1, off_err);
         if (err || off_err) {
             trace_event("STOP: activation=%d deactivation=%d", err, off_err);
             return err ? err : off_err;
+        }
+        k_mutex_lock(&state_lock, K_FOREVER);
+        bool cancelled = stopping;
+        k_mutex_unlock(&state_lock);
+        if (cancelled) {
+            trace_event("STOPPED: all outputs commanded inactive");
+            return 0;
         }
     }
     trace_event("COMPLETE: all outputs commanded inactive");
@@ -94,9 +145,38 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
-    static const char *const names[] = {"initializing", "ready", "running", "complete", "faulted"};
+    struct sequence_snapshot status = sequence_status();
+    shell_print(sh, "%s; sequence=%s step=%u/%u error=%d comment=%s", status.state,
+                status.name, (unsigned)status.step, (unsigned)status.total_steps,
+                status.error, status.comment);
+    return 0;
+}
+
+int sequence_start(const char *name)
+{
+    const struct valve_sequence *sequence = NULL;
+    for (size_t i = 0; i < ARRAY_SIZE(sequences); ++i) {
+        if (!strcmp(name, sequences[i].name)) {
+            sequence = &sequences[i];
+            break;
+        }
+    }
+    if (!sequence) {
+        return -ENOENT;
+    }
     k_mutex_lock(&state_lock, K_FOREVER);
-    shell_print(sh, "%s; sequence=%s", names[state], selected ? selected->name : "none");
+    if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
+        k_mutex_unlock(&state_lock);
+        return -EBUSY;
+    }
+    selected = sequence;
+    state = RUNNING;
+    stopping = false;
+    current_step = 0;
+    last_error = 0;
+    k_sem_reset(&stop_wakeup);
+    /* Publish selection and wakeup together so USB/TCP starts cannot race. */
+    k_sem_give(&run_requested);
     k_mutex_unlock(&state_lock);
     return 0;
 }
@@ -104,28 +184,21 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 static int cmd_run(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
-    const struct valve_sequence *sequence = NULL;
-    for (size_t i = 0; i < ARRAY_SIZE(sequences); ++i) {
-        if (!strcmp(argv[1], sequences[i].name)) {
-            sequence = &sequences[i];
-            break;
-        }
+    int err = sequence_start(argv[1]);
+    if (err) {
+        shell_error(sh, "Cannot start (%d): check name/status; faults require reset", err);
+    } else {
+        shell_print(sh, "Queued sequence %s", argv[1]);
     }
-    if (!sequence) {
-        shell_error(sh, "Unknown sequence; use sequence list");
-        return -ENOENT;
-    }
-    k_mutex_lock(&state_lock, K_FOREVER);
-    if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
-        shell_error(sh, "Cannot start: initializing, running, or faulted (faults require reset)");
-        k_mutex_unlock(&state_lock);
-        return -EBUSY;
-    }
-    selected = sequence;
-    state = RUNNING;
-    k_mutex_unlock(&state_lock);
-    shell_print(sh, "Queued sequence %s", sequence->name);
-    k_sem_give(&run_requested);
+    return err;
+}
+
+static int cmd_stop(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    sequence_stop();
+    shell_print(sh, "Stop requested; use sequence status to confirm outputs-off completion");
     return 0;
 }
 
@@ -133,6 +206,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sequence_commands,
     SHELL_CMD_ARG(list, NULL, "List embedded sequences", cmd_list, 1, 0),
     SHELL_CMD_ARG(run, NULL, "Run a named sequence", cmd_run, 2, 0),
     SHELL_CMD_ARG(status, NULL, "Show sequence state", cmd_status, 1, 0),
+    SHELL_CMD_ARG(stop, NULL, "Stop and deactivate outputs", cmd_stop, 1, 0),
     SHELL_SUBCMD_SET_END
 );
 SHELL_CMD_REGISTER(sequence, &sequence_commands, "Embedded valve sequences", NULL);
@@ -158,6 +232,7 @@ int main(void)
         all_off();
         k_mutex_lock(&state_lock, K_FOREVER);
         state = FAULTED;
+        last_error = -ENODEV;
         k_mutex_unlock(&state_lock);
         return -ENODEV;
     }
@@ -168,11 +243,12 @@ int main(void)
     trace_event("READY: use sequence list, then sequence run <name>");
     for (;;) {
         k_sem_take(&run_requested, K_FOREVER);
-        /* Only the shell writes selected, and RUNNING prevents changes during a run. */
+        /* RUNNING prevents USB/TCP commands from changing selected during a run. */
         int err = run_sequence(selected);
         k_mutex_lock(&state_lock, K_FOREVER);
-        state = err ? FAULTED : COMPLETE;
+        last_error = err;
+        state = last_error ? FAULTED : (stopping ? STOPPED : COMPLETE);
         k_mutex_unlock(&state_lock);
-        trace_event("State=%s", err ? "faulted (reset required)" : "complete; ready for another run");
+        trace_event("State=%s", sequence_status().state);
     }
 }

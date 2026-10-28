@@ -39,6 +39,59 @@ class SequencesTest(unittest.TestCase):
             path.unlink()
             (inputs / 'bad name.json').write_text('[{"duration_ms":1,"channels":[]}]')
             self.generate(inputs, header, False)
+            (inputs / 'bad name.json').unlink()
+            for index in range(17):
+                (inputs / f'sequence_{index}.json').write_text('[{"duration_ms":1,"channels":[]}]')
+            self.generate(inputs, header, False)
+
+    def test_valve_name_resolution_and_mapping_validation(self):
+        sys.path.insert(0, str(ROOT))
+        from run_sequence import load_sequence, load_valve_map
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            mapping = directory / 'mapping.json'
+            source = directory / 'sequence.json'
+            header = directory / 'sequence.h'
+            mapping.write_text(json.dumps({'SV001': 0, 'PBV101': 8}))
+            source.write_text(json.dumps([
+                {'duration_ms': 5, 'valves': ['SV001', 'PBV101']},
+                {'duration_ms': 10, 'valves': []}]))
+            steps = load_sequence(source, mapping)
+            self.assertEqual([step['channels'] for step in steps], [[0, 8], []])
+            command = [sys.executable, str(ROOT / 'generate_sequence.py'), str(source), str(header),
+                       '--valve-map', str(mapping)]
+            subprocess.run(command, check=True)
+            self.assertIn('0x00000101U', header.read_text())
+            # Reassignment changes the firmware mask without editing the sequence.
+            mapping.write_text(json.dumps({'SV001': 7, 'PBV101': 8}))
+            subprocess.run(command, check=True)
+            self.assertIn('0x00000180U', header.read_text())
+            source.write_text('[{"duration_ms":5,"channels":["SV001","PBV101"]}]')
+            self.assertEqual(load_sequence(source, mapping)[0]['channels'], [7, 8])
+            for step in [
+                {'duration_ms': 5, 'valves': ['MISSING']},
+                {'duration_ms': 5, 'valves': ['SV001', 'SV001']},
+                {'duration_ms': 5, 'valves': [0]},
+                {'duration_ms': 5, 'channels': [7, 'SV001']},
+                {'duration_ms': 5, 'valves': [], 'channels': []},
+            ]:
+                source.write_text(json.dumps([step]))
+                with self.assertRaises(ValueError):
+                    load_sequence(source, mapping)
+            for invalid_map in [
+                {'SV001': 32}, {'SV001': -1}, {'SV001': True},
+                {'SV001': 0, 'PBV101': 0}, {'bad name': 0}, [],
+            ]:
+                mapping.write_text(json.dumps(invalid_map))
+                with self.assertRaises(ValueError):
+                    load_valve_map(mapping)
+            mapping.write_text('{"SV001":0,"SV001":1}')
+            with self.assertRaisesRegex(ValueError, 'duplicate valve name'):
+                load_valve_map(mapping)
+            mapping.write_text('{"SV001":null}')
+            source.write_text('[{"duration_ms":5,"valves":["SV001"]}]')
+            with self.assertRaisesRegex(ValueError, 'no channel assigned'):
+                load_sequence(source, mapping)
 
     def test_firmware_with_mock_gpio(self):
         """Execute actual firmware control flow with mocked GPIO, clock and shell."""
@@ -60,7 +113,7 @@ class SequencesTest(unittest.TestCase):
             harness.write_text(MOCKS + firmware + CHECKS)
             binary = directory / 'test'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(harness),
-                            '-o', str(binary)], check=True)
+                            '-I', str(ROOT / 'src'), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 
 
@@ -80,6 +133,7 @@ MOCKS = r'''
 #define GPIO_ACTIVE_LOW 1
 #define GPIO_OUTPUT_INACTIVE 0
 #define K_FOREVER 0
+#define K_MSEC(ms) (ms)
 #define K_MUTEX_DEFINE(n) static int n
 #define K_SEM_DEFINE(n, a, b) static int n
 #define k_mutex_lock(a, b) ((void)(a), (void)(b))
@@ -127,14 +181,25 @@ static int gpio_pin_set_dt(const struct gpio_dt_spec *p, int value) {
     return 0;
 }
 static int gpio_pin_get_raw(const struct device *d, unsigned pin) { (void)d; return values[pin]; }
-static void k_msleep(int ms) { elapsed += ms; }
+
 static void k_sem_give(int *s) { (void)s; ++pending; }
-static void k_sem_take(int *s, int timeout);
+static void k_sem_reset(int *s) { (void)s; }
+static int k_sem_take(int *s, int timeout);
 '''
 
 CHECKS = r'''
-static void k_sem_take(int *s, int timeout) {
-    (void)s; (void)timeout;
+static int k_sem_take(int *s, int timeout) {
+    if (s == &stop_wakeup) {
+        if (scenario == 4) {
+            assert(cmd_stop(NULL, 0, NULL) == 0);
+            assert(!strcmp(sequence_status().state, "stopping"));
+            --pending;
+            return 0;
+        }
+        elapsed += timeout;
+        return -1;
+    }
+    (void)timeout;
     char *a[] = {"run", "a"};
     char *b[] = {"run", "b"};
     assert(!pending);
@@ -145,18 +210,23 @@ static void k_sem_take(int *s, int timeout) {
         assert(state == RUNNING && selected == &sequences[0]);
         assert(cmd_run(NULL, 2, b) == -EBUSY);
         assert(selected == &sequences[0]);
+        if (scenario == 3) {
+            assert(sequence_stop() == 0);
+            --pending;
+        }
     } else if (scenario == 0 && take_count <= 3) {
         assert(state == COMPLETE);
         assert(!values[0] && !values[1] && !values[2]);
         /* Run a second file, then repeat it without reset. */
         assert(cmd_run(NULL, 2, b) == 0);
     } else {
-        assert(state == (scenario ? FAULTED : COMPLETE));
-        if (scenario) assert(cmd_run(NULL, 2, b) == -EBUSY);
+        assert(state == (scenario == 3 || scenario == 4 ? STOPPED : (scenario ? FAULTED : COMPLETE)));
+        if (scenario == 1 || scenario == 2) assert(cmd_run(NULL, 2, b) == -EBUSY);
         longjmp(idle, 1);
     }
     assert(pending == 1);
     --pending;
+    return 0;
 }
 static void reset(void) {
     memset(values, 0, sizeof(values));
@@ -165,6 +235,7 @@ static void reset(void) {
     init_fail = fail_on = fail_off = 0;
     state = INITIALIZING;
     selected = NULL;
+    stopping = false; current_step = 0; last_error = 0;
 }
 int main(void) {
     assert(registered);
@@ -187,6 +258,15 @@ int main(void) {
     reset(); scenario = 2; fail_off = 1;
     if (!setjmp(idle)) firmware_main();
     assert(on_count == 2 && elapsed == 10 && off_count == 3);
+    reset(); scenario = 3;
+    if (!setjmp(idle)) firmware_main();
+    assert(state == STOPPED && on_count == 0 && off_count == 3);
+    assert(sequence_status().error == 0);
+    assert(sequence_start("b") == 0); /* Restart after acknowledged stop. */
+    reset(); scenario = 4;
+    if (!setjmp(idle)) firmware_main();
+    assert(state == STOPPED && on_count == 2 && off_count == 3 && elapsed == 0);
+    assert(!values[0] && !values[1] && !values[2]);
     reset(); init_fail = 1;
     assert(firmware_main() == -ENODEV);
     assert(state == FAULTED && on_count == 0 && off_count == 3);

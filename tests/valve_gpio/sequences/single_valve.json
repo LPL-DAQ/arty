@@ -1,10 +1,50 @@
 [
-  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
-  {"duration_ms": 5000, "channels": [0], "comment": "Energizing valve 0 for 5 seconds"},
-  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
-  {"duration_ms": 5000, "channels": [1], "comment": "Energizing valve 1 for 5 seconds"},
-  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
-  {"duration_ms": 5000, "channels": [2], "comment": "Energizing valve 2 for 5 seconds"},
-  {"duration_ms": 5000, "channels": [], "comment": "All valves off; waiting 5 seconds"},
-  {"duration_ms": 5000, "channels": [3], "comment": "Energizing valve 3 for 5 seconds"}
+  {
+    "duration_ms": 5000,
+    "comment": "All valves off; waiting 5 seconds",
+    "valves": []
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "Energizing SV001 for 5 seconds",
+    "valves": [
+      "SV001"
+    ]
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "All valves off; waiting 5 seconds",
+    "valves": []
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "Energizing SV002 for 5 seconds",
+    "valves": [
+      "SV002"
+    ]
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "All valves off; waiting 5 seconds",
+    "valves": []
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "Energizing SV003 for 5 seconds",
+    "valves": [
+      "SV003"
+    ]
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "All valves off; waiting 5 seconds",
+    "valves": []
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "Energizing SV004 for 5 seconds",
+    "valves": [
+      "SV004"
+    ]
+  }
 ]

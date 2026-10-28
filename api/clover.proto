@@ -12,12 +12,15 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 40
+// next tag: 41
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
     IdentifyClientRequest identify_client = 6;
     IsNotAbortedRequest is_not_aborted_request = 26;
+
+    // Named GPIO bench sequences (supported by standalone valve test firmware).
+    NamedSequenceRequest named_sequence = 40;
 
     // Sensors
     ConfigureAnalogSensorsRequest configure_analog_sensors = 25;
@@ -88,6 +91,23 @@ message Request {
 // Successful if err is missing.
 message Response {
   optional string err = 1;
+  optional NamedSequenceInfo named_sequence = 2;
+}
+
+// Additive protocol extension; existing Clover requests and field numbers are unchanged.
+message NamedSequenceRequest {
+  enum Operation { LIST = 0; RUN = 1; STATUS = 2; STOP = 3; }
+  required Operation operation = 1;
+  optional string name = 2;
+}
+message NamedSequenceInfo {
+  repeated string names = 1;
+  required string state = 2;
+  optional string name = 3;
+  optional uint32 step = 4; // One-based; zero means no step started.
+  optional uint32 total_steps = 5;
+  optional string comment = 6;
+  optional sint32 error = 7;
 }
 
 // Subscribe client IP to data stream.
