@@ -10,14 +10,17 @@ class RequestRejected(ValueError):
 def make_request(command):
     words = command.strip().split()
     if len(words) < 2 or words[0].lower() != 'sequence':
-        raise ValueError('Use sequence list | run <name> | status | stop')
+        raise ValueError('Use sequence list | run <name> | status | abort')
     operation = words[1].lower()
+    if operation == 'abort' and len(words) == 2:
+        request = clover_pb2.Request()
+        request.abort.SetInParent()
+        return request
     operations = {'list': clover_pb2.NamedSequenceRequest.LIST,
                   'run': clover_pb2.NamedSequenceRequest.RUN,
-                  'status': clover_pb2.NamedSequenceRequest.STATUS,
-                  'stop': clover_pb2.NamedSequenceRequest.STOP}
+                  'status': clover_pb2.NamedSequenceRequest.STATUS}
     if operation not in operations or len(words) != (3 if operation == 'run' else 2):
-        raise ValueError('Use sequence list | run <name> | status | stop')
+        raise ValueError('Use sequence list | run <name> | status | abort')
     request = clover_pb2.Request()
     request.named_sequence.operation = operations[operation]
     if operation == 'run':

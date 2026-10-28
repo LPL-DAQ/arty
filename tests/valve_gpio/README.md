@@ -215,15 +215,15 @@ sequence list
 sequence status
 sequence run single_valve
 sequence run multi_valve
-sequence stop
+sequence abort
 trace
 ```
 
 Wait for completion before starting another run. The shell remains responsive
 while the main thread executes the sequence. `sequence status` reports
-`initializing`, `ready`, `running`, `stopping`, `stopped`, `complete`, or `faulted`,
+`initializing`, `ready`, `running`, `aborting`, `aborted`, `complete`, or `faulted`,
 plus the selected name, current step, total steps, comment and error code.
-`ready`, `complete` and `stopped` allow another run. A second start while running
+`ready`, `complete` and `aborted` allow another run. A second start while running
 is rejected. Unknown names do not activate any output. `trace` retrieves recent
 logs if you connected after startup. Use a generic USB serial terminal if your
 monitor does not recognize the board's USB CDC device.
@@ -231,8 +231,8 @@ monitor does not recognize the board's USB CDC device.
 An initialization, activation, or deactivation error prevents further runs until
 reset. After an activation or deactivation error the firmware attempts to turn
 every output off. Disconnecting the monitor does not cancel a running sequence:
-it completes on the board. `sequence stop` interrupts the timed wait and requests
-outputs off; wait for `stopped` or `faulted` in status before starting again.
+it completes on the board. `sequence abort` interrupts the timed wait and requests
+outputs off; wait for `aborted` or `faulted` in status before starting again.
 Firmware crashes and failed I2C off writes still require independent removal
 of valve power.
 
@@ -291,7 +291,7 @@ shell. Valve sequences still require an explicit USB command.
 
 The named-sequence build (`sequence.conf`) also runs a TCP command server on
 port **19690**, with Clover's length-prefixed protobuf Request/Response framing.
-It accepts only the new named-sequence request; ordinary Clover control and
+It accepts named-sequence requests and the existing `AbortRequest`; ordinary Clover control and
 telemetry requests return an explicit unsupported-command error. USB and TCP
 share one sequence engine, so they cannot start overlapping tests. Up to two
 TCP clients can connect at once. A disconnected client does not cancel a run.
@@ -308,10 +308,10 @@ At `CMD>` enter:
 vlvseq
 ```
 
-Inside the `VLVSEQ>` prompt, use `list`, `run single_valve`, `status`, `stop`,
+Inside the `VLVSEQ>` prompt, use `list`, `run single_valve`, `status`, `abort`,
 or `run multi_valve`. `back` or `exit` returns to the main client prompt without
-stopping the board. Ctrl+C shows a reminder to use `stop`; it does not send a
-stop automatically.
+stopping the board. Ctrl+C shows a reminder to use `abort`; it does not send a
+abort automatically.
 
 The mode displays sequence names in a table and timestamped state/step changes
 with the current JSON comment. Progress is polled every 200 ms and printed above
@@ -326,13 +326,20 @@ Or send a single command and exit, without subscribing to telemetry:
 python scripts/client-new.py --host 169.254.99.99 --command "sequence list"
 python scripts/client-new.py --host 169.254.99.99 --command "sequence run single_valve"
 python scripts/client-new.py --host 169.254.99.99 --command "sequence status"
-python scripts/client-new.py --host 169.254.99.99 --command "sequence stop"
+python scripts/client-new.py --host 169.254.99.99 --command "sequence abort"
 ```
 
 RUN acknowledges queuing, not sequence completion. The `vlvseq` mode automatically
-shows progress; one-shot commands can poll status manually. STOP acknowledges
-the request; confirm `stopped` or
-`faulted` before another run. GPIO faults require reset. Sequence commands are
+shows progress; one-shot commands can poll status manually. ABORT acknowledges
+the request; confirm `aborted` or
+`faulted` before another run. GPIO faults require reset. `abort` sends the same protobuf `AbortRequest` used by
+Clover's top-level abort command (not `NamedSequenceRequest.STOP`). In this
+standalone firmware its handler cancels a run and de-energizes all valve GPIOs,
+including when idle; it does not link or execute Clover's `Controller::handle_abort()`.
+A fault remains latched even if a later abort successfully writes all outputs off.
+A successful abort allows another test run. The legacy STOP wire operation is
+still accepted for older clients, but the new CLI and USB command are `abort`.
+Sequence commands are
 never automatically resent after a lost acknowledgement; reconnect and check
 status before attempting another run. `--port` overrides the TCP port if needed.
 Sequence names are case sensitive.

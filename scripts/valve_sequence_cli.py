@@ -29,7 +29,7 @@ class ValveSequenceMode:
             return
         previous = self.last_status
         self.last_status = signature
-        styles = {'running': 'cyan', 'stopping': 'yellow', 'stopped': 'yellow',
+        styles = {'running': 'cyan', 'aborting': 'yellow', 'aborted': 'yellow',
                   'complete': 'green', 'ready': 'green', 'faulted': 'bold red'}
         line = Text(f'[{datetime.now():%H:%M:%S}] ', style='dim')
         line.append(info.state.upper(), style=styles.get(info.state, 'white'))
@@ -46,7 +46,7 @@ class ValveSequenceMode:
         try:
             request = named_sequences.make_request('sequence ' + command)
         except ValueError:
-            self.console.print('Use: list | run <name> | status | stop | back', style='yellow')
+            self.console.print('Use: list | run <name> | status | abort | back', style='yellow')
             return False
         with self.lock:
             if self.broken:
@@ -70,7 +70,7 @@ class ValveSequenceMode:
             finally:
                 if not self.broken:
                     self.connection.settimeout(previous_timeout)
-            operation = request.named_sequence.operation
+            operation = None if request.HasField('abort') else request.named_sequence.operation
             if operation == clover_pb2.NamedSequenceRequest.LIST:
                 table = Table(title='Stored valve sequences', show_header=True, min_width=30)
                 table.add_column('Name', style='cyan')
@@ -79,8 +79,8 @@ class ValveSequenceMode:
                 self.console.print(table)
             elif operation == clover_pb2.NamedSequenceRequest.RUN:
                 self.console.print(Text(f'Run accepted: {request.named_sequence.name}', style='green'))
-            elif operation == clover_pb2.NamedSequenceRequest.STOP:
-                self.console.print('Stop requested; waiting for stopped or faulted status.', style='yellow')
+            elif request.HasField('abort'):
+                self.console.print('Abort requested; waiting for aborted or faulted status.', style='yellow')
             self.show_status(info, force=operation == clover_pb2.NamedSequenceRequest.STATUS and not quiet)
             return True
 
@@ -95,7 +95,7 @@ class ValveSequenceMode:
             Text('list           Show stored sequences\n'
                  'run <name>     Start a sequence\n'
                  'status         Show current state, step and comment\n'
-                 'stop           Request outputs off\n'
+                 'abort          Abort sequence and request outputs off\n'
                  'back / exit    Return to CMD (does not stop the board)\n\n'
                  'Progress updates appear automatically while this mode is open.'),
             title='Valve sequences — vlvseq', border_style='cyan'))
@@ -110,14 +110,14 @@ class ValveSequenceMode:
                     try:
                         command = session.prompt('\n  VLVSEQ> ').strip()
                     except KeyboardInterrupt:
-                        self.console.print('Use stop to stop the board, or back to leave this mode.', style='yellow')
+                        self.console.print('Use abort to abort the sequence, or back to leave this mode.', style='yellow')
                         continue
                     except EOFError:
                         break
                     if command.lower() in ('back', 'exit', 'quit', 'q'):
                         break
                     if command.lower() in ('help', '?', 'h'):
-                        self.console.print('list | run <name> | status | stop | back')
+                        self.console.print('list | run <name> | status | abort | back')
                     elif command:
                         self.execute(command)
             finally:

@@ -14,5 +14,5 @@ struct sequence_snapshot {
 size_t sequence_count(void);
 const char *sequence_name(size_t index);
 int sequence_start(const char *name);
-int sequence_stop(void);
+int sequence_abort(void);
 struct sequence_snapshot sequence_status(void);

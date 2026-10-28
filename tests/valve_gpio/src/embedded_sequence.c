@@ -38,13 +38,13 @@ static int all_off(void)
     return first_error;
 }
 
-enum sequence_state { INITIALIZING, READY, RUNNING, COMPLETE, FAULTED, STOPPED };
+enum sequence_state { INITIALIZING, READY, RUNNING, COMPLETE, FAULTED, ABORTED };
 static enum sequence_state state = INITIALIZING;
 static const struct valve_sequence *selected;
 K_MUTEX_DEFINE(state_lock);
 K_SEM_DEFINE(run_requested, 0, 1);
-K_SEM_DEFINE(stop_wakeup, 0, 1);
-static bool stopping;
+K_SEM_DEFINE(abort_wakeup, 0, 1);
+static bool aborting;
 static uint32_t current_step;
 static int last_error;
 
@@ -53,10 +53,10 @@ const char *sequence_name(size_t index) { return index < sequence_count() ? sequ
 
 struct sequence_snapshot sequence_status(void)
 {
-    static const char *const names[] = {"initializing", "ready", "running", "complete", "faulted", "stopped"};
+    static const char *const names[] = {"initializing", "ready", "running", "complete", "faulted", "aborted"};
     k_mutex_lock(&state_lock, K_FOREVER);
     struct sequence_snapshot out = {
-        .state = stopping && state == RUNNING ? "stopping" : names[state],
+        .state = aborting && state == RUNNING ? "aborting" : names[state],
         .name = selected ? selected->name : "",
         .comment = selected && current_step ? selected->steps[current_step - 1].comment : "",
         .step = current_step,
@@ -67,15 +67,28 @@ struct sequence_snapshot sequence_status(void)
     return out;
 }
 
-int sequence_stop(void)
+int sequence_abort(void)
 {
     k_mutex_lock(&state_lock, K_FOREVER);
-    if (state == RUNNING) {
-        stopping = true;
-        k_sem_give(&stop_wakeup);
+    int err = 0;
+    if (state == INITIALIZING) {
+        err = -EBUSY;
+    } else if (state == RUNNING) {
+        aborting = true;
+        k_sem_give(&abort_wakeup);
+    } else {
+        /* An idle/faulted abort also attempts to de-energize every output.
+         * Never clear a latched GPIO fault as a side effect of abort. */
+        err = all_off();
+        if (err) {
+            last_error = err;
+            state = FAULTED;
+        } else if (state != FAULTED) {
+            state = ABORTED;
+        }
     }
     k_mutex_unlock(&state_lock);
-    return 0;
+    return err;
 }
 
 static int run_sequence(const struct valve_sequence *sequence)
@@ -83,7 +96,7 @@ static int run_sequence(const struct valve_sequence *sequence)
     trace_event("START sequence=%s", sequence->name);
     for (size_t step = 0; step < sequence->count; ++step) {
         k_mutex_lock(&state_lock, K_FOREVER);
-        if (stopping) {
+        if (aborting) {
             k_mutex_unlock(&state_lock);
             int off_err = all_off();
             return off_err;
@@ -110,8 +123,8 @@ static int run_sequence(const struct valve_sequence *sequence)
         }
         k_mutex_unlock(&state_lock);
         if (!err) {
-            /* STOP wakes this wait; timing and cleanup remain owned by this thread. */
-            k_sem_take(&stop_wakeup, K_MSEC(sequence->steps[step].duration_ms));
+            /* ABORT wakes this wait; timing and cleanup remain owned by this thread. */
+            k_sem_take(&abort_wakeup, K_MSEC(sequence->steps[step].duration_ms));
         }
         int off_err = all_off();
         trace_event("STEP %u OFF result=%d", (unsigned)step + 1, off_err);
@@ -120,10 +133,10 @@ static int run_sequence(const struct valve_sequence *sequence)
             return err ? err : off_err;
         }
         k_mutex_lock(&state_lock, K_FOREVER);
-        bool cancelled = stopping;
+        bool cancelled = aborting;
         k_mutex_unlock(&state_lock);
         if (cancelled) {
-            trace_event("STOPPED: all outputs commanded inactive");
+            trace_event("ABORTED: all outputs commanded inactive");
             return 0;
         }
     }
@@ -171,10 +184,10 @@ int sequence_start(const char *name)
     }
     selected = sequence;
     state = RUNNING;
-    stopping = false;
+    aborting = false;
     current_step = 0;
     last_error = 0;
-    k_sem_reset(&stop_wakeup);
+    k_sem_reset(&abort_wakeup);
     /* Publish selection and wakeup together so USB/TCP starts cannot race. */
     k_sem_give(&run_requested);
     k_mutex_unlock(&state_lock);
@@ -193,12 +206,16 @@ static int cmd_run(const struct shell *sh, size_t argc, char **argv)
     return err;
 }
 
-static int cmd_stop(const struct shell *sh, size_t argc, char **argv)
+static int cmd_abort(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
-    sequence_stop();
-    shell_print(sh, "Stop requested; use sequence status to confirm outputs-off completion");
+    int err = sequence_abort();
+    if (err) {
+        shell_error(sh, "Abort failed (%d); check sequence status", err);
+        return err;
+    }
+    shell_print(sh, "Abort requested; use sequence status to confirm outputs-off completion");
     return 0;
 }
 
@@ -206,7 +223,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sequence_commands,
     SHELL_CMD_ARG(list, NULL, "List embedded sequences", cmd_list, 1, 0),
     SHELL_CMD_ARG(run, NULL, "Run a named sequence", cmd_run, 2, 0),
     SHELL_CMD_ARG(status, NULL, "Show sequence state", cmd_status, 1, 0),
-    SHELL_CMD_ARG(stop, NULL, "Stop and deactivate outputs", cmd_stop, 1, 0),
+    SHELL_CMD_ARG(abort, NULL, "Abort and deactivate outputs", cmd_abort, 1, 0),
     SHELL_SUBCMD_SET_END
 );
 SHELL_CMD_REGISTER(sequence, &sequence_commands, "Embedded valve sequences", NULL);
@@ -247,7 +264,7 @@ int main(void)
         int err = run_sequence(selected);
         k_mutex_lock(&state_lock, K_FOREVER);
         last_error = err;
-        state = last_error ? FAULTED : (stopping ? STOPPED : COMPLETE);
+        state = last_error ? FAULTED : (aborting ? ABORTED : COMPLETE);
         k_mutex_unlock(&state_lock);
         trace_event("State=%s", sequence_status().state);
     }

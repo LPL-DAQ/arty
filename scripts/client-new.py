@@ -2406,14 +2406,14 @@ def cmd_named_sequence(command):
             info = named_sequences.exchange(sock, request)
         finally:
             sock.settimeout(previous_timeout)
-        if request.named_sequence.operation == clover_pb2.NamedSequenceRequest.LIST:
+        if not request.HasField('abort') and request.named_sequence.operation == clover_pb2.NamedSequenceRequest.LIST:
             console.print("Stored sequences: " + ", ".join(info.names), markup=False)
         console.print(f"{info.state}; sequence={info.name or 'none'}; "
                       f"step={info.step}/{info.total_steps}; error={info.error}", markup=False)
         if info.comment:
             console.print(info.comment, markup=False)
-        if request.named_sequence.operation == clover_pb2.NamedSequenceRequest.STOP:
-            console.print("Stop requested; use sequence status to confirm stopped or faulted.")
+        if request.HasField('abort'):
+            console.print("Abort requested; use sequence status to confirm aborted or faulted.")
         return True
     except Exception as exc:
         console.print(f"Sequence request failed: {exc}. No automatic retry. "

@@ -7,15 +7,18 @@
 void sequence_handle_request(const Request *request, Response *response)
 {
     *response = (Response)Response_init_zero;
-    if (request->which_payload != Request_named_sequence_tag) {
+    bool abort = request->which_payload == Request_abort_tag;
+    if (!abort && request->which_payload != Request_named_sequence_tag) {
         response->has_err = true;
         snprintf(response->err, sizeof(response->err),
-                 "Standalone valve test supports named_sequence only; use Clover for production commands");
+                 "Standalone valve test supports named_sequence and abort only; use Clover for production commands");
         return;
     }
     const NamedSequenceRequest *command = &request->payload.named_sequence;
     int err = 0;
-    switch (command->operation) {
+    if (abort) {
+        err = sequence_abort();
+    } else switch (command->operation) {
     case NamedSequenceRequest_Operation_LIST:
     case NamedSequenceRequest_Operation_STATUS:
         break;
@@ -23,7 +26,7 @@ void sequence_handle_request(const Request *request, Response *response)
         err = command->has_name && command->name[0] ? sequence_start(command->name) : -EINVAL;
         break;
     case NamedSequenceRequest_Operation_STOP:
-        err = sequence_stop();
+        err = sequence_abort(); /* Legacy wire operation; new clients send AbortRequest. */
         break;
     default:
         err = -EINVAL;
@@ -46,7 +49,7 @@ void sequence_handle_request(const Request *request, Response *response)
     info->step = status.step;
     info->total_steps = status.total_steps;
     info->error = status.error;
-    if (command->operation == NamedSequenceRequest_Operation_LIST) {
+    if (!abort && command->operation == NamedSequenceRequest_Operation_LIST) {
         for (size_t i = 0; i < sequence_count(); ++i) {
             snprintf(info->names[info->names_count++], sizeof(info->names[0]), "%s", sequence_name(i));
         }

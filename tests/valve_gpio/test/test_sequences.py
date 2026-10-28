@@ -189,10 +189,10 @@ static int k_sem_take(int *s, int timeout);
 
 CHECKS = r'''
 static int k_sem_take(int *s, int timeout) {
-    if (s == &stop_wakeup) {
+    if (s == &abort_wakeup) {
         if (scenario == 4) {
-            assert(cmd_stop(NULL, 0, NULL) == 0);
-            assert(!strcmp(sequence_status().state, "stopping"));
+            assert(cmd_abort(NULL, 0, NULL) == 0);
+            assert(!strcmp(sequence_status().state, "aborting"));
             --pending;
             return 0;
         }
@@ -211,7 +211,7 @@ static int k_sem_take(int *s, int timeout) {
         assert(cmd_run(NULL, 2, b) == -EBUSY);
         assert(selected == &sequences[0]);
         if (scenario == 3) {
-            assert(sequence_stop() == 0);
+            assert(sequence_abort() == 0);
             --pending;
         }
     } else if (scenario == 0 && take_count <= 3) {
@@ -220,7 +220,7 @@ static int k_sem_take(int *s, int timeout) {
         /* Run a second file, then repeat it without reset. */
         assert(cmd_run(NULL, 2, b) == 0);
     } else {
-        assert(state == (scenario == 3 || scenario == 4 ? STOPPED : (scenario ? FAULTED : COMPLETE)));
+        assert(state == (scenario == 3 || scenario == 4 ? ABORTED : (scenario ? FAULTED : COMPLETE)));
         if (scenario == 1 || scenario == 2) assert(cmd_run(NULL, 2, b) == -EBUSY);
         longjmp(idle, 1);
     }
@@ -235,7 +235,7 @@ static void reset(void) {
     init_fail = fail_on = fail_off = 0;
     state = INITIALIZING;
     selected = NULL;
-    stopping = false; current_step = 0; last_error = 0;
+    aborting = false; current_step = 0; last_error = 0;
 }
 int main(void) {
     assert(registered);
@@ -260,12 +260,12 @@ int main(void) {
     assert(on_count == 2 && elapsed == 10 && off_count == 3);
     reset(); scenario = 3;
     if (!setjmp(idle)) firmware_main();
-    assert(state == STOPPED && on_count == 0 && off_count == 3);
+    assert(state == ABORTED && on_count == 0 && off_count == 3);
     assert(sequence_status().error == 0);
     assert(sequence_start("b") == 0); /* Restart after acknowledged stop. */
     reset(); scenario = 4;
     if (!setjmp(idle)) firmware_main();
-    assert(state == STOPPED && on_count == 2 && off_count == 3 && elapsed == 0);
+    assert(state == ABORTED && on_count == 2 && off_count == 3 && elapsed == 0);
     assert(!values[0] && !values[1] && !values[2]);
     reset(); init_fail = 1;
     assert(firmware_main() == -ENODEV);

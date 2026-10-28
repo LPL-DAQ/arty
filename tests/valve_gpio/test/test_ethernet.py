@@ -130,8 +130,8 @@ int main(int argc, char **argv) {
             with self.assertRaisesRegex(ValueError, 'rejected'):
                 self.request(connection, 'sequence run MixedCase')
             with socket.create_connection(('127.0.0.1', port), timeout=1) as second:
-                self.request(second, 'sequence stop')
-            self.wait_state(connection, 'stopped')
+                self.request(second, 'sequence abort')
+            self.wait_state(connection, 'aborted')
             self.request(connection, 'sequence run MixedCase')
             self.wait_state(connection, 'complete')
             # The production client routes its actual command via the same TCP server.
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
             logs.seek(0)
             text = logs.read()
             self.assertLess(text.index('READY:'), text.index('ON channel='))
-            self.assertIn('STOPPED:', text)
+            self.assertIn('ABORTED:', text)
             self.assertIn('raw_readback=', text)
 
     def test_protocol_fragmentation_rejection_and_fault(self):
@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
             unsupported = clover_pb2.Request()
             unsupported.actuate_valve.valve = clover_pb2.SV001
             unsupported.actuate_valve.state = clover_pb2.POWERED_OPEN
-            with self.assertRaisesRegex(ValueError, 'named_sequence only'):
+            with self.assertRaisesRegex(ValueError, 'named_sequence and abort only'):
                 named_sequences.exchange(connection, unsupported)
             missing_name = clover_pb2.Request()
             missing_name.named_sequence.operation = clover_pb2.NamedSequenceRequest.RUN
@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
             self.assertIn('reset required', output.getvalue())
             with self.assertRaisesRegex(ValueError, 'rejected'):
                 self.request(connection, 'sequence run MixedCase')
-            self.request(connection, 'sequence stop')
+            self.request(connection, 'sequence abort')
             self.assertEqual(self.request(connection, 'sequence status').state, 'faulted')
             # Oversized/malformed frames are closed without any command execution.
             connection.sendall(_VarintBytes(257))
@@ -205,7 +205,7 @@ int main(int argc, char **argv) {
                         self.fail(f'Missing {text!r}: {output.getvalue()}')
                     time.sleep(.01)
 
-            actions = iter(['list', 'run missing', 'run alpha', 'status', 'stop', 'run MixedCase', 'back'])
+            actions = iter(['list', 'run missing', 'run alpha', 'status', 'abort', 'run MixedCase', 'back'])
             test = self
 
             class Session:
@@ -216,7 +216,7 @@ int main(int argc, char **argv) {
                         # Must arrive without the user manually requesting status.
                         wait_output('Alpha "test" café %')
                     elif command == 'run MixedCase':
-                        wait_output('STOPPED')
+                        wait_output('ABORTED')
                     elif command == 'back':
                         wait_output('COMPLETE')
                     return command
@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
             self.assertIn('RUNNING', text)
             self.assertIn('step 1/2', text)
             self.assertIn('Alpha "test" café %', text)
-            self.assertIn('Stop requested', text)
+            self.assertIn('Abort requested', text)
             self.assertIn('Returned to CMD', text)
             self.assertNotIn('\x1b', text)
             self.assertTrue(mode.done.is_set())
@@ -253,6 +253,22 @@ int main(int argc, char **argv) {
                 named_sequences.make_request(command)
         request = named_sequences.make_request('sequence run MixedCase')
         self.assertEqual(request.named_sequence.name, 'MixedCase')
+
+    def test_abort_request_idle_and_legacy_stop(self):
+        request = named_sequences.make_request('sequence abort')
+        self.assertEqual(request.WhichOneof('payload'), 'abort')
+        with self.assertRaises(ValueError):
+            named_sequences.make_request('sequence stop')
+        with self.server() as (connection, port, logs):
+            # Idle abort also commands all outputs inactive, without starting a run.
+            info = named_sequences.exchange(connection, request)
+            self.assertEqual(info.state, 'aborted')
+            self.assertEqual(info.error, 0)
+            self.request(connection, 'sequence run MixedCase')
+            self.wait_state(connection, 'complete')
+            legacy = clover_pb2.Request()
+            legacy.named_sequence.operation = clover_pb2.NamedSequenceRequest.STOP
+            self.assertEqual(named_sequences.exchange(connection, legacy).state, 'aborted')
 
     def test_lost_ack_is_not_retried(self):
         class LostAck:
