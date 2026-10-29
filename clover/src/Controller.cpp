@@ -555,8 +555,10 @@ static void step_control_loop(k_work*)
     // Valve actuator statuses
 
 #ifdef CONFIG_FLIGHT
+    const uint64_t estimator_start_cycle = k_cycle_get_64();
     auto estimated_state =
         StateEstimator::estimate(data.lidar_1, data.lidar_2, data.imu, data.backup_imu_1, data.backup_imu_2, data.gnss);
+    data.controller_timing.state_estimator_update_time_ns = nsec_since_cycle(estimator_start_cycle);
     if (estimated_state) {
         data.has_estimated_state = true;
         data.estimated_state = *estimated_state;
