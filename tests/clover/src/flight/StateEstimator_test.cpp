@@ -561,7 +561,7 @@ ZTEST(StateEstimator_tests, test_vn300_long_outage_escalates_to_faulty_and_falls
     // here on -- so any attitude change below can only have come from the backup.
     imu.has_arrival_time_ns = false;
 
-    t_ns += 60'000'000;  // +60ms: past the 50ms stale threshold, well short of the 150ms fault one
+    t_ns += 60'000'000;  // +60ms: past the 50ms stale threshold, short of the 100ms fault one
     StateEstimator::set_now_ns_for_testing(t_ns);
     backup_1.sense_time_ns += 1.0f;
     auto stale_result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
@@ -673,12 +673,12 @@ ZTEST(StateEstimator_tests, test_vn300_brief_stale_does_not_escalate_and_holds_l
     zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "60ms is short of the fault threshold");
     assert_attitude_is(*first, 0.7071f, 0.7071f, 0.0f, 0.0f, "attitude should stay frozen at the last VN300 value while merely STALE");
 
-    t_ns += 40'000'000;  // 100ms total -- still inside the stale window, below the 150ms threshold
+    t_ns += 30'000'000;  // 90ms total, still below the 100ms fault threshold
     StateEstimator::set_now_ns_for_testing(t_ns);
     backup_1.sense_time_ns += 1.0f;
     auto second = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_true(second.has_value());
-    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "100ms without a reading should still be STALE -- escalation must wait for the fault threshold");
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "90ms without a reading should still be STALE -- escalation must wait for the fault threshold");
     assert_attitude_is(*second, 0.7071f, 0.7071f, 0.0f, 0.0f, "attitude should still be frozen, not handed to the backup");
 }
 
@@ -1441,15 +1441,15 @@ ZTEST(StateEstimator_tests, test_moderate_dropout_rejects_oversized_dt_without_e
     float z_before_dropout = result->position.z;
     float vz_before_dropout = result->velocity.z;
 
-    // 100ms without a reading: past the 50ms stale threshold and past MAX_PREDICT_DT_S, but short
-    // of the 150ms fault threshold.
+    // 90ms without a reading: past the 50ms stale threshold and past MAX_PREDICT_DT_S, but short
+    // of the 100ms fault threshold.
     imu.has_arrival_time_ns = false;
-    t_ns += 100'000'000;
+    t_ns += 90'000'000;
     StateEstimator::set_now_ns_for_testing(t_ns);
     result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_true(result.has_value());
-    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "a 100ms dropout should leave VN300 STALE");
-    zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "100ms is short of the fault threshold -- this must not escalate");
+    zassert_true(StateEstimator::vn300_is_stale_for_testing(), "a 90ms dropout should leave VN300 STALE");
+    zassert_false(StateEstimator::vn300_is_faulty_for_testing(), "90ms is short of the fault threshold -- this must not escalate");
 
     // Resume. VN300 is STALE, not FAULTY, so predict() genuinely runs -- and the only thing
     // standing between a 100ms dt and a garbage spike is the clamp rejecting it.
@@ -1964,24 +1964,19 @@ ZTEST(StateEstimator_tests, test_attitude_without_backup_is_invalid_100ms_after_
     zassert_true(result->attitude_valid, "valid again once VN300 is healthy");
 }
 
-ZTEST(StateEstimator_tests, test_attitude_valid_again_once_backup_takes_over)
+ZTEST(StateEstimator_tests, test_attitude_stays_valid_through_backup_handoff)
 {
     LidarRig rig = healthy_vn300_rig();
     step_all(rig, true, true, true);
     const uint64_t last_imu_ns = rig.t_ns;
-    std::optional<EstimatedState> result;
 
-    // The backup only becomes the attitude source when VN300 escalates to FAULTY at 150 ms, so
-    // attitude is invalid between the 100 ms limit and the handoff.
-    for (result = step_all(rig, true, false, true); !StateEstimator::vn300_is_faulty_for_testing();
-         result = step_all(rig, true, false, true)) {
-        const bool within_limit = rig.t_ns - last_imu_ns <= 100'000'000;
-        zassert_equal(result->attitude_valid, within_limit, "before handoff, valid only within 100 ms (t=%llu)", rig.t_ns - last_imu_ns);
-    }
+    // VN300 stops while the backups keep reporting. It escalates to FAULTY on the same tick the
+    // 100 ms attitude limit would expire, so attitude never goes invalid.
     for (int i = 0; i < 400; i++) {
-        zassert_true(result->attitude_valid, "valid at tick %d: a fresh backup is a live source once VN300 is faulty", i);
-        result = step_all(rig, true, false, true);
+        auto result = step_all(rig, true, false, true);
+        zassert_true(result->attitude_valid, "valid at t=%llu", rig.t_ns - last_imu_ns);
     }
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 escalated to FAULTY");
 }
 
 // ── Backup IMU selection once VN300 is faulty ─────────────────────────────────────────────

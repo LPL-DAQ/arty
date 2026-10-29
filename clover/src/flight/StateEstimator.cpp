@@ -59,9 +59,11 @@ static constexpr uint64_t VN300_STALE_THRESHOLD_NS = 50'000'000;
 static constexpr uint64_t VN300_RETRUST_THRESHOLD_NS = 100'000'000;
 
 // Placeholder. Time without a reading before VN300 escalates from STALE to FAULTY and attitude moves
-// to the backup IMUs. While STALE, attitude is frozen and error grows at the body rate (about 4.5
-// deg at 30 deg/s by this point). No backup IMU hardware exists yet, so a dead VN300 still freezes.
-static constexpr uint64_t VN300_FAULT_THRESHOLD_NS = 150'000'000;
+// to the backup IMUs. While STALE, attitude is frozen and error grows at the body rate (about 3 deg
+// at 30 deg/s by this point). Matches ATTITUDE_HOLD_LIMIT_NS so a fresh backup takes over on the
+// same tick attitude would otherwise go invalid. No backup IMU hardware exists yet, so a dead
+// VN300 still freezes.
+static constexpr uint64_t VN300_FAULT_THRESHOLD_NS = 100'000'000;
 static_assert(
     VN300_FAULT_THRESHOLD_NS > VN300_STALE_THRESHOLD_NS, "fault threshold must sit beyond the stale window"
 );
@@ -79,6 +81,9 @@ static constexpr uint64_t LATERAL_HOLD_LIMIT_NS = 500'000'000;
 // Attitude is invalid this long after the last reading from a live source (a healthy VN300, or a
 // backup IMU once VN300 is faulty). This includes the VN300 stale window.
 static constexpr uint64_t ATTITUDE_HOLD_LIMIT_NS = 100'000'000;
+static_assert(
+    VN300_FAULT_THRESHOLD_NS <= ATTITUDE_HOLD_LIMIT_NS, "VN300 must hand off to the backups before attitude goes invalid"
+);
 
 // Placeholder. Max per-component quaternion difference for the two backups to agree.
 static constexpr float BACKUP_IMU_AGREEMENT_THRESHOLD = 0.05f;
