@@ -1902,7 +1902,7 @@ ZTEST(StateEstimator_tests, test_lateral_held_from_faulted_javad_is_invalid_afte
     zassert_not_equal(result->fault_status, EstimatorFaultStatus_CRITICAL, "no longer CRITICAL after recovery");
 }
 
-ZTEST(StateEstimator_tests, test_attitude_held_without_backup_is_invalid_after_500ms)
+ZTEST(StateEstimator_tests, test_attitude_without_backup_is_invalid_100ms_after_last_vn300_reading)
 {
     LidarRig rig = healthy_vn300_rig();
     rig.imu.quat_w = 0.9238795f;
@@ -1911,17 +1911,15 @@ ZTEST(StateEstimator_tests, test_attitude_held_without_backup_is_invalid_after_5
     zassert_true(result->attitude_valid, "attitude valid with VN300 healthy");
     const uint64_t last_imu_ns = rig.t_ns;
 
-    // VN300 stops and no backup IMU reports: STALE after 50 ms, then held for up to 500 ms.
-    while (rig.t_ns + PERIOD_NS <= last_imu_ns + 550'000'000) {
+    // VN300 stops and no backup IMU reports. The 100 ms limit includes the 50 ms stale window.
+    while (rig.t_ns + PERIOD_NS <= last_imu_ns + 100'000'000) {
         result = step_all(rig, true, false, false);
-        zassert_true(result->attitude_valid, "still valid within the hold limit (t=%llu)", rig.t_ns - last_imu_ns);
+        zassert_true(result->attitude_valid, "still valid within 100 ms of the last reading (t=%llu)", rig.t_ns - last_imu_ns);
     }
     assert_attitude_is(*result, 0.9238795f, 0.3826834f, 0.0f, 0.0f, "attitude held at last VN300 value");
 
-    for (int i = 0; i < 4; i++) {
-        result = step_all(rig, true, false, false);
-    }
-    zassert_false(result->attitude_valid, "invalid once held past the limit with no backup");
+    result = step_all(rig, true, false, false);
+    zassert_false(result->attitude_valid, "invalid once 100 ms have passed with no live source");
     zassert_equal(result->fault_status, EstimatorFaultStatus_CRITICAL, "CRITICAL once a channel is invalid");
 
     for (int i = 0; i < 50; i++) {
@@ -1931,16 +1929,24 @@ ZTEST(StateEstimator_tests, test_attitude_held_without_backup_is_invalid_after_5
     zassert_true(result->attitude_valid, "valid again once VN300 is healthy");
 }
 
-ZTEST(StateEstimator_tests, test_attitude_stays_valid_when_backup_takes_over)
+ZTEST(StateEstimator_tests, test_attitude_valid_again_once_backup_takes_over)
 {
     LidarRig rig = healthy_vn300_rig();
     step_all(rig, true, true, true);
+    const uint64_t last_imu_ns = rig.t_ns;
     std::optional<EstimatedState> result;
-    for (int i = 0; i < 400; i++) {
-        result = step_all(rig, true, false, true);
-        zassert_true(result->attitude_valid, "valid at tick %d: a fresh backup is a live source once VN300 is faulty", i);
+
+    // The backup only becomes the attitude source when VN300 escalates to FAULTY at 150 ms, so
+    // attitude is invalid between the 100 ms limit and the handoff.
+    for (result = step_all(rig, true, false, true); !StateEstimator::vn300_is_faulty_for_testing();
+         result = step_all(rig, true, false, true)) {
+        const bool within_limit = rig.t_ns - last_imu_ns <= 100'000'000;
+        zassert_equal(result->attitude_valid, within_limit, "before handoff, valid only within 100 ms (t=%llu)", rig.t_ns - last_imu_ns);
     }
-    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 escalated to FAULTY");
+    for (int i = 0; i < 400; i++) {
+        zassert_true(result->attitude_valid, "valid at tick %d: a fresh backup is a live source once VN300 is faulty", i);
+        result = step_all(rig, true, false, true);
+    }
 }
 
 // ── Javad velocity frame: GREIS [VE] ECEF velocity is rotated into NED before use ────────────

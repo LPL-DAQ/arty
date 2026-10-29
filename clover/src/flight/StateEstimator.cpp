@@ -108,9 +108,13 @@ static constexpr uint64_t JAVAD_STALE_THRESHOLD_NS = 300'000'000;
 static constexpr uint64_t LIDAR_STALE_THRESHOLD_NS = 100'000'000;
 static constexpr uint64_t BACKUP_IMU_STALE_THRESHOLD_NS = 50'000'000;
 
-// Longest a channel may hold its last value without a live source before it is marked invalid.
+// Longest lateral may hold its last value without a usable Javad before it is marked invalid.
 static constexpr uint64_t LATERAL_HOLD_LIMIT_NS = 500'000'000;
-static constexpr uint64_t ATTITUDE_HOLD_LIMIT_NS = 500'000'000;
+
+// Attitude is marked invalid this long after the last reading from a live attitude source (a
+// healthy VN300, or backup IMU 1 once VN300 is faulty). Counted from that reading, so it includes
+// the VN300 stale window rather than starting after it.
+static constexpr uint64_t ATTITUDE_HOLD_LIMIT_NS = 100'000'000;
 
 // Placeholder -- needs real backup IMU noise specs before flight. Max per-component quaternion
 // difference for the two backups to count as agreeing with each other.
@@ -158,8 +162,8 @@ static ArrivalTracker backup_imu_2_arrival;
 static bool javad_stale = true;
 static bool lateral_held = false;
 static uint64_t lateral_held_since_ns = 0;
-static bool attitude_held = false;
-static uint64_t attitude_held_since_ns = 0;
+static bool attitude_clock_started = false;
+static uint64_t last_live_attitude_ns = 0;
 static bool lidar_1_stale = true;
 static bool lidar_2_stale = true;
 static bool backup_imu_1_stale = true;
@@ -275,8 +279,8 @@ void StateEstimator::reset()
     javad_stale = true;
     lateral_held = false;
     lateral_held_since_ns = 0;
-    attitude_held = false;
-    attitude_held_since_ns = 0;
+    attitude_clock_started = false;
+    last_live_attitude_ns = 0;
     lidar_1_stale = true;
     lidar_2_stale = true;
     backup_imu_1_stale = true;
@@ -573,16 +577,28 @@ static bool channelValid(bool has_live_source, bool& held, uint64_t& held_since_
     return currentTimeNs() - held_since_ns <= limit_ns;
 }
 
-static bool attitudeHasLiveSource()
+// Before any live reading, the limit runs from the first call, as the lateral hold does.
+static bool attitudeValid()
 {
-    return vn300_health == SensorHealth::HEALTHY || (vn300_health == SensorHealth::FAULTY && !backup_imu_1_stale);
+    const uint64_t now_ns = currentTimeNs();
+    if (!attitude_clock_started) {
+        attitude_clock_started = true;
+        last_live_attitude_ns = now_ns;
+    }
+    if (vn300_health == SensorHealth::HEALTHY) {
+        last_live_attitude_ns = std::max(last_live_attitude_ns, vn300_last_arrival_time_ns);
+    }
+    else if (vn300_health == SensorHealth::FAULTY && backup_imu_1_arrival.seen) {
+        last_live_attitude_ns = std::max(last_live_attitude_ns, backup_imu_1_arrival.last_arrival_ns);
+    }
+    return now_ns - last_live_attitude_ns <= ATTITUDE_HOLD_LIMIT_NS;
 }
 
 // Publishes NOMINAL / DEGRADED / CRITICAL on the estimate from the primary sensors' health.
 static void updateFaultStatus()
 {
     current_estimate.lateral_valid = channelValid(javadUsable(), lateral_held, lateral_held_since_ns, LATERAL_HOLD_LIMIT_NS);
-    current_estimate.attitude_valid = channelValid(attitudeHasLiveSource(), attitude_held, attitude_held_since_ns, ATTITUDE_HOLD_LIMIT_NS);
+    current_estimate.attitude_valid = attitudeValid();
 
     // CRITICAL when both VN300 and Javad are FAULTY, or a channel has been held past its limit.
     // DEGRADED when either primary sensor is stale or faulty but every channel is still within it.
