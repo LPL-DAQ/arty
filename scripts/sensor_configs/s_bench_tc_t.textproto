@@ -1,5 +1,0 @@
-# Bench: one T-type TC on the same AD8495 breakout as s_bench_tc, OUT -> AIN4 (J5 pad 3), Vin -> J2 pad 1, GND -> J5 pad 19.
-# T polarity: blue = +, red = -.
-# T table covers -200..400 C (older builds stop at 50 C: a stuck 50.0 means old firmware).
-# Points: ice (0 C), room, boil (99.8 C at ~70 m), LN2 (-196 C) if available.
-configs { channel: 4  assignment: TC002  tc_type: T_TYPE  tc_bias_deg_c: 0 }
