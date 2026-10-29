@@ -33,10 +33,11 @@ static mjbots::moteus::Controller::Options make_motor_opts(
 
     // Position command format — include the three NaN fields so they appear
     // in the frame exactly as the test bench sends them.
-    opts.position_format.stop_position    = mjbots::moteus::kFloat;
-    opts.position_format.velocity_limit  = mjbots::moteus::kFloat;
-    opts.position_format.accel_limit     = mjbots::moteus::kFloat;
-    opts.position_format.watchdog_timeout = mjbots::moteus::kFloat;
+    opts.position_format.stop_position      = mjbots::moteus::kFloat;
+    opts.position_format.feedforward_torque = mjbots::moteus::kFloat;
+    opts.position_format.velocity_limit     = mjbots::moteus::kFloat;
+    opts.position_format.accel_limit        = mjbots::moteus::kFloat;
+    opts.position_format.watchdog_timeout   = mjbots::moteus::kFloat;
 
     return opts;
 }
@@ -81,20 +82,20 @@ void reset() {
 }
 
 std::expected<std::tuple<TvcActuatorCommand, TvcActuatorCommand, RangerTvcMetrics>, Error>
-tick(float pitch_command_deg) {
+tick(float position) {
     if (!s_motor) {
         return std::unexpected(Error::from_cause("RangerTvc not initialized"));
     }
 
     mjbots::moteus::PositionMode::Command cmd;
-    cmd.position         = pitch_command_deg / 360.0f;
-    cmd.velocity         = 0.0f;
-    cmd.stop_position    = NaN;
-    cmd.velocity_limit   = 0.13f;  // ~0.13 rev/s → covers 46° in ~1 s
-    cmd.accel_limit      = 4.0;
-    cmd.watchdog_timeout = 0.5f;  // 500 ms — motor safe-stops if Teensy hangs
+    cmd.position            = position; //position relative to the motor position
+    cmd.velocity            = 0.0f;
+    cmd.stop_position       = NaN;
+    cmd.feedforward_torque  = 1.0f;
+    cmd.velocity_limit      = 0.75f; // temp setting speed to 0.75f
+    cmd.watchdog_timeout    = 0.5f; // 500 ms — motor safe-stops if Teensy hangs
 
-    LOG_INF("tx: pos=%d mrot", (int)(cmd.position * 1000));
+    LOG_INF("tx: pos=%d mrot", (int)cmd.position);
 
     auto result = s_motor->SetPosition(cmd);
 

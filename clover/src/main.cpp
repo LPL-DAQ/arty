@@ -49,14 +49,36 @@ int main(void)
 
     LOG_INF("USB Connected. Bypassing flight hardware for TVC standalone test.");
 
-    float pitch_deg = 80.0f;
+    float max_pos = 5.0f;
+    float min_pos = 0.0f;
+
+    float target_pos = max_pos;
+    int ticks = 0;
+
+    // 5 seconds at 50 Hz
+    constexpr int hold_ticks = 50;
+
+    // auto result = RangerTvc::tick(target_pos);
+
+    // if (!result) {
+    //     LOG_ERR("tick failed: %s", result.error().build_message().c_str());
+    // }
+
+    // k_sleep(K_MSEC(20));
+
     while (1) {
-        pitch_deg -= 0.5f;  // 0.5 deg per tick at 50 Hz = 25 deg/s
-        auto result = RangerTvc::tick(pitch_deg);
+        auto result = RangerTvc::tick(target_pos);
+
         if (!result) {
             LOG_ERR("tick failed: %s", result.error().build_message().c_str());
         }
+
         k_sleep(K_MSEC(20));
+
+        if (++ticks >= hold_ticks) {
+            target_pos = (target_pos == max_pos) ? min_pos : max_pos;
+            ticks = 0;
+        }
     }
 
     return 0;
