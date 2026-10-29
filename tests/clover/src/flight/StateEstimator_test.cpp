@@ -1528,4 +1528,150 @@ ZTEST(StateEstimator_tests, test_ekf_predict_rotation_tracks_truth_under_tilted_
     );
 }
 
+// ── Per-sensor staleness ────────────────────────────────────────────────────────────────────
+
+struct StalenessCase {
+    const char* name;
+    uint64_t threshold_ns;
+    bool (*is_stale)();
+    void (*arrive)(LidarReading&, LidarReading&, ImuReading&, ImuReading&, GnssReadings&, uint64_t);
+};
+
+static void arrive_javad(LidarReading&, LidarReading&, ImuReading&, ImuReading&, GnssReadings& g, uint64_t t)
+{
+    g.has_arrival_time_ns = true;
+    g.arrival_time_ns = t;
+}
+static void arrive_lidar_1(LidarReading& l1, LidarReading&, ImuReading&, ImuReading&, GnssReadings&, uint64_t t)
+{
+    l1.has_arrival_time_ns = true;
+    l1.arrival_time_ns = t;
+}
+static void arrive_lidar_2(LidarReading&, LidarReading& l2, ImuReading&, ImuReading&, GnssReadings&, uint64_t t)
+{
+    l2.has_arrival_time_ns = true;
+    l2.arrival_time_ns = t;
+}
+static void arrive_backup_1(LidarReading&, LidarReading&, ImuReading& b1, ImuReading&, GnssReadings&, uint64_t t)
+{
+    b1.has_arrival_time_ns = true;
+    b1.arrival_time_ns = t;
+}
+static void arrive_backup_2(LidarReading&, LidarReading&, ImuReading&, ImuReading& b2, GnssReadings&, uint64_t t)
+{
+    b2.has_arrival_time_ns = true;
+    b2.arrival_time_ns = t;
+}
+
+static void run_staleness_case(const StalenessCase& c)
+{
+    StateEstimator::reset();
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading imu = ImuReading_init_default;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    uint64_t t_ns = 1'000'000'000;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(c.is_stale(), "%s: stale before any reading", c.name);
+
+    c.arrive(lidar_1, lidar_2, backup_1, backup_2, gnss, t_ns);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_false(c.is_stale(), "%s: fresh on first reading", c.name);
+
+    const uint64_t last_arrival_ns = t_ns;
+    StateEstimator::set_now_ns_for_testing(last_arrival_ns + c.threshold_ns);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_false(c.is_stale(), "%s: still fresh at exactly the threshold", c.name);
+
+    StateEstimator::set_now_ns_for_testing(last_arrival_ns + c.threshold_ns + 1'000'000);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_true(c.is_stale(), "%s: stale 1 ms past the threshold", c.name);
+
+    t_ns = last_arrival_ns + c.threshold_ns + 2'000'000;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    c.arrive(lidar_1, lidar_2, backup_1, backup_2, gnss, t_ns);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_false(c.is_stale(), "%s: fresh again on the next reading", c.name);
+}
+
+ZTEST(StateEstimator_tests, test_javad_staleness_after_300ms)
+{
+    run_staleness_case({"javad", 300'000'000, StateEstimator::javad_is_stale_for_testing, arrive_javad});
+}
+
+ZTEST(StateEstimator_tests, test_lidar_staleness_after_100ms)
+{
+    run_staleness_case({"lidar 1", 100'000'000, StateEstimator::lidar_1_is_stale_for_testing, arrive_lidar_1});
+    run_staleness_case({"lidar 2", 100'000'000, StateEstimator::lidar_2_is_stale_for_testing, arrive_lidar_2});
+}
+
+ZTEST(StateEstimator_tests, test_backup_imu_staleness_after_50ms)
+{
+    run_staleness_case({"backup imu 1", 50'000'000, StateEstimator::backup_imu_1_is_stale_for_testing, arrive_backup_1});
+    run_staleness_case({"backup imu 2", 50'000'000, StateEstimator::backup_imu_2_is_stale_for_testing, arrive_backup_2});
+}
+
+ZTEST(StateEstimator_tests, test_sensors_go_stale_independently)
+{
+    StateEstimator::reset();
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading imu = ImuReading_init_default;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    uint64_t t_ns = 1'000'000'000;
+    StateEstimator::set_now_ns_for_testing(t_ns);
+    arrive_lidar_1(lidar_1, lidar_2, backup_1, backup_2, gnss, t_ns);
+    arrive_lidar_2(lidar_1, lidar_2, backup_1, backup_2, gnss, t_ns);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    for (int i = 1; i <= 20; i++) {
+        t_ns += 10'000'000;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        arrive_lidar_1(lidar_1, lidar_2, backup_1, backup_2, gnss, t_ns);
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_false(StateEstimator::lidar_1_is_stale_for_testing(), "lidar 1 kept reporting");
+    zassert_true(StateEstimator::lidar_2_is_stale_for_testing(), "lidar 2 stopped 200 ms ago");
+}
+
+ZTEST(StateEstimator_tests, test_stale_javad_degrades_fault_status)
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 1.0f;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+
+    uint64_t t_ns = 0;
+    warm_vn300_to_healthy(t_ns, lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    gnss.has_arrival_time_ns = true;
+    gnss.arrival_time_ns = t_ns;
+    gnss.sense_time_ns = 1.0f;
+    auto result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    zassert_equal(result->fault_status, EstimatorFaultStatus_NOMINAL, "NOMINAL with VN300 and Javad fresh");
+
+    const uint64_t last_gnss_ns = t_ns;
+    while (t_ns <= last_gnss_ns + 300'000'000) {
+        t_ns += PERIOD_NS;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        imu.arrival_time_ns = t_ns;
+        imu.sense_time_ns += 1.0f;
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    zassert_true(StateEstimator::javad_is_stale_for_testing(), "Javad stale after 300 ms without a reading");
+    zassert_false(StateEstimator::javad_is_faulty_for_testing(), "stale is not faulty");
+    zassert_equal(result->fault_status, EstimatorFaultStatus_DEGRADED, "DEGRADED while Javad is stale");
+}
+
 ZTEST_SUITE(StateEstimator_tests, NULL, NULL, NULL, NULL, NULL);

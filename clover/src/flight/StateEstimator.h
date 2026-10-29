@@ -28,6 +28,11 @@ namespace StateEstimator {
     bool vn300_is_stale_for_testing();
     bool vn300_is_faulty_for_testing();
     bool javad_is_faulty_for_testing();
+    bool javad_is_stale_for_testing();
+    bool lidar_1_is_stale_for_testing();
+    bool lidar_2_is_stale_for_testing();
+    bool backup_imu_1_is_stale_for_testing();
+    bool backup_imu_2_is_stale_for_testing();
     bool lidar_1_is_faulty_for_testing();
     bool lidar_2_is_faulty_for_testing();
 

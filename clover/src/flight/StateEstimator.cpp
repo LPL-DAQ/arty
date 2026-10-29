@@ -16,10 +16,10 @@ LOG_MODULE_REGISTER(StateEstimator, LOG_LEVEL_INF);
 // Health flags flip only after N consecutive readings agree, in both directions, so sensor noise
 // or a one-tick timing skew between independently-clocked sensors can't flap the state.
 //
-// STALE recovers on a timer, FAULTY on a streak: STALE means no data at all, and once it resumes
-// the sensor's own filter needs wall-clock time to re-converge; FAULTY means data is arriving but
-// disagrees, which only needs enough samples to confirm. VN300 is the only sensor here with a
-// staleness concept, so it's the only one using both.
+// STALE means no new reading within the sensor's threshold; FAULTY means readings arrive but
+// disagree. VN300 re-trusts on a timer after an outage because its own filter needs time to
+// re-converge. The other sensors are tracked as stale separately from their FAULTY flag and are
+// usable again on their next reading.
 
 // Health state for a fused sensor. Tracked for VN300, Javad, and the two LiDARs.
 enum class SensorHealth {
@@ -101,6 +101,13 @@ static_assert(
     VN300_FAULT_THRESHOLD_NS > VN300_STALE_THRESHOLD_NS, "fault threshold must sit beyond the stale window"
 );
 
+// Time without a new reading before a sensor counts as stale. Placeholders sized from assumed
+// rates: Javad at 10 Hz or more (to be confirmed against its configured output rate), and the
+// LiDARs and backup IMUs at 50 Hz or more. A sensor that has never reported is stale.
+static constexpr uint64_t JAVAD_STALE_THRESHOLD_NS = 300'000'000;
+static constexpr uint64_t LIDAR_STALE_THRESHOLD_NS = 100'000'000;
+static constexpr uint64_t BACKUP_IMU_STALE_THRESHOLD_NS = 50'000'000;
+
 // Placeholder -- needs real backup IMU noise specs before flight. Max per-component quaternion
 // difference for the two backups to count as agreeing with each other.
 static constexpr float BACKUP_IMU_AGREEMENT_THRESHOLD = 0.05f;
@@ -135,6 +142,22 @@ static bool now_ns_override_set = false;
 static uint64_t now_ns_override = 0;
 #endif
 
+struct ArrivalTracker {
+    bool seen = false;
+    uint64_t last_arrival_ns = 0;
+};
+
+static ArrivalTracker javad_arrival;
+static ArrivalTracker lidar_1_arrival;
+static ArrivalTracker lidar_2_arrival;
+static ArrivalTracker backup_imu_1_arrival;
+static ArrivalTracker backup_imu_2_arrival;
+static bool javad_stale = true;
+static bool lidar_1_stale = true;
+static bool lidar_2_stale = true;
+static bool backup_imu_1_stale = true;
+static bool backup_imu_2_stale = true;
+
 static SensorHealth vn300_health = SensorHealth::STALE;
 static uint64_t vn300_last_arrival_time_ns = 0;
 static uint64_t vn300_recovery_start_time_ns = 0;
@@ -155,16 +178,13 @@ static uint64_t vn300_divergence_last_backup_2_time_ns = 0;
 // compare against.
 static bool vn300_fault_from_staleness = false;
 
-// Javad has no staleness tracking, so its health only toggles HEALTHY <-> FAULTY via the velocity
-// divergence check. Starts HEALTHY rather than STALE because nothing would ever move it out of
-// STALE.
+// Divergence health only. Staleness is tracked in javad_stale.
 static SensorHealth javad_health = SensorHealth::HEALTHY;
 static int javad_disagree_streak = 0;
 static int javad_agree_streak = 0;
 static uint64_t javad_divergence_last_gnss_time_ns = 0;
 
-// Same for the LiDARs: no staleness tracking, HEALTHY default, toggled by the altitude divergence
-// check.
+// Divergence health only. Staleness is tracked in lidar_1_stale and lidar_2_stale.
 static SensorHealth lidar_1_health = SensorHealth::HEALTHY;
 static int lidar_1_disagree_streak = 0;
 static int lidar_1_agree_streak = 0;
@@ -239,6 +259,16 @@ void StateEstimator::reset()
     lidar_2_disagree_streak = 0;
     lidar_2_agree_streak = 0;
     lidar_divergence_last_gnss_time_ns = 0;
+    javad_arrival = {};
+    lidar_1_arrival = {};
+    lidar_2_arrival = {};
+    backup_imu_1_arrival = {};
+    backup_imu_2_arrival = {};
+    javad_stale = true;
+    lidar_1_stale = true;
+    lidar_2_stale = true;
+    backup_imu_1_stale = true;
+    backup_imu_2_stale = true;
 #if CONFIG_TEST
     now_ns_override_set = false;
 #endif
@@ -360,6 +390,45 @@ static void updateVn300Staleness()
     }
 }
 
+static void trackArrival(ArrivalTracker& tracker, bool has_arrival_time, uint64_t arrival_time_ns)
+{
+    if (has_arrival_time && (!tracker.seen || arrival_time_ns > tracker.last_arrival_ns)) {
+        tracker.seen = true;
+        tracker.last_arrival_ns = arrival_time_ns;
+    }
+}
+
+static bool isStale(const ArrivalTracker& tracker, uint64_t threshold_ns)
+{
+    return !tracker.seen || currentTimeNs() - tracker.last_arrival_ns > threshold_ns;
+}
+
+static void updateSensorStaleness(
+    const LidarReading& lidar_1,
+    const LidarReading& lidar_2,
+    const ImuReading& backup_imu_1,
+    const ImuReading& backup_imu_2,
+    const GnssReadings& gnss
+)
+{
+    trackArrival(javad_arrival, gnss.has_arrival_time_ns, gnss.arrival_time_ns);
+    trackArrival(lidar_1_arrival, lidar_1.has_arrival_time_ns, lidar_1.arrival_time_ns);
+    trackArrival(lidar_2_arrival, lidar_2.has_arrival_time_ns, lidar_2.arrival_time_ns);
+    trackArrival(backup_imu_1_arrival, backup_imu_1.has_arrival_time_ns, backup_imu_1.arrival_time_ns);
+    trackArrival(backup_imu_2_arrival, backup_imu_2.has_arrival_time_ns, backup_imu_2.arrival_time_ns);
+
+    javad_stale = isStale(javad_arrival, JAVAD_STALE_THRESHOLD_NS);
+    lidar_1_stale = isStale(lidar_1_arrival, LIDAR_STALE_THRESHOLD_NS);
+    lidar_2_stale = isStale(lidar_2_arrival, LIDAR_STALE_THRESHOLD_NS);
+    backup_imu_1_stale = isStale(backup_imu_1_arrival, BACKUP_IMU_STALE_THRESHOLD_NS);
+    backup_imu_2_stale = isStale(backup_imu_2_arrival, BACKUP_IMU_STALE_THRESHOLD_NS);
+}
+
+static bool javadUsable()
+{
+    return !javad_stale && javad_health == SensorHealth::HEALTHY;
+}
+
 static void checkVn300Divergence(
     const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2, bool vn300_fresh
 )
@@ -479,7 +548,7 @@ static void updateFaultStatus()
     // channels each fall back on their own (attitude to backup IMU 1, lateral held, vertical
     // coasting on covariance alone), so nothing keys off this flag to decide behavior.
     bool vn300_ok = vn300_health == SensorHealth::HEALTHY;
-    bool javad_ok = javad_health == SensorHealth::HEALTHY;
+    bool javad_ok = javadUsable();
     bool critical_fault = vn300_health == SensorHealth::FAULTY && javad_health == SensorHealth::FAULTY;
 
     if (critical_fault) {
@@ -569,7 +638,7 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
             z_axis_ekf.update_velocity(gnss.vz_ms, javad_vz_r_variance);
         }
     }
-    else if (javad_health == SensorHealth::FAULTY && vn300_health != SensorHealth::FAULTY &&
+    else if (!javadUsable() && vn300_health != SensorHealth::FAULTY &&
              imu.has_arrival_time_ns && imu.has_vel_d) {
         // Javad is faulty -- use VN300's INS vertical velocity so the EKF still gets a velocity
         // correction. No altitude fallback: VN300's ins_alt is itself already fused, so feeding it
@@ -724,6 +793,7 @@ std::optional<EstimatedState> StateEstimator::estimate(
     has_update_timestamp_ns = true;
 
     bool vn300_fresh = trackVn300Freshness(imu);
+    updateSensorStaleness(lidar_1, lidar_2, backup_imu_1, backup_imu_2, gnss);
 
     checkPrimarySensorFaults(imu, backup_imu_1, backup_imu_2, gnss, vn300_fresh);
 
@@ -773,6 +843,31 @@ bool StateEstimator::vn300_is_faulty_for_testing()
 bool StateEstimator::javad_is_faulty_for_testing()
 {
     return javad_health == SensorHealth::FAULTY;
+}
+
+bool StateEstimator::javad_is_stale_for_testing()
+{
+    return javad_stale;
+}
+
+bool StateEstimator::lidar_1_is_stale_for_testing()
+{
+    return lidar_1_stale;
+}
+
+bool StateEstimator::lidar_2_is_stale_for_testing()
+{
+    return lidar_2_stale;
+}
+
+bool StateEstimator::backup_imu_1_is_stale_for_testing()
+{
+    return backup_imu_1_stale;
+}
+
+bool StateEstimator::backup_imu_2_is_stale_for_testing()
+{
+    return backup_imu_2_stale;
 }
 
 bool StateEstimator::lidar_1_is_faulty_for_testing()
