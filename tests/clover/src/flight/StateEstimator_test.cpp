@@ -1826,6 +1826,30 @@ ZTEST(StateEstimator_tests, test_lidar_check_skipped_while_javad_faulty)
     zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "no LiDAR verdict while Javad is faulty");
 }
 
+ZTEST(StateEstimator_tests, test_sensor_health_published_in_estimate)
+{
+    LidarRig rig = diverging_lidar_2_rig();
+    auto result = StateEstimator::estimate(rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+    zassert_equal(result->vn300_health, SensorHealth_STALE, "VN300 STALE before any reading");
+    zassert_equal(result->javad_health, SensorHealth_STALE, "Javad STALE before any reading");
+
+    for (int i = 0; i < StateEstimator::lidar_divergence_streak_threshold_for_testing(); i++) {
+        rig.step(true, true, true);
+    }
+    result = StateEstimator::estimate(rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+    zassert_equal(result->javad_health, SensorHealth_HEALTHY, "Javad HEALTHY while fresh");
+    zassert_equal(result->lidar_1_health, SensorHealth_HEALTHY, "LiDAR 1 agrees with Javad");
+    zassert_equal(result->lidar_2_health, SensorHealth_FAULTY, "LiDAR 2 flagged FAULTY");
+
+    // LiDAR 1 stops reporting: STALE once past its threshold, while LiDAR 2 stays FAULTY.
+    for (int i = 0; i < 45; i++) {
+        rig.step(false, true, true);
+    }
+    result = StateEstimator::estimate(rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+    zassert_equal(result->lidar_1_health, SensorHealth_STALE, "LiDAR 1 STALE after 100 ms without a reading");
+    zassert_equal(result->lidar_2_health, SensorHealth_FAULTY, "FAULTY takes precedence over STALE");
+}
+
 // ── Hold limits: a held channel is marked invalid after 500 ms ───────────────────────────────
 
 static std::optional<EstimatedState> step_all(LidarRig& rig, bool gnss_fresh, bool imu_fresh, bool backup_fresh)

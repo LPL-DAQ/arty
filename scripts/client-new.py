@@ -180,6 +180,7 @@ def listen_for_telemetry():
 # update SystemState with (18); range 19
 _STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
 _FAULT_STATUS_NAMES = {float(v): n for n, v in clover_pb2.EstimatorFaultStatus.items()}
+_SENSOR_HEALTH_NAMES = {float(v): n for n, v in clover_pb2.SensorHealth.items()}
 _FAULT_STATUS_COLORS = {'NOMINAL': 'green', 'DEGRADED': 'yellow', 'CRITICAL': 'bold red'}
 
 
@@ -298,6 +299,10 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
                 'est_fault_status': float(est.fault_status),
                 'est_lateral_valid': float(est.lateral_valid),
                 'est_attitude_valid': float(est.attitude_valid),
+                'est_vn300_health': float(est.vn300_health),
+                'est_javad_health': float(est.javad_health),
+                'est_lidar_1_health': float(est.lidar_1_health),
+                'est_lidar_2_health': float(est.lidar_2_health),
             }
         )
 
@@ -413,6 +418,8 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
         event = _STATE_NAMES.get(raw_value, '') if sensor == 'gnc_state' else ''
         if sensor == 'est_fault_status':
             event = _FAULT_STATUS_NAMES.get(raw_value, '')
+        elif sensor.startswith('est_') and sensor.endswith('_health'):
+            event = _SENSOR_HEALTH_NAMES.get(raw_value, '')
 
         rows.append(
             {

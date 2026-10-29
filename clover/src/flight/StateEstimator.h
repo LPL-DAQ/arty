@@ -23,7 +23,7 @@ namespace StateEstimator {
     // Overrides the wall-clock "now" used by the staleness check. reset() clears the override.
     void set_now_ns_for_testing(uint64_t ns);
 
-    // SensorHealth is internal to StateEstimator.cpp, so these expose only the yes/no answers.
+    // Internal divergence health and staleness, before publishedHealth() combines them.
     bool vn300_is_healthy_for_testing();
     bool vn300_is_stale_for_testing();
     bool vn300_is_faulty_for_testing();

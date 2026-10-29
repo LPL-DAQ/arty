@@ -21,13 +21,6 @@ LOG_MODULE_REGISTER(StateEstimator, LOG_LEVEL_INF);
 // re-converge. The other sensors are tracked as stale separately from their FAULTY flag and are
 // usable again on their next reading.
 
-// Health state for a fused sensor. Tracked for VN300, Javad, and the two LiDARs.
-enum class SensorHealth {
-    HEALTHY,  // trusted, actively used in the estimate
-    STALE,    // no reading recently enough to trust (see staleness check) -- timer-based recovery
-    FAULTY,   // consistently disagrees with corroborating sensors (see divergence check) -- streak-based recovery
-};
-
 static EstimatedState current_estimate = EstimatedState_init_default;
 static float update_timestamp_ns = 0;
 static bool has_update_timestamp_ns = false;
@@ -170,7 +163,7 @@ static bool lidar_2_stale = true;
 static bool backup_imu_1_stale = true;
 static bool backup_imu_2_stale = true;
 
-static SensorHealth vn300_health = SensorHealth::STALE;
+static SensorHealth vn300_health = SensorHealth_STALE;
 static uint64_t vn300_last_arrival_time_ns = 0;
 static uint64_t vn300_recovery_start_time_ns = 0;
 static bool vn300_recovering = false;
@@ -191,16 +184,16 @@ static uint64_t vn300_divergence_last_backup_2_time_ns = 0;
 static bool vn300_fault_from_staleness = false;
 
 // Divergence health only. Staleness is tracked in javad_stale.
-static SensorHealth javad_health = SensorHealth::HEALTHY;
+static SensorHealth javad_health = SensorHealth_HEALTHY;
 static int javad_disagree_streak = 0;
 static int javad_agree_streak = 0;
 static uint64_t javad_divergence_last_gnss_time_ns = 0;
 
 // Divergence health only. Staleness is tracked in lidar_1_stale and lidar_2_stale.
-static SensorHealth lidar_1_health = SensorHealth::HEALTHY;
+static SensorHealth lidar_1_health = SensorHealth_HEALTHY;
 static int lidar_1_disagree_streak = 0;
 static int lidar_1_agree_streak = 0;
-static SensorHealth lidar_2_health = SensorHealth::HEALTHY;
+static SensorHealth lidar_2_health = SensorHealth_HEALTHY;
 static int lidar_2_disagree_streak = 0;
 static int lidar_2_agree_streak = 0;
 
@@ -252,7 +245,7 @@ void StateEstimator::reset()
     lidar_2_altitude_m = 0;
     z_axis_ekf.reset();
     z_axis_ekf_last_predict_time_ns = 0;
-    vn300_health = SensorHealth::STALE;
+    vn300_health = SensorHealth_STALE;
     vn300_last_arrival_time_ns = 0;
     vn300_recovery_start_time_ns = 0;
     vn300_recovering = false;
@@ -261,14 +254,14 @@ void StateEstimator::reset()
     vn300_agree_streak = 0;
     vn300_divergence_last_backup_1_time_ns = 0;
     vn300_divergence_last_backup_2_time_ns = 0;
-    javad_health = SensorHealth::HEALTHY;
+    javad_health = SensorHealth_HEALTHY;
     javad_disagree_streak = 0;
     javad_agree_streak = 0;
     javad_divergence_last_gnss_time_ns = 0;
-    lidar_1_health = SensorHealth::HEALTHY;
+    lidar_1_health = SensorHealth_HEALTHY;
     lidar_1_disagree_streak = 0;
     lidar_1_agree_streak = 0;
-    lidar_2_health = SensorHealth::HEALTHY;
+    lidar_2_health = SensorHealth_HEALTHY;
     lidar_2_disagree_streak = 0;
     lidar_2_agree_streak = 0;
     lidar_1_divergence_last_gnss_time_ns = 0;
@@ -314,8 +307,8 @@ static bool trackVn300Freshness(const ImuReading& imu)
     // data comes back. A divergence-induced FAULTY deliberately does not: it clears only via
     // checkVn300Divergence()'s agree-streak, since "the data returned" says nothing about whether
     // the sensor is still lying.
-    bool awaiting_reconvergence = vn300_health == SensorHealth::STALE ||
-                                  (vn300_health == SensorHealth::FAULTY && vn300_fault_from_staleness);
+    bool awaiting_reconvergence = vn300_health == SensorHealth_STALE ||
+                                  (vn300_health == SensorHealth_FAULTY && vn300_fault_from_staleness);
 
     if (awaiting_reconvergence) {
         if (!vn300_recovering) {
@@ -327,7 +320,7 @@ static bool trackVn300Freshness(const ImuReading& imu)
             // TODO: a VN300 that returns but genuinely disagrees with the backups is re-trusted
             // here at the 100ms timer before the disagree-streak can re-raise FAULTY. Unreachable
             // today (no backup hardware); resolve alongside the comment-24 streak-gating work.
-            vn300_health = SensorHealth::HEALTHY;
+            vn300_health = SensorHealth_HEALTHY;
             vn300_recovering = false;
             vn300_fault_from_staleness = false;
         }
@@ -347,7 +340,7 @@ static void predictVerticalState(const ImuReading& imu, bool vn300_fresh)
     if (z_axis_ekf_last_predict_time_ns != 0) {
         float dt_s = static_cast<float>(imu.arrival_time_ns - z_axis_ekf_last_predict_time_ns) / 1e9f;
 
-        if (vn300_health == SensorHealth::FAULTY) {
+        if (vn300_health == SensorHealth_FAULTY) {
             // Never integrate off an accelerometer already declared untrustworthy -- a confidently
             // wrong altitude is worse than a stale one. Covariance still propagates, so the held
             // estimate reports uncertainty rising instead of a confidence it no longer has.
@@ -397,13 +390,13 @@ static void updateVn300Staleness()
         // Escalating to FAULTY is what routes updateAttitude() to the backup IMUs -- without this,
         // STALE is terminal (nothing else can flag a sensor that sends no readings to disagree
         // with) and a dead VN300 would hold last-good attitude forever.
-        vn300_health = SensorHealth::FAULTY;
+        vn300_health = SensorHealth_FAULTY;
         vn300_fault_from_staleness = true;
     }
     else {
         // Brief dropout -- freeze and wait. Takes precedence over a divergence FAULTY flag: with
         // no data at all there's nothing left to diverge.
-        vn300_health = SensorHealth::STALE;
+        vn300_health = SensorHealth_STALE;
         vn300_fault_from_staleness = false;
     }
 }
@@ -444,7 +437,7 @@ static void updateSensorStaleness(
 
 static bool javadUsable()
 {
-    return !javad_stale && javad_health == SensorHealth::HEALTHY;
+    return !javad_stale && javad_health == SensorHealth_HEALTHY;
 }
 
 // The one place Javad velocity enters the estimator. GREIS [VE] reports ECEF velocity, rotated
@@ -501,8 +494,8 @@ static void checkVn300Divergence(
             vn300_disagree_streak++;
             vn300_agree_streak = 0;
 
-            if (vn300_health != SensorHealth::FAULTY && vn300_disagree_streak >= VN300_DIVERGENCE_STREAK_THRESHOLD) {
-                vn300_health = SensorHealth::FAULTY;
+            if (vn300_health != SensorHealth_FAULTY && vn300_disagree_streak >= VN300_DIVERGENCE_STREAK_THRESHOLD) {
+                vn300_health = SensorHealth_FAULTY;
                 vn300_fault_from_staleness = false;
                 vn300_disagree_streak = 0;
             }
@@ -514,9 +507,9 @@ static void checkVn300Divergence(
             // Only un-flags a divergence-induced fault. A stale-induced one recovers on the
             // re-trust timer in trackVn300Freshness() instead: agreeing with backups says the
             // sensor isn't lying, not that it has had time to re-converge after an outage.
-            if (vn300_health == SensorHealth::FAULTY && !vn300_fault_from_staleness &&
+            if (vn300_health == SensorHealth_FAULTY && !vn300_fault_from_staleness &&
                 vn300_agree_streak >= VN300_DIVERGENCE_STREAK_THRESHOLD) {
-                vn300_health = SensorHealth::HEALTHY;
+                vn300_health = SensorHealth_HEALTHY;
                 vn300_agree_streak = 0;
             }
         }
@@ -527,7 +520,7 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
 {
     // Only runs while VN300 is healthy: if VN300 itself is untrustworthy, a mismatch says nothing
     // about Javad.
-    if (vn300_health == SensorHealth::HEALTHY && gnss.has_arrival_time_ns && imu.has_arrival_time_ns &&
+    if (vn300_health == SensorHealth_HEALTHY && gnss.has_arrival_time_ns && imu.has_arrival_time_ns &&
         imu.has_vel_n && imu.has_vel_e && imu.has_vel_d) {
         // Javad is the slow participant (~10-20Hz against a ~1000Hz loop), so an un-gated counter
         // reaches N within a single Javad epoch -- before a second reading has even arrived to
@@ -548,8 +541,8 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
             javad_disagree_streak++;
             javad_agree_streak = 0;
 
-            if (javad_health != SensorHealth::FAULTY && javad_disagree_streak >= JAVAD_DIVERGENCE_STREAK_THRESHOLD) {
-                javad_health = SensorHealth::FAULTY;
+            if (javad_health != SensorHealth_FAULTY && javad_disagree_streak >= JAVAD_DIVERGENCE_STREAK_THRESHOLD) {
+                javad_health = SensorHealth_FAULTY;
                 javad_disagree_streak = 0;
             }
         }
@@ -557,8 +550,8 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
             javad_agree_streak++;
             javad_disagree_streak = 0;
 
-            if (javad_health == SensorHealth::FAULTY && javad_agree_streak >= JAVAD_DIVERGENCE_STREAK_THRESHOLD) {
-                javad_health = SensorHealth::HEALTHY;
+            if (javad_health == SensorHealth_FAULTY && javad_agree_streak >= JAVAD_DIVERGENCE_STREAK_THRESHOLD) {
+                javad_health = SensorHealth_HEALTHY;
                 javad_agree_streak = 0;
             }
         }
@@ -587,10 +580,10 @@ static bool attitudeValid()
         attitude_clock_started = true;
         last_live_attitude_ns = now_ns;
     }
-    if (vn300_health == SensorHealth::HEALTHY) {
+    if (vn300_health == SensorHealth_HEALTHY) {
         last_live_attitude_ns = std::max(last_live_attitude_ns, vn300_last_arrival_time_ns);
     }
-    else if (vn300_health == SensorHealth::FAULTY) {
+    else if (vn300_health == SensorHealth_FAULTY) {
         for (const ArrivalTracker* backup : {&backup_imu_1_arrival, &backup_imu_2_arrival}) {
             if (backup->seen) {
                 last_live_attitude_ns = std::max(last_live_attitude_ns, backup->last_arrival_ns);
@@ -608,9 +601,9 @@ static void updateFaultStatus()
 
     // CRITICAL when both VN300 and Javad are FAULTY, or a channel has been held past its limit.
     // DEGRADED when either primary sensor is stale or faulty but every channel is still within it.
-    bool vn300_ok = vn300_health == SensorHealth::HEALTHY;
+    bool vn300_ok = vn300_health == SensorHealth_HEALTHY;
     bool javad_ok = javadUsable();
-    bool critical_fault = vn300_health == SensorHealth::FAULTY && javad_health == SensorHealth::FAULTY;
+    bool critical_fault = vn300_health == SensorHealth_FAULTY && javad_health == SensorHealth_FAULTY;
 
     if (critical_fault || !current_estimate.lateral_valid || !current_estimate.attitude_valid) {
         current_estimate.fault_status = EstimatorFaultStatus_CRITICAL;
@@ -658,10 +651,10 @@ static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1
     // is stale. A merely STALE VN300 freezes the last estimate. A critical fault takes this same
     // backup path rather than a special freeze: holding last-good attitude with a usable backup
     // available is the more dangerous of the two options.
-    if (vn300_health == SensorHealth::HEALTHY) {
+    if (vn300_health == SensorHealth_HEALTHY) {
         takeAttitudeFrom(imu, imu_update_timestamp_ns);
     }
-    else if (vn300_health == SensorHealth::FAULTY) {
+    else if (vn300_health == SensorHealth_FAULTY) {
         if (!backup_imu_1_stale || backup_imu_2_stale) {
             takeAttitudeFrom(backup_imu_1, backup_imu_1_update_timestamp_ns);
         }
@@ -679,7 +672,7 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
     // Lateral position/velocity from GNSS when the timestamp changed, unless Javad is flagged
     // faulty -- then the last known-good values are held instead. Vertical state is not set here;
     // it comes from the EKF, via publishVerticalState().
-    if (javad_health != SensorHealth::FAULTY && gnss.sense_time_ns > gnss_update_timestamp_ns) {
+    if (javad_health != SensorHealth_FAULTY && gnss.sense_time_ns > gnss_update_timestamp_ns) {
         gnss_update_timestamp_ns = gnss.sense_time_ns;
         gnss_updated = true;
         const Vector3D javad_ned = javadVelocityNed(gnss);
@@ -705,7 +698,7 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
             z_axis_ekf.update_velocity(javad_vz_up_ms, javad_vz_r_variance);
         }
     }
-    else if (!javadUsable() && vn300_health != SensorHealth::FAULTY &&
+    else if (!javadUsable() && vn300_health != SensorHealth_FAULTY &&
              imu.has_arrival_time_ns && imu.has_vel_d) {
         // Javad is faulty -- use VN300's INS vertical velocity so the EKF still gets a velocity
         // correction. No altitude fallback: VN300's ins_alt is itself already fused, so feeding it
@@ -755,16 +748,16 @@ static void updateLidarDivergence(bool disagrees, int& disagree_streak, int& agr
     if (disagrees) {
         disagree_streak++;
         agree_streak = 0;
-        if (health != SensorHealth::FAULTY && disagree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
-            health = SensorHealth::FAULTY;
+        if (health != SensorHealth_FAULTY && disagree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
+            health = SensorHealth_FAULTY;
             disagree_streak = 0;
         }
     }
     else {
         agree_streak++;
         disagree_streak = 0;
-        if (health == SensorHealth::FAULTY && agree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
-            health = SensorHealth::HEALTHY;
+        if (health == SensorHealth_FAULTY && agree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
+            health = SensorHealth_HEALTHY;
             agree_streak = 0;
         }
     }
@@ -798,10 +791,10 @@ static void updateVerticalFromLidars(bool lidar_1_updated, bool lidar_2_updated)
 {
     // Only healthy LiDARs feed the EKF. Runs after checkLidarDivergence(), so a LiDAR flagged
     // faulty on this exact tick is excluded immediately rather than one tick late.
-    if (lidar_1_updated && lidar_1_health == SensorHealth::HEALTHY) {
+    if (lidar_1_updated && lidar_1_health == SensorHealth_HEALTHY) {
         z_axis_ekf.update_altitude(lidar_1_altitude_m, LIDAR_1_ALTITUDE_R_VARIANCE_M2);
     }
-    if (lidar_2_updated && lidar_2_health == SensorHealth::HEALTHY) {
+    if (lidar_2_updated && lidar_2_health == SensorHealth_HEALTHY) {
         z_axis_ekf.update_altitude(lidar_2_altitude_m, LIDAR_2_ALTITUDE_R_VARIANCE_M2);
     }
 }
@@ -827,6 +820,23 @@ static void publishVerticalState(const GnssReadings& gnss, bool gnss_updated)
         current_estimate.position.z = gnss.up_m;
         current_estimate.velocity.z = -javadVelocityNed(gnss).z;
     }
+}
+
+// Javad and the LiDARs track staleness apart from their divergence health; FAULTY takes precedence.
+static SensorHealth publishedHealth(SensorHealth divergence_health, bool stale)
+{
+    if (divergence_health == SensorHealth_FAULTY) {
+        return SensorHealth_FAULTY;
+    }
+    return stale ? SensorHealth_STALE : divergence_health;
+}
+
+static void publishSensorHealth()
+{
+    current_estimate.vn300_health = vn300_health;
+    current_estimate.javad_health = publishedHealth(javad_health, javad_stale);
+    current_estimate.lidar_1_health = publishedHealth(lidar_1_health, lidar_1_stale);
+    current_estimate.lidar_2_health = publishedHealth(lidar_2_health, lidar_2_stale);
 }
 
 std::optional<EstimatedState> StateEstimator::estimate(
@@ -863,6 +873,7 @@ std::optional<EstimatedState> StateEstimator::estimate(
     updateVerticalFromLidars(lidar_1_updated, lidar_2_updated);
 
     publishVerticalState(gnss, gnss_updated);
+    publishSensorHealth();
 
     return current_estimate;
 }
@@ -876,22 +887,22 @@ void StateEstimator::set_now_ns_for_testing(uint64_t ns)
 
 bool StateEstimator::vn300_is_healthy_for_testing()
 {
-    return vn300_health == SensorHealth::HEALTHY;
+    return vn300_health == SensorHealth_HEALTHY;
 }
 
 bool StateEstimator::vn300_is_stale_for_testing()
 {
-    return vn300_health == SensorHealth::STALE;
+    return vn300_health == SensorHealth_STALE;
 }
 
 bool StateEstimator::vn300_is_faulty_for_testing()
 {
-    return vn300_health == SensorHealth::FAULTY;
+    return vn300_health == SensorHealth_FAULTY;
 }
 
 bool StateEstimator::javad_is_faulty_for_testing()
 {
-    return javad_health == SensorHealth::FAULTY;
+    return javad_health == SensorHealth_FAULTY;
 }
 
 bool StateEstimator::javad_is_stale_for_testing()
@@ -921,12 +932,12 @@ bool StateEstimator::backup_imu_2_is_stale_for_testing()
 
 bool StateEstimator::lidar_1_is_faulty_for_testing()
 {
-    return lidar_1_health == SensorHealth::FAULTY;
+    return lidar_1_health == SensorHealth_FAULTY;
 }
 
 bool StateEstimator::lidar_2_is_faulty_for_testing()
 {
-    return lidar_2_health == SensorHealth::FAULTY;
+    return lidar_2_health == SensorHealth_FAULTY;
 }
 
 int StateEstimator::vn300_divergence_streak_threshold_for_testing()

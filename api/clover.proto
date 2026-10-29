@@ -756,6 +756,16 @@ enum EstimatorFaultStatus {
   CRITICAL = 2;
 }
 
+// Health of a fused sensor (VN300, Javad, and the two LiDARs).
+enum SensorHealth {
+  // Trusted and used in the estimate.
+  HEALTHY = 0;
+  // No reading within the sensor's staleness threshold.
+  STALE = 1;
+  // Readings arrive but consistently disagree with the corroborating sensors.
+  FAULTY = 2;
+}
+
 // Estimated vehicle state for telemetry and flight path monitoring.
 message EstimatedState {
   required Quaternion R_WB = 1; // world to body
@@ -766,6 +776,10 @@ message EstimatedState {
   // False once the channel has been held without a live source for longer than its hold limit.
   required bool lateral_valid = 6;
   required bool attitude_valid = 7;
+  required SensorHealth vn300_health = 8;
+  required SensorHealth javad_health = 9;
+  required SensorHealth lidar_1_health = 10;
+  required SensorHealth lidar_2_health = 11;
 }
 
 message FlightControllerDesiredState {
