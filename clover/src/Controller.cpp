@@ -508,14 +508,14 @@ static void step_control_loop(k_work*)
     if (auto vectornav = VectornavImu::read()) {
         data.imu = *vectornav;
         data.has_imu = true;
-        LOG_INF(
+        LOG_DBG(
             "VectornavIMU: quat: [%f %f %f %f] | sense: %f ns",
             (double)data.imu.quat_w,
             (double)data.imu.quat_x,
             (double)data.imu.quat_y,
             (double)data.imu.quat_z,
             (double)data.imu.sense_time_ns);
-        LOG_INF(
+        LOG_DBG(
             "VectornavIMU: accel: [%f %f %f] gyro: [%f %f %f] mag: [%f %f %f]",
             (double)data.imu.accel_x,
             (double)data.imu.accel_y,

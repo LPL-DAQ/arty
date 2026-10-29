@@ -135,7 +135,7 @@ template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
 std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_line(char line[MAX_LINE_SIZE])
 {
     LOG_MODULE_DECLARE(VectornavIMU);
-    LOG_INF("%s rx: %.12s", kind_to_prefix(kind), line);
+    LOG_DBG("%s rx: %.12s", kind_to_prefix(kind), line);
     ImuReading new_reading = ImuReading_init_default;
     if (parse_vnqmr(line, &new_reading)) {
         MutexGuard guard{&reading_mutex};
