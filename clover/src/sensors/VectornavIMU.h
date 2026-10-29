@@ -37,6 +37,7 @@ private:
     static inline ImuReading reading = ImuReading_init_default;
     static inline float sense_time_ns = 0.0f;
     static inline uint64_t last_reading_cycle = 0;
+    static inline uint64_t arrival_time_ns = 0;
     static inline bool has_reading = false;
 
     // Initialized in init()
@@ -142,6 +143,7 @@ std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::decode_
         uint64_t curr_cycle = k_cycle_get_64();
         sense_time_ns = static_cast<float>(curr_cycle - last_reading_cycle) / sys_clock_hw_cycles_per_sec() * 1e9f;
         last_reading_cycle = curr_cycle;
+        arrival_time_ns = k_cyc_to_ns_near64(curr_cycle);
         reading = new_reading;
         has_reading = true;
     }
@@ -314,7 +316,9 @@ template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> 
     has_reading = false;
 
     reading.sense_time_ns = sense_time_ns;
-    reading.arrival_time_ns = k_cyc_to_ns_near64(k_cycle_get_64());
+    // Stamped when the line was decoded, not when the controller reads it, so the estimator's dt
+    // is not quantized to the control tick.
+    reading.arrival_time_ns = arrival_time_ns;
     reading.has_arrival_time_ns = true;
     return {reading};
 }
