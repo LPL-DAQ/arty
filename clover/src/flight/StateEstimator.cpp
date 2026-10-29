@@ -192,9 +192,9 @@ static SensorHealth lidar_2_health = SensorHealth::HEALTHY;
 static int lidar_2_disagree_streak = 0;
 static int lidar_2_agree_streak = 0;
 
-// The LiDAR pair's own freshness is already established by trackLidarFreshness(); this covers the
-// Javad side of the same comparison.
-static uint64_t lidar_divergence_last_gnss_time_ns = 0;
+// Last Javad epoch each LiDAR was compared against, so each LiDAR counts one disagreement per epoch.
+static uint64_t lidar_1_divergence_last_gnss_time_ns = 0;
+static uint64_t lidar_2_divergence_last_gnss_time_ns = 0;
 
 // Converts a LiDAR slant range into vertical altitude (height above whatever the beam hit), using
 // the vehicle's current attitude and the LiDAR's fixed body-frame mount angle.
@@ -258,7 +258,8 @@ void StateEstimator::reset()
     lidar_2_health = SensorHealth::HEALTHY;
     lidar_2_disagree_streak = 0;
     lidar_2_agree_streak = 0;
-    lidar_divergence_last_gnss_time_ns = 0;
+    lidar_1_divergence_last_gnss_time_ns = 0;
+    lidar_2_divergence_last_gnss_time_ns = 0;
     javad_arrival = {};
     lidar_1_arrival = {};
     lidar_2_arrival = {};
@@ -683,65 +684,49 @@ static void projectLidarAltitudes(
     }
 }
 
+// Advances one LiDAR's divergence streak and health. A LiDAR counts as disagreeing only if it
+// disagrees with both Javad and the other LiDAR.
+static void updateLidarDivergence(bool disagrees, int& disagree_streak, int& agree_streak, SensorHealth& health)
+{
+    if (disagrees) {
+        disagree_streak++;
+        agree_streak = 0;
+        if (health != SensorHealth::FAULTY && disagree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
+            health = SensorHealth::FAULTY;
+            disagree_streak = 0;
+        }
+    }
+    else {
+        agree_streak++;
+        disagree_streak = 0;
+        if (health == SensorHealth::FAULTY && agree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
+            health = SensorHealth::HEALTHY;
+            agree_streak = 0;
+        }
+    }
+}
+
+// 2-of-3 across the two LiDARs and Javad, run per LiDAR on its own fresh readings. Needs all three:
+// Javad usable with a new epoch since this LiDAR's last check, and the other LiDAR not stale.
 static void checkLidarDivergence(const GnssReadings& gnss, bool lidar_1_updated, bool lidar_2_updated)
 {
-    // 2-of-3 across LiDAR 1, LiDAR 2 and Javad: each LiDAR is flagged only if it disagrees with
-    // both of the others. If all three disagree at once, both LiDARs get flagged, which is the
-    // honest outcome when nothing can be corroborated.
-    // TODO: unlike checkJavadDivergence(), this doesn't require Javad to be healthy first.
-    if (lidar_1_updated && lidar_2_updated && gnss.has_arrival_time_ns) {
-        // lidar_*_updated already establishes the LiDAR pair's freshness; Javad is the slow
-        // participant here, so without this one Javad epoch supplies the Javad half of all N
-        // counts. This costs LiDAR-fault detection latency (now bounded by Javad's rate) rather
-        // than leaving the counter inflatable -- tune N if that latency matters.
-        if (gnss.arrival_time_ns <= lidar_divergence_last_gnss_time_ns) {
-            return;
-        }
-        lidar_divergence_last_gnss_time_ns = gnss.arrival_time_ns;
+    if (!javadUsable()) {
+        return;
+    }
 
-        bool lidar_1_matches_javad = std::fabs(lidar_1_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
-        bool lidar_2_matches_javad = std::fabs(lidar_2_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
-        bool lidars_match_each_other = std::fabs(lidar_1_altitude_m - lidar_2_altitude_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
+    const bool lidars_match_each_other =
+        std::fabs(lidar_1_altitude_m - lidar_2_altitude_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
 
-        // Lidar 1: disagrees with both Javad and Lidar 2.
-        if (!lidar_1_matches_javad && !lidars_match_each_other) {
-            lidar_1_disagree_streak++;
-            lidar_1_agree_streak = 0;
+    if (lidar_1_updated && !lidar_2_stale && gnss.arrival_time_ns > lidar_1_divergence_last_gnss_time_ns) {
+        lidar_1_divergence_last_gnss_time_ns = gnss.arrival_time_ns;
+        const bool matches_javad = std::fabs(lidar_1_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
+        updateLidarDivergence(!matches_javad && !lidars_match_each_other, lidar_1_disagree_streak, lidar_1_agree_streak, lidar_1_health);
+    }
 
-            if (lidar_1_health != SensorHealth::FAULTY && lidar_1_disagree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
-                lidar_1_health = SensorHealth::FAULTY;
-                lidar_1_disagree_streak = 0;
-            }
-        }
-        else {
-            lidar_1_agree_streak++;
-            lidar_1_disagree_streak = 0;
-
-            if (lidar_1_health == SensorHealth::FAULTY && lidar_1_agree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
-                lidar_1_health = SensorHealth::HEALTHY;
-                lidar_1_agree_streak = 0;
-            }
-        }
-
-        // Lidar 2: disagrees with both Javad and Lidar 1.
-        if (!lidar_2_matches_javad && !lidars_match_each_other) {
-            lidar_2_disagree_streak++;
-            lidar_2_agree_streak = 0;
-
-            if (lidar_2_health != SensorHealth::FAULTY && lidar_2_disagree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
-                lidar_2_health = SensorHealth::FAULTY;
-                lidar_2_disagree_streak = 0;
-            }
-        }
-        else {
-            lidar_2_agree_streak++;
-            lidar_2_disagree_streak = 0;
-
-            if (lidar_2_health == SensorHealth::FAULTY && lidar_2_agree_streak >= LIDAR_DIVERGENCE_STREAK_THRESHOLD) {
-                lidar_2_health = SensorHealth::HEALTHY;
-                lidar_2_agree_streak = 0;
-            }
-        }
+    if (lidar_2_updated && !lidar_1_stale && gnss.arrival_time_ns > lidar_2_divergence_last_gnss_time_ns) {
+        lidar_2_divergence_last_gnss_time_ns = gnss.arrival_time_ns;
+        const bool matches_javad = std::fabs(lidar_2_altitude_m - gnss.up_m) < LIDAR_ALTITUDE_DIVERGENCE_THRESHOLD;
+        updateLidarDivergence(!matches_javad && !lidars_match_each_other, lidar_2_disagree_streak, lidar_2_agree_streak, lidar_2_health);
     }
 }
 

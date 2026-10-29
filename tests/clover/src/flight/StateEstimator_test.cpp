@@ -447,7 +447,11 @@ ZTEST(StateEstimator_tests, test_lidar_cross_check_flags_diverging_lidar)
         t_ns += PERIOD_NS;
         StateEstimator::set_now_ns_for_testing(t_ns);
         lidar_1.sense_time_ns = static_cast<float>(i + 1);
+        lidar_1.has_arrival_time_ns = true;
+        lidar_1.arrival_time_ns = t_ns;
         lidar_2.sense_time_ns = static_cast<float>(i + 1);
+        lidar_2.has_arrival_time_ns = true;
+        lidar_2.arrival_time_ns = t_ns;
         gnss.sense_time_ns = static_cast<float>(i + 1);
         gnss.has_arrival_time_ns = true;
         gnss.arrival_time_ns = t_ns;
@@ -459,7 +463,11 @@ ZTEST(StateEstimator_tests, test_lidar_cross_check_flags_diverging_lidar)
     t_ns += PERIOD_NS;
     StateEstimator::set_now_ns_for_testing(t_ns);
     lidar_1.sense_time_ns = static_cast<float>(n);
+    lidar_1.has_arrival_time_ns = true;
+    lidar_1.arrival_time_ns = t_ns;
     lidar_2.sense_time_ns = static_cast<float>(n);
+    lidar_2.has_arrival_time_ns = true;
+    lidar_2.arrival_time_ns = t_ns;
     gnss.sense_time_ns = static_cast<float>(n);
     gnss.arrival_time_ns = t_ns;
     StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
@@ -810,7 +818,11 @@ ZTEST(StateEstimator_tests, test_lidar_divergence_streak_ignores_held_javad_read
     StateEstimator::set_now_ns_for_testing(t_ns);
     lidar_seq += 1.0f;
     lidar_1.sense_time_ns = lidar_seq;
+    lidar_1.has_arrival_time_ns = true;
+    lidar_1.arrival_time_ns = t_ns;
     lidar_2.sense_time_ns = lidar_seq;
+    lidar_2.has_arrival_time_ns = true;
+    lidar_2.arrival_time_ns = t_ns;
     gnss.has_arrival_time_ns = true;
     gnss.arrival_time_ns = t_ns;
     StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
@@ -826,7 +838,11 @@ ZTEST(StateEstimator_tests, test_lidar_divergence_streak_ignores_held_javad_read
         StateEstimator::set_now_ns_for_testing(t_ns);
         lidar_seq += 1.0f;
         lidar_1.sense_time_ns = lidar_seq;
+        lidar_1.has_arrival_time_ns = true;
+        lidar_1.arrival_time_ns = t_ns;
         lidar_2.sense_time_ns = lidar_seq;
+        lidar_2.has_arrival_time_ns = true;
+        lidar_2.arrival_time_ns = t_ns;
         gnss.arrival_time_ns = held_gnss_time_ns;
         StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     }
@@ -841,7 +857,11 @@ ZTEST(StateEstimator_tests, test_lidar_divergence_streak_ignores_held_javad_read
         StateEstimator::set_now_ns_for_testing(t_ns);
         lidar_seq += 1.0f;
         lidar_1.sense_time_ns = lidar_seq;
+        lidar_1.has_arrival_time_ns = true;
+        lidar_1.arrival_time_ns = t_ns;
         lidar_2.sense_time_ns = lidar_seq;
+        lidar_2.has_arrival_time_ns = true;
+        lidar_2.arrival_time_ns = t_ns;
         gnss.arrival_time_ns = t_ns;
         StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
         zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "Lidar 2 should not be flagged before N distinct Javad epochs");
@@ -851,7 +871,11 @@ ZTEST(StateEstimator_tests, test_lidar_divergence_streak_ignores_held_javad_read
     StateEstimator::set_now_ns_for_testing(t_ns);
     lidar_seq += 1.0f;
     lidar_1.sense_time_ns = lidar_seq;
+    lidar_1.has_arrival_time_ns = true;
+    lidar_1.arrival_time_ns = t_ns;
     lidar_2.sense_time_ns = lidar_seq;
+    lidar_2.has_arrival_time_ns = true;
+    lidar_2.arrival_time_ns = t_ns;
     gnss.arrival_time_ns = t_ns;
     StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     zassert_true(StateEstimator::lidar_2_is_faulty_for_testing(), "Lidar 2 should be flagged on exactly the Nth distinct Javad epoch");
@@ -1004,8 +1028,12 @@ ZTEST(StateEstimator_tests, test_ekf_constant_velocity_ascent_all_sensors_health
 
         lidar_1.distance_m = z_true;
         lidar_1.sense_time_ns = static_cast<float>(i + 1);
+        lidar_1.has_arrival_time_ns = true;
+        lidar_1.arrival_time_ns = t_ns;
         lidar_2.distance_m = z_true;
         lidar_2.sense_time_ns = static_cast<float>(i + 1);
+        lidar_2.has_arrival_time_ns = true;
+        lidar_2.arrival_time_ns = t_ns;
 
         result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
     }
@@ -1059,7 +1087,11 @@ ZTEST(StateEstimator_tests, test_flagged_lidar_wild_reading_does_not_influence_e
         t_ns += PERIOD_NS;
         StateEstimator::set_now_ns_for_testing(t_ns);
         lidar_1.sense_time_ns = static_cast<float>(i + 1);
+        lidar_1.has_arrival_time_ns = true;
+        lidar_1.arrival_time_ns = t_ns;
         lidar_2.sense_time_ns = static_cast<float>(i + 1);
+        lidar_2.has_arrival_time_ns = true;
+        lidar_2.arrival_time_ns = t_ns;
         gnss.sense_time_ns = static_cast<float>(i + 1);
         gnss.has_arrival_time_ns = true;
         gnss.arrival_time_ns = t_ns;
@@ -1076,6 +1108,8 @@ ZTEST(StateEstimator_tests, test_flagged_lidar_wild_reading_does_not_influence_e
     // zero effect on the EKF's z.
     lidar_2.distance_m = 99999.0f;
     lidar_2.sense_time_ns = static_cast<float>(n + 1);
+    lidar_2.has_arrival_time_ns = true;
+    lidar_2.arrival_time_ns = t_ns;
     gnss.sense_time_ns = static_cast<float>(n + 1);
     t_ns += PERIOD_NS;
     gnss.arrival_time_ns = t_ns;
@@ -1672,6 +1706,112 @@ ZTEST(StateEstimator_tests, test_stale_javad_degrades_fault_status)
     zassert_true(StateEstimator::javad_is_stale_for_testing(), "Javad stale after 300 ms without a reading");
     zassert_false(StateEstimator::javad_is_faulty_for_testing(), "stale is not faulty");
     zassert_equal(result->fault_status, EstimatorFaultStatus_DEGRADED, "DEGRADED while Javad is stale");
+}
+
+// ── LiDAR cross-check: per-LiDAR freshness and Javad gating ───────────────────────────────────
+
+struct LidarRig {
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading imu = ImuReading_init_default;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+    uint64_t t_ns = 0;
+    float seq = 0.0f;
+
+    void step(bool lidar_1_fresh, bool lidar_2_fresh, bool gnss_fresh)
+    {
+        t_ns += PERIOD_NS;
+        seq += 1.0f;
+        StateEstimator::set_now_ns_for_testing(t_ns);
+        if (lidar_1_fresh) {
+            lidar_1.sense_time_ns = seq;
+            lidar_1.has_arrival_time_ns = true;
+            lidar_1.arrival_time_ns = t_ns;
+        }
+        if (lidar_2_fresh) {
+            lidar_2.sense_time_ns = seq;
+            lidar_2.has_arrival_time_ns = true;
+            lidar_2.arrival_time_ns = t_ns;
+        }
+        if (gnss_fresh) {
+            gnss.sense_time_ns = seq;
+            gnss.has_arrival_time_ns = true;
+            gnss.arrival_time_ns = t_ns;
+        }
+        if (imu.has_arrival_time_ns) {
+            imu.arrival_time_ns = t_ns;
+            imu.sense_time_ns = seq;
+        }
+        StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+};
+
+static LidarRig diverging_lidar_2_rig()
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+    LidarRig rig;
+    rig.gnss.up_m = 10.0f;
+    rig.lidar_1.distance_m = 10.0f;
+    rig.lidar_2.distance_m = 3.0f;
+    return rig;
+}
+
+ZTEST(StateEstimator_tests, test_lidar_check_runs_when_lidars_update_on_different_ticks)
+{
+    LidarRig rig = diverging_lidar_2_rig();
+    const int n = StateEstimator::lidar_divergence_streak_threshold_for_testing();
+
+    // Each Javad epoch: LiDAR 1 on one tick, LiDAR 2 on the next, never together.
+    for (int epoch = 0; epoch < n; epoch++) {
+        zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "not flagged before N epochs (epoch %d)", epoch);
+        rig.step(true, false, true);
+        rig.step(false, true, false);
+    }
+    zassert_true(StateEstimator::lidar_2_is_faulty_for_testing(), "LiDAR 2 flagged after N epochs without same-tick updates");
+    zassert_false(StateEstimator::lidar_1_is_faulty_for_testing(), "LiDAR 1 agrees with Javad");
+}
+
+ZTEST(StateEstimator_tests, test_lidar_check_skipped_while_javad_stale)
+{
+    LidarRig rig = diverging_lidar_2_rig();
+    const int n = StateEstimator::lidar_divergence_streak_threshold_for_testing();
+
+    rig.step(true, true, true);
+    // Javad stops; 300 ms later it is stale and the LiDARs keep diverging for many more readings.
+    for (int i = 0; i < 120 + 4 * n; i++) {
+        rig.step(true, true, false);
+    }
+    zassert_true(StateEstimator::javad_is_stale_for_testing(), "setup: Javad stale");
+    zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "no LiDAR verdict without a usable Javad");
+    zassert_false(StateEstimator::lidar_1_is_faulty_for_testing(), "no LiDAR verdict without a usable Javad");
+}
+
+ZTEST(StateEstimator_tests, test_lidar_check_skipped_while_javad_faulty)
+{
+    LidarRig rig = diverging_lidar_2_rig();
+    rig.imu.quat_w = 1.0f;
+    rig.imu.has_vel_n = rig.imu.has_vel_e = rig.imu.has_vel_d = true;
+    rig.backup_1.quat_w = 1.0f;
+    rig.backup_2.quat_w = 1.0f;
+    warm_vn300_to_healthy(rig.t_ns, rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+    rig.seq = 100.0f;
+
+    // Flag Javad faulty by velocity divergence, with both LiDARs agreeing with each other meanwhile.
+    rig.gnss.vx_ms = 100.0f;
+    rig.lidar_2.distance_m = 10.0f;
+    for (int i = 0; i < StateEstimator::javad_divergence_streak_threshold_for_testing(); i++) {
+        rig.step(true, true, true);
+    }
+    zassert_true(StateEstimator::javad_is_faulty_for_testing(), "setup: Javad faulty");
+
+    rig.lidar_2.distance_m = 3.0f;
+    for (int i = 0; i < 4 * StateEstimator::lidar_divergence_streak_threshold_for_testing(); i++) {
+        rig.step(true, true, true);
+    }
+    zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "no LiDAR verdict while Javad is faulty");
 }
 
 ZTEST_SUITE(StateEstimator_tests, NULL, NULL, NULL, NULL, NULL);
