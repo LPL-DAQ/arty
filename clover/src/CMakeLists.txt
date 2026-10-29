@@ -12,15 +12,19 @@ add_subdirectory(sensors)
 add_subdirectory(flight)
 
 if(CONFIG_BLINK_LED)
-target_sources(app PRIVATE BlinkLed.cpp)
+    target_sources(app PRIVATE BlinkLed.cpp)
 endif()
 
 if(CONFIG_THROTTLE_VALVES)
-target_sources(app PRIVATE ThrottleValve.cpp)
+    target_sources(app PRIVATE ThrottleValve.cpp)
 endif()
 
 if(CONFIG_VALVES)
-target_sources(app PRIVATE Valves.cpp)
+    target_sources(app PRIVATE Valves.cpp)
+endif()
+
+if(CONFIG_PWM_ACTUATORS)
+    target_sources(app PRIVATE PwmActuator.cpp)
 endif()
 
 if(CONFIG_HORNET)
