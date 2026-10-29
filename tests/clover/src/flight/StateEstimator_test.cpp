@@ -430,6 +430,48 @@ ZTEST(StateEstimator_tests, test_calculate_vertical_altitude_with_mount_angle)
     zassert_within(altitude, 8.660f, 0.01f, "Altitude should be slant_range * cos(mount_angle) with no vehicle tilt");
 }
 
+// ── LiDAR tilt rejection ──────────────────────────────────────────────────────────────────
+
+static Quaternion pitched_deg(float deg)
+{
+    const float half = 0.5f * deg * PI_F / 180.0f;
+    return math_util::createQuaternion(std::cos(half), 0.0f, -std::sin(half), 0.0f);
+}
+
+static void assert_lidar_altitude(float tilt_deg, float mount_deg, std::optional<float> expected, const char* what)
+{
+    auto altitude = StateEstimator::lidar_altitude_for_testing(10.0f, pitched_deg(tilt_deg), mount_deg * PI_F / 180.0f);
+    if (expected) {
+        zassert_true(altitude.has_value(), "%s: accepted", what);
+        zassert_within(*altitude, *expected, 1e-3f, "%s: altitude", what);
+    }
+    else {
+        zassert_false(altitude.has_value(), "%s: rejected", what);
+    }
+}
+
+ZTEST(StateEstimator_tests, test_lidar_altitude_at_0_10_and_30_deg_tilt)
+{
+    assert_lidar_altitude(0.0f, 0.0f, 10.0f, "level");
+    assert_lidar_altitude(10.0f, 0.0f, 10.0f * std::cos(10.0f * PI_F / 180.0f), "10 deg");
+    assert_lidar_altitude(-10.0f, 0.0f, 10.0f * std::cos(10.0f * PI_F / 180.0f), "-10 deg");
+    assert_lidar_altitude(30.0f, 0.0f, std::nullopt, "30 deg");
+}
+
+ZTEST(StateEstimator_tests, test_lidar_altitude_at_the_tilt_limit)
+{
+    const float limit = StateEstimator::lidar_max_beam_tilt_deg_for_testing();
+    assert_lidar_altitude(limit - 0.1f, 0.0f, 10.0f * std::cos((limit - 0.1f) * PI_F / 180.0f), "just inside the limit");
+    assert_lidar_altitude(limit + 0.1f, 0.0f, std::nullopt, "just past the limit");
+}
+
+ZTEST(StateEstimator_tests, test_lidar_tilt_limit_includes_mount_angle)
+{
+    const float limit = StateEstimator::lidar_max_beam_tilt_deg_for_testing();
+    assert_lidar_altitude(0.0f, limit - 5.0f, 10.0f * std::cos((limit - 5.0f) * PI_F / 180.0f), "mount inside the limit");
+    assert_lidar_altitude(0.0f, limit + 5.0f, std::nullopt, "mount past the limit");
+}
+
 // ── (7) LiDAR-vs-Javad-vs-other-LiDAR cross-check ────────────────────────────────────────────────
 
 ZTEST(StateEstimator_tests, test_lidar_cross_check_flags_diverging_lidar)
@@ -2039,6 +2081,39 @@ ZTEST(StateEstimator_tests, test_opposite_vertical_velocity_flags_javad)
         step_all(rig, true, true, false);
     }
     zassert_true(StateEstimator::javad_is_faulty_for_testing(), "Javad climbing while VN300 descends is flagged");
+}
+
+// Holds a healthy VN300 at a fixed pitch with an EKF started at 10 m, then feeds LiDAR 1 a reading
+// whose vertical projection at that pitch is 9 m. Returns the EKF altitude afterwards.
+static float ekf_z_after_tilted_lidar(float tilt_deg)
+{
+    LidarRig rig = healthy_vn300_rig();
+    const Quaternion q = pitched_deg(tilt_deg);
+    rig.imu.quat_w = q.qw;
+    rig.imu.quat_y = q.qy;
+    const Vector3D accel_body = math_util::multiplyQuaternionVector(q, math_util::createVector3D(0.0f, 0.0f, GRAVITY_M_S2));
+    rig.imu.accel_x = accel_body.x;
+    rig.imu.accel_y = accel_body.y;
+    rig.imu.accel_z = accel_body.z;
+    rig.gnss.up_m = 10.0f;
+    rig.gnss.vrms_m = 1.0f;
+    step_all(rig, true, true, false);
+
+    rig.lidar_1.distance_m = 9.0f / std::cos(tilt_deg * PI_F / 180.0f);
+    std::optional<EstimatedState> result;
+    for (int i = 0; i < 20; i++) {
+        rig.lidar_1.has_arrival_time_ns = true;
+        rig.lidar_1.arrival_time_ns = rig.t_ns + PERIOD_NS;
+        rig.lidar_1.sense_time_ns = rig.seq + 1.0f;
+        result = step_all(rig, false, true, false);
+    }
+    return result->position.z;
+}
+
+ZTEST(StateEstimator_tests, test_tilted_lidar_reading_is_kept_out_of_the_ekf)
+{
+    zassert_true(ekf_z_after_tilted_lidar(10.0f) < 9.5f, "10 deg: LiDAR pulls the EKF toward 9 m");
+    zassert_within(ekf_z_after_tilted_lidar(30.0f), 10.0f, 0.05f, "30 deg: LiDAR rejected, EKF stays at 10 m");
 }
 
 // ── 400 Hz VN300 against the 1.5 ms control tick ──────────────────────────────────────────

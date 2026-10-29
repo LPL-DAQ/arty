@@ -158,19 +158,43 @@ static int lidar_2_agree_streak = 0;
 static uint64_t lidar_1_divergence_last_gnss_time_ns = 0;
 static uint64_t lidar_2_divergence_last_gnss_time_ns = 0;
 
-// Height above whatever the beam hit, from slant range, attitude and the LiDAR mount angle. World is
-// Z-up and attitude_wb is world-to-body, so its conjugate rotates body vectors into world.
-//
-// ASSUMPTION, to be verified against the mount: the boresight is body -Z at mount angle 0, tilted
-// in the body X-Z plane.
+// ASSUMPTION, to be verified against the mount: the boresight is body -Z at mount angle 0, and a
+// nonzero mount angle tilts it toward body +X.
+static constexpr Vector3D LIDAR_BORESIGHT_BODY = {0.0f, 0.0f, -1.0f};
+static constexpr Vector3D LIDAR_MOUNT_TILT_DIRECTION_BODY = {1.0f, 0.0f, 0.0f};
+
+// Placeholder. Readings are rejected when the beam is more than this far from straight down, which
+// includes the mount angle. Set above the flight controller's 8 deg maximum intentional tilt.
+static constexpr float LIDAR_MAX_BEAM_TILT_DEG = 20.0f;
+
+static Vector3D lidarBoresightWorld(const Quaternion& attitude_wb, float mount_angle_rad)
+{
+    const float c = std::cos(mount_angle_rad);
+    const float s = std::sin(mount_angle_rad);
+    Vector3D boresight_body = math_util::createVector3D(
+        c * LIDAR_BORESIGHT_BODY.x + s * LIDAR_MOUNT_TILT_DIRECTION_BODY.x,
+        c * LIDAR_BORESIGHT_BODY.y + s * LIDAR_MOUNT_TILT_DIRECTION_BODY.y,
+        c * LIDAR_BORESIGHT_BODY.z + s * LIDAR_MOUNT_TILT_DIRECTION_BODY.z
+    );
+
+    // World is Z-up and attitude_wb is world-to-body, so its conjugate rotates body into world.
+    return math_util::multiplyQuaternionVector(math_util::conjugateQuaternion(attitude_wb), boresight_body);
+}
+
+// Height above whatever the beam hit.
 static float calculateVerticalAltitude(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad)
 {
-    Vector3D boresight_body = math_util::createVector3D(std::sin(mount_angle_rad), 0.0f, -std::cos(mount_angle_rad));
+    return -slant_range_m * lidarBoresightWorld(attitude_wb, mount_angle_rad).z;
+}
 
-    Quaternion attitude_bw = math_util::conjugateQuaternion(attitude_wb);
-    Vector3D boresight_world = math_util::multiplyQuaternionVector(attitude_bw, boresight_body);
-
-    return -slant_range_m * boresight_world.z;
+// As calculateVerticalAltitude(), or nullopt when the beam is tilted past LIDAR_MAX_BEAM_TILT_DEG.
+static std::optional<float> lidarAltitude(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad)
+{
+    const float cos_beam_tilt = -lidarBoresightWorld(attitude_wb, mount_angle_rad).z;
+    if (cos_beam_tilt < std::cos(LIDAR_MAX_BEAM_TILT_DEG * DEG2RAD_F)) {
+        return std::nullopt;
+    }
+    return slant_range_m * cos_beam_tilt;
 }
 
 
@@ -619,15 +643,17 @@ static bool trackLidarFreshness(const LidarReading& lidar, float& last_update_ti
     return false;
 }
 
-static void projectLidarAltitudes(
-    const LidarReading& lidar_1, const LidarReading& lidar_2, bool lidar_1_updated, bool lidar_2_updated
-)
+// A reading rejected for tilt is treated as if it had not arrived this tick.
+static void projectLidarAltitude(const LidarReading& lidar, bool& updated, float& altitude_m)
 {
-    if (lidar_1_updated) {
-        lidar_1_altitude_m = calculateVerticalAltitude(lidar_1.distance_m, current_estimate.R_WB, LIDAR_MOUNT_ANGLE_DEG * DEG2RAD_F);
+    if (!updated) {
+        return;
     }
-    if (lidar_2_updated) {
-        lidar_2_altitude_m = calculateVerticalAltitude(lidar_2.distance_m, current_estimate.R_WB, LIDAR_MOUNT_ANGLE_DEG * DEG2RAD_F);
+    if (auto altitude = lidarAltitude(lidar.distance_m, current_estimate.R_WB, LIDAR_MOUNT_ANGLE_DEG * DEG2RAD_F)) {
+        altitude_m = *altitude;
+    }
+    else {
+        updated = false;
     }
 }
 
@@ -746,7 +772,8 @@ std::optional<EstimatedState> StateEstimator::estimate(
 
     bool lidar_1_updated = trackLidarFreshness(lidar_1, lidar_1_update_timestamp_ns);
     bool lidar_2_updated = trackLidarFreshness(lidar_2, lidar_2_update_timestamp_ns);
-    projectLidarAltitudes(lidar_1, lidar_2, lidar_1_updated, lidar_2_updated);
+    projectLidarAltitude(lidar_1, lidar_1_updated, lidar_1_altitude_m);
+    projectLidarAltitude(lidar_2, lidar_2_updated, lidar_2_altitude_m);
 
     // After updateAttitude(), since the LiDAR altitudes depend on this tick's attitude.
     checkLidarDivergence(gnss, lidar_1_updated, lidar_2_updated);
@@ -843,6 +870,16 @@ float StateEstimator::ekf_z_variance_for_testing()
 float StateEstimator::calculate_vertical_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad)
 {
     return calculateVerticalAltitude(slant_range_m, attitude_wb, mount_angle_rad);
+}
+
+std::optional<float> StateEstimator::lidar_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad)
+{
+    return lidarAltitude(slant_range_m, attitude_wb, mount_angle_rad);
+}
+
+float StateEstimator::lidar_max_beam_tilt_deg_for_testing()
+{
+    return LIDAR_MAX_BEAM_TILT_DEG;
 }
 #endif
 

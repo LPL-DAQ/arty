@@ -43,6 +43,8 @@ namespace StateEstimator {
     float ekf_z_variance_for_testing();
 
     float calculate_vertical_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad);
+    std::optional<float> lidar_altitude_for_testing(float slant_range_m, const Quaternion& attitude_wb, float mount_angle_rad);
+    float lidar_max_beam_tilt_deg_for_testing();
 #endif
 
 }

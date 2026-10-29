@@ -18,8 +18,9 @@ constexpr float RAD2DEG_F = 57.2957795f;
 constexpr float N_TO_LBF  = 0.224809f;
 constexpr float GRAVITY_M_S2 = 9.80665f;
 
-// PLACEHOLDER -- not yet measured. Angle of the LiDAR boresight off the body -Z axis (straight
-// down at 0), assumed to tilt in the body X-Z plane toward +X. Confirm against real geometry.
+// PLACEHOLDER -- not yet measured. Angle of the LiDAR boresight off straight down. The boresight
+// and tilt direction it applies to are LIDAR_BORESIGHT_BODY and LIDAR_MOUNT_TILT_DIRECTION_BODY in
+// StateEstimator.cpp, both to be confirmed against the mount.
 constexpr float LIDAR_MOUNT_ANGLE_DEG = 0.0f;
 
 // PLACEHOLDER -- not the real launch site. Geodetic position used to rotate Javad's ECEF velocity
