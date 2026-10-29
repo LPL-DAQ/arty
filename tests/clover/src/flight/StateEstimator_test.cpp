@@ -2041,4 +2041,78 @@ ZTEST(StateEstimator_tests, test_opposite_vertical_velocity_flags_javad)
     zassert_true(StateEstimator::javad_is_faulty_for_testing(), "Javad climbing while VN300 descends is flagged");
 }
 
+// ── 400 Hz VN300 against the 1.5 ms control tick ──────────────────────────────────────────
+
+struct TickRateCase {
+    uint64_t imu_period_ns;
+    int ticks_per_delivery;  // the controller sees a new reading at most once every this many ticks
+};
+
+// Runs 1 s of 1.5 ms ticks with a constant 1 m/s^2 climb from rest. Readings are stamped at the
+// tick that reads them, as VectornavImu::read() does. Returns vz minus a * (last - first arrival).
+static float run_tick_rate_case(const TickRateCase& c, int& deliveries)
+{
+    StateEstimator::reset();
+    LidarReading lidar_1 = LidarReading_init_default;
+    LidarReading lidar_2 = LidarReading_init_default;
+    ImuReading imu = ImuReading_init_default;
+    imu.quat_w = 1.0f;
+    imu.accel_z = GRAVITY_M_S2 + 1.0f;
+    ImuReading backup_1 = ImuReading_init_default;
+    ImuReading backup_2 = ImuReading_init_default;
+    GnssReadings gnss = GnssReadings_init_default;
+    gnss.has_arrival_time_ns = true;
+    gnss.arrival_time_ns = 1;
+    gnss.sense_time_ns = 1.0f;
+
+    constexpr uint64_t TICK_NS = 1'500'000;
+    StateEstimator::set_now_ns_for_testing(1);
+    StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+
+    uint64_t produced = 0;
+    uint64_t consumed = 0;
+    uint64_t first_arrival = 0;
+    uint64_t last_arrival = 0;
+    deliveries = 0;
+    std::optional<EstimatedState> result;
+    for (int tick = 1; tick <= 667; tick++) {
+        const uint64_t now = tick * TICK_NS;
+        StateEstimator::set_now_ns_for_testing(now);
+        while ((produced + 1) * c.imu_period_ns <= now) {
+            produced++;
+        }
+        if (produced > consumed && tick % c.ticks_per_delivery == 0) {
+            consumed = produced;
+            imu.has_arrival_time_ns = true;
+            imu.arrival_time_ns = now;
+            imu.sense_time_ns = static_cast<float>(consumed);
+            if (deliveries++ == 0) {
+                first_arrival = now;
+            }
+            last_arrival = now;
+        }
+        result = StateEstimator::estimate(lidar_1, lidar_2, imu, backup_1, backup_2, gnss);
+    }
+    const float expected_vz = static_cast<float>(last_arrival - first_arrival) / 1e9f;
+    return result->velocity.z - expected_vz;
+}
+
+ZTEST(StateEstimator_tests, test_400hz_imu_on_1500us_ticks_integrates_each_interval_once)
+{
+    int deliveries = 0;
+    const float error = run_tick_rate_case({2'500'000, 1}, deliveries);
+    zassert_within(deliveries, 400, 1, "one prediction per 400 Hz reading, got %d", deliveries);
+    zassert_within(error, 0.0f, 1e-3f, "vz matches a * elapsed: no double-counted or dropped time (error %f)", static_cast<double>(error));
+}
+
+ZTEST(StateEstimator_tests, test_readings_overwritten_between_ticks_keep_integrated_time)
+{
+    // The controller reads only every third tick, so about half the 400 Hz readings are overwritten
+    // before they are seen. The surviving predictions must still span the whole interval.
+    int deliveries = 0;
+    const float error = run_tick_rate_case({2'500'000, 3}, deliveries);
+    zassert_true(deliveries < 300, "setup: readings were dropped (%d delivered)", deliveries);
+    zassert_within(error, 0.0f, 1e-3f, "vz matches a * elapsed despite dropped readings (error %f)", static_cast<double>(error));
+}
+
 ZTEST_SUITE(StateEstimator_tests, NULL, NULL, NULL, NULL, NULL);
