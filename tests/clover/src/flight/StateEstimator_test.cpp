@@ -43,6 +43,18 @@ void assert_attitude_is(const EstimatedState& state, float qw, float qx, float q
     zassert_within(state.R_WB.qz, qz, 1e-6f, "%s (qz)", what);
 }
 
+// Sets Javad's ECEF velocity from a local NED velocity at the launch site, the inverse of the
+// rotation the estimator applies to GREIS [VE].
+void set_javad_velocity_ned(GnssReadings& gnss, float north, float east, float down)
+{
+    const float lat = LAUNCH_SITE_LAT_DEG * DEG2RAD_F;
+    const float lon = LAUNCH_SITE_LON_DEG * DEG2RAD_F;
+    const float up = -down;
+    gnss.vx_ms = -std::sin(lon) * east - std::sin(lat) * std::cos(lon) * north + std::cos(lat) * std::cos(lon) * up;
+    gnss.vy_ms = std::cos(lon) * east - std::sin(lat) * std::sin(lon) * north + std::cos(lat) * std::sin(lon) * up;
+    gnss.vz_ms = std::cos(lat) * north + std::sin(lat) * up;
+}
+
 }  // namespace
 
 // ── (1) VN300 staleness: triggers at >50ms, clears only after a full 100ms re-convergence ──────
@@ -1019,7 +1031,7 @@ ZTEST(StateEstimator_tests, test_ekf_constant_velocity_ascent_all_sensors_health
         float z_true = vz_true * t_s;
 
         gnss.up_m = z_true;
-        gnss.vz_ms = vz_true;
+        set_javad_velocity_ned(gnss, 0.0f, 0.0f, -vz_true);
         gnss.vrms_m = 0.02f;
         gnss.vvel_rms_ms = 0.02f;
         gnss.has_arrival_time_ns = true;
@@ -1220,9 +1232,9 @@ ZTEST(StateEstimator_tests, test_ekf_initializes_from_first_gnss_reading_and_the
     zassert_within(result0->position.z, 0.0f, 1e-6f, "position.z should stay at default before any GNSS reading arrives");
     zassert_within(result0->velocity.z, 0.0f, 1e-6f, "velocity.z should stay at default before any GNSS reading arrives");
 
-    // First GNSS reading -- should initialize the EKF exactly from z0=up_m, vz0=vz_ms.
+    // First GNSS reading -- should initialize the EKF exactly from z0=up_m and Javad's up velocity.
     gnss.up_m = 7.5f;
-    gnss.vz_ms = 1.2f;
+    set_javad_velocity_ned(gnss, 0.0f, 0.0f, -1.2f);
     gnss.has_arrival_time_ns = true;
     gnss.arrival_time_ns = 1'000'000;
     gnss.sense_time_ns = 1.0f;
@@ -1929,6 +1941,38 @@ ZTEST(StateEstimator_tests, test_attitude_stays_valid_when_backup_takes_over)
         zassert_true(result->attitude_valid, "valid at tick %d: a fresh backup is a live source once VN300 is faulty", i);
     }
     zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 escalated to FAULTY");
+}
+
+// ── Javad velocity frame: GREIS [VE] ECEF velocity is rotated into NED before use ────────────
+
+ZTEST(StateEstimator_tests, test_agreeing_1ms_climb_does_not_flag_javad)
+{
+    LidarRig rig = healthy_vn300_rig();
+    rig.imu.vel_n = 0.5f;
+    rig.imu.vel_e = -0.25f;
+    rig.imu.vel_d = -1.0f;
+    set_javad_velocity_ned(rig.gnss, 0.5f, -0.25f, -1.0f);
+
+    std::optional<EstimatedState> result;
+    for (int i = 0; i < 3 * StateEstimator::javad_divergence_streak_threshold_for_testing(); i++) {
+        result = step_all(rig, true, true, false);
+    }
+    zassert_false(StateEstimator::javad_is_faulty_for_testing(), "Javad agrees with VN300 once both are in NED");
+    zassert_within(result->velocity.x, 0.5f, 1e-4f, "velocity.x is Javad north");
+    zassert_within(result->velocity.y, -0.25f, 1e-4f, "velocity.y is Javad east");
+}
+
+ZTEST(StateEstimator_tests, test_opposite_vertical_velocity_flags_javad)
+{
+    LidarRig rig = healthy_vn300_rig();
+    rig.imu.vel_d = 1.0f;
+    set_javad_velocity_ned(rig.gnss, 0.0f, 0.0f, -1.0f);
+
+    for (int i = 0; i < StateEstimator::javad_divergence_streak_threshold_for_testing(); i++) {
+        zassert_false(StateEstimator::javad_is_faulty_for_testing(), "not flagged before N epochs (epoch %d)", i);
+        step_all(rig, true, true, false);
+    }
+    zassert_true(StateEstimator::javad_is_faulty_for_testing(), "Javad climbing while VN300 descends is flagged");
 }
 
 ZTEST_SUITE(StateEstimator_tests, NULL, NULL, NULL, NULL, NULL);

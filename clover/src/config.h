@@ -22,6 +22,12 @@ constexpr float GRAVITY_M_S2 = 9.80665f;
 // down at 0), assumed to tilt in the body X-Z plane toward +X. Confirm against real geometry.
 constexpr float LIDAR_MOUNT_ANGLE_DEG = 0.0f;
 
+// PLACEHOLDER -- not the real launch site. Geodetic position used to rotate Javad's ECEF velocity
+// into local NED. Replace once the Javad provides local-frame velocity ([VG]) or geodetic
+// position ([PG]).
+constexpr float LAUNCH_SITE_LAT_DEG = 34.0f;
+constexpr float LAUNCH_SITE_LON_DEG = -118.0f;
+
 // PWM pulse width range (microseconds): 0% throttle = 1000 µs, 100% throttle = 2000 µs
 constexpr uint32_t MIN_PWM_PULSE_US = 1000;
 constexpr uint32_t MAX_PWM_PULSE_US = 2000;

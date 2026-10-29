@@ -271,5 +271,20 @@ namespace math_util
             }
         }
     }
+
+    // Rotates an ECEF velocity into local NED at the given geodetic latitude and longitude [rad].
+    // Returns (north, east, down).
+    inline Vector3D ecefToNedVelocity(float vx, float vy, float vz, float lat_rad, float lon_rad)
+    {
+        const float sin_lat = std::sin(lat_rad);
+        const float cos_lat = std::cos(lat_rad);
+        const float sin_lon = std::sin(lon_rad);
+        const float cos_lon = std::cos(lon_rad);
+
+        const float east = -sin_lon * vx + cos_lon * vy;
+        const float north = -sin_lat * cos_lon * vx - sin_lat * sin_lon * vy + cos_lat * vz;
+        const float up = cos_lat * cos_lon * vx + cos_lat * sin_lon * vy + sin_lat * vz;
+        return createVector3D(north, east, -up);
+    }
 }
 #endif

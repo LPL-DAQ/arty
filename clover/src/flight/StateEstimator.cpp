@@ -124,9 +124,8 @@ static constexpr float VN300_DIVERGENCE_THRESHOLD = 0.05f;
 // to flag VN300 faulty, and consecutive agreeing readings to un-flag it.
 static constexpr int VN300_DIVERGENCE_STREAK_THRESHOLD = 10;
 
-// Placeholder -- also needs a frame-alignment pass before flight: GNSS vx/vy/vz and VN300
-// vel_n/vel_e/vel_d aren't guaranteed to be directly comparable without a proper transform. Max
-// per-axis velocity difference [m/s] before Javad and VN300 count as disagreeing.
+// Placeholder -- needs real GNSS/VN300 velocity noise analysis before flight. Max per-axis NED
+// velocity difference [m/s] before Javad and VN300 count as disagreeing.
 static constexpr float JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD = 1.0f;
 
 // Placeholder -- needs real GNSS/VN300 velocity noise analysis before flight. Consecutive
@@ -442,6 +441,15 @@ static bool javadUsable()
     return !javad_stale && javad_health == SensorHealth::HEALTHY;
 }
 
+// The one place Javad velocity enters the estimator. GREIS [VE] reports ECEF velocity, rotated
+// here into local NED at the placeholder launch site. Returns (north, east, down).
+static Vector3D javadVelocityNed(const GnssReadings& gnss)
+{
+    return math_util::ecefToNedVelocity(
+        gnss.vx_ms, gnss.vy_ms, gnss.vz_ms, LAUNCH_SITE_LAT_DEG * DEG2RAD_F, LAUNCH_SITE_LON_DEG * DEG2RAD_F
+    );
+}
+
 static void checkVn300Divergence(
     const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2, bool vn300_fresh
 )
@@ -512,7 +520,7 @@ static void checkVn300Divergence(
 static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss, bool vn300_fresh)
 {
     // Only runs while VN300 is healthy: if VN300 itself is untrustworthy, a mismatch says nothing
-    // about Javad. See the frame-alignment caveat on JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD.
+    // about Javad.
     if (vn300_health == SensorHealth::HEALTHY && gnss.has_arrival_time_ns && imu.has_arrival_time_ns &&
         imu.has_vel_n && imu.has_vel_e && imu.has_vel_d) {
         // Javad is the slow participant (~10-20Hz against a ~1000Hz loop), so an un-gated counter
@@ -523,8 +531,9 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
         }
         javad_divergence_last_gnss_time_ns = gnss.arrival_time_ns;
 
+        const Vector3D javad_ned = javadVelocityNed(gnss);
         bool velocities_agree = math_util::vectorsClose(
-            gnss.vx_ms, gnss.vy_ms, gnss.vz_ms,
+            javad_ned.x, javad_ned.y, javad_ned.z,
             imu.vel_n, imu.vel_e, imu.vel_d,
             JAVAD_VN300_VELOCITY_DIVERGENCE_THRESHOLD
         );
@@ -647,15 +656,17 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
     if (javad_health != SensorHealth::FAULTY && gnss.sense_time_ns > gnss_update_timestamp_ns) {
         gnss_update_timestamp_ns = gnss.sense_time_ns;
         gnss_updated = true;
+        const Vector3D javad_ned = javadVelocityNed(gnss);
+        const float javad_vz_up_ms = -javad_ned.z;
         current_estimate.position.x = gnss.north_m;
         current_estimate.position.y = gnss.east_m;
-        current_estimate.velocity.x = gnss.vx_ms;
-        current_estimate.velocity.y = gnss.vy_ms;
+        current_estimate.velocity.x = javad_ned.x;
+        current_estimate.velocity.y = javad_ned.y;
 
         // Bootstrap the EKF from the first healthy GNSS reading; feed later ones as updates.
         if (!z_axis_ekf.is_valid()) {
             z_axis_ekf.init(
-                gnss.up_m, gnss.vz_ms, EKF_INITIAL_Z_VARIANCE_M2, EKF_INITIAL_VZ_VARIANCE_M2_S2, EKF_INITIAL_BIAS_VARIANCE_M2_S4
+                gnss.up_m, javad_vz_up_ms, EKF_INITIAL_Z_VARIANCE_M2, EKF_INITIAL_VZ_VARIANCE_M2_S2, EKF_INITIAL_BIAS_VARIANCE_M2_S4
             );
         }
         else {
@@ -665,7 +676,7 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
             z_axis_ekf.update_altitude(gnss.up_m, javad_z_r_variance);
 
             float javad_vz_r_variance = std::max(gnss.vvel_rms_ms * gnss.vvel_rms_ms, JAVAD_VELOCITY_R_VARIANCE_FLOOR_M2_S2);
-            z_axis_ekf.update_velocity(gnss.vz_ms, javad_vz_r_variance);
+            z_axis_ekf.update_velocity(javad_vz_up_ms, javad_vz_r_variance);
         }
     }
     else if (!javadUsable() && vn300_health != SensorHealth::FAULTY &&
@@ -680,8 +691,6 @@ static bool updateFromGnss(const ImuReading& imu, const GnssReadings& gnss)
         //
         // vel_d follows the NED convention and is positive DOWN, opposite this codebase's Z-up,
         // hence the negation.
-        // TODO: checkJavadDivergence() compares gnss.vz_ms against imu.vel_d with no such flip.
-        // If vz_ms is genuinely up-positive, that comparison has a sign bug.
         float vz_world_from_vn300 = -imu.vel_d;
         z_axis_ekf.update_velocity(vz_world_from_vn300, VN300_VEL_D_VELOCITY_R_VARIANCE_M2_S2);
     }
@@ -785,12 +794,12 @@ static void publishVerticalState(const GnssReadings& gnss, bool gnss_updated)
             // No healthy GNSS reading yet -- pass raw GNSS through so the estimate isn't frozen
             // at 0 in the meantime.
             current_estimate.position.z = gnss.up_m;
-            current_estimate.velocity.z = gnss.vz_ms;
+            current_estimate.velocity.z = -javadVelocityNed(gnss).z;
         }
     }
     else if (gnss_updated) {
         current_estimate.position.z = gnss.up_m;
-        current_estimate.velocity.z = gnss.vz_ms;
+        current_estimate.velocity.z = -javadVelocityNed(gnss).z;
     }
 }
 
