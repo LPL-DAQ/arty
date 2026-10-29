@@ -3,9 +3,7 @@
 #include "../math_util.h"
 #include <cmath>
 
-// Placeholder -- needs tuning against real sensor data. Max dt for a single predict() step [s]:
-// past this the reading feed has likely stalled, and one step spanning the whole gap would inject
-// a large, probably-wrong state change.
+// Placeholder. Longest predict step [s]; a longer gap means the feed stalled.
 static constexpr float MAX_PREDICT_DT_S = 0.05f;
 
 // Placeholder -- needs tuning from logged data. Continuous-time process noise, scaled by dt in
@@ -15,17 +13,13 @@ static constexpr float MAX_PREDICT_DT_S = 0.05f;
 static constexpr float ACCEL_NOISE_PSD_M2_S3 = 10.0f;
 static constexpr float ACCEL_BIAS_RANDOM_WALK_PSD_M2_S5 = 4e-4f;
 
-// Placeholder -- needs tuning against real sensor data. Innovation gate threshold in multiples of
-// sqrt(S). Rejects single wild measurements (LiDAR/GNSS multipath, corrupted packets).
+// Placeholder. Innovation gate in multiples of sqrt(S).
 static constexpr float INNOVATION_GATE_SIGMA = 5.0f;
 
-// Covariance half of a propagation step: P = F*P*F^T + Q. Shared by predict() and
-// predict_covariance_only() so the two can't drift apart. F depends only on dt_s, never on x_,
-// which is what makes propagating covariance without touching the state well-defined.
+// P = F*P*F^T + Q, shared by predict() and predict_covariance_only().
 static void propagateCovariance(float P[3][3], float dt_s)
 {
-    // State transition Jacobian F = df/dx over x = [z, vz, bias]. The bias column is negative
-    // because da/dbias = -1: raising the bias estimate lowers the inferred true acceleration.
+    // The bias column is negative because a larger bias estimate lowers the inferred acceleration.
     float dt2 = dt_s * dt_s;
     const float F[3][3] = {
         {1.0f, dt_s, -0.5f * dt2},
@@ -49,10 +43,7 @@ static void propagateCovariance(float P[3][3], float dt_s)
         {0.0f, 0.0f, ACCEL_BIAS_RANDOM_WALK_PSD_M2_S5 * dt_s},
     };
 
-    // P = F*P*F^T + Q
     math_util::addMatrix3(FPFt, Q, P);
-
-    // Re-symmetrize every step rather than letting float rounding accumulate.
     math_util::symmetrizeMatrix3(P);
 }
 
@@ -63,8 +54,6 @@ void ZAxisEkf::init(float z0, float vz0)
 
 void ZAxisEkf::init(float z0, float vz0, float z0_variance, float vz0_variance, float bias0_variance)
 {
-    // Back to the default member initializers (x_ and P_ zeroed, invalid, no rejections), then set
-    // only what this overload specifies. Accel bias stays at 0.
     *this = ZAxisEkf{};
 
     x_[0] = z0;
@@ -85,26 +74,20 @@ void ZAxisEkf::reset()
 void ZAxisEkf::predict(float accel_world_z, float dt_s)
 {
     if (!valid_) {
-        // Predicting on an uninitialized (all-zero) state would be silently meaningless.
         return;
     }
     if (!std::isfinite(accel_world_z) || !std::isfinite(dt_s)) {
         return;
     }
     if (dt_s <= 0.0f || dt_s > MAX_PREDICT_DT_S) {
-        // Reject rather than clamp: hold the last known-good estimate instead of propagating over
-        // a gap the constant-acceleration model doesn't apply to.
+        // Rejected rather than clamped: the model doesn't hold across a gap this long.
         return;
     }
 
     float bias = x_[2];
 
-    // True vertical acceleration: measured, minus gravity, minus the bias the filter currently
-    // attributes to the accelerometer.
     float a = accel_world_z - GRAVITY_M_S2 - bias;
 
-    // Constant-acceleration kinematics. bias follows a random walk -- predict() leaves it alone;
-    // only a measurement update revises it, via the Kalman gain.
     x_[0] += x_[1] * dt_s + 0.5f * a * dt_s * dt_s;
     x_[1] += a * dt_s;
 
@@ -120,8 +103,6 @@ void ZAxisEkf::predict_covariance_only(float dt_s)
         return;
     }
     if (dt_s <= 0.0f || dt_s > MAX_PREDICT_DT_S) {
-        // Same rejection as predict(): a gap this long says the feed stalled, and inflating P by
-        // one huge step would understate how little is actually known.
         return;
     }
 
@@ -138,53 +119,40 @@ void ZAxisEkf::update_velocity(float vz_meas, float r_variance)
     scalar_update(1, vz_meas, r_variance);
 }
 
-// Standard scalar-measurement Kalman update. h_index picks the one-hot observation row:
-// h_index=0 -> H=[1,0,0] (update_altitude), h_index=1 -> H=[0,1,0] (update_velocity). r_variance
-// is this measurement's own variance, so the gain weights a noisy reading less on its own.
 void ZAxisEkf::scalar_update(int h_index, float meas, float r_variance)
 {
     if (!valid_) {
         return;
     }
     if (!std::isfinite(meas) || !std::isfinite(r_variance) || r_variance <= 0.0f) {
-        // r_variance <= 0 would risk divide-by-zero or a negative S below.
         return;
     }
 
-    // H is the one-hot row vector selecting which state component this measurement observes.
     float H[3] = {0.0f, 0.0f, 0.0f};
     H[h_index] = 1.0f;
 
-    // y = meas - H*x  (innovation: how far the measurement is from what the current state predicts)
     float y = meas - math_util::dotProduct(H, x_);
 
-    // S = H*P*H^T + r  (innovation covariance). P*H^T first (H^T is just H's values as a column
-    // vector, same array), then H*(P*H^T) via dot product, since H*P*H^T is a scalar here.
     float PHt[3];
     math_util::multiplyMatrix3Vector(P_, H, PHt);
     float S = math_util::dotProduct(H, PHt) + r_variance;
 
-    // Innovation gate. S > 0 holds because P stays PSD (Joseph form, below) and r_variance > 0.
     float sigma = std::sqrt(S);
     if (std::fabs(y) > INNOVATION_GATE_SIGMA * sigma) {
         rejected_update_count_++;
         return;
     }
 
-    // K = P*H^T / S  (Kalman gain)
     float K[3];
     for (int i = 0; i < 3; i++) {
         K[i] = PHt[i] / S;
     }
 
-    // x += K*y
     for (int i = 0; i < 3; i++) {
         x_[i] += K[i] * y;
     }
 
-    // Joseph form: P = (I-KH)*P*(I-KH)^T + K*r*K^T. Both terms are PSD by construction, so P stays
-    // PSD under float rounding -- unlike the simpler P = (I-KH)*P, which only matches in exact
-    // arithmetic and can develop negative diagonal entries.
+    // Joseph form, P = (I-KH)*P*(I-KH)^T + K*r*K^T, keeps P positive semi-definite under rounding.
     float KH[3][3];
     math_util::outerProduct(K, H, KH);
 
@@ -216,7 +184,6 @@ void ZAxisEkf::scalar_update(int h_index, float meas, float r_variance)
 
     math_util::addMatrix3(term1, term2, P_);
 
-    // Same reasoning as predict(): re-symmetrize rather than letting rounding accumulate.
     math_util::symmetrizeMatrix3(P_);
 }
 

@@ -8,11 +8,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-// Placeholder interface for the two backup IMUs -- hardware does not exist yet. Mirrors
-// VectornavIMU.h's shape (static reading buffer + mutex + has_reading flag + read()), minus the
-// UART plumbing, so a real driver can fill in the private internals without changing any call
-// site. The mutex is already here so read()'s locking doesn't change once a sense() thread starts
-// writing concurrently.
+// Placeholder for the two backup IMUs, which have no hardware yet. Same interface as VectornavIMU.h
+// so a real driver can be added without changing callers.
 
 enum class BackupImuKind { BACKUP_IMU_1, BACKUP_IMU_2 };
 
@@ -39,8 +36,7 @@ private:
 public:
     static std::expected<void, Error> init();
 
-    // Returns the latest reading, if one is available. No hardware exists yet, so has_reading is
-    // never set -- this will always return std::nullopt until a real driver lands.
+    // Always std::nullopt until a driver exists.
     static std::optional<ImuReading> read();
 };
 

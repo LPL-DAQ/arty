@@ -113,7 +113,7 @@ ZTEST(ZAxisEkf_tests, test_covariance_grows_stays_symmetric_and_positive_diagona
     zassert_within(ekf.accel_bias_variance(), p_after[2][2], 1e-9f, "accel_bias_variance() should match P[2][2]");
 }
 
-// ══ update_altitude()/update_velocity() tests (this task) ══════════════════════════════════════
+// ══ update_altitude()/update_velocity() tests ══════════════════════════════════════════════════
 
 // (1) Altitude update pulls z toward the measurement and shrinks P[0][0]
 
@@ -131,11 +131,7 @@ ZTEST(ZAxisEkf_tests, test_altitude_update_pulls_z_toward_measurement_and_shrink
     const float p_before = ekf.z_variance();
     zassert_true(p_before > 0.0f, "P[0][0] should be nonzero after predict-only steps");
 
-    // Offset chosen to be a plausible measurement given the filter's current uncertainty (well
-    // inside the innovation gate, not an outlier) -- a large arbitrary offset like +10m here would
-    // exceed 5*sigma against the tiny P[0][0] built up from only 20 short predict steps and get
-    // rejected by the innovation gate, defeating the point of this test (verified numerically
-    // before picking this value, not guessed).
+    // Small enough to stay inside the innovation gate.
     const float z_meas = z_before + 0.5f;
     ekf.update_altitude(z_meas, 0.1f);
 
@@ -160,9 +156,7 @@ ZTEST(ZAxisEkf_tests, test_smaller_r_variance_pulls_harder_toward_measurement)
         ekf_large_r.predict(GRAVITY_M_S2 + 1.0f, dt);
     }
 
-    // Identical predict history on both filters -- z_before is the same for both. Offset kept
-    // small enough to clear the innovation gate for the SMALL-r case (the tighter constraint,
-    // since smaller r means smaller S means a smaller 5*sigma allowance) -- verified numerically.
+    // Same history on both filters. The offset stays inside the gate for the smaller r.
     const float z_before = ekf_small_r.z_m();
     const float z_meas = z_before + 0.3f;
 
@@ -301,9 +295,7 @@ ZTEST(ZAxisEkf_tests, test_smaller_r_variance_pulls_velocity_harder_toward_measu
         ekf_large_r.predict(GRAVITY_M_S2 + 1.0f, dt);
     }
 
-    // Identical predict history on both filters -- vz_before is the same for both. Offset kept
-    // small enough to clear the innovation gate for the SMALL-r case (the tighter constraint) --
-    // verified numerically.
+    // Same history on both filters. The offset stays inside the gate for the smaller r.
     const float vz_before = ekf_small_r.vz_ms();
     const float vz_meas = vz_before + 0.05f;
 

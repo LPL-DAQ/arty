@@ -1056,10 +1056,7 @@ ZTEST(StateEstimator_tests, test_ekf_constant_velocity_ascent_all_sensors_health
     float final_t_s = static_cast<float>(t_ns) / 1e9f;
     float expected_z = vz_true * final_t_s;
 
-    // All sensors agree with the truth trajectory throughout, so tracking should be tight --
-    // verified numerically (see this task's dev notes) that this converges to ~exact tracking,
-    // not just "in the right ballpark". 0.05 leaves comfortable margin above float noise while
-    // still being tight enough to catch a genuinely broken fusion.
+    // Every sensor agrees with the truth, so tracking should be tight.
     zassert_within(result->position.z, expected_z, 0.05f, "z should smoothly track the true constant-velocity ascent");
     zassert_within(result->velocity.z, vz_true, 0.05f, "vz should smoothly track the true constant ascent rate");
 }
@@ -1092,9 +1089,7 @@ ZTEST(StateEstimator_tests, test_flagged_lidar_wild_reading_does_not_influence_e
     uint64_t t_ns = 0;
     std::optional<EstimatedState> result;
 
-    // Drive lidar_2 to FAULTY. gnss.up_m staying constant at 10.0 also bootstraps/anchors the EKF
-    // there in the same loop -- gnss.vrms_m defaults to 0, floored to a tiny r_variance, so the
-    // EKF locks onto z~=10 tightly (verified numerically).
+    // Drive lidar_2 to FAULTY. Javad at 10 m with its floored r_variance holds the EKF near 10 m.
     for (int i = 0; i < n; i++) {
         t_ns += PERIOD_NS;
         StateEstimator::set_now_ns_for_testing(t_ns);
@@ -1162,9 +1157,7 @@ ZTEST(StateEstimator_tests, test_javad_faulty_switches_velocity_source_to_vn300_
     gnss.vy_ms = 0.0f;
     gnss.vz_ms = 0.0f;
     gnss.up_m = 5.0f;
-    // Realistic (non-floored) reported uncertainty during warmup, not the tiny default-0 floor --
-    // verified numerically that flooring here would make the filter so confident that the later
-    // vel_d fallback value gets rejected by the innovation gate instead of applied.
+    // Non-floored uncertainty, so the filter isn't confident enough to gate out the later vel_d.
     gnss.vrms_m = 0.1f;
     gnss.vvel_rms_ms = 0.1f;
 
@@ -1194,9 +1187,7 @@ ZTEST(StateEstimator_tests, test_javad_faulty_switches_velocity_source_to_vn300_
     zassert_true(result.has_value());
     float vz_before = result->velocity.z;
 
-    // Asymmetric, clearly-nonzero vel_d: a wrong sign would move vz the WRONG way. 1.5 (not a
-    // larger/rounder number) chosen because it's within the innovation gate given how confident
-    // the filter already is after the warmup above -- verified numerically.
+    // Nonzero vel_d, so a wrong sign moves vz the wrong way. 1.5 stays inside the innovation gate.
     imu.vel_d = 1.5f;  // NED down-positive: descending -> world vz should become MORE NEGATIVE
     imu.arrival_time_ns = t_ns + PERIOD_NS;
     imu.sense_time_ns += 1.0f;
@@ -1244,20 +1235,8 @@ ZTEST(StateEstimator_tests, test_ekf_initializes_from_first_gnss_reading_and_the
     zassert_within(result1->position.z, 7.5f, 1e-4f, "position.z should equal the first GNSS reading exactly (EKF init)");
     zassert_within(result1->velocity.z, 1.2f, 1e-4f, "velocity.z should equal the first GNSS reading exactly (EKF init)");
 
-    // Second GNSS reading, a clearly different value. If this were still raw passthrough (the
-    // pre-EKF behavior this task replaced), position.z would snap exactly to the new value.
-    // Instead it should be a Kalman-filtered partial correction -- pulled toward, but not equal
-    // to, the new reading -- proving the EKF is genuinely driving the output now, not a mirror of
-    // gnss.up_m.
-    //
-    // Retuned when the initial covariance dropped to 2m / 2 (m/s) sigma (review comments 4 and 5).
-    // The old jump of 7.5 -> 50 was a 21-sigma innovation against the new P and is now correctly
-    // rejected by the innovation gate, which would leave z at 7.5 and prove nothing.
-    //
-    // r_variance is deliberately comparable to P here (vrms_m = 2 -> r = 4, against P00 = 4), so
-    // K = 0.5 and z lands near 9.75 -- an unmistakable partial correction. The previous
-    // vrms_m = 0.1 gave r = 0.01 against P00 = 100, i.e. a 99.99% pull, which was effectively the
-    // passthrough this test claims to rule out.
+    // A second, different reading should give a partial correction, not a passthrough. With
+    // r = 4 against P00 = 4, K = 0.5 and z lands near 9.75. The jump stays inside the gate.
     gnss.up_m = 12.0f;
     gnss.vrms_m = 2.0f;
     gnss.arrival_time_ns = 2'000'000;
@@ -1270,14 +1249,9 @@ ZTEST(StateEstimator_tests, test_ekf_initializes_from_first_gnss_reading_and_the
     zassert_within(result2->position.z, 9.75f, 0.05f, "the correction should be roughly half the gap (K = P/(P+r) = 0.5), not a near-total snap");
 }
 
-// (5) Accel dropout (no fresh VN300 readings) followed by resume must not produce a garbage
-// spike. A dropout this long escalates VN300 to FAULTY, so the state is held deliberately until
-// re-trust completes -- the dt clamp is not what protects us here, and is exercised on its own in
-// the moderate-dropout test that follows.
-//
-// Updated for staleness escalation (67b92be): before it, a 500ms dropout left VN300 merely STALE
-// and predict resumed on the very next reading. This test asserted that, and now asserts the
-// escalate -> hold -> re-trust -> resume sequence that replaced it.
+// (5) An accel dropout followed by resume must not produce a spike. A dropout this long escalates
+// VN300 to FAULTY, so the state is held until re-trust completes, then predict resumes. The dt
+// clamp is tested separately in the moderate-dropout test below.
 
 ZTEST(StateEstimator_tests, test_accel_dropout_then_resume_does_not_produce_garbage_spike)
 {
@@ -1291,10 +1265,7 @@ ZTEST(StateEstimator_tests, test_accel_dropout_then_resume_does_not_produce_garb
 
     ImuReading imu = ImuReading_init_default;
     imu.quat_w = 1.0f;
-    // Nonzero net acceleration on purpose (not GRAVITY_M_S2 alone): if the dt clamp failed and a
-    // huge dt were integrated, a=0 would barely move vz/z at all (v*huge_dt with v~0 is still
-    // ~0), making a broken clamp look identical to a working one. a=1.0 makes a real spike
-    // obvious if the clamp doesn't reject it -- verified numerically.
+    // Nonzero net acceleration, so integrating an oversized dt would produce a visible spike.
     imu.accel_z = GRAVITY_M_S2 + 1.0f;
 
     GnssReadings gnss = GnssReadings_init_default;
@@ -1536,9 +1507,7 @@ ZTEST(StateEstimator_tests, test_ekf_predict_rotation_tracks_truth_under_tilted_
     // TRUE world-frame constant-acceleration trajectory (a_true=2.0 m/s^2) -- NOT the raw,
     // un-rotated body-frame reading (K, ~16.7 m/s^2 net after subtracting gravity), which is
     // nearly an order of magnitude different and would result from a broken/missing rotation.
-    // predict()'s discrete update is exact for piecewise-constant acceleration (see
-    // test_constant_acceleration_matches_closed_form_kinematics in ZAxisEkf_test.cpp), so a tight
-    // tolerance is appropriate here despite going through quaternion trig -- verified numerically.
+    // predict() is exact for piecewise-constant acceleration, so the tolerance can be tight.
     const int n = 100;
     std::optional<EstimatedState> result;
     for (int i = 0; i < n; i++) {
