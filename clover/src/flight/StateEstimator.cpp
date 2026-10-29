@@ -35,6 +35,7 @@ static float lidar_1_update_timestamp_ns = 0;
 static float lidar_2_update_timestamp_ns = 0;
 static float imu_update_timestamp_ns = 0;
 static float backup_imu_1_update_timestamp_ns = 0;
+static float backup_imu_2_update_timestamp_ns = 0;
 static float gnss_update_timestamp_ns = 0;
 static float lidar_1_altitude_m = 0;
 static float lidar_2_altitude_m = 0;
@@ -85,7 +86,7 @@ static constexpr uint64_t VN300_STALE_THRESHOLD_NS = 50'000'000;
 static constexpr uint64_t VN300_RETRUST_THRESHOLD_NS = 100'000'000;
 
 // Placeholder -- to be tuned against real VN300 dropout behavior. Total time without a reading
-// before VN300 escalates STALE -> FAULTY, handing attitude over to backup IMU 1.
+// before VN300 escalates STALE -> FAULTY, handing attitude over to the backup IMUs.
 //
 // STALE holds the last R_WB without integrating anything, so attitude error accrues at the full
 // body rotation rate: at 30 deg/s every 100ms of freeze is ~3 deg. This sits only 100ms past the
@@ -93,7 +94,7 @@ static constexpr uint64_t VN300_RETRUST_THRESHOLD_NS = 100'000'000;
 // just freezes, short enough that a dead VN300 is handed off quickly.
 //
 // On current hardware this fixes the attitude-source ROUTING, not the visible symptom: no backup
-// IMU hardware exists, so backup_imu_1.sense_time_ns never advances and updateAttitude()'s backup
+// IMU hardware exists, so neither backup's sense_time_ns advances and updateAttitude()'s backup
 // branch no-ops -- a dead VN300 still practically freezes today. The fallback becomes real once
 // backup hardware is fitted.
 static constexpr uint64_t VN300_FAULT_THRESHOLD_NS = 150'000'000;
@@ -112,7 +113,7 @@ static constexpr uint64_t BACKUP_IMU_STALE_THRESHOLD_NS = 50'000'000;
 static constexpr uint64_t LATERAL_HOLD_LIMIT_NS = 500'000'000;
 
 // Attitude is marked invalid this long after the last reading from a live attitude source (a
-// healthy VN300, or backup IMU 1 once VN300 is faulty). Counted from that reading, so it includes
+// healthy VN300, or a backup IMU once VN300 is faulty). Counted from that reading, so it includes
 // the VN300 stale window rather than starting after it.
 static constexpr uint64_t ATTITUDE_HOLD_LIMIT_NS = 100'000'000;
 
@@ -245,6 +246,7 @@ void StateEstimator::reset()
     lidar_2_update_timestamp_ns = 0;
     imu_update_timestamp_ns = 0;
     backup_imu_1_update_timestamp_ns = 0;
+    backup_imu_2_update_timestamp_ns = 0;
     gnss_update_timestamp_ns = 0;
     lidar_1_altitude_m = 0;
     lidar_2_altitude_m = 0;
@@ -392,7 +394,7 @@ static void updateVn300Staleness()
 
     if (time_since_last_reading_ns > VN300_FAULT_THRESHOLD_NS) {
         // The freeze has run long enough that the held attitude is no longer worth trusting.
-        // Escalating to FAULTY is what routes updateAttitude() to backup IMU 1 -- without this,
+        // Escalating to FAULTY is what routes updateAttitude() to the backup IMUs -- without this,
         // STALE is terminal (nothing else can flag a sensor that sends no readings to disagree
         // with) and a dead VN300 would hold last-good attitude forever.
         vn300_health = SensorHealth::FAULTY;
@@ -588,8 +590,12 @@ static bool attitudeValid()
     if (vn300_health == SensorHealth::HEALTHY) {
         last_live_attitude_ns = std::max(last_live_attitude_ns, vn300_last_arrival_time_ns);
     }
-    else if (vn300_health == SensorHealth::FAULTY && backup_imu_1_arrival.seen) {
-        last_live_attitude_ns = std::max(last_live_attitude_ns, backup_imu_1_arrival.last_arrival_ns);
+    else if (vn300_health == SensorHealth::FAULTY) {
+        for (const ArrivalTracker* backup : {&backup_imu_1_arrival, &backup_imu_2_arrival}) {
+            if (backup->seen) {
+                last_live_attitude_ns = std::max(last_live_attitude_ns, backup->last_arrival_ns);
+            }
+        }
     }
     return now_ns - last_live_attitude_ns <= ATTITUDE_HOLD_LIMIT_NS;
 }
@@ -635,28 +641,32 @@ static void checkPrimarySensorFaults(
     updateFaultStatus();
 }
 
-static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1)
+static void takeAttitudeFrom(const ImuReading& source, float& last_update_timestamp_ns)
 {
-    // VN300 while healthy; backup IMU 1 once flagged faulty (backup_imu_2 is redundant with it
-    // once corroborated). A merely STALE VN300 freezes the last estimate. A critical fault takes
-    // this same backup path rather than a special freeze: holding last-good attitude with a usable
-    // backup available is the more dangerous of the two options.
+    if (source.sense_time_ns > last_update_timestamp_ns) {
+        last_update_timestamp_ns = source.sense_time_ns;
+        current_estimate.R_WB.qw = source.quat_w;
+        current_estimate.R_WB.qx = source.quat_x;
+        current_estimate.R_WB.qy = source.quat_y;
+        current_estimate.R_WB.qz = source.quat_z;
+    }
+}
+
+static void updateAttitude(const ImuReading& imu, const ImuReading& backup_imu_1, const ImuReading& backup_imu_2)
+{
+    // VN300 while healthy. Once it is flagged faulty, backup IMU 1, or backup IMU 2 while backup 1
+    // is stale. A merely STALE VN300 freezes the last estimate. A critical fault takes this same
+    // backup path rather than a special freeze: holding last-good attitude with a usable backup
+    // available is the more dangerous of the two options.
     if (vn300_health == SensorHealth::HEALTHY) {
-        if (imu.sense_time_ns > imu_update_timestamp_ns) {
-            imu_update_timestamp_ns = imu.sense_time_ns;
-            current_estimate.R_WB.qw = imu.quat_w;
-            current_estimate.R_WB.qx = imu.quat_x;
-            current_estimate.R_WB.qy = imu.quat_y;
-            current_estimate.R_WB.qz = imu.quat_z;
-        }
+        takeAttitudeFrom(imu, imu_update_timestamp_ns);
     }
     else if (vn300_health == SensorHealth::FAULTY) {
-        if (backup_imu_1.sense_time_ns > backup_imu_1_update_timestamp_ns) {
-            backup_imu_1_update_timestamp_ns = backup_imu_1.sense_time_ns;
-            current_estimate.R_WB.qw = backup_imu_1.quat_w;
-            current_estimate.R_WB.qx = backup_imu_1.quat_x;
-            current_estimate.R_WB.qy = backup_imu_1.quat_y;
-            current_estimate.R_WB.qz = backup_imu_1.quat_z;
+        if (!backup_imu_1_stale || backup_imu_2_stale) {
+            takeAttitudeFrom(backup_imu_1, backup_imu_1_update_timestamp_ns);
+        }
+        else {
+            takeAttitudeFrom(backup_imu_2, backup_imu_2_update_timestamp_ns);
         }
     }
 }
@@ -840,7 +850,7 @@ std::optional<EstimatedState> StateEstimator::estimate(
     // before updateAttitude() so it keeps rotating by the previous tick's R_WB, as it always has.
     predictVerticalState(imu, vn300_fresh);
 
-    updateAttitude(imu, backup_imu_1);
+    updateAttitude(imu, backup_imu_1, backup_imu_2);
     bool gnss_updated = updateFromGnss(imu, gnss);
 
     bool lidar_1_updated = trackLidarFreshness(lidar_1, lidar_1_update_timestamp_ns);

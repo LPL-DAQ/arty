@@ -1949,6 +1949,73 @@ ZTEST(StateEstimator_tests, test_attitude_valid_again_once_backup_takes_over)
     }
 }
 
+// ── Backup IMU selection once VN300 is faulty ─────────────────────────────────────────────
+
+static std::optional<EstimatedState> step_backups(LidarRig& rig, bool backup_1_fresh, bool backup_2_fresh)
+{
+    rig.t_ns += PERIOD_NS;
+    rig.seq += 1.0f;
+    StateEstimator::set_now_ns_for_testing(rig.t_ns);
+    if (backup_1_fresh) {
+        rig.backup_1.has_arrival_time_ns = true;
+        rig.backup_1.arrival_time_ns = rig.t_ns;
+        rig.backup_1.sense_time_ns = rig.seq;
+    }
+    if (backup_2_fresh) {
+        rig.backup_2.has_arrival_time_ns = true;
+        rig.backup_2.arrival_time_ns = rig.t_ns;
+        rig.backup_2.sense_time_ns = rig.seq;
+    }
+    return StateEstimator::estimate(rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+}
+
+// VN300 stops; steps until it escalates to FAULTY with the given backups reporting.
+static void fault_vn300_by_outage(LidarRig& rig, bool backup_1_fresh, bool backup_2_fresh)
+{
+    while (!StateEstimator::vn300_is_faulty_for_testing()) {
+        step_backups(rig, backup_1_fresh, backup_2_fresh);
+    }
+}
+
+ZTEST(StateEstimator_tests, test_backup_imu_2_takes_attitude_when_backup_1_stale)
+{
+    LidarRig rig = healthy_vn300_rig();
+    rig.backup_2.quat_w = 0.7071f;
+    rig.backup_2.quat_z = 0.7071f;
+    fault_vn300_by_outage(rig, false, true);
+
+    auto result = step_backups(rig, false, true);
+    zassert_true(StateEstimator::backup_imu_1_is_stale_for_testing(), "setup: backup 1 stale");
+    assert_attitude_is(*result, 0.7071f, 0.0f, 0.0f, 0.7071f, "attitude from backup IMU 2");
+    zassert_true(result->attitude_valid, "backup IMU 2 is a live attitude source");
+
+    for (int i = 0; i < 200; i++) {
+        result = step_backups(rig, false, true);
+        zassert_true(result->attitude_valid, "stays valid on backup IMU 2 (tick %d)", i);
+    }
+}
+
+ZTEST(StateEstimator_tests, test_backup_imu_1_preferred_when_both_backups_fresh)
+{
+    LidarRig rig = healthy_vn300_rig();
+    rig.backup_1.quat_w = 0.9238795f;
+    rig.backup_1.quat_x = 0.3826834f;
+    rig.backup_2.quat_w = 0.7071f;
+    rig.backup_2.quat_z = 0.7071f;
+    fault_vn300_by_outage(rig, true, true);
+
+    auto result = step_backups(rig, true, true);
+    assert_attitude_is(*result, 0.9238795f, 0.3826834f, 0.0f, 0.0f, "attitude from backup IMU 1");
+
+    // Backup 1 stops: backup 2 takes over once backup 1 is stale.
+    for (int i = 0; i < 25; i++) {
+        result = step_backups(rig, false, true);
+    }
+    zassert_true(StateEstimator::backup_imu_1_is_stale_for_testing(), "setup: backup 1 stale");
+    assert_attitude_is(*result, 0.7071f, 0.0f, 0.0f, 0.7071f, "attitude from backup IMU 2 after backup 1 goes stale");
+    zassert_true(result->attitude_valid, "valid on backup IMU 2");
+}
+
 // ── Javad velocity frame: GREIS [VE] ECEF velocity is rotated into NED before use ────────────
 
 ZTEST(StateEstimator_tests, test_agreeing_1ms_climb_does_not_flag_javad)
