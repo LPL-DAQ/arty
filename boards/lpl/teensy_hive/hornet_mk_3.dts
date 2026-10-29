@@ -74,7 +74,8 @@ TODO:
 // VN-300 IMU (pins 0/1)
 &lpuart6 {
     status = "okay";
-    current-speed = <115200>;
+    // VN-300. The driver probes 921600 and falls back to the VN-300's 115200 power-on rate.
+    current-speed = <921600>;
     pinctrl-0 = <&pinmux_lpuart6>;
     pinctrl-1 = <&pinmux_lpuart6_sleep>;
     pinctrl-names = "default", "sleep";

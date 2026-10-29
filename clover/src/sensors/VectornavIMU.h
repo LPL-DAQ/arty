@@ -29,7 +29,11 @@ template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> 
 private:
     constexpr static int RING_BUF_SIZE = 2048;
     constexpr static int MAX_LINE_SIZE = 256;
-    constexpr static uint32_t UART_BAUD_RATE = 115200;
+    constexpr static uint32_t UART_BAUD_RATE = 921600;
+    // The VN-300 comes up at this rate after a power cycle. The baud change is never saved to its
+    // flash, so a Teensy-only reset finds it still at UART_BAUD_RATE.
+    constexpr static uint32_t VN300_POWER_ON_BAUD_RATE = 115200;
+    constexpr static int BAUD_PROBE_TIMEOUT_MS = 100;
 
     constexpr static const device* uart_dev = uart_dt_init;
     constexpr static k_sem* ready_sem = ready_sem_ptr;  // Must be static-initialized as the sense thread waits on this
@@ -51,6 +55,14 @@ private:
 
     // Send raw bytes over UART (poll mode - only used for configuration commands)
     static void uart_send(const uint8_t* data, size_t len);
+
+    static std::expected<void, Error> set_uart_baud(uint32_t baud);
+
+    // True if any $VN line arrives at the current UART rate within BAUD_PROBE_TIMEOUT_MS.
+    static bool responds_at_current_baud();
+
+    // Leaves the UART and the VN-300 both at UART_BAUD_RATE.
+    static std::expected<void, Error> connect();
 
     // Send output configuration commands to the VN-300
     static void configure_outputs();
@@ -122,7 +134,7 @@ template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> 
 {
     LOG_MODULE_DECLARE(VectornavIMU);
     const char* type_cmd = "$VNWRG,06,08*XX\r\n";  // VNQMR: quat, mag, accel, gyro
-    const char* rate_cmd = "$VNWRG,07,40*XX\r\n";  // 40 Hz
+    const char* rate_cmd = "$VNWRG,07,400*XX\r\n";  // 400 Hz
 
     uart_send((const uint8_t*)type_cmd, strlen(type_cmd));
     k_msleep(100);
@@ -252,6 +264,87 @@ bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::parse_vnqmr(const char* line,
     return true;
 }
 
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
+std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::set_uart_baud(uint32_t baud)
+{
+    struct uart_config cfg = {
+        .baudrate = baud,
+        .parity = UART_CFG_PARITY_NONE,
+        .stop_bits = UART_CFG_STOP_BITS_1,
+        .data_bits = UART_CFG_DATA_BITS_8,
+        .flow_ctrl = UART_CFG_FLOW_CTRL_NONE,
+    };
+    int err = uart_configure(uart_dev, &cfg);
+    if (err) {
+        return std::unexpected(Error::from_code(err).context("%s Failed to configure UART at %u baud", kind_to_prefix(kind), baud));
+    }
+    return {};
+}
+
+/// Polls the UART directly, so this must run before the RX interrupt is enabled.
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
+bool Vectornav<kind, uart_dt_init, ready_sem_ptr>::responds_at_current_baud()
+{
+    const char* model_query = "$VNRRG,01*XX\r\n";
+    uart_send((const uint8_t*)model_query, strlen(model_query));
+
+    const char* expected = "$VN";
+    int matched = 0;
+    const int64_t deadline = k_uptime_get() + BAUD_PROBE_TIMEOUT_MS;
+    while (k_uptime_get() < deadline) {
+        unsigned char c;
+        if (uart_poll_in(uart_dev, &c) != 0) {
+            continue;
+        }
+        matched = c == expected[matched] ? matched + 1 : (c == '$' ? 1 : 0);
+        if (expected[matched] == '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Tries UART_BAUD_RATE first (Teensy-only reset), then the power-on rate, which it switches from.
+template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr>
+std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::connect()
+{
+    LOG_MODULE_DECLARE(VectornavIMU);
+
+    if (auto result = set_uart_baud(UART_BAUD_RATE); !result) {
+        return result;
+    }
+    if (responds_at_current_baud()) {
+        LOG_INF("%s Already at %u baud", kind_to_prefix(kind), UART_BAUD_RATE);
+        return {};
+    }
+
+    if (auto result = set_uart_baud(VN300_POWER_ON_BAUD_RATE); !result) {
+        return result;
+    }
+    if (!responds_at_current_baud()) {
+        LOG_ERR("%s No response at %u or %u baud, continuing at %u", kind_to_prefix(kind), UART_BAUD_RATE,
+                VN300_POWER_ON_BAUD_RATE, UART_BAUD_RATE);
+        return set_uart_baud(UART_BAUD_RATE);
+    }
+
+    // Not followed by $VNWNV, so the VN-300 returns to its power-on rate after a power cycle.
+    const char* baud_cmd = "$VNWRG,05,921600*XX\r\n";
+    static_assert(UART_BAUD_RATE == 921600, "baud_cmd must match UART_BAUD_RATE");
+    uart_send((const uint8_t*)baud_cmd, strlen(baud_cmd));
+    k_msleep(100);
+
+    if (auto result = set_uart_baud(UART_BAUD_RATE); !result) {
+        return result;
+    }
+    if (!responds_at_current_baud()) {
+        LOG_ERR("%s No response after switching to %u baud", kind_to_prefix(kind), UART_BAUD_RATE);
+    }
+    else {
+        LOG_INF("%s Switched from %u to %u baud", kind_to_prefix(kind), VN300_POWER_ON_BAUD_RATE, UART_BAUD_RATE);
+    }
+    return {};
+}
+
 /// Initialize VN-300: set up ring buffer, configure UART, attach IRQ, send output config commands.
 template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std::expected<void, Error> Vectornav<kind, uart_dt_init, ready_sem_ptr>::init()
 {
@@ -268,24 +361,14 @@ template <VectornavKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> 
         return std::unexpected(Error::from_device_not_ready(uart_dev).context("%s UART is not ready", kind_to_prefix(kind)));
     }
 
-    struct uart_config cfg = {
-        .baudrate = UART_BAUD_RATE,
-        .parity = UART_CFG_PARITY_NONE,
-        .stop_bits = UART_CFG_STOP_BITS_1,
-        .data_bits = UART_CFG_DATA_BITS_8,
-        .flow_ctrl = UART_CFG_FLOW_CTRL_NONE,
-    };
-
-    LOG_INF("%s Configuring UART", kind_to_prefix(kind));
-    int err = uart_configure(uart_dev, &cfg);
-    if (err) {
-        return std::unexpected(Error::from_code(err).context("%s Failed to configure UART", kind_to_prefix(kind)));
+    if (auto result = connect(); !result) {
+        return std::unexpected(result.error());
     }
 
     configure_outputs();
 
     LOG_INF("%s Setting UART IRQ", kind_to_prefix(kind));
-    err = uart_irq_callback_user_data_set(uart_dev, uart_handler, nullptr);
+    int err = uart_irq_callback_user_data_set(uart_dev, uart_handler, nullptr);
     if (err) {
         return std::unexpected(Error::from_code(err).context("%s Failed to attach UART interrupt handler", kind_to_prefix(kind)));
     }
