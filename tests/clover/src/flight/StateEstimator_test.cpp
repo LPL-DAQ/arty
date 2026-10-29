@@ -1814,4 +1814,121 @@ ZTEST(StateEstimator_tests, test_lidar_check_skipped_while_javad_faulty)
     zassert_false(StateEstimator::lidar_2_is_faulty_for_testing(), "no LiDAR verdict while Javad is faulty");
 }
 
+// ── Hold limits: a held channel is marked invalid after 500 ms ───────────────────────────────
+
+static std::optional<EstimatedState> step_all(LidarRig& rig, bool gnss_fresh, bool imu_fresh, bool backup_fresh)
+{
+    rig.t_ns += PERIOD_NS;
+    rig.seq += 1.0f;
+    StateEstimator::set_now_ns_for_testing(rig.t_ns);
+    if (imu_fresh) {
+        rig.imu.has_arrival_time_ns = true;
+        rig.imu.arrival_time_ns = rig.t_ns;
+        rig.imu.sense_time_ns = rig.seq;
+    }
+    if (gnss_fresh) {
+        rig.gnss.has_arrival_time_ns = true;
+        rig.gnss.arrival_time_ns = rig.t_ns;
+        rig.gnss.sense_time_ns = rig.seq;
+    }
+    if (backup_fresh) {
+        for (ImuReading* b : {&rig.backup_1, &rig.backup_2}) {
+            b->has_arrival_time_ns = true;
+            b->arrival_time_ns = rig.t_ns;
+            b->sense_time_ns = rig.seq;
+        }
+    }
+    return StateEstimator::estimate(rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+}
+
+static LidarRig healthy_vn300_rig()
+{
+    StateEstimator::reset();
+    StateEstimator::set_now_ns_for_testing(0);
+    LidarRig rig;
+    rig.imu.quat_w = 1.0f;
+    rig.imu.has_vel_n = rig.imu.has_vel_e = rig.imu.has_vel_d = true;
+    rig.backup_1.quat_w = 1.0f;
+    rig.backup_2.quat_w = 1.0f;
+    warm_vn300_to_healthy(rig.t_ns, rig.lidar_1, rig.lidar_2, rig.imu, rig.backup_1, rig.backup_2, rig.gnss);
+    rig.seq = 100.0f;
+    return rig;
+}
+
+ZTEST(StateEstimator_tests, test_lateral_held_from_faulted_javad_is_invalid_after_500ms)
+{
+    LidarRig rig = healthy_vn300_rig();
+    rig.gnss.north_m = 5.0f;
+    rig.gnss.east_m = -3.0f;
+    auto result = step_all(rig, true, true, false);
+    zassert_true(result->lateral_valid, "lateral valid with Javad fresh and healthy");
+    zassert_within(result->position.x, 5.0f, 1e-6f, "lateral position taken from Javad");
+
+    rig.gnss.vx_ms = 100.0f;
+    while (!StateEstimator::javad_is_faulty_for_testing()) {
+        result = step_all(rig, true, true, false);
+    }
+    const uint64_t fault_ns = rig.t_ns;
+    rig.gnss.north_m = 50.0f;
+
+    while (rig.t_ns + PERIOD_NS <= fault_ns + 500'000'000) {
+        result = step_all(rig, true, true, false);
+        zassert_true(result->lateral_valid, "still valid within 500 ms of the fault (t=%llu)", rig.t_ns - fault_ns);
+    }
+    zassert_within(result->position.x, 5.0f, 1e-6f, "lateral position held while Javad is faulty");
+
+    result = step_all(rig, true, true, false);
+    zassert_false(result->lateral_valid, "invalid once held past 500 ms");
+    zassert_equal(result->fault_status, EstimatorFaultStatus_CRITICAL, "CRITICAL once a channel is invalid");
+    zassert_true(result->attitude_valid, "attitude unaffected");
+
+    rig.gnss.vx_ms = 0.0f;
+    while (StateEstimator::javad_is_faulty_for_testing()) {
+        result = step_all(rig, true, true, false);
+    }
+    zassert_true(result->lateral_valid, "valid again once Javad recovers");
+    zassert_not_equal(result->fault_status, EstimatorFaultStatus_CRITICAL, "no longer CRITICAL after recovery");
+}
+
+ZTEST(StateEstimator_tests, test_attitude_held_without_backup_is_invalid_after_500ms)
+{
+    LidarRig rig = healthy_vn300_rig();
+    rig.imu.quat_w = 0.9238795f;
+    rig.imu.quat_x = 0.3826834f;
+    auto result = step_all(rig, true, true, false);
+    zassert_true(result->attitude_valid, "attitude valid with VN300 healthy");
+    const uint64_t last_imu_ns = rig.t_ns;
+
+    // VN300 stops and no backup IMU reports: STALE after 50 ms, then held for up to 500 ms.
+    while (rig.t_ns + PERIOD_NS <= last_imu_ns + 550'000'000) {
+        result = step_all(rig, true, false, false);
+        zassert_true(result->attitude_valid, "still valid within the hold limit (t=%llu)", rig.t_ns - last_imu_ns);
+    }
+    assert_attitude_is(*result, 0.9238795f, 0.3826834f, 0.0f, 0.0f, "attitude held at last VN300 value");
+
+    for (int i = 0; i < 4; i++) {
+        result = step_all(rig, true, false, false);
+    }
+    zassert_false(result->attitude_valid, "invalid once held past the limit with no backup");
+    zassert_equal(result->fault_status, EstimatorFaultStatus_CRITICAL, "CRITICAL once a channel is invalid");
+
+    for (int i = 0; i < 50; i++) {
+        result = step_all(rig, true, true, false);
+    }
+    zassert_true(StateEstimator::vn300_is_healthy_for_testing(), "VN300 re-trusted");
+    zassert_true(result->attitude_valid, "valid again once VN300 is healthy");
+}
+
+ZTEST(StateEstimator_tests, test_attitude_stays_valid_when_backup_takes_over)
+{
+    LidarRig rig = healthy_vn300_rig();
+    step_all(rig, true, true, true);
+    std::optional<EstimatedState> result;
+    for (int i = 0; i < 400; i++) {
+        result = step_all(rig, true, false, true);
+        zassert_true(result->attitude_valid, "valid at tick %d: a fresh backup is a live source once VN300 is faulty", i);
+    }
+    zassert_true(StateEstimator::vn300_is_faulty_for_testing(), "VN300 escalated to FAULTY");
+}
+
 ZTEST_SUITE(StateEstimator_tests, NULL, NULL, NULL, NULL, NULL);

@@ -108,6 +108,10 @@ static constexpr uint64_t JAVAD_STALE_THRESHOLD_NS = 300'000'000;
 static constexpr uint64_t LIDAR_STALE_THRESHOLD_NS = 100'000'000;
 static constexpr uint64_t BACKUP_IMU_STALE_THRESHOLD_NS = 50'000'000;
 
+// Longest a channel may hold its last value without a live source before it is marked invalid.
+static constexpr uint64_t LATERAL_HOLD_LIMIT_NS = 500'000'000;
+static constexpr uint64_t ATTITUDE_HOLD_LIMIT_NS = 500'000'000;
+
 // Placeholder -- needs real backup IMU noise specs before flight. Max per-component quaternion
 // difference for the two backups to count as agreeing with each other.
 static constexpr float BACKUP_IMU_AGREEMENT_THRESHOLD = 0.05f;
@@ -153,6 +157,10 @@ static ArrivalTracker lidar_2_arrival;
 static ArrivalTracker backup_imu_1_arrival;
 static ArrivalTracker backup_imu_2_arrival;
 static bool javad_stale = true;
+static bool lateral_held = false;
+static uint64_t lateral_held_since_ns = 0;
+static bool attitude_held = false;
+static uint64_t attitude_held_since_ns = 0;
 static bool lidar_1_stale = true;
 static bool lidar_2_stale = true;
 static bool backup_imu_1_stale = true;
@@ -266,6 +274,10 @@ void StateEstimator::reset()
     backup_imu_1_arrival = {};
     backup_imu_2_arrival = {};
     javad_stale = true;
+    lateral_held = false;
+    lateral_held_since_ns = 0;
+    attitude_held = false;
+    attitude_held_since_ns = 0;
     lidar_1_stale = true;
     lidar_2_stale = true;
     backup_imu_1_stale = true;
@@ -538,21 +550,38 @@ static void checkJavadDivergence(const ImuReading& imu, const GnssReadings& gnss
     }
 }
 
+// True while the channel has no live source. Returns false once it has been held past limit_ns.
+static bool channelValid(bool has_live_source, bool& held, uint64_t& held_since_ns, uint64_t limit_ns)
+{
+    if (has_live_source) {
+        held = false;
+        return true;
+    }
+    if (!held) {
+        held = true;
+        held_since_ns = currentTimeNs();
+    }
+    return currentTimeNs() - held_since_ns <= limit_ns;
+}
+
+static bool attitudeHasLiveSource()
+{
+    return vn300_health == SensorHealth::HEALTHY || (vn300_health == SensorHealth::FAULTY && !backup_imu_1_stale);
+}
+
 // Publishes NOMINAL / DEGRADED / CRITICAL on the estimate from the primary sensors' health.
 static void updateFaultStatus()
 {
-    // Carried on EstimatedState so consumers can tell "one primary sensor down" from "both" by
-    // reading one field, rather than re-deriving it from the health states, which are file-local.
-    //
-    // CRITICAL needs both VN300 and Javad specifically FAULTY, not merely STALE -- no trustworthy
-    // attitude or velocity source is left. It is a severity signal for consumers, not a mode: the
-    // channels each fall back on their own (attitude to backup IMU 1, lateral held, vertical
-    // coasting on covariance alone), so nothing keys off this flag to decide behavior.
+    current_estimate.lateral_valid = channelValid(javadUsable(), lateral_held, lateral_held_since_ns, LATERAL_HOLD_LIMIT_NS);
+    current_estimate.attitude_valid = channelValid(attitudeHasLiveSource(), attitude_held, attitude_held_since_ns, ATTITUDE_HOLD_LIMIT_NS);
+
+    // CRITICAL when both VN300 and Javad are FAULTY, or a channel has been held past its limit.
+    // DEGRADED when either primary sensor is stale or faulty but every channel is still within it.
     bool vn300_ok = vn300_health == SensorHealth::HEALTHY;
     bool javad_ok = javadUsable();
     bool critical_fault = vn300_health == SensorHealth::FAULTY && javad_health == SensorHealth::FAULTY;
 
-    if (critical_fault) {
+    if (critical_fault || !current_estimate.lateral_valid || !current_estimate.attitude_valid) {
         current_estimate.fault_status = EstimatorFaultStatus_CRITICAL;
     }
     else if (!vn300_ok || !javad_ok) {

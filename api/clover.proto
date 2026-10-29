@@ -751,8 +751,8 @@ enum EstimatorFaultStatus {
   // Exactly one of VN300/Javad is not fully trusted (stale or flagged faulty). The estimate is
   // still updating, via fallback (backup IMU) or partial freeze (e.g. GNSS-derived position).
   DEGRADED = 1;
-  // VN300 AND Javad are both flagged faulty simultaneously. Holding the last known-good estimate
-  // rather than degrading further -- see StateEstimator.cpp for the documented default here.
+  // VN300 and Javad are both flagged faulty, or a held channel has passed its hold limit
+  // (lateral_valid or attitude_valid is false).
   CRITICAL = 2;
 }
 
@@ -763,6 +763,9 @@ message EstimatedState {
   required Vector3D position = 2;
   required Vector3D velocity = 3;
   required EstimatorFaultStatus fault_status = 5;
+  // False once the channel has been held without a live source for longer than its hold limit.
+  required bool lateral_valid = 6;
+  required bool attitude_valid = 7;
 }
 
 message FlightControllerDesiredState {
