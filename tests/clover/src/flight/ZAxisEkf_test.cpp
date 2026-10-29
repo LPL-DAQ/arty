@@ -194,14 +194,11 @@ ZTEST(ZAxisEkf_tests, test_repeated_altitude_updates_with_constant_offset_conver
     // attribute that persistent discrepancy to the bias state via the F matrix's bias-column
     // coupling, rather than to z/vz alone.
     //
-    // 20,000 steps (200s simulated), not 2000: PROCESS_NOISE_BIAS_M2_S4 is deliberately tiny
-    // (1e-6, "bias should drift slowly"), which is exactly what makes the filter cautious about
-    // moving its bias estimate -- convergence is real but slow. Verified numerically that 2000
-    // steps only reaches ~2% convergence, while 20,000 reaches ~73%, comfortably past this test's
-    // 50% bar. native_sim runs this near-instantly either way (pure arithmetic, no simulated-time
-    // delay), so the extra steps cost nothing in test runtime.
+    // 40,000 steps (400 s simulated). The acceleration process noise is large so the filter leans
+    // on measurements, which also makes it slow to attribute a persistent offset to bias: this
+    // reaches about 84% convergence, against about 48% at 200 s.
     float t = 0.0f;
-    for (int i = 0; i < 20000; i++) {
+    for (int i = 0; i < 40000; i++) {
         ekf.predict(GRAVITY_M_S2 + a_true + true_bias, dt);
         t += dt;
 
@@ -278,10 +275,8 @@ ZTEST(ZAxisEkf_tests, test_velocity_update_pulls_vz_toward_measurement_and_shrin
     const float p_before = ekf.vz_variance();
     zassert_true(p_before > 0.0f, "P[1][1] should be nonzero after predict-only steps");
 
-    // Offset chosen well inside the innovation gate: P[1][1] after 20 short predict steps is
-    // large relative to the altitude channel (PROCESS_NOISE_VZ_M2_S2 is 100x PROCESS_NOISE_Z_M2),
-    // so 5*sigma here is comfortably wide (~2.7 with r=0.1) -- verified numerically before picking
-    // this value, not guessed.
+    // Offset chosen well inside the innovation gate: P[1][1] is about 2 (m/s)^2 after 20 predict
+    // steps of 10 ms, so 5 sigma is about 7 m/s with r=0.1.
     const float vz_meas = vz_before + 0.1f;
     ekf.update_velocity(vz_meas, 0.1f);
 
@@ -447,6 +442,29 @@ ZTEST(ZAxisEkf_tests, test_predict_covariance_only_rejects_invalid_filter_and_ou
     ekf.predict_covariance_only(10.0f);
     ekf.get_covariance_for_testing(p_after);
     zassert_within(p_after[0][0], p_before[0][0], 1e-9f, "non-positive or oversized dt should be rejected, not clamped");
+}
+
+ZTEST(ZAxisEkf_tests, test_process_noise_does_not_depend_on_predict_rate)
+{
+    ZAxisEkf at_40hz;
+    ZAxisEkf at_400hz;
+    at_40hz.init(0.0f, 0.0f);
+    at_400hz.init(0.0f, 0.0f);
+
+    for (int i = 0; i < 40; i++) {
+        at_40hz.predict_covariance_only(0.025f);
+    }
+    for (int i = 0; i < 400; i++) {
+        at_400hz.predict_covariance_only(0.0025f);
+    }
+
+    float p_40[3][3];
+    float p_400[3][3];
+    at_40hz.get_covariance_for_testing(p_40);
+    at_400hz.get_covariance_for_testing(p_400);
+    for (int i = 0; i < 3; i++) {
+        zassert_within(p_400[i][i], p_40[i][i], 0.01f * p_40[i][i], "P[%d][%d] after 1 s matches at 40 and 400 Hz", i, i);
+    }
 }
 
 ZTEST_SUITE(ZAxisEkf_tests, NULL, NULL, NULL, NULL, NULL);

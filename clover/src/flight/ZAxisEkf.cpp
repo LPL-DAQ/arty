@@ -8,12 +8,12 @@
 // a large, probably-wrong state change.
 static constexpr float MAX_PREDICT_DT_S = 0.05f;
 
-// Placeholder -- needs tuning against real sensor data. Process noise variance added to P's
-// diagonal every predict() step. Larger values trust the kinematic model less and lean harder on
-// measurement updates.
-static constexpr float PROCESS_NOISE_Z_M2 = 1e-4f;
-static constexpr float PROCESS_NOISE_VZ_M2_S2 = 1e-2f;
-static constexpr float PROCESS_NOISE_BIAS_M2_S4 = 1e-6f;  // small: bias should drift slowly
+// Placeholder -- needs tuning from logged data. Continuous-time process noise, scaled by dt in
+// each step so the filter behaves the same at any VN300 rate: white acceleration noise driving z
+// and vz, and a random walk on the accelerometer bias. The acceleration term is deliberately large
+// so the steady-state gain leans on LiDAR and Javad rather than the IMU-driven model.
+static constexpr float ACCEL_NOISE_PSD_M2_S3 = 10.0f;
+static constexpr float ACCEL_BIAS_RANDOM_WALK_PSD_M2_S5 = 4e-4f;
 
 // Placeholder -- needs tuning against real sensor data. Innovation gate threshold in multiples of
 // sqrt(S). Rejects single wild measurements (LiDAR/GNSS multipath, corrupted packets).
@@ -42,10 +42,11 @@ static void propagateCovariance(float P[3][3], float dt_s)
     float FPFt[3][3];
     math_util::multiplyMatrix3(FP, Ft, FPFt);
 
+    const float qa = ACCEL_NOISE_PSD_M2_S3;
     const float Q[3][3] = {
-        {PROCESS_NOISE_Z_M2, 0.0f, 0.0f},
-        {0.0f, PROCESS_NOISE_VZ_M2_S2, 0.0f},
-        {0.0f, 0.0f, PROCESS_NOISE_BIAS_M2_S4},
+        {qa * dt2 * dt_s / 3.0f, qa * dt2 / 2.0f, 0.0f},
+        {qa * dt2 / 2.0f, qa * dt_s, 0.0f},
+        {0.0f, 0.0f, ACCEL_BIAS_RANDOM_WALK_PSD_M2_S5 * dt_s},
     };
 
     // P = F*P*F^T + Q

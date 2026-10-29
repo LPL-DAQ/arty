@@ -61,10 +61,10 @@ static constexpr float EKF_INITIAL_Z_VARIANCE_M2 = 4.0f;
 static constexpr float EKF_INITIAL_VZ_VARIANCE_M2_S2 = 4.0f;
 static constexpr float EKF_INITIAL_BIAS_VARIANCE_M2_S4 = 1.0f;
 
-// Placeholder -- needs real LiDAR noise specs before flight. r_variance for each LiDAR's computed
-// altitude.
-static constexpr float LIDAR_1_ALTITUDE_R_VARIANCE_M2 = 0.01f;
-static constexpr float LIDAR_2_ALTITUDE_R_VARIANCE_M2 = 0.01f;
+// r_variance for each LiDAR's computed altitude: 5 cm sigma, the TF02-Pro datasheet accuracy below
+// 5 m (1% of range beyond). Confirm against logged data.
+static constexpr float LIDAR_1_ALTITUDE_R_VARIANCE_M2 = 0.0025f;
+static constexpr float LIDAR_2_ALTITUDE_R_VARIANCE_M2 = 0.0025f;
 
 // Placeholder -- needs real GNSS noise-floor analysis before flight. Floors on Javad's own
 // reported per-epoch uncertainty, so a zero or implausibly tiny value can't make the filter
