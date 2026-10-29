@@ -230,7 +230,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         'sequence_number': float(pkt.sequence_number),
         #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
         #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
-        #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
         #'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
         #'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
         #'gnc_connected': float(pkt.gnc_connected),
@@ -291,6 +291,20 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             #'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
         }
     )
+
+    if _has(pkt, 'imu'):
+        imu = pkt.imu
+        row.update(
+            {
+                'imu_quat_w': float(imu.quat_w),
+                'imu_quat_x': float(imu.quat_x),
+                'imu_quat_y': float(imu.quat_y),
+                'imu_quat_z': float(imu.quat_z),
+                'imu_accel_x': float(imu.accel_x),
+                'imu_accel_y': float(imu.accel_y),
+                'imu_accel_z': float(imu.accel_z),
+            }
+        )
 
     if _has(pkt, 'estimated_state'):
         est = pkt.estimated_state
@@ -989,6 +1003,18 @@ def _build_status_renderable():
     pose.add_row('Position', f'{pos.x:.2f}', f'{pos.y:.2f}', f'{pos.z:.2f}', 'm')
     pose.add_row('Velocity', f'{vel.x:.2f}', f'{vel.y:.2f}', f'{vel.z:.2f}', 'm/s')
     pose.add_row('Y/P/R', f'{euler.x:.1f}', f'{euler.y:.1f}', f'{euler.z:.1f}', 'deg')
+    if _has(pkt, 'imu'):
+        imu = pkt.imu
+        pose.add_row(
+            'IMU accel', f'{imu.accel_x:.2f}', f'{imu.accel_y:.2f}', f'{imu.accel_z:.2f}', 'm/s²'
+        )
+        pose.add_row(
+            'IMU q xyz',
+            f'{imu.quat_x:.3f}',
+            f'{imu.quat_y:.3f}',
+            f'{imu.quat_z:.3f}',
+            f'w {imu.quat_w:.3f}',
+        )
     fault_name = clover_pb2.EstimatorFaultStatus.Name(pkt.estimated_state.fault_status)
     fault_color = _FAULT_STATUS_COLORS.get(fault_name, 'white')
     lateral = 'ok' if pkt.estimated_state.lateral_valid else 'invalid'
