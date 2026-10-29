@@ -38,10 +38,6 @@ static float lidar_2_altitude_m = 0;
 static ZAxisEkf z_axis_ekf;
 static uint64_t z_axis_ekf_last_predict_time_ns = 0;
 
-// Ground-testing escape hatch: flip to false to bypass the EKF and pass raw GNSS altitude/vertical
-// velocity straight through. Should be true for real flight.
-static constexpr bool USE_ZAXIS_EKF_FOR_ALTITUDE = true;
-
 // Initial covariance when bootstrapping the EKF from the first healthy GNSS reading, which is a
 // single uncertain measurement rather than a known state. Bias starts less uncertain than z/vz,
 // but not known-exact.
@@ -802,9 +798,9 @@ static void updateVerticalFromLidars(bool lidar_1_updated, bool lidar_2_updated)
 static void publishVerticalState(const GnssReadings& gnss, bool gnss_updated)
 {
     // position.z/velocity.z come from the EKF -- VN300 acceleration via predict(), LiDAR and Javad
-    // via update(), with the vel_d fallback while Javad is faulty. USE_ZAXIS_EKF_FOR_ALTITUDE
-    // switches back to raw GNSS passthrough for ground testing.
-    if constexpr (USE_ZAXIS_EKF_FOR_ALTITUDE) {
+    // via update(), with the vel_d fallback while Javad is faulty. Turning off
+    // CONFIG_USE_ZAXIS_EKF_FOR_ALTITUDE switches back to raw GNSS passthrough for ground testing.
+    if constexpr (IS_ENABLED(CONFIG_USE_ZAXIS_EKF_FOR_ALTITUDE)) {
         if (z_axis_ekf.is_valid()) {
             current_estimate.position.z = z_axis_ekf.z_m();
             current_estimate.velocity.z = z_axis_ekf.vz_ms();

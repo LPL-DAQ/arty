@@ -1,0 +1,6 @@
+config USE_ZAXIS_EKF_FOR_ALTITUDE
+    bool "Use the vertical EKF for altitude and vertical velocity"
+    default y
+    help
+      Turn off for ground testing to pass raw Javad altitude and vertical
+      velocity straight through. Keep on for flight.
