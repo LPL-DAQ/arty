@@ -291,4 +291,35 @@ ZTEST(MathUtil_tests, test_euler_negative_yaw)
     zassert_within(e.z, 0.0f, EPSILON, "Negative 90-deg yaw: roll should be 0");
 }
 
+static void assert_ned(const Vector3D& v, float n, float e, float d, const char* what)
+{
+    zassert_within(v.x, n, 1e-5f, "%s: north", what);
+    zassert_within(v.y, e, 1e-5f, "%s: east", what);
+    zassert_within(v.z, d, 1e-5f, "%s: down", what);
+}
+
+ZTEST(MathUtil_tests, test_ecef_to_ned_vertical_at_lat0_lon0)
+{
+    // At lat 0, lon 0, ECEF +X points straight up.
+    assert_ned(math_util::ecefToNedVelocity(1.0f, 0.0f, 0.0f, 0.0f, 0.0f), 0.0f, 0.0f, -1.0f, "1 m/s up at lat 0 lon 0");
+}
+
+ZTEST(MathUtil_tests, test_ecef_to_ned_vertical_at_lat34_lon_minus118)
+{
+    // ECEF up unit vector at lat 34, lon -118, computed independently.
+    const float lat = 34.0f * 3.14159265f / 180.0f;
+    const float lon = -118.0f * 3.14159265f / 180.0f;
+    assert_ned(math_util::ecefToNedVelocity(-0.38920956f, -0.73199673f, 0.55919290f, lat, lon), 0.0f, 0.0f, -1.0f, "1 m/s up");
+    assert_ned(math_util::ecefToNedVelocity(0.38920956f, 0.73199673f, -0.55919290f, lat, lon), 0.0f, 0.0f, 1.0f, "1 m/s down");
+}
+
+ZTEST(MathUtil_tests, test_ecef_to_ned_east_and_north)
+{
+    const float lat = 34.0f * 3.14159265f / 180.0f;
+    const float lon = -118.0f * 3.14159265f / 180.0f;
+    assert_ned(math_util::ecefToNedVelocity(0.88294759f, -0.46947156f, 0.0f, lat, lon), 0.0f, 1.0f, 0.0f, "1 m/s east");
+    assert_ned(math_util::ecefToNedVelocity(0.26252517f, 0.49373803f, 0.82903757f, lat, lon), 1.0f, 0.0f, 0.0f, "1 m/s north");
+    assert_ned(math_util::ecefToNedVelocity(0.0f, 1.0f, 0.0f, 0.0f, 0.0f), 0.0f, 1.0f, 0.0f, "ECEF +Y is east at lat 0 lon 0");
+}
+
 ZTEST_SUITE(MathUtil_tests, NULL, NULL, NULL, NULL, NULL);

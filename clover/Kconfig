@@ -146,6 +146,8 @@ config FLIGHT
     depends on LIDAR
     depends on GNSS
 
+rsource "Kconfig.estimator"
+
 endmenu
 
 module = CLOVER

@@ -470,7 +470,7 @@ enum SystemState {
   STATE_FLIGHT_PRIMED = 18;
 }
 
-// next tag: 94
+// next tag: 96
 message DataPacket {
   // Time since chip start in nanoseconds.
   required uint64 time_ns = 1;
@@ -506,6 +506,10 @@ message DataPacket {
 
   //IMU
   optional ImuReading imu = 23;
+
+  // Backup IMUs. Placeholder fields -- hardware does not exist yet (see BackupImu.h).
+  optional ImuReading backup_imu_1 = 94;
+  optional ImuReading backup_imu_2 = 95;
 
   // state estimate
   optional EstimatedState estimated_state = 86;
@@ -678,6 +682,11 @@ message LidarReading {
   required float distance_m = 1;
   required float strength = 2;
   required float sense_time_ns = 3;
+
+  // Wall-clock time (ns since chip start, k_cycle_get_64 scale) this reading arrived at the
+  // estimator. Unlike sense_time_ns (inter-arrival delta), this is an absolute timestamp usable
+  // for staleness checks.
+  optional uint64 arrival_time_ns = 4;
 }
 
 message ImuReading {
@@ -714,6 +723,11 @@ message ImuReading {
   required float quat_z = 25;
 
   required float sense_time_ns = 26;
+
+  // Wall-clock time (ns since chip start, k_cycle_get_64 scale) this reading arrived at the
+  // estimator. Unlike sense_time_ns (inter-arrival delta), this is an absolute timestamp usable
+  // for staleness checks.
+  optional uint64 arrival_time_ns = 27;
 }
 
 // this is what is sent to other controllers, calculated in FlightController
@@ -728,12 +742,44 @@ message Quaternion {
   required float qz = 3;
 }
 
+// Combined fault severity across the redundant primary sensors (VN300 + Javad), so any consumer
+// of EstimatedState (FlightController, telemetry, ...) can tell "one primary sensor down" apart
+// from "both primary sensors down" from this field alone, instead of re-deriving it from two
+// separate per-sensor health states itself.
+enum EstimatorFaultStatus {
+  NOMINAL = 0;
+  // Exactly one of VN300/Javad is not fully trusted (stale or flagged faulty). The estimate is
+  // still updating, via fallback (backup IMU) or partial freeze (e.g. GNSS-derived position).
+  DEGRADED = 1;
+  // VN300 and Javad are both flagged faulty, or a held channel has passed its hold limit
+  // (lateral_valid or attitude_valid is false).
+  CRITICAL = 2;
+}
+
+// Health of a fused sensor (VN300, Javad, and the two LiDARs).
+enum SensorHealth {
+  // Trusted and used in the estimate.
+  HEALTHY = 0;
+  // No reading within the sensor's staleness threshold.
+  STALE = 1;
+  // Readings arrive but consistently disagree with the corroborating sensors.
+  FAULTY = 2;
+}
+
 // Estimated vehicle state for telemetry and flight path monitoring.
 message EstimatedState {
   required Quaternion R_WB = 1; // world to body
   required Vector3D euler = 4; // for data logging ease
   required Vector3D position = 2;
   required Vector3D velocity = 3;
+  required EstimatorFaultStatus fault_status = 5;
+  // False once the channel has been held without a live source for longer than its hold limit.
+  required bool lateral_valid = 6;
+  required bool attitude_valid = 7;
+  required SensorHealth vn300_health = 8;
+  required SensorHealth javad_health = 9;
+  required SensorHealth lidar_1_health = 10;
+  required SensorHealth lidar_2_health = 11;
 }
 
 message FlightControllerDesiredState {
@@ -805,5 +851,10 @@ message GnssReadings {
   required uint32 sol_type = 15;
 
   required float sense_time_ns = 16;
+
+  // Wall-clock time (ns since chip start, k_cycle_get_64 scale) this reading arrived at the
+  // estimator. Unlike sense_time_ns (inter-arrival delta), this is an absolute timestamp usable
+  // for staleness checks.
+  optional uint64 arrival_time_ns = 17;
 }
 

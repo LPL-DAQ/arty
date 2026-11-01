@@ -179,6 +179,9 @@ def listen_for_telemetry():
 
 # update SystemState with (18); range 19
 _STATE_NAMES = {float(i): clover_pb2.SystemState.Name(i) for i in range(19)}
+_FAULT_STATUS_NAMES = {float(v): n for n, v in clover_pb2.EstimatorFaultStatus.items()}
+_SENSOR_HEALTH_NAMES = {float(v): n for n, v in clover_pb2.SensorHealth.items()}
+_FAULT_STATUS_COLORS = {'NOMINAL': 'green', 'DEGRADED': 'yellow', 'CRITICAL': 'bold red'}
 
 
 # Shared protobuf descriptor helpers.
@@ -227,7 +230,7 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
         'sequence_number': float(pkt.sequence_number),
         #'controller_tick_ns': float(pkt.controller_timing.controller_tick_time_ns),
         #'analog_sense_ns': _opt(pkt.controller_timing, 'analog_sensors_sense_time_ns'),
-        #'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
+        'state_estimator_ns': _opt(pkt.controller_timing, 'state_estimator_update_time_ns'),
         #'lidar_sense_ns': _opt(pkt.controller_timing, 'lidar_sense_time_ns'),
         #'imu_sense_ns': _opt(pkt.controller_timing, 'imu_sense_time_ns'),
         #'gnc_connected': float(pkt.gnc_connected),
@@ -288,6 +291,34 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
             #'rcs_propeller_ccw_command_us': _opt(pkt, 'rcs_propeller_ccw_command'),
         }
     )
+
+    if _has(pkt, 'imu'):
+        imu = pkt.imu
+        row.update(
+            {
+                'imu_quat_w': float(imu.quat_w),
+                'imu_quat_x': float(imu.quat_x),
+                'imu_quat_y': float(imu.quat_y),
+                'imu_quat_z': float(imu.quat_z),
+                'imu_accel_x': float(imu.accel_x),
+                'imu_accel_y': float(imu.accel_y),
+                'imu_accel_z': float(imu.accel_z),
+            }
+        )
+
+    if _has(pkt, 'estimated_state'):
+        est = pkt.estimated_state
+        row.update(
+            {
+                'est_fault_status': float(est.fault_status),
+                'est_lateral_valid': float(est.lateral_valid),
+                'est_attitude_valid': float(est.attitude_valid),
+                'est_vn300_health': float(est.vn300_health),
+                'est_javad_health': float(est.javad_health),
+                'est_lidar_1_health': float(est.lidar_1_health),
+                'est_lidar_2_health': float(est.lidar_2_health),
+            }
+        )
 
     # # Optional GNSS data.
     # if _has(pkt, 'gnss'):
@@ -399,6 +430,10 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
         value = float(raw_value)
         # event column: state label for gnc_state rows, empty string otherwise
         event = _STATE_NAMES.get(raw_value, '') if sensor == 'gnc_state' else ''
+        if sensor == 'est_fault_status':
+            event = _FAULT_STATUS_NAMES.get(raw_value, '')
+        elif sensor.startswith('est_') and sensor.endswith('_health'):
+            event = _SENSOR_HEALTH_NAMES.get(raw_value, '')
 
         rows.append(
             {
@@ -968,6 +1003,29 @@ def _build_status_renderable():
     pose.add_row('Position', f'{pos.x:.2f}', f'{pos.y:.2f}', f'{pos.z:.2f}', 'm')
     pose.add_row('Velocity', f'{vel.x:.2f}', f'{vel.y:.2f}', f'{vel.z:.2f}', 'm/s')
     pose.add_row('Y/P/R', f'{euler.x:.1f}', f'{euler.y:.1f}', f'{euler.z:.1f}', 'deg')
+    if _has(pkt, 'imu'):
+        imu = pkt.imu
+        pose.add_row(
+            'IMU accel', f'{imu.accel_x:.2f}', f'{imu.accel_y:.2f}', f'{imu.accel_z:.2f}', 'm/s²'
+        )
+        pose.add_row(
+            'IMU q xyz',
+            f'{imu.quat_x:.3f}',
+            f'{imu.quat_y:.3f}',
+            f'{imu.quat_z:.3f}',
+            f'w {imu.quat_w:.3f}',
+        )
+    fault_name = clover_pb2.EstimatorFaultStatus.Name(pkt.estimated_state.fault_status)
+    fault_color = _FAULT_STATUS_COLORS.get(fault_name, 'white')
+    lateral = 'ok' if pkt.estimated_state.lateral_valid else 'invalid'
+    attitude = 'ok' if pkt.estimated_state.attitude_valid else 'invalid'
+    pose.add_row(
+        'Estimator',
+        f'[{fault_color}]{fault_name}[/{fault_color}]',
+        f'lat {lateral}',
+        f'att {attitude}',
+        '',
+    )
 
     # Command table
     cmd = Table(
@@ -1314,6 +1372,9 @@ def get_toolbar():
 
         euler = pkt.estimated_state.euler
         attitude_html = f'  │  ypr=({euler.x:.1f}, {euler.y:.1f}, {euler.z:.1f})°'
+
+        fault_name = clover_pb2.EstimatorFaultStatus.Name(pkt.estimated_state.fault_status)
+        attitude_html += f'  │  est={fault_name}'
 
     return HTML(
         f' 📡 <{tag}><b>{short}</b></{tag}>'

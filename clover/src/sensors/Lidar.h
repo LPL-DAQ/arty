@@ -203,6 +203,8 @@ template <LidarKind kind, const device* uart_dt_init, k_sem* ready_sem_ptr> std:
     has_reading = false;
 
     reading.sense_time_ns = sense_time_ns;
+    reading.arrival_time_ns = k_cyc_to_ns_near64(k_cycle_get_64());
+    reading.has_arrival_time_ns = true;
     return {reading};
 }
 

@@ -1,6 +1,7 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
+#include <cstdint>
 #include <limits>
 
 constexpr int CONTROLLER_STEP_WORK_Q_PRIORITY = -10;
@@ -16,6 +17,17 @@ constexpr float DEG2RAD_F = 0.0174532925f;
 constexpr float RAD2DEG_F = 57.2957795f;
 constexpr float N_TO_LBF  = 0.224809f;
 constexpr float GRAVITY_M_S2 = 9.80665f;
+
+// PLACEHOLDER -- not yet measured. Angle of the LiDAR boresight off straight down. The boresight
+// and tilt direction it applies to are LIDAR_BORESIGHT_BODY and LIDAR_MOUNT_TILT_DIRECTION_BODY in
+// StateEstimator.cpp, both to be confirmed against the mount.
+constexpr float LIDAR_MOUNT_ANGLE_DEG = 0.0f;
+
+// PLACEHOLDER -- not the real launch site. Geodetic position used to rotate Javad's ECEF velocity
+// into local NED. Replace once the Javad provides local-frame velocity ([VG]) or geodetic
+// position ([PG]).
+constexpr float LAUNCH_SITE_LAT_DEG = 34.0f;
+constexpr float LAUNCH_SITE_LON_DEG = -118.0f;
 
 // PWM pulse width range (microseconds): 0% throttle = 1000 µs, 100% throttle = 2000 µs
 constexpr uint32_t MIN_PWM_PULSE_US = 1000;

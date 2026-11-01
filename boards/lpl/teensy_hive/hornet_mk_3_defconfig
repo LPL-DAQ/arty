@@ -1,5 +1,6 @@
 # Clover settings
 CONFIG_HORNET=y
+CONFIG_FLIGHT=y
 
 # And other stuff
 CONFIG_BUILD_OUTPUT_HEX=y
