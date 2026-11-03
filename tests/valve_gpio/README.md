@@ -201,6 +201,26 @@ west build -p always -s tests/valve_gpio -b ranger_1/mimxrt1062 \
 west flash -d tests/valve_gpio/build-sequence
 ```
 
+### Persistent manual control over Ethernet
+
+With the updated standalone sequence firmware flashed, run `v` in
+`scripts/client-new.py`. Select a valve from `valve_map.json`, then power ON or
+OFF. No `cfgv` setup is needed: manual control uses the same zero-based channel
+mapping as the named sequences. Power refers to energizing the output, not a
+guarantee that the valve is physically open or closed.
+After each successful `v` command, the client lists all manually powered valves
+reported by the firmware, including outputs enabled by other clients. This is
+the commanded output state, not physical valve feedback.
+
+Manual power persists after the client disconnects. Use `v` to turn it OFF, or
+`abort` / `sequence abort` to deactivate every output. Manual commands are
+rejected while a sequence is running, and sequences cannot start while any
+manual output is ON. Turn those outputs OFF or abort before starting a sequence.
+GPIO failures latch a fault and attempt to deactivate all outputs; reset is
+required to clear the fault. Manual commands are not automatically retried if
+their acknowledgement is lost. Keep the mapping file consistent with the one
+used to build the firmware.
+
 If reusing a build configured with the old `VALVE_SEQUENCE_FILE` setting, clear
 that override by adding `-UVALVE_SEQUENCE_FILE` after `--`, or use a fresh build
 directory. The normal build embeds every `*.json` directly in `sequences/`.

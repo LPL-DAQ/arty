@@ -13,6 +13,7 @@
 # changes made AFTER .proto file updates
 
 import argparse
+import json
 import math
 import struct
 import socket
@@ -1187,7 +1188,7 @@ def _build_status_renderable():
         table.add_column('Sensor', style='bold white', no_wrap=True)
         table.add_column('Reading', style='white', justify='right', no_wrap=True)
         table.add_column('Unit', style=t['muted'], no_wrap=True)
-        
+
         for sensor, reading in MessageToDict(pkt.analog_sensors).items():
             if sensor[:2] == 'pt':
                 unit = 'psig'
@@ -1216,7 +1217,7 @@ def _build_status_renderable():
         )
         table.add_column('Valve', style='bold white', no_wrap=True)
         table.add_column('State', style='white', justify='right', no_wrap=True)
-        
+
         for valve, state in MessageToDict(pkt.valve_states).items():
             table.add_row(valve.upper(), state)
 
@@ -1227,7 +1228,7 @@ def _build_status_renderable():
                 border_style=t['panel_border'],
             ),
         )
-        
+
     if fcm.row_count != 0:
         bottom_columns.append(Panel(
             fcm,
@@ -1417,41 +1418,41 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test     (assigns channels 0-21)')
     console.print('      [3] Test 2   (assigns channels 22-31)')
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(22):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
         for chan in range(10):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan + 22
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
-    
+
     else:
         raise ValueError(f'Unknown profile of `{profile}`')
 
@@ -1462,7 +1463,7 @@ def cmd_configure_analog_sensors():
 
 def cmd_configure_valves():
     """Configure valves."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test    (assigns channel 0-12)')
@@ -1470,39 +1471,39 @@ def cmd_configure_valves():
     console.print('      [4] Test 3  (assigns channel 26-31)')
 
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(13):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
-                
-            configs.append(cfg)
-        
-    elif profile == '3':
-        configs = []
-        
-        for chan in range(13):
-            cfg = clover_pb2.ValveConfig()
-            cfg.channel = chan + 13
-            cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 13
+            cfg.assignment = chan + 1
+
+            configs.append(cfg)
+
+    elif profile == '3':
+        configs = []
+
         for chan in range(6):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan + 26
             cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     else:
@@ -1555,24 +1556,46 @@ def cmd_reset_valve_position():
 
 
 def cmd_actuate_valve():
-    t = THEME
-    console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
-    MAX_VALVE = 13
-    for i in range(1, MAX_VALVE + 1):
-        console.print(f'    [{i}] {clover_pb2.Valve.Name(i)}')
-    choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
-    valve = int(choice)
-    
-    console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
-    for i in range(1, 5):
-        console.print(f'    [{i}] {clover_pb2.ValveState.Name(i)}')
-    choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
-    state = int(choice)
-    
+    """Persistent manual GPIO power control using the standalone bench mapping."""
+    mapping_path = pathlib.Path(__file__).resolve().parents[1] / 'tests/valve_gpio/valve_map.json'
+    try:
+        mapping = json.loads(mapping_path.read_text())
+        if not isinstance(mapping, dict) or not mapping:
+            raise ValueError('Expected a nonempty valve mapping')
+        valves = [(name, channel) for name, channel in mapping.items() if channel is not None]
+        if not valves or any(type(channel) is not int or not 0 <= channel <= 31
+                             for _, channel in valves):
+            raise ValueError('Mapped channels must be integers from 0 to 31')
+    except (OSError, ValueError) as exc:
+        console.print(f'Cannot load valve map: {exc}', markup=False)
+        return
+    for i, (name, channel) in enumerate(valves, 1):
+        console.print(f'    [{i}] {name} (channel {channel})', markup=False)
+    choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, len(valves) + 1)])
+    name, channel = valves[int(choice) - 1]
+    console.print('    [1] Power ON (energize output)\n    [2] Power OFF (de-energize output)')
+    powered = Prompt.ask('  Set power', choices=['1', '2']) == '1'
+    console.print('  Power persists after disconnect. Turn it OFF here or use abort to turn all outputs OFF.')
     req = clover_pb2.Request()
-    req.actuate_valve.valve = valve
-    req.actuate_valve.state = state
-    send_request(req, 'ACTUATE_VALVE')
+    req.manual_valve.channel = channel
+    req.manual_valve.powered = powered
+    previous_timeout = sock.gettimeout()
+    try:
+        sock.settimeout(5)
+        info = named_sequences.exchange(sock, req)
+        console.print(f'{name} (channel {channel}): power {"ON" if powered else "OFF"}', markup=False)
+        if info.HasField('manual_powered_channels'):
+            names_by_channel = {channel: name for name, channel in valves}
+            active = [f'{names_by_channel.get(index, "Unmapped valve")} (channel {index})'
+                      for index in range(32) if info.manual_powered_channels & (1 << index)]
+            console.print('Active valves (powered outputs): ' + (', '.join(active) or 'none'), markup=False)
+        else:
+            console.print('Active valves unavailable; update firmware to report powered outputs.')
+    except Exception as exc:
+        console.print(f'Manual command failed: {exc}. No automatic retry. '
+                      'If acknowledgement was lost, output state is unknown; reconnect and use abort.', markup=False)
+    finally:
+        sock.settimeout(previous_timeout)
 
 
 def cmd_power_on_valve():
@@ -2259,7 +2282,7 @@ MENU_ITEMS = [
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
     ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
     ('cfgv', 'cfgv', 'Configure regular valves', cmd_configure_valves),
-    ('v', 'v', 'Actuate valve', cmd_actuate_valve),
+    ('v', 'v', 'Manual valve power ON/OFF (standalone firmware)', cmd_actuate_valve),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
     ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),

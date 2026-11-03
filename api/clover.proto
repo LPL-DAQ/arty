@@ -12,7 +12,7 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 41
+// next tag: 42
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
@@ -21,6 +21,8 @@ message Request {
 
     // Named GPIO bench sequences (supported by standalone valve test firmware).
     NamedSequenceRequest named_sequence = 40;
+    // Direct GPIO power control for standalone valve bench firmware.
+    ManualValveRequest manual_valve = 41;
 
     // Sensors
     ConfigureAnalogSensorsRequest configure_analog_sensors = 25;
@@ -89,6 +91,11 @@ message Request {
 }
 
 // Successful if err is missing.
+message ManualValveRequest {
+  required uint32 channel = 1;
+  required bool powered = 2;
+}
+
 message Response {
   optional string err = 1;
   optional NamedSequenceInfo named_sequence = 2;
@@ -108,6 +115,8 @@ message NamedSequenceInfo {
   optional uint32 total_steps = 5;
   optional string comment = 6;
   optional sint32 error = 7;
+  // Manual outputs commanded ON; valid when idle and not faulted.
+  optional uint32 manual_powered_channels = 8;
 }
 
 // Subscribe client IP to data stream.

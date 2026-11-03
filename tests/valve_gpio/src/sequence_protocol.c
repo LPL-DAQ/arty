@@ -7,16 +7,20 @@
 void sequence_handle_request(const Request *request, Response *response)
 {
     *response = (Response)Response_init_zero;
+    bool manual = request->which_payload == Request_manual_valve_tag;
     bool abort = request->which_payload == Request_abort_tag;
-    if (!abort && request->which_payload != Request_named_sequence_tag) {
+    if (!abort && !manual && request->which_payload != Request_named_sequence_tag) {
         response->has_err = true;
         snprintf(response->err, sizeof(response->err),
-                 "Standalone valve test supports named_sequence and abort only; use Clover for production commands");
+                 "Standalone valve test supports named_sequence, manual_valve and abort only");
         return;
     }
     const NamedSequenceRequest *command = &request->payload.named_sequence;
     int err = 0;
-    if (abort) {
+    if (manual) {
+        err = sequence_manual_valve(request->payload.manual_valve.channel,
+                                    request->payload.manual_valve.powered);
+    } else if (abort) {
         err = sequence_abort();
     } else switch (command->operation) {
     case NamedSequenceRequest_Operation_LIST:
@@ -35,7 +39,7 @@ void sequence_handle_request(const Request *request, Response *response)
     if (err) {
         response->has_err = true;
         snprintf(response->err, sizeof(response->err),
-                 "Sequence request rejected (%d): check name and status; faults require reset", err);
+                 "Valve/sequence request rejected (%d): check channel, name and status; faults require reset", err);
     }
     struct sequence_snapshot status = sequence_status();
     response->has_named_sequence = true;
@@ -49,7 +53,12 @@ void sequence_handle_request(const Request *request, Response *response)
     info->step = status.step;
     info->total_steps = status.total_steps;
     info->error = status.error;
-    if (!abort && command->operation == NamedSequenceRequest_Operation_LIST) {
+    if (strcmp(status.state, "running") && strcmp(status.state, "aborting") &&
+        strcmp(status.state, "initializing") && strcmp(status.state, "faulted")) {
+        info->has_manual_powered_channels = true;
+        info->manual_powered_channels = status.manual_powered_channels;
+    }
+    if (!abort && !manual && command->operation == NamedSequenceRequest_Operation_LIST) {
         for (size_t i = 0; i < sequence_count(); ++i) {
             snprintf(info->names[info->names_count++], sizeof(info->names[0]), "%s", sequence_name(i));
         }

@@ -111,6 +111,80 @@ int main(int argc, char **argv) {
                 self.fail(f'Expected {expected}, got {info}')
             time.sleep(.01)
 
+    def test_manual_power_persistence_busy_abort_and_fault(self):
+        def manual(connection, channel, powered):
+            request = clover_pb2.Request()
+            request.manual_valve.channel = channel
+            request.manual_valve.powered = powered
+            return named_sequences.exchange(connection, request)
+
+        with self.server() as (connection, port, logs):
+            manual(connection, 0, True)
+            # A second connection cannot start a sequence over a held manual output.
+            with socket.create_connection(('127.0.0.1', port), timeout=1) as second:
+                with self.assertRaisesRegex(ValueError, 'rejected'):
+                    self.request(second, 'sequence run alpha')
+                manual(second, 0, False)
+                with self.assertRaisesRegex(ValueError, 'rejected'):
+                    manual(second, 32, True)
+                self.request(second, 'sequence run alpha')
+                self.wait_state(second, 'running')
+                with self.assertRaisesRegex(ValueError, 'rejected'):
+                    manual(second, 0, False)
+                self.request(second, 'sequence abort')
+                self.wait_state(second, 'aborted')
+                manual(second, 0, True)
+            # Disconnect does not release power; abort does.
+            with self.assertRaisesRegex(ValueError, 'rejected'):
+                self.request(connection, 'sequence run alpha')
+            self.request(connection, 'sequence abort')
+            self.request(connection, 'sequence run MixedCase')
+            self.wait_state(connection, 'complete')
+            logs.seek(0)
+            self.assertIn('MANUAL channel=0 power=ON result=0', logs.read())
+
+        with self.server(fault=True) as (connection, port, logs):
+            with self.assertRaisesRegex(ValueError, 'rejected'):
+                manual(connection, 1, True)
+            self.assertEqual(self.request(connection, 'sequence status').state, 'faulted')
+            with self.assertRaisesRegex(ValueError, 'rejected'):
+                manual(connection, 0, True)
+            self.request(connection, 'sequence abort')
+            self.assertEqual(self.request(connection, 'sequence status').state, 'faulted')
+
+    def test_client_v_uses_bench_mapping(self):
+        spec = importlib.util.spec_from_file_location('bench_client', REPO / 'scripts/client-new.py')
+        client = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(client)
+        with self.server() as (connection, port, logs):
+            client.sock = connection
+            output = io.StringIO()
+            client.console = Console(file=output, force_terminal=False)
+            # Another client's held output must appear too, even after disconnect.
+            with socket.create_connection(('127.0.0.1', port), timeout=1) as second:
+                request = clover_pb2.Request()
+                request.manual_valve.channel = 1
+                request.manual_valve.powered = True
+                named_sequences.exchange(second, request)
+            with patch.object(client.Prompt, 'ask', side_effect=['1', '1']):
+                client.cmd_actuate_valve()
+            self.assertIn('SV001 (channel 0): power ON', output.getvalue())
+            self.assertIn('Active valves (powered outputs): SV001 (channel 0), SV002 (channel 1)', output.getvalue())
+            with self.assertRaisesRegex(ValueError, 'rejected'):
+                self.request(connection, 'sequence run alpha')
+            with patch.object(client.Prompt, 'ask', side_effect=['1', '2']):
+                client.cmd_actuate_valve()
+            self.assertIn('SV001 (channel 0): power OFF', output.getvalue())
+            self.assertIn('Active valves (powered outputs): SV002 (channel 1)', output.getvalue())
+            self.request(connection, 'sequence abort')
+            output.seek(0)
+            output.truncate()
+            with patch.object(client.Prompt, 'ask', side_effect=['1', '2']):
+                client.cmd_actuate_valve()
+            self.assertIn('Active valves (powered outputs): none', output.getvalue())
+            self.request(connection, 'sequence run MixedCase')
+            self.wait_state(connection, 'complete')
+
     def test_named_runs_busy_stop_disconnect_and_client_cli(self):
         with self.server() as (connection, port, logs):
             info = self.request(connection, 'sequence list')
@@ -167,7 +241,7 @@ int main(int argc, char **argv) {
             unsupported = clover_pb2.Request()
             unsupported.actuate_valve.valve = clover_pb2.SV001
             unsupported.actuate_valve.state = clover_pb2.POWERED_OPEN
-            with self.assertRaisesRegex(ValueError, 'named_sequence and abort only'):
+            with self.assertRaisesRegex(ValueError, 'named_sequence, manual_valve and abort only'):
                 named_sequences.exchange(connection, unsupported)
             missing_name = clover_pb2.Request()
             missing_name.named_sequence.operation = clover_pb2.NamedSequenceRequest.RUN

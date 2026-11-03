@@ -47,6 +47,33 @@ K_SEM_DEFINE(abort_wakeup, 0, 1);
 static bool aborting;
 static uint32_t current_step;
 static int last_error;
+static uint32_t manual_outputs;
+
+int sequence_manual_valve(uint32_t channel, bool powered)
+{
+    if (channel >= ARRAY_SIZE(valves)) {
+        return -EINVAL;
+    }
+    k_mutex_lock(&state_lock, K_FOREVER);
+    if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
+        k_mutex_unlock(&state_lock);
+        return -EBUSY;
+    }
+    int err = gpio_pin_set_dt(&valves[channel], powered ? 1 : 0);
+    if (err) {
+        all_off();
+        last_error = err;
+        state = FAULTED;
+    } else if (powered) {
+        manual_outputs |= BIT(channel);
+    } else {
+        manual_outputs &= ~BIT(channel);
+    }
+    trace_event("MANUAL channel=%u power=%s result=%d", (unsigned)channel,
+                powered ? "ON" : "OFF", err);
+    k_mutex_unlock(&state_lock);
+    return err;
+}
 
 size_t sequence_count(void) { return ARRAY_SIZE(sequences); }
 const char *sequence_name(size_t index) { return index < sequence_count() ? sequences[index].name : NULL; }
@@ -62,6 +89,7 @@ struct sequence_snapshot sequence_status(void)
         .step = current_step,
         .total_steps = selected ? selected->count : 0,
         .error = last_error,
+        .manual_powered_channels = manual_outputs,
     };
     k_mutex_unlock(&state_lock);
     return out;
@@ -80,6 +108,9 @@ int sequence_abort(void)
         /* An idle/faulted abort also attempts to de-energize every output.
          * Never clear a latched GPIO fault as a side effect of abort. */
         err = all_off();
+        if (!err) {
+            manual_outputs = 0;
+        }
         if (err) {
             last_error = err;
             state = FAULTED;
@@ -178,7 +209,7 @@ int sequence_start(const char *name)
         return -ENOENT;
     }
     k_mutex_lock(&state_lock, K_FOREVER);
-    if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
+    if (state == INITIALIZING || state == RUNNING || state == FAULTED || manual_outputs) {
         k_mutex_unlock(&state_lock);
         return -EBUSY;
     }
