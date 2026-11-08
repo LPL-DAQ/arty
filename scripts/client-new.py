@@ -1512,12 +1512,12 @@ def cmd_configure_analog_sensors():
             return
 
     elif profile == '2':
-        if not _list_saved_sequences(SENSOR_CONFIG_DIR):
+        if not _list_saved_configs(SENSOR_CONFIG_DIR):
             console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
             return
         # A bad table file must not crash the client (and stop logging) mid-test
         try:
-            table = _pick_and_load_sequence(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
+            table = _pick_and_load_config(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
         except text_format.ParseError as e:
             console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
             return
@@ -1773,15 +1773,15 @@ def cmd_calibrate_throttle_valve():
     send_request(req, f'CALIBRATE_THROTTLE_VALVE ({valve_name})')
 
 
-def _list_saved_sequences(subdir: pathlib.Path) -> list[pathlib.Path]:
+def _list_saved_configs(subdir: pathlib.Path) -> list[pathlib.Path]:
     if not subdir.exists():
         return []
     return sorted(subdir.glob('*.textproto'))
 
 
-def _pick_and_load_sequence(subdir: pathlib.Path, msg_class):
-    """Display saved sequences, prompt user to pick one, return parsed proto."""
-    files = _list_saved_sequences(subdir)
+def _pick_and_load_config(subdir: pathlib.Path, msg_class):
+    """Display saved textproto files (sensor tables, sequences), prompt user to pick one, return parsed proto."""
+    files = _list_saved_configs(subdir)
     t = THEME
     table = Table(
         box=box.SIMPLE_HEAD,
@@ -1914,9 +1914,9 @@ def cmd_load_throttle_valve_sequence():
         f'\n  {t["icon_seq"]} [{t["primary"]}]Load Throttle Valve Sequence[/{t["primary"]}]'
     )
 
-    saved = _list_saved_sequences(VALVE_SEQ_DIR)
+    saved = _list_saved_configs(VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadThrottleValveSequenceRequest)
+        loaded = _pick_and_load_config(VALVE_SEQ_DIR, clover_pb2.LoadThrottleValveSequenceRequest)
         req = clover_pb2.Request()
         req.load_throttle_valve_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_THROTTLE_VALVE_SEQUENCE')
@@ -1972,9 +1972,9 @@ def cmd_load_throttle_sequence():
     t = THEME
     console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Throttle Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(THRUST_SEQ_DIR)
+    saved = _list_saved_configs(THRUST_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrottleSequenceRequest)
+        loaded = _pick_and_load_config(THRUST_SEQ_DIR, clover_pb2.LoadThrottleSequenceRequest)
         req = clover_pb2.Request()
         req.load_throttle_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_THROTTLE_SEQUENCE')
@@ -2137,9 +2137,9 @@ def cmd_load_tvc_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load TVC Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(TVC_SEQ_DIR)
+    saved = _list_saved_configs(TVC_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(TVC_SEQ_DIR, clover_pb2.LoadTvcSequenceRequest)
+        loaded = _pick_and_load_config(TVC_SEQ_DIR, clover_pb2.LoadTvcSequenceRequest)
         req = clover_pb2.Request()
         req.load_tvc_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_TVC_SEQUENCE')
@@ -2181,9 +2181,9 @@ def cmd_load_rcs_valve_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Valve Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(RCS_VALVE_SEQ_DIR)
+    saved = _list_saved_configs(RCS_VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(RCS_VALVE_SEQ_DIR, clover_pb2.LoadRcsValveSequenceRequest)
+        loaded = _pick_and_load_config(RCS_VALVE_SEQ_DIR, clover_pb2.LoadRcsValveSequenceRequest)
         req = clover_pb2.Request()
         req.load_rcs_valve_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_RCS_VALVE_SEQUENCE')
@@ -2224,9 +2224,9 @@ def cmd_load_rcs_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(RCS_SEQ_DIR)
+    saved = _list_saved_configs(RCS_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(RCS_SEQ_DIR, clover_pb2.LoadRcsSequenceRequest)
+        loaded = _pick_and_load_config(RCS_SEQ_DIR, clover_pb2.LoadRcsSequenceRequest)
         req = clover_pb2.Request()
         req.load_rcs_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_RCS_SEQUENCE')
@@ -2263,9 +2263,9 @@ def cmd_load_static_fire_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Static Fire Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(STATIC_FIRE_SEQ_DIR)
+    saved = _list_saved_configs(STATIC_FIRE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(
+        loaded = _pick_and_load_config(
             STATIC_FIRE_SEQ_DIR, clover_pb2.LoadStaticFireSequenceRequest
         )
         req = clover_pb2.Request()
@@ -2314,9 +2314,9 @@ def cmd_load_flight_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Flight Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(FLIGHT_SEQ_DIR)
+    saved = _list_saved_configs(FLIGHT_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(FLIGHT_SEQ_DIR, clover_pb2.LoadFlightSequenceRequest)
+        loaded = _pick_and_load_config(FLIGHT_SEQ_DIR, clover_pb2.LoadFlightSequenceRequest)
         req = clover_pb2.Request()
         req.load_flight_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_FLIGHT_SEQUENCE')
