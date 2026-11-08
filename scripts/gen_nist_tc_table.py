@@ -10,6 +10,7 @@ Existing clover LUTs were generated as follows:
 uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py k -200 400 200
 uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py t -200 400 240
 ```
+TODO: lower the upper bound to the range we actually read, for more granularity there.
 """
 
 import csv

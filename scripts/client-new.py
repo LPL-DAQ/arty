@@ -1496,6 +1496,8 @@ def _pick_pins():
     return configs
 
 
+# TODO: standardize with valves and other inputs, which are each set a different way today. Ideally all of them are
+# set from the client without reflashing, unless a blocker makes that impossible.
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
