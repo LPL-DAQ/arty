@@ -30,7 +30,7 @@ GNC throttle + TVC flows board.
         lox-valve-encoder-a-gpios = <&gpio4 4 GPIO_ACTIVE_HIGH>; // Pin 2
         lox-valve-encoder-b-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>; // Pin 1
 
-        // NOTE: io-channels MUST BE IN SORTED ORDER OF INPUT CHANNELS!!!!
+        // io-channels can be in any order; AnalogSensors maps readings back by ADC channel id.
         // PT102 - PT1 - Pin 40 - A16 - adc1 9
         // PT103 - PT2 - Pin 41 - A17 - adc1 10
         // PT202 - PT4 - Pin 15 - A1 - adc1 8
