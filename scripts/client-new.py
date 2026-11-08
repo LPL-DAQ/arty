@@ -468,23 +468,28 @@ def _reconnect_and_resubscribe():
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
 
-_USEFUL_SENSORS: dict[str, str] = {
-    'pt004': 'PT-004',
-    'pt005': 'PT-005',
-    'pt006': 'PT-006',
-    'pt103': 'PT-103',
-    'pt203': 'PT-203',
-    'ptf401': 'PTF-401',
-    'pto401': 'PTO-401',
-    'ptc401': 'PTC-401',
-    'ptc402': 'PTC-402',
-    'tc002': 'TC-002 (°C)',
-    'battery_voltage': 'Battery voltage (V)',
-    'tc102': 'TC-102 (°C)',
-    'tc102_5': 'TC-102.5 (°C)',
-    'tcf401': 'TCF-401 (°C)',
-    'tco401': 'TCO-401 (°C)',
-}
+# One subplot per unit, so psi, °C and V don't share a y axis
+_SENSOR_PLOTS: list[tuple[str, dict[str, str]]] = [
+    ('Pressures (psi)', {
+        'pt004': 'PT-004',
+        'pt005': 'PT-005',
+        'pt006': 'PT-006',
+        'pt103': 'PT-103',
+        'pt203': 'PT-203',
+        'ptf401': 'PTF-401',
+        'pto401': 'PTO-401',
+        'ptc401': 'PTC-401',
+        'ptc402': 'PTC-402',
+    }),
+    ('Temperatures (°C)', {
+        'tc002': 'TC-002',
+        'tc102': 'TC-102',
+        'tc102_5': 'TC-102.5',
+        'tcf401': 'TCF-401',
+        'tco401': 'TCO-401',
+    }),
+    ('Voltage (V)', {'battery_voltage': 'Battery voltage'}),
+]
 
 _MOTOR_SENSORS: dict[str, str] = {
     'gnc_fuel_target_deg': 'Fuel Desired',
@@ -580,17 +585,16 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
         has_throttle_metrics = any(
             series.get(sensor) for sensor, _ in _THROTTLE_METRIC_PLOTS[0][1]
         )
+        # Only units that have data get a subplot; keep at least one so the layout below holds
+        sensor_plots = [(t, s) for t, s in _SENSOR_PLOTS if any(series.get(k) for k in s)] or _SENSOR_PLOTS[:1]
+        n_sensor_rows = len(sensor_plots)
 
-        if has_throttle_metrics:
-            n_rows = 2 + len(_THROTTLE_METRIC_PLOTS)
-            subplot_titles = (
-                'All Sensors',
-                'Motor Traces — Desired vs Actual',
-                *(title for title, _ in _THROTTLE_METRIC_PLOTS),
-            )
-        else:
-            n_rows = 2
-            subplot_titles = ('All Sensors', 'Motor Traces — Desired vs Actual')
+        subplot_titles = (
+            *(title for title, _ in sensor_plots),
+            'Motor Traces — Desired vs Actual',
+            *(title for title, _ in (_THROTTLE_METRIC_PLOTS if has_throttle_metrics else [])),
+        )
+        n_rows = len(subplot_titles)
 
         fig = make_subplots(
             rows=n_rows,
@@ -600,16 +604,18 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
             vertical_spacing=0.06,
         )
 
-        _add_traces(fig, series, _USEFUL_SENSORS.items(), t0, tups, row=1, go=go)
-        _add_traces(fig, series, _MOTOR_SENSORS.items(), t0, tups, row=2, go=go)
+        for i, (title, sensors) in enumerate(sensor_plots):
+            _add_traces(fig, series, sensors.items(), t0, tups, row=1 + i, go=go)
+            fig.update_yaxes(title_text=title, row=1 + i, col=1)
+        motor_row = n_sensor_rows + 1
+        _add_traces(fig, series, _MOTOR_SENSORS.items(), t0, tups, row=motor_row, go=go)
 
         if has_throttle_metrics:
             for i, (_, sensor_label_pairs) in enumerate(_THROTTLE_METRIC_PLOTS):
-                _add_traces(fig, series, sensor_label_pairs, t0, tups, row=3 + i, go=go)
+                _add_traces(fig, series, sensor_label_pairs, t0, tups, row=motor_row + 1 + i, go=go)
 
         fig.update_xaxes(title_text='Time (s)', row=n_rows, col=1)
-        fig.update_yaxes(title_text='Value', row=1, col=1)
-        fig.update_yaxes(title_text='Position (°)', row=2, col=1)
+        fig.update_yaxes(title_text='Position (°)', row=motor_row, col=1)
         fig.update_layout(hovermode='x unified', height=400 * n_rows)
 
         plots_dir = csv_path.parent / 'plots'
