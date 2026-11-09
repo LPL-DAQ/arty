@@ -182,7 +182,16 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
     while (true) {
         Request request = Request_init_default;
-        bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
+        LOG_INF("Waiting for protobuf request");
+
+        bool valid = pb_decode_ex(
+            &pb_input,
+            Request_fields,
+            &request,
+            PB_DECODE_DELIMITED
+        );
+
+        LOG_INF("Protobuf decode returned: %d", valid);
         if (!valid) {
             LOG_ERR("Failed to decode next message: errno=%d pb_err='%s'", errno, PB_GET_ERROR(&pb_input));
             break;
@@ -193,6 +202,11 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         // Handle request
         switch (request.which_payload) {
+        // The shared schema also serves bench clients; production firmware has no bench engine.
+        case Request_named_sequence_tag: {
+            cmd_result = std::unexpected(Error::from_cause("Named GPIO sequences require the standalone valve test firmware"));
+            break;
+        }
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
             cmd_result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_socket);

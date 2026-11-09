@@ -1,0 +1,28 @@
+[
+  {
+    "duration_ms": 5000,
+    "comment": "All valves off; waiting 5 seconds",
+    "valves": []
+  },
+  {
+    "duration_ms": 10000,
+    "comment": "Energizing SV001 and SV002 for 10 seconds",
+    "valves": [
+      "SV001",
+      "SV002"
+    ]
+  },
+  {
+    "duration_ms": 5000,
+    "comment": "All valves off; waiting 5 seconds",
+    "valves": []
+  },
+  {
+    "duration_ms": 10000,
+    "comment": "Energizing SV002 and SV003 for 10 seconds",
+    "valves": [
+      "SV002",
+      "SV003"
+    ]
+  }
+]
