@@ -1,3 +1,5 @@
+/* Clover-compatible transport only; sequence_protocol dispatches commands and
+ * embedded_sequence owns GPIO timing independently of client connections. */
 #include <errno.h>
 #include <string.h>
 #include <pb_decode.h>
@@ -12,6 +14,7 @@ LOG_MODULE_REGISTER(sequence_tcp, LOG_LEVEL_INF);
 #define CLIENTS 2
 #define FRAME_SIZE 256
 #define PARTIAL_TIMEOUT_MS 5000
+/* Retain partial prefix/body state independently for each connected client. */
 struct client {
     uint8_t frame[FRAME_SIZE];
     size_t used;
@@ -62,6 +65,7 @@ static void serve(void *a, void *b, void *c)
                     if (fds[slot].fd < 0) {
                         fds[slot].fd = fd;
                         memset(&clients[slot - 1], 0, sizeof(clients[0]));
+                        /* Bound slow-reader stalls in this shared server thread. */
                         struct timeval timeout = {.tv_sec = 0, .tv_usec = 100000};
                         zsock_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
                         break;
@@ -84,6 +88,7 @@ static void serve(void *a, void *b, void *c)
                 } else {
                     client->last_byte = k_uptime_get();
                     if (!client->reading_body) {
+                        /* Reject oversized varints before shifting or indexing frame storage. */
                         if (client->prefix_bytes == 4 ||
                             (client->prefix_bytes == 3 && (byte & 0xf0))) {
                             close_client = true;
@@ -102,6 +107,8 @@ static void serve(void *a, void *b, void *c)
                             if (!pb_decode(&input, Request_fields, &request)) {
                                 close_client = true;
                             } else {
+                                /* Dispatch once per complete frame. Losing the reply does not
+                                 * undo a run/manual command already accepted by the engine. */
                                 sequence_handle_request(&request, &response);
                                 pb_ostream_t output = pb_ostream_from_buffer(reply, sizeof(reply));
                                 if (!pb_encode_delimited(&output, Response_fields, &response)) {
@@ -115,6 +122,7 @@ static void serve(void *a, void *b, void *c)
                                     }
                                 }
                             }
+                            /* The next byte on this connection begins a new length prefix. */
                             memset(client, 0, sizeof(*client));
                         }
                     }

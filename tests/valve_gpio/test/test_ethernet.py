@@ -47,6 +47,8 @@ class EthernetTest(unittest.TestCase):
             path = directory / 'zephyr' / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('#include "host_zephyr.h"\n')
+        # Compile actual engine/server sources against host adapters; only entry point,
+        # trace backend and listening port change for the isolated test process.
         engine = (ROOT / 'src/embedded_sequence.c').read_text().replace('#include "test_trace.h"', '')
         engine = engine.replace('int main(void)', 'int firmware_main(void)')
         server = (ROOT / 'src/sequence_server.c').read_text().replace('htons(19690)', 'htons(host_port)')

@@ -26,6 +26,7 @@
 #define K_MUTEX_DEFINE(n) pthread_mutex_t n = PTHREAD_MUTEX_INITIALIZER
 #define k_mutex_lock(m, t) pthread_mutex_lock(m)
 #define k_mutex_unlock(m) pthread_mutex_unlock(m)
+/* Binary semaphores model queued runs and abort wakeups using real host threads. */
 struct host_sem { pthread_mutex_t lock; pthread_cond_t cond; int count; };
 #define K_SEM_DEFINE(n, a, b) struct host_sem n = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, a}
 static inline void k_sem_give(struct host_sem *s) {
@@ -77,6 +78,7 @@ struct gpio_dt_spec { struct device *port; unsigned pin; unsigned dt_flags; };
 #define DT_FOREACH_PROP_ELEM_SEP(...) {&host_gpio,0,0},{&host_gpio,1,0},{&host_gpio,2,0}
 #define GPIO_ACTIVE_LOW 1
 #define GPIO_OUTPUT_INACTIVE 0
+/* Track commanded levels and inject an activation error to exercise cleanup. */
 static int outputs[3];
 static bool inject_fault;
 static unsigned host_port;

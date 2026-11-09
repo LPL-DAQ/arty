@@ -17,6 +17,7 @@ class ValveSequenceMode:
         self.connection = connection
         self.console = console
         self.poll_interval = poll_interval
+        # Polling and prompt commands share one socket; lock the whole transaction.
         self.lock = threading.Lock()
         self.done = threading.Event()
         self.broken = False
@@ -24,6 +25,7 @@ class ValveSequenceMode:
 
     def show_status(self, info, force=False):
         """Called under lock, keeping command replies and progress in order."""
+        # Poll frequently but print only transitions unless status was explicitly requested.
         signature = (info.state, info.name, info.step, info.total_steps, info.comment, info.error)
         if signature == self.last_status and not force:
             return
@@ -61,6 +63,8 @@ class ValveSequenceMode:
                 self.console.print(Text(f'Rejected: {exc}', style='red'))
                 return False
             except Exception as exc:
+                # After a framing/transport failure, a later reply could belong to this request.
+                # Discard the connection rather than replaying a potentially accepted run.
                 self.broken = True
                 self.connection.close()
                 self.console.print(Text(f'Connection failed: {exc}', style='red'))
@@ -85,6 +89,7 @@ class ValveSequenceMode:
             return True
 
     def watch(self):
+        """Observe board progress without making the UI responsible for sequence timing."""
         while not self.done.wait(self.poll_interval):
             if not self.execute('status', quiet=True):
                 break
@@ -121,6 +126,7 @@ class ValveSequenceMode:
                     elif command:
                         self.execute(command)
             finally:
+                # Join before returning so the main CLI regains exclusive socket ownership.
                 self.done.set()
                 watcher.join()
         self.console.print('Returned to CMD. Leaving vlvseq does not cancel a running sequence.', style='dim')

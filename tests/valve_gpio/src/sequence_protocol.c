@@ -4,8 +4,10 @@
 #include "sequence_engine.h"
 #include "sequence_protocol.h"
 
+/* Shared adapter from wire operations to the same engine used by the USB shell. */
 void sequence_handle_request(const Request *request, Response *response)
 {
+    /* Responses are reused by the server; clear optional-field flags on every call. */
     *response = (Response)Response_init_zero;
     bool manual = request->which_payload == Request_manual_valve_tag;
     bool abort = request->which_payload == Request_abort_tag;
@@ -41,6 +43,7 @@ void sequence_handle_request(const Request *request, Response *response)
         snprintf(response->err, sizeof(response->err),
                  "Valve/sequence request rejected (%d): check channel, name and status; faults require reset", err);
     }
+    /* Report a coherent engine snapshot after command acceptance, not run completion. */
     struct sequence_snapshot status = sequence_status();
     response->has_named_sequence = true;
     NamedSequenceInfo *info = &response->named_sequence;

@@ -91,6 +91,7 @@ message Request {
 }
 
 // Successful if err is missing.
+// Channel is a zero-based devicetree index; power persists until OFF or abort.
 message ManualValveRequest {
   required uint32 channel = 1;
   required bool powered = 2;
@@ -107,6 +108,7 @@ message NamedSequenceRequest {
   required Operation operation = 1;
   optional string name = 2;
 }
+// RUN/abort replies acknowledge acceptance; poll state to observe completion.
 message NamedSequenceInfo {
   repeated string names = 1;
   required string state = 2;

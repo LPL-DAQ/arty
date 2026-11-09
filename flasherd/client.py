@@ -33,6 +33,7 @@ def launch_flasherd_command(logger, command_req: flasherd_pb2.RunCommandRequest,
                     sys.stdout.buffer.write(resp.stderr)
                 if resp.HasField('exit_code'):
                     logger.info(f'Process terminated with code {resp.exit_code}')
+                    # Preserve remote build/flash failure for calling scripts and CI.
                     if resp.exit_code:
                         raise SystemExit(resp.exit_code)
                     break

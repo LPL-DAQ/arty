@@ -8,6 +8,46 @@ configuration is needed. Channel numbers are zero-based indices into
 `zephyr,user/valve-gpios` in the board DTS. This tests the GPIO path directly,
 not Clover's valve assignment or command protocol.
 
+## Tracing execution in the source
+
+`CMakeLists.txt` selects one firmware entry point: `src/main.c` for USB
+`valve pulse/group` commands, `src/automatic.c` for a boot-time single-channel
+pulse, or `src/embedded_sequence.c` for named sequences. The latter also builds
+`src/sequence_server.c` and `src/sequence_protocol.c` for TCP control.
+
+For named sequences, follow these paths:
+
+1. At build time, `generate_sequence.py` calls `run_sequence.py:load_sequence`
+   to validate JSON and resolve names through `valve_map.json`. It emits
+   `valve_sequence.h`, containing immutable step masks, durations and comments.
+2. On the host, `scripts/client-new.py` routes `sequence ...` commands to
+   `scripts/named_sequences.py`. The `vlvseq` menu uses
+   `scripts/valve_sequence_cli.py`, which serializes prompt commands and status
+   polling over the same socket. Manual `v` commands use the same framing.
+3. On the board, `sequence_server.c:serve` assembles each length-prefixed TCP
+   frame, decodes the shared Clover protobuf, and calls
+   `sequence_protocol.c:sequence_handle_request`. USB `sequence` commands call
+   the same engine functions directly.
+4. `embedded_sequence.c:sequence_start` checks state and queues work. Its `main`
+   loop wakes and calls `run_sequence`, which energizes each mask, waits for the
+   duration or abort wakeup, and attempts to turn every output off. Command
+   acceptance is asynchronous; use status to observe completion or faults.
+5. `sequence_status` copies progress under the state mutex. `test_trace.h`
+   retains recent events for the USB `trace` command and also sends them to
+   Zephyr logging. GPIO faults latch until restart. Manual power blocks sequence
+   starts until cleared and persists across client disconnects.
+
+The alternative host USB runner, `run_sequence.py`, sends one `valve group`
+command at a time to `src/main.c` and waits for its matching `VALVE_DONE` token.
+An empty step delays on the host. This path does not use the named-sequence
+engine or TCP server.
+
+`test/test_sequences.py` checks validation and firmware control flow with mock
+GPIO. `test/test_ethernet.py` compiles the engine, protocol and server with
+`test/host_zephyr.h` adapters to exercise real TCP and nanopb framing. Generated
+protobuf bindings, JSON examples and captured logs are data artifacts; edit
+`api/clover.proto` and `api/clover.options` to change the wire schema.
+
 Build and flash from the repository root in the development container:
 
 ```sh

@@ -35,6 +35,7 @@ static int cmd_trace(const struct shell *sh, size_t argc, char **argv)
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
     k_mutex_lock(&trace_lock, K_FOREVER);
+    /* Walk logical event numbers so wrapped ring entries print oldest first. */
     unsigned int start = trace_total > TRACE_COUNT ? trace_total - TRACE_COUNT : 0;
     shell_print(sh, "Retained events %u..%u (latest %u maximum)", start, trace_total, TRACE_COUNT);
     for (unsigned int i = start; i < trace_total; ++i) {

@@ -202,6 +202,7 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         // Handle request
         switch (request.which_payload) {
+        // The shared schema also serves bench clients; production firmware has no bench engine.
         case Request_named_sequence_tag: {
             cmd_result = std::unexpected(Error::from_cause("Named GPIO sequences require the standalone valve test firmware"));
             break;

@@ -30,12 +30,14 @@ def main():
             sequences.append((path.stem, load_sequence(path, args.valve_map)))
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
+    # Firmware checks this highest channel against its devicetree at compile time.
     used = {channel for _, steps in sequences for step in steps for channel in step["channels"]}
     lines = ["/* Generated from JSON; do not edit. */", "#pragma once",
              "#include <stdint.h>", "#include <stddef.h>",
              f"#define SEQUENCE_REQUIRED_CHANNELS {max(used, default=-1) + 1}",
              "struct sequence_step { uint32_t duration_ms; uint32_t mask; const char *comment; };",
              "struct valve_sequence { const char *name; const struct sequence_step *steps; size_t count; };"]
+    # One mask bit per channel lets firmware energize each step without parsing JSON.
     for index, (_, steps) in enumerate(sequences):
         lines.append(f"static const struct sequence_step sequence_steps_{index}[] = {{")
         for step in steps:

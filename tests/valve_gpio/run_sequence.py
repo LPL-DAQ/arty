@@ -12,6 +12,7 @@ DEFAULT_VALVE_MAP = Path(__file__).with_name("valve_map.json")
 
 
 def load_valve_map(path):
+    # Preserve duplicate keys long enough to reject ambiguous JSON assignments.
     def unique_names(pairs):
         result = {}
         for name, channel in pairs:
@@ -38,6 +39,7 @@ def load_valve_map(path):
 
 
 def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
+    # Resolve names lazily so numeric-only sequences do not require a wiring map.
     mapping = None
     steps = json.loads(Path(path).read_text())
     if not isinstance(steps, list) or not steps:
@@ -89,6 +91,7 @@ def pulse(connection, token, step):
     command = f"valve group {token} {step['duration_ms']} {channels}\r"
     connection.write(command.encode("ascii"))
     connection.flush()
+    # Completion is emitted after firmware cleanup; match this token, not stale output.
     deadline = time.monotonic() + step["duration_ms"] / 1000 + 5
     pattern = re.compile(rb"VALVE_DONE " + str(token).encode() + rb" (-?\d+)\r?\n")
     received = b""
@@ -134,6 +137,7 @@ def main():
                 if step["channels"]:
                     pulse(connection, secrets.randbelow(2147483647), step)
                 else:
+                    # An empty group is a host-side delay; no GPIO command is needed.
                     time.sleep(step["duration_ms"] / 1000)
         print("Sequence complete; all requested deactivation writes succeeded.")
     except (ValueError, OSError, RuntimeError, ImportError) as exc:

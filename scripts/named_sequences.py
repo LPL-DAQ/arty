@@ -8,12 +8,14 @@ class RequestRejected(ValueError):
 
 
 def make_request(command):
+    # Normalize command words only; firmware sequence names retain their case.
     words = command.strip().split()
     if len(words) < 2 or words[0].lower() != 'sequence':
         raise ValueError('Use sequence list | run <name> | status | abort')
     operation = words[1].lower()
     if operation == 'abort' and len(words) == 2:
         request = clover_pb2.Request()
+        # Abort uses Clover's shared abort payload, including for idle manual outputs.
         request.abort.SetInParent()
         return request
     operations = {'list': clover_pb2.NamedSequenceRequest.LIST,
@@ -32,6 +34,7 @@ def exchange(connection, request):
     """One transaction; caller must serialize access to connection. No retry on lost ACK."""
     raw = request.SerializeToString()
     connection.sendall(_VarintBytes(len(raw)) + raw)
+    # TCP has no message boundaries: read the varint prefix, then exactly its body.
     length = 0
     for shift in range(0, 35, 7):
         byte = connection.recv(1)
@@ -53,6 +56,7 @@ def exchange(connection, request):
     response = clover_pb2.Response.FromString(bytes(body))
     if not response.IsInitialized():
         raise ValueError('Incomplete protocol response')
+    # A decoded rejection preserves framing; truncated/invalid replies do not.
     if response.HasField('err'):
         raise RequestRejected(response.err)
     if not response.HasField('named_sequence'):

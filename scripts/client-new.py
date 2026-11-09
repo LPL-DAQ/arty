@@ -127,6 +127,7 @@ def _make_tcp_socket() -> socket.socket:
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
+    # Bound connection setup; interactive operations choose their own reply timeout.
     s.settimeout(5)
     try:
         s.connect((ZEPHYR_IP, ZEPHYR_PORT))
@@ -137,6 +138,7 @@ def _make_tcp_socket() -> socket.socket:
     return s
 
 
+# Connect in main after parsing host/port, allowing imports without contacting hardware.
 sock = None
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
@@ -1562,6 +1564,7 @@ def cmd_actuate_valve():
         mapping = json.loads(mapping_path.read_text())
         if not isinstance(mapping, dict) or not mapping:
             raise ValueError('Expected a nonempty valve mapping')
+        # Null assignments represent unwired valves and must not become selectable.
         valves = [(name, channel) for name, channel in mapping.items() if channel is not None]
         if not valves or any(type(channel) is not int or not 0 <= channel <= 31
                              for _, channel in valves):
@@ -1579,6 +1582,7 @@ def cmd_actuate_valve():
     req = clover_pb2.Request()
     req.manual_valve.channel = channel
     req.manual_valve.powered = powered
+    # A lost acknowledgement leaves output state uncertain, so send only once.
     previous_timeout = sock.gettimeout()
     try:
         sock.settimeout(5)
@@ -2272,6 +2276,7 @@ def cmd_start_flight_sequence():
 # ── Menu ─────────────────────────────────────────────────────────────────────
 
 def cmd_valve_sequences():
+    # This mode owns command/reply traffic until its background watcher has stopped.
     ValveSequenceMode(sock, console).run()
 
 
@@ -2421,6 +2426,7 @@ def print_menu():
 
 
 def cmd_named_sequence(command):
+    """Send a single sequence command for either the prompt or --command mode."""
     try:
         request = named_sequences.make_request(command)
         previous_timeout = sock.gettimeout()
@@ -2447,6 +2453,7 @@ def cmd_named_sequence(command):
 def route_command(cmd: str) -> bool:
     """Route a typed command. Returns False if user wants to quit."""
     cmd = cmd.strip()
+    # Route before lowercasing the whole line: stored sequence names are case sensitive.
     if cmd.split() and cmd.split()[0].lower() == 'sequence':
         cmd_named_sequence(cmd)
         return True
@@ -2495,6 +2502,7 @@ def main():
     parser.add_argument('--command', help='Run one named-sequence command and exit')
     args = parser.parse_args()
     ZEPHYR_IP, ZEPHYR_PORT = args.host, args.port
+    # Reject malformed one-shot commands before opening a hardware connection.
     if args.command:
         try:
             named_sequences.make_request(args.command)

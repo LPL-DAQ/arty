@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20.0)
 set(CONFIG_MCUX_COMPONENT_driver.lpspi ON)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(valve_gpio_test)
+# These modes provide different main functions; compile exactly one entry point.
 if(CONFIG_VALVE_TEST_EMBEDDED_SEQUENCE AND CONFIG_VALVE_TEST_AUTOMATIC)
     message(FATAL_ERROR "Select embedded sequence or automatic single-channel test, not both")
 endif()
@@ -18,6 +19,7 @@ if(CONFIG_VALVE_TEST_EMBEDDED_SEQUENCE)
     set(VALVE_MAP_FILE "${CMAKE_CURRENT_SOURCE_DIR}/valve_map.json" CACHE FILEPATH "Valve-name to GPIO-channel mapping")
     get_filename_component(VALVE_MAP_FILE "${VALVE_MAP_FILE}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
     set(sequence_header "${CMAKE_CURRENT_BINARY_DIR}/generated/valve_sequence.h")
+    # Revalidate and regenerate tables whenever sequences, wiring or loaders change.
     add_custom_command(
         OUTPUT "${sequence_header}"
         COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/generate_sequence.py"
@@ -26,6 +28,7 @@ if(CONFIG_VALVE_TEST_EMBEDDED_SEQUENCE)
                 "${CMAKE_CURRENT_SOURCE_DIR}/generate_sequence.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/run_sequence.py"
         VERBATIM)
+    # Share Clover wire definitions while keeping GPIO execution in this test app.
     list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
     include(nanopb)
     zephyr_nanopb_sources(app ../../api/clover.proto)

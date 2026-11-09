@@ -5,6 +5,7 @@ ControlTrace.segments max_count:30
 
 Response.err max_size:1024
 
+# Fixed nanopb storage bounds include space for each string terminator.
 NamedSequenceRequest.name max_size:49
 NamedSequenceInfo.names max_count:16 max_size:49
 NamedSequenceInfo.state max_size:16

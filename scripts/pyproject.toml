@@ -17,8 +17,3 @@ dependencies = [
     "pyarrow>=23.0.1",
     "rich>=14.2.0",
 ]
-
-[tool.uv.workspace]
-members = [
-    "rich",
-]

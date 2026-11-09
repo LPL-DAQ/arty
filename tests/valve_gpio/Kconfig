@@ -6,6 +6,7 @@ config RANGER
 config RF
     bool "RF board defaults (unused by this test)"
 
+# CMake uses these mode flags to choose the application main function.
 config VALVE_TEST_AUTOMATIC
     bool "Automatically pulse a valve after boot"
     default n

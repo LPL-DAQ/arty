@@ -1,3 +1,5 @@
+/* Named-sequence engine: USB shell and TCP queue work; main owns timed execution.
+ * JSON steps become immutable tables in the generated valve_sequence.h. */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/drivers/gpio.h>
@@ -7,6 +9,7 @@
 #include "sequence_engine.h"
 #include "test_trace.h"
 
+/* Array indices are the channel numbers used by JSON masks and wire requests. */
 static const struct gpio_dt_spec valves[] = {
     DT_FOREACH_PROP_ELEM_SEP(DT_PATH(zephyr_user), valve_gpios,
                              GPIO_DT_SPEC_GET_BY_IDX, (,))
@@ -41,6 +44,8 @@ static int all_off(void)
 enum sequence_state { INITIALIZING, READY, RUNNING, COMPLETE, FAULTED, ABORTED };
 static enum sequence_state state = INITIALIZING;
 static const struct valve_sequence *selected;
+/* Serialize command admission and snapshots across main, shell and TCP threads.
+ * Semaphores separately queue a run and interrupt a timed step for abort. */
 K_MUTEX_DEFINE(state_lock);
 K_SEM_DEFINE(run_requested, 0, 1);
 K_SEM_DEFINE(abort_wakeup, 0, 1);
@@ -59,6 +64,7 @@ int sequence_manual_valve(uint32_t channel, bool powered)
         k_mutex_unlock(&state_lock);
         return -EBUSY;
     }
+    /* Manual power persists until explicitly cleared; active runs own all outputs. */
     int err = gpio_pin_set_dt(&valves[channel], powered ? 1 : 0);
     if (err) {
         all_off();
@@ -82,6 +88,7 @@ struct sequence_snapshot sequence_status(void)
 {
     static const char *const names[] = {"initializing", "ready", "running", "complete", "faulted", "aborted"};
     k_mutex_lock(&state_lock, K_FOREVER);
+    /* Strings point to static tables; copy related counters under the same lock. */
     struct sequence_snapshot out = {
         .state = aborting && state == RUNNING ? "aborting" : names[state],
         .name = selected ? selected->name : "",
@@ -102,6 +109,7 @@ int sequence_abort(void)
     if (state == INITIALIZING) {
         err = -EBUSY;
     } else if (state == RUNNING) {
+        /* Acknowledge the request now; main publishes ABORTED after cleanup. */
         aborting = true;
         k_sem_give(&abort_wakeup);
     } else {
@@ -132,6 +140,7 @@ static int run_sequence(const struct valve_sequence *sequence)
             int off_err = all_off();
             return off_err;
         }
+        /* Expose one-based progress before energizing this step; zero means queued. */
         current_step = step + 1;
         if (sequence->steps[step].comment[0]) {
             trace_event("NEXT: %s", sequence->steps[step].comment);
@@ -157,6 +166,7 @@ static int run_sequence(const struct valve_sequence *sequence)
             /* ABORT wakes this wait; timing and cleanup remain owned by this thread. */
             k_sem_take(&abort_wakeup, K_MSEC(sequence->steps[step].duration_ms));
         }
+        /* Every step ends with all outputs inactive, including empty-mask delays. */
         int off_err = all_off();
         trace_event("STEP %u OFF result=%d", (unsigned)step + 1, off_err);
         if (err || off_err) {
@@ -209,6 +219,7 @@ int sequence_start(const char *name)
         return -ENOENT;
     }
     k_mutex_lock(&state_lock, K_FOREVER);
+    /* Do not overlap runs with manual power or recover a latched fault implicitly. */
     if (state == INITIALIZING || state == RUNNING || state == FAULTED || manual_outputs) {
         k_mutex_unlock(&state_lock);
         return -EBUSY;
@@ -218,6 +229,7 @@ int sequence_start(const char *name)
     aborting = false;
     current_step = 0;
     last_error = 0;
+    /* Discard an earlier run's wakeup before accepting this run's abort requests. */
     k_sem_reset(&abort_wakeup);
     /* Publish selection and wakeup together so USB/TCP starts cannot race. */
     k_sem_give(&run_requested);
@@ -295,6 +307,7 @@ int main(void)
         int err = run_sequence(selected);
         k_mutex_lock(&state_lock, K_FOREVER);
         last_error = err;
+        /* Faults take precedence over abort/completion and block subsequent starts. */
         state = last_error ? FAULTED : (aborting ? ABORTED : COMPLETE);
         k_mutex_unlock(&state_lock);
         trace_event("State=%s", sequence_status().state);

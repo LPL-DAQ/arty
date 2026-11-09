@@ -1,4 +1,4 @@
-
+/* Boot-only diagnostic: initialize all outputs, wait, pulse one channel, then stop. */
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SequencesTest(unittest.TestCase):
     def generate(self, source, output, success=True):
+        """Exercise the build-time CLI, including its validation exit status."""
         result = subprocess.run([sys.executable, str(ROOT / 'generate_sequence.py'),
                                  str(source), str(output)], capture_output=True, text=True)
         self.assertEqual(result.returncode == 0, success, result.stderr)

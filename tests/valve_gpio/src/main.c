@@ -1,3 +1,5 @@
+/* Default USB-shell firmware: each pulse/group completes inside its shell handler.
+ * Select embedded-sequence firmware for independently running named sequences. */
 #include <errno.h>
 #include <stdlib.h>
 #include <zephyr/drivers/gpio.h>
@@ -11,6 +13,7 @@ static const struct gpio_dt_spec valves[] = {
 };
 static bool ready;
 
+/* Reject partial numbers and overflow before using input as an index or duration. */
 static int number(const char *text, unsigned long maximum, unsigned long *value)
 {
     char *end;
@@ -147,6 +150,7 @@ int main(void)
             ok = false;
         }
     }
+    /* Expose diagnostics over USB even when initialization blocks pulse commands. */
     ready = ok;
     return usb_enable(NULL);
 }
