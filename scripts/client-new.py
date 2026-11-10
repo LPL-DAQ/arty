@@ -1457,6 +1457,7 @@ def _print_sensor_configs(configs):
     console.print(table)
 
 
+# TODO: test on hardware. So far only run with the board stubbed out. Bench check: two PTs on AIN6/AIN7, unplug one, only its value should drop.
 def _pick_pins():
     """Ask which AIN pins to read and what is on each. Returns the configs, or None if cancelled."""
     console.print(f'  [{THEME["muted"]}]Ranger 1 J5 pads: ' + '  '.join(f'AIN{a}={_j5_pad(a)}' for a in range(32)) + f'[/{THEME["muted"]}]')
