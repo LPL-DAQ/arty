@@ -1495,10 +1495,15 @@ def _load_sensor_table():
     """Load a sensor table file (the last picked one by default, or e.g. a planned hotfire table). None if bad or cancelled."""
     path = pathlib.Path(Prompt.ask('  Table file', default=str(_LAST_SENSOR_TABLE)))
     try:
-        configs = list(text_format.Parse(path.read_text(), clover_pb2.ConfigureAnalogSensorsRequest()).configs)
+        table = text_format.Parse(path.read_text(), clover_pb2.ConfigureAnalogSensorsRequest())
     except (OSError, text_format.ParseError) as e:
         console.print(f'  [{THEME["danger"]}]Could not load {path}: {e}. Use [2] Pick pins to make one.[/{THEME["danger"]}]')
         return None
+    # channel and assignment are required; a row missing one parses fine but crashes the send
+    if missing := table.FindInitializationErrors():
+        console.print(f'  [{THEME["danger"]}]{path} is missing {", ".join(missing)}, nothing sent.[/{THEME["danger"]}]')
+        return None
+    configs = list(table.configs)
     _print_sensor_configs(configs)
     if not Confirm.ask('  Send this table?', default=True):
         console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
