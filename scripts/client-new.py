@@ -111,6 +111,8 @@ _csv_writer = None  # csv.DictWriter bound to _csv_fh
 _csv_rows_written: int = 0
 _seq_recording: bool = False
 _manual_recording: bool = False  # `rec` toggles it: record while IDLE (sensor cal)
+_csv_file_lock = threading.Lock()  # serializes the flush thread and the exit path over the _csv_* file state
+_csv_exiting: bool = False  # set by _write_csv_on_exit; the flush thread stops instead of reopening a file
 
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
@@ -418,32 +420,36 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
 
 def _write_csv_on_exit():
     """Flush any remaining buffered packets to the CSV file and close it."""
-    global _csv_fh, _csv_writer, _csv_path, _csv_rows_written
+    global _csv_fh, _csv_writer, _csv_path, _csv_rows_written, _csv_exiting
 
-    with _csv_store_lock:
-        remaining = list(_csv_store)
-        _csv_store.clear()
+    # The flush thread must neither write while the file is being closed nor open a second file afterwards (rec still on, or a sequence still running)
+    with _csv_file_lock:
+        _csv_exiting = True
 
-    # Sequence started but flush_loop never ran — create the file now
-    if remaining and _csv_fh is None:
-        _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
-        _csv_path.parent.mkdir(exist_ok=True)
-        _csv_fh = open(_csv_path, 'w', newline='')
-        _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
-        _csv_writer.writeheader()
+        with _csv_store_lock:
+            remaining = list(_csv_store)
+            _csv_store.clear()
 
-    if _csv_fh is None:
-        return
+        # Sequence started but flush_loop never ran — create the file now
+        if remaining and _csv_fh is None:
+            _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
+            _csv_path.parent.mkdir(exist_ok=True)
+            _csv_fh = open(_csv_path, 'w', newline='')
+            _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+            _csv_writer.writeheader()
 
-    for recv_time, pkt in remaining:
-        try:
-            for row in _packet_to_csv_rows(recv_time, pkt):
-                _csv_writer.writerow(row)
-                _csv_rows_written += 1
-        except Exception as e:
-            console.print(f'  [bold red]CSV row error:[/bold red] {e}')
+        if _csv_fh is None:
+            return
 
-    _close_csv()
+        for recv_time, pkt in remaining:
+            try:
+                for row in _packet_to_csv_rows(recv_time, pkt):
+                    _csv_writer.writerow(row)
+                    _csv_rows_written += 1
+            except Exception as e:
+                console.print(f'  [bold red]CSV row error:[/bold red] {e}')
+
+        _close_csv()
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
@@ -662,41 +668,46 @@ def _flush_loop():
     while True:
         time.sleep(1)
 
-        # ── CSV incremental flush ────────────────────────────────────────────
-        with _csv_store_lock:
-            if _csv_store:
-                csv_batch = list(_csv_store)
-                _csv_store.clear()
-            else:
-                csv_batch = []
+        with _csv_file_lock:
+            if _csv_exiting:
+                return
 
-        if csv_batch:
-            global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
-            if _csv_fh is None and (_seq_recording or _manual_recording):
-                _csv_path = (
-                    pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
-                )
-                _csv_path.parent.mkdir(exist_ok=True)
-                _csv_fh = open(_csv_path, 'w', newline='')
-                _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
-                _csv_writer.writeheader()
-            if _csv_fh is not None:
-                try:
-                    for recv_time, pkt in csv_batch:
-                        for row in _packet_to_csv_rows(recv_time, pkt):
-                            _csv_writer.writerow(row)
-                            _csv_rows_written += 1
-                    _csv_fh.flush()
-                except Exception as e:
-                    console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+            # ── CSV incremental flush ────────────────────────────────────────────
+            # Lock is taken before the batch is pulled, so the exit path never finds rows this thread already claimed and then drops
+            with _csv_store_lock:
+                if _csv_store:
+                    csv_batch = list(_csv_store)
+                    _csv_store.clear()
+                else:
+                    csv_batch = []
 
-        # ── Detect sequence end (after flush so last data lands in current file)
-        pkt = latest_packet
-        if _seq_recording and pkt is not None:
-            if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
-                _seq_recording = False
-        if _csv_fh is not None and not (_seq_recording or _manual_recording):
-            _close_csv()
+            if csv_batch:
+                global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
+                if _csv_fh is None and (_seq_recording or _manual_recording):
+                    _csv_path = (
+                        pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
+                    )
+                    _csv_path.parent.mkdir(exist_ok=True)
+                    _csv_fh = open(_csv_path, 'w', newline='')
+                    _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+                    _csv_writer.writeheader()
+                if _csv_fh is not None:
+                    try:
+                        for recv_time, pkt in csv_batch:
+                            for row in _packet_to_csv_rows(recv_time, pkt):
+                                _csv_writer.writerow(row)
+                                _csv_rows_written += 1
+                        _csv_fh.flush()
+                    except Exception as e:
+                        console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+
+            # ── Detect sequence end (after flush so last data lands in current file)
+            pkt = latest_packet
+            if _seq_recording and pkt is not None:
+                if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
+                    _seq_recording = False
+            if _csv_fh is not None and not (_seq_recording or _manual_recording):
+                _close_csv()
 
 
 # ── Live status display ──────────────────────────────────────────────────────
