@@ -8,9 +8,10 @@ uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py <k or t> <mi
 Existing clover LUTs were generated as follows:
 ```
 uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py k -200 400 200
-uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py t -200 400 240
+uv --project ~/arty/scripts run ~/arty/scripts/gen_nist_tc_table.py t -200 110 240
 ```
-TODO: lower the upper bound to the range we actually read, for more granularity there.
+T tops out at 110 C (boiling water plus margin; T TCs shouldn't read higher) for finer slots: ~1 C/slot, was ~2.4-2.9 at 400.
+Anything hotter reads as 110 (the table clamps).
 """
 
 import csv
