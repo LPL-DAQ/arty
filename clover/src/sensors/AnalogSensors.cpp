@@ -229,7 +229,7 @@ static void sense()
                             break;
                         }
                         case TCType_T_TYPE: {
-                            // Reading is from -200 to 400 deg C. The AD8495 is a K amp but works with T using the NIST T table
+                            // Reading is from -200 to 110 deg C, anything hotter reads 110. The AD8495 is a K amp but works with T using the NIST T table
                             // (ADI, "AD8495 Interface to Type T Thermocouples").
                             curr_reading = TcTTypeVToDegCLut::sample(unamplified_v);
                             break;
