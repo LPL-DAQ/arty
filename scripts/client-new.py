@@ -1458,11 +1458,17 @@ def _pick_pins():
     # DBG_CHAN names are stale entries in clover_pb2.py that the firmware no longer has
     sensors = [v.name for v in clover_pb2.AnalogSensor.DESCRIPTOR.values if v.name != 'UNKNOWN_ANALOG_SENSOR' and 'DBG_CHAN' not in v.name]
     console.print(f'  [{THEME["muted"]}]Sensors: {" ".join(sensors)}[/{THEME["muted"]}]')
+    if len(pins) > len(sensors):
+        console.print(f'  [{THEME["danger"]}]{len(pins)} pins but only {len(sensors)} sensor names, nothing sent. Pick fewer pins.[/{THEME["danger"]}]')
+        return None
     configs, used = [], set()
     for pin in pins:
         cfg = clover_pb2.AnalogSensorConfig(channel=pin)
         while True:
-            name = Prompt.ask(f'  AIN{pin} (pad {_j5_pad(pin)}) sensor').strip().upper()
+            name = Prompt.ask(f'  AIN{pin} (pad {_j5_pad(pin)}) sensor (blank to cancel)').strip().upper()
+            if not name:
+                console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+                return None
             if name in used:
                 console.print(f'  [{THEME["danger"]}]{name} is already on another pin.[/{THEME["danger"]}]')
             elif name in sensors:
