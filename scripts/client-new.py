@@ -1446,7 +1446,7 @@ def _print_sensor_configs(configs):
 def _pick_pins():
     """Ask which AIN pins to read and what is on each. Returns the configs, or None if cancelled."""
     console.print(f'  [{THEME["muted"]}]Ranger 1 J5 pads: ' + '  '.join(f'AIN{a}={_j5_pad(a)}' for a in range(32)) + f'[/{THEME["muted"]}]')
-    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. Resend after every reboot.[/{THEME["muted"]}]')
+    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Default resends this table.[/{THEME["muted"]}]')
     while True:
         try:
             pins = _parse_pins(Prompt.ask('  AIN pins to read (e.g. 4,6-7)'))
@@ -1488,21 +1488,45 @@ def _pick_pins():
     return configs
 
 
+_LAST_SENSOR_TABLE = pathlib.Path('data') / 'last_sensor_table.textproto'
+
+
+def _load_sensor_table():
+    """Load a sensor table file (the last picked one by default, or e.g. a planned hotfire table). None if bad or cancelled."""
+    path = pathlib.Path(Prompt.ask('  Table file', default=str(_LAST_SENSOR_TABLE)))
+    try:
+        configs = list(text_format.Parse(path.read_text(), clover_pb2.ConfigureAnalogSensorsRequest()).configs)
+    except (OSError, text_format.ParseError) as e:
+        console.print(f'  [{THEME["danger"]}]Could not load {path}: {e}. Use [2] Pick pins to make one.[/{THEME["danger"]}]')
+        return None
+    _print_sensor_configs(configs)
+    if not Confirm.ask('  Send this table?', default=True):
+        console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+        return None
+    return configs
+
+
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
     console.print('    Profile:')
-    console.print('      [1] Pick pins  (choose AIN pins and what is on each)')
-    console.print('      [2] Test     (assigns channels 0-21)')
-    console.print('      [3] Test 2   (assigns channels 22-31)')
-    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
+    console.print('      [1] Default    (resend the last picked table, or load a table file)')
+    console.print('      [2] Pick pins  (choose AIN pins and what is on each)')
+    console.print('      [3] Test       (assigns channels 0-21)')
+    console.print('      [4] Test 2     (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1' if _LAST_SENSOR_TABLE.exists() else '2')
 
     if profile == '1':
-        configs = _pick_pins()
+        configs = _load_sensor_table()
         if configs is None:
             return
 
     elif profile == '2':
+        configs = _pick_pins()
+        if configs is None:
+            return
+
+    elif profile == '3':
         configs = []
         
         for chan in range(22):
@@ -1514,9 +1538,9 @@ def cmd_configure_analog_sensors():
                 
             configs.append(cfg)
 
-    elif profile == '3':
+    elif profile == '4':
         configs = []
-        
+
         for chan in range(10):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan + 22
@@ -1531,7 +1555,10 @@ def cmd_configure_analog_sensors():
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend(configs)
-    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
+    if send_request(req, 'CONFIGURE_ANALOG_SENSORS') and profile == '2':
+        _LAST_SENSOR_TABLE.parent.mkdir(exist_ok=True)
+        _LAST_SENSOR_TABLE.write_text(text_format.MessageToString(req.configure_analog_sensors))
+        console.print(f'  [{THEME["muted"]}]Saved to {_LAST_SENSOR_TABLE.resolve()}. Copy it to load this table on another computer.[/{THEME["muted"]}]')
 
 
 def cmd_configure_valves():
