@@ -1428,7 +1428,8 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
         console.print(
             f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]{label} sent but no response: {e}[/{THEME["warning"]}]\n'
         )
-        return True
+        # The board did not confirm, so callers that record a success must not treat this as accepted.
+        return False
 
 
 # comment out to test in terminal without real data
@@ -1489,11 +1490,17 @@ def _pick_pins():
 
     sensors = [v.name for v in clover_pb2.AnalogSensor.DESCRIPTOR.values if v.name != 'UNKNOWN_ANALOG_SENSOR']
     console.print(f'  [{THEME["muted"]}]Sensors: {" ".join(sensors)}[/{THEME["muted"]}]')
+    if len(pins) > len(sensors):
+        console.print(f'  [{THEME["danger"]}]{len(pins)} pins but only {len(sensors)} sensor names, nothing sent. Pick fewer pins.[/{THEME["danger"]}]')
+        return None
     configs, used = [], set()
     for pin in pins:
         cfg = clover_pb2.AnalogSensorConfig(channel=pin)
         while True:
-            name = Prompt.ask(f'  AIN{pin} (pad {_j5_pad(pin)}) sensor').strip().upper()
+            name = Prompt.ask(f'  AIN{pin} (pad {_j5_pad(pin)}) sensor (blank to cancel)').strip().upper()
+            if not name:
+                console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+                return None
             if name in used:
                 console.print(f'  [{THEME["danger"]}]{name} is already on another pin.[/{THEME["danger"]}]')
             elif name in sensors:
