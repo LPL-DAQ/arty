@@ -1461,7 +1461,7 @@ def _print_sensor_configs(configs):
 def _pick_pins():
     """Ask which AIN pins to read and what is on each. Returns the configs, or None if cancelled."""
     console.print(f'  [{THEME["muted"]}]Ranger 1 J5 pads: ' + '  '.join(f'AIN{a}={_j5_pad(a)}' for a in range(32)) + f'[/{THEME["muted"]}]')
-    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Saved table -> last_picked resends this table.[/{THEME["muted"]}]')
+    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Saved table -> last_picked resends the last table sent.[/{THEME["muted"]}]')
     while True:
         try:
             pins = _parse_pins(Prompt.ask('  AIN pins to read (e.g. 4,6-7)'))
@@ -1503,7 +1503,7 @@ def _pick_pins():
     return configs
 
 
-# Pick pins saves here, so the saved-table list offers it next time
+# The last table sent (from Pick pins or a saved table) goes here; the saved-table list shows it first
 _LAST_PICKED = SENSOR_CONFIG_DIR / 'last_picked.textproto'
 
 
@@ -1512,7 +1512,7 @@ def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
     console.print('    Profile:')
-    console.print(f'      [1] Saved table  (from {SENSOR_CONFIG_DIR}/, incl. last_picked = last table from Pick pins)')
+    console.print(f'      [1] Saved table  (from {SENSOR_CONFIG_DIR}/, last_picked at top = last table sent)')
     console.print('      [2] Pick pins    (choose AIN pins and what is on each)')
     console.print('      [3] Test         (assigns channels 0-21)')
     console.print('      [4] Test 2       (assigns channels 22-31)')
@@ -1572,7 +1572,7 @@ def cmd_configure_analog_sensors():
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend(configs)
-    if send_request(req, 'CONFIGURE_ANALOG_SENSORS') and profile == '2':
+    if send_request(req, 'CONFIGURE_ANALOG_SENSORS') and profile in ('1', '2'):
         _LAST_PICKED.parent.mkdir(parents=True, exist_ok=True)
         _LAST_PICKED.write_text(text_format.MessageToString(req.configure_analog_sensors))
         console.print(f'  [{THEME["muted"]}]Saved as last_picked in {SENSOR_CONFIG_DIR}/. To keep it (e.g. for hotfire), copy it to a new name there and commit it.[/{THEME["muted"]}]')
@@ -1791,7 +1791,7 @@ def cmd_calibrate_throttle_valve():
 def _list_saved_configs(subdir: pathlib.Path) -> list[pathlib.Path]:
     if not subdir.exists():
         return []
-    return sorted(subdir.glob('*.textproto'))
+    return sorted(subdir.glob('*.textproto'), key=lambda f: (f.stem != 'last_picked', f.name))  # last sent sensor table first
 
 
 def _pick_and_load_config(subdir: pathlib.Path, msg_class):
