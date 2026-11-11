@@ -415,12 +415,23 @@ static void ads79xx_acquisition_thread(void* p1, void* p2, void* p3)
 
         int nsamples = POPCOUNT(data->channels);
         uint16_t rx = 0;
+        /* channels still expected in this sweep; auto-1 returns the programmed channels lowest first */
+        uint16_t pending = data->channels;
 
         for (int i = 0; i < nsamples; i++) {
             ret = ads79xx_continue(dev, &rx);
             if (ret) {
                 LOG_ERR("acquisition failed (err %d)", ret);
                 ads79xx_fail(data, ret);
+                goto acquisition_failed;
+            }
+            /* Every frame carries its channel address. A frame for another channel means the stream is out of
+             * step; fail the read instead of handing back samples the caller would assign to the wrong input. */
+            uint8_t expected = find_lsb_set(pending) - 1;
+            pending &= (uint16_t)~BIT(expected);
+            if (ads79xx_rx_addr(cfg, rx) != expected) {
+                LOG_ERR("channel order mismatch: frame %d is channel %d, expected %d", i, ads79xx_rx_addr(cfg, rx), expected);
+                ads79xx_fail(data, -EIO);
                 goto acquisition_failed;
             }
             *data->buffer++ = ads79xx_sample(cfg, rx);
