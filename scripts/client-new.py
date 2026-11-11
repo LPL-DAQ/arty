@@ -1543,7 +1543,7 @@ def cmd_configure_analog_sensors():
         # A bad table file must not crash the client (and stop logging) mid-test
         try:
             table = _pick_and_load_config(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
-        except text_format.ParseError as e:
+        except (OSError, ValueError, text_format.ParseError) as e:
             console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
             return
         # channel and assignment are required; a row missing one parses fine but fails to serialize
