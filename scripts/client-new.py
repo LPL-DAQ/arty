@@ -1461,7 +1461,7 @@ def _print_sensor_configs(configs):
 def _pick_pins():
     """Ask which AIN pins to read and what is on each. Returns the configs, or None if cancelled."""
     console.print(f'  [{THEME["muted"]}]Ranger 1 J5 pads: ' + '  '.join(f'AIN{a}={_j5_pad(a)}' for a in range(32)) + f'[/{THEME["muted"]}]')
-    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Default resends this table.[/{THEME["muted"]}]')
+    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Saved table -> last_picked resends this table.[/{THEME["muted"]}]')
     while True:
         try:
             pins = _parse_pins(Prompt.ask('  AIN pins to read (e.g. 4,6-7)'))
@@ -1503,27 +1503,8 @@ def _pick_pins():
     return configs
 
 
-_LAST_SENSOR_TABLE = pathlib.Path('data') / 'last_sensor_table.textproto'
-
-
-def _load_sensor_table():
-    """Load a sensor table file (the last picked one by default, or e.g. a planned hotfire table). None if bad or cancelled."""
-    path = pathlib.Path(Prompt.ask('  Table file', default=str(_LAST_SENSOR_TABLE)))
-    try:
-        table = text_format.Parse(path.read_text(), clover_pb2.ConfigureAnalogSensorsRequest())
-    except (OSError, text_format.ParseError) as e:
-        console.print(f'  [{THEME["danger"]}]Could not load {path}: {e}. Use [2] Pick pins to make one.[/{THEME["danger"]}]')
-        return None
-    # channel and assignment are required; a row missing one parses fine but crashes the send
-    if missing := table.FindInitializationErrors():
-        console.print(f'  [{THEME["danger"]}]{path} is missing {", ".join(missing)}, nothing sent.[/{THEME["danger"]}]')
-        return None
-    configs = list(table.configs)
-    _print_sensor_configs(configs)
-    if not Confirm.ask('  Send this table?', default=True):
-        console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
-        return None
-    return configs
+# Pick pins saves here, so the saved-table list offers it next time
+_LAST_PICKED = SENSOR_CONFIG_DIR / 'last_picked.textproto'
 
 
 # TODO: standardize with valves and other inputs, which are each set a different way today. Ideally all of them are set from the client without reflashing, unless a blocker makes that impossible.
@@ -1531,24 +1512,13 @@ def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
     console.print('    Profile:')
-    console.print('      [1] Default    (resend the last picked table, or load a table file)')
-    console.print('      [2] Pick pins  (choose AIN pins and what is on each)')
-    console.print(f'      [3] Sensor table (from {SENSOR_CONFIG_DIR}/)')
-    console.print('      [4] Test       (assigns channels 0-21)')
-    console.print('      [5] Test 2     (assigns channels 22-31)')
-    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(5)], default='1' if _LAST_SENSOR_TABLE.exists() else '2')
+    console.print(f'      [1] Saved table  (from {SENSOR_CONFIG_DIR}/, incl. last_picked = last table from Pick pins)')
+    console.print('      [2] Pick pins    (choose AIN pins and what is on each)')
+    console.print('      [3] Test         (assigns channels 0-21)')
+    console.print('      [4] Test 2       (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1' if _list_saved_configs(SENSOR_CONFIG_DIR) else '2')
 
     if profile == '1':
-        configs = _load_sensor_table()
-        if configs is None:
-            return
-
-    elif profile == '2':
-        configs = _pick_pins()
-        if configs is None:
-            return
-
-    elif profile == '3':
         if not _list_saved_configs(SENSOR_CONFIG_DIR):
             console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
             return
@@ -1568,7 +1538,12 @@ def cmd_configure_analog_sensors():
             console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
             return
 
-    elif profile == '4':
+    elif profile == '2':
+        configs = _pick_pins()
+        if configs is None:
+            return
+
+    elif profile == '3':
         configs = []
         
         for chan in range(22):
@@ -1580,7 +1555,7 @@ def cmd_configure_analog_sensors():
                 
             configs.append(cfg)
 
-    elif profile == '5':
+    elif profile == '4':
         configs = []
 
         for chan in range(10):
@@ -1598,9 +1573,9 @@ def cmd_configure_analog_sensors():
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend(configs)
     if send_request(req, 'CONFIGURE_ANALOG_SENSORS') and profile == '2':
-        _LAST_SENSOR_TABLE.parent.mkdir(exist_ok=True)
-        _LAST_SENSOR_TABLE.write_text(text_format.MessageToString(req.configure_analog_sensors))
-        console.print(f'  [{THEME["muted"]}]Saved to {_LAST_SENSOR_TABLE.resolve()}. Copy it to load this table on another computer.[/{THEME["muted"]}]')
+        _LAST_PICKED.parent.mkdir(parents=True, exist_ok=True)
+        _LAST_PICKED.write_text(text_format.MessageToString(req.configure_analog_sensors))
+        console.print(f'  [{THEME["muted"]}]Saved as last_picked in {SENSOR_CONFIG_DIR}/. To keep it (e.g. for hotfire), copy it to a new name there and commit it.[/{THEME["muted"]}]')
 
 
 def cmd_configure_valves():
