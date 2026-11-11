@@ -1395,7 +1395,8 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
         console.print(
             f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]{label} sent but no response: {e}[/{THEME["warning"]}]\n'
         )
-        return True
+        # The board did not confirm, so callers that record a success must not treat this as accepted.
+        return False
 
 
 # comment out to test in terminal without real data
