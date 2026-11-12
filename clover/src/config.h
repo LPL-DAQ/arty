@@ -3,6 +3,9 @@
 
 #include <limits>
 
+// Watchdog Timeout (in ms)
+constexpr uint32_t WATCHDOG_TIMEOUT = 3000; 
+
 constexpr int CONTROLLER_STEP_WORK_Q_PRIORITY = -10;
 constexpr int ANALOG_SENSORS_THREAD_PRIORITY = -5;
 constexpr int LIDAR_1_THREAD_PRIORITY = -5;

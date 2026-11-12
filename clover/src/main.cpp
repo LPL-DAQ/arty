@@ -1,3 +1,4 @@
+
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -8,6 +9,7 @@
 #include <zephyr/usb/usb_device.h>
 
 #include "BlinkLed.h"
+#include "config.h"
 #include "Controller.h"
 #include "ThrottleValve.h"
 #include "Valves.h"
@@ -22,6 +24,10 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 int main(void)
 {
+    // Upon Startup - Evaluate the reboot cause before doing anything else.
+    // This also calls the on_watchdog_reboot() function if the cause was determined to be a watchdog reset.
+    const Watchdog::RebootCheckResult reboot = Watchdog::evaluate_reboot_cause();
+
 #ifdef CONFIG_USB_LOGGING
     // Serial over USB setup
     if (usb_enable(nullptr)) {
@@ -51,7 +57,26 @@ int main(void)
 #warning "No logging backend set -- should use either CONFIG_USB_LOGGING or CONFIG_UART_LOGGING"
 #endif
 
-    if (!Watchdog::init(3000)) {
+    // Now that logging has been established, print the reboot cause for the user to view.
+    // Note: If we want more sophisticated handling for the two error cases, they can be added here. 
+    // 1) reboot.cause_available. If this is false then we don't know why the teensy restarted.
+    // 2) reboot.clear_error. If this is non-zero then we were unable to clear the reset reason. Just good to have documented.
+    if (!reboot.cause_available) {
+        LOG_WRN("Reset cause unavailable (%d)", reboot.read_error);
+    } else {
+        if (reboot.watchdog_reset) {
+            LOG_WRN("Watchdog reset detected");
+        }
+
+        if (reboot.clear_error != 0) {
+            LOG_WRN("Failed to clear reset flags (%d); "
+                    "future checks may include an older reset",
+                    reboot.clear_error);
+        }
+    }
+
+    // Initialize the Watchdog with the appropriate timeout (established in config.h)
+    if (!Watchdog::init(WATCHDOG_TIMEOUT)) {
         LOG_ERR("Failed to initialize Watchdog. Aborting boot.");
         return 0;
     }
