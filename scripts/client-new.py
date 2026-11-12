@@ -1395,7 +1395,8 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
         console.print(
             f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]{label} sent but no response: {e}[/{THEME["warning"]}]\n'
         )
-        return True
+        # The board did not confirm, so callers that record a success must not treat this as accepted.
+        return False
 
 
 # comment out to test in terminal without real data
@@ -1407,20 +1408,137 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 # ── Command implementations ──────────────────────────────────────────────────
 
 
+def _j5_pad(ain: int) -> int:
+    """Ranger 1 J5 (DB-37) pad for an AIN number. Even AINs run along the top row, odd along the bottom."""
+    return ain // 2 + 1 if ain % 2 == 0 else ain // 2 + 20
+
+
+def _parse_pins(text: str) -> list[int]:
+    """'4, 6-7' -> [4, 6, 7]. Raises ValueError on anything else."""
+    pins = []
+    for part in text.replace(' ', '').split(','):
+        lo, _, hi = part.partition('-')
+        lo, hi = int(lo), int(hi or lo)
+        if hi < lo:
+            raise ValueError(text)
+        pins.extend(range(lo, hi + 1))
+    if not pins or len(set(pins)) != len(pins) or not all(0 <= p <= 31 for p in pins):
+        raise ValueError(text)
+    return pins
+
+
+def _print_sensor_configs(configs):
+    """Show what is about to be sent, so a wrong channel or range is caught before it reaches the board."""
+    table = Table(box=box.SIMPLE_HEAD, header_style=THEME['primary'], border_style=THEME['panel_border'], padding=(0, 2))
+    for col in ('Channel', 'J5 pad', 'Sensor', 'Type', 'Range', 'Bias'):
+        table.add_column(col)
+    for c in configs:
+        if c.HasField('pt_range_psig'):
+            kind, rng, bias = 'PT (psig)', c.pt_range_psig, c.pt_bias_psig
+        elif c.HasField('raw_range_v'):
+            kind, rng, bias = 'raw (V)', c.raw_range_v, c.raw_bias_v
+        else:
+            kind, rng, bias = f'TC {clover_pb2.TCType.Name(c.tc_type)} (°C)', '-', '-'
+        table.add_row(f'AIN{c.channel}', str(_j5_pad(c.channel)), clover_pb2.AnalogSensor.Name(c.assignment), kind, str(rng), str(bias))
+    console.print(table)
+
+
+# TODO: test on hardware. So far only run with the board stubbed out. Bench check: two PTs on AIN6/AIN7, unplug one, only its value should drop.
+def _pick_pins():
+    """Ask which AIN pins to read and what is on each. Returns the configs, or None if cancelled."""
+    console.print(f'  [{THEME["muted"]}]Ranger 1 J5 pads: ' + '  '.join(f'AIN{a}={_j5_pad(a)}' for a in range(32)) + f'[/{THEME["muted"]}]')
+    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Default resends this table.[/{THEME["muted"]}]')
+    while True:
+        try:
+            pins = _parse_pins(Prompt.ask('  AIN pins to read (e.g. 4,6-7)'))
+            break
+        except ValueError:
+            console.print(f'  [{THEME["danger"]}]Use AIN numbers 0-31, comma separated, ranges like 6-7, no repeats.[/{THEME["danger"]}]')
+
+    # DBG_CHAN names are stale entries in clover_pb2.py that the firmware no longer has
+    sensors = [v.name for v in clover_pb2.AnalogSensor.DESCRIPTOR.values if v.name != 'UNKNOWN_ANALOG_SENSOR' and 'DBG_CHAN' not in v.name]
+    console.print(f'  [{THEME["muted"]}]Sensors: {" ".join(sensors)}[/{THEME["muted"]}]')
+    if len(pins) > len(sensors):
+        console.print(f'  [{THEME["danger"]}]{len(pins)} pins but only {len(sensors)} sensor names, nothing sent. Pick fewer pins.[/{THEME["danger"]}]')
+        return None
+    configs, used = [], set()
+    for pin in pins:
+        cfg = clover_pb2.AnalogSensorConfig(channel=pin)
+        while True:
+            name = Prompt.ask(f'  AIN{pin} (pad {_j5_pad(pin)}) sensor (blank to cancel)').strip().upper()
+            if not name:
+                console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+                return None
+            if name in used:
+                console.print(f'  [{THEME["danger"]}]{name} is already on another pin.[/{THEME["danger"]}]')
+            elif name in sensors:
+                break
+            else:
+                console.print(f'  [{THEME["danger"]}]Not a sensor name. Pick one from the list above.[/{THEME["danger"]}]')
+        used.add(name)
+        cfg.assignment = clover_pb2.AnalogSensor.Value(name)
+        kind = Prompt.ask(f'  AIN{pin} type', choices=['pt', 'tc', 'raw'], default='pt')
+        if kind == 'pt':
+            cfg.pt_range_psig = FloatPrompt.ask(f'  AIN{pin} range psig (PT rated psi, e.g. 1000)')
+            cfg.pt_bias_psig = FloatPrompt.ask(f'  AIN{pin} bias psig', default=0.0)
+        elif kind == 'tc':
+            cfg.tc_type = clover_pb2.TCType.Value(Prompt.ask(f'  AIN{pin} TC type', choices=['K_TYPE', 'T_TYPE'], default='K_TYPE'))
+        else:
+            cfg.raw_range_v = FloatPrompt.ask(f'  AIN{pin} range V', default=5.0)
+            cfg.raw_bias_v = FloatPrompt.ask(f'  AIN{pin} bias V', default=0.0)
+        configs.append(cfg)
+
+    _print_sensor_configs(configs)
+    if not Confirm.ask('  Send this table?', default=True):
+        console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+        return None
+    return configs
+
+
+_LAST_SENSOR_TABLE = pathlib.Path('data') / 'last_sensor_table.textproto'
+
+
+def _load_sensor_table():
+    """Load a sensor table file (the last picked one by default, or e.g. a planned hotfire table). None if bad or cancelled."""
+    path = pathlib.Path(Prompt.ask('  Table file', default=str(_LAST_SENSOR_TABLE)))
+    try:
+        table = text_format.Parse(path.read_text(), clover_pb2.ConfigureAnalogSensorsRequest())
+    except (OSError, text_format.ParseError) as e:
+        console.print(f'  [{THEME["danger"]}]Could not load {path}: {e}. Use [2] Pick pins to make one.[/{THEME["danger"]}]')
+        return None
+    # channel and assignment are required; a row missing one parses fine but crashes the send
+    if missing := table.FindInitializationErrors():
+        console.print(f'  [{THEME["danger"]}]{path} is missing {", ".join(missing)}, nothing sent.[/{THEME["danger"]}]')
+        return None
+    configs = list(table.configs)
+    _print_sensor_configs(configs)
+    if not Confirm.ask('  Send this table?', default=True):
+        console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+        return None
+    return configs
+
+
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
-    
+
     console.print('    Profile:')
-    console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test     (assigns channels 0-21)')
-    console.print('      [3] Test 2   (assigns channels 22-31)')
-    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
-    
+    console.print('      [1] Default    (resend the last picked table, or load a table file)')
+    console.print('      [2] Pick pins  (choose AIN pins and what is on each)')
+    console.print('      [3] Test       (assigns channels 0-21)')
+    console.print('      [4] Test 2     (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1' if _LAST_SENSOR_TABLE.exists() else '2')
+
     if profile == '1':
-        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
-        configs = []
-        
+        configs = _load_sensor_table()
+        if configs is None:
+            return
+
     elif profile == '2':
+        configs = _pick_pins()
+        if configs is None:
+            return
+
+    elif profile == '3':
         configs = []
         
         for chan in range(22):
@@ -1432,9 +1550,9 @@ def cmd_configure_analog_sensors():
                 
             configs.append(cfg)
 
-    elif profile == '3':
+    elif profile == '4':
         configs = []
-        
+
         for chan in range(10):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan + 22
@@ -1449,7 +1567,10 @@ def cmd_configure_analog_sensors():
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend(configs)
-    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
+    if send_request(req, 'CONFIGURE_ANALOG_SENSORS') and profile == '2':
+        _LAST_SENSOR_TABLE.parent.mkdir(exist_ok=True)
+        _LAST_SENSOR_TABLE.write_text(text_format.MessageToString(req.configure_analog_sensors))
+        console.print(f'  [{THEME["muted"]}]Saved to {_LAST_SENSOR_TABLE.resolve()}. Copy it to load this table on another computer.[/{THEME["muted"]}]')
 
 
 def cmd_configure_valves():
