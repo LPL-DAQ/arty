@@ -18,3 +18,4 @@ out.log
 
 credentials
 /settings.py
+/scripts/sensor_configs/last_picked.textproto

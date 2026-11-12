@@ -1,0 +1,19 @@
+# Sensor table: a ConfigureAnalogSensorsRequest. Pick it with `cfgana` -> 1.
+# Only channels listed here are read by the ADC; everything else is not sampled.
+# Each send replaces the whole config, and the board forgets it on reboot - resend after every power cycle.
+#
+# channel = AIN number (NOT the J5 pad). U7 = AIN0-15, U8 = AIN16-31 (U8 is broken, don't use).
+# Usable U7: AIN1-7, AIN10-15 (AIN0 reads 0, skip AIN8/9).
+#   AIN1=pad20  AIN2=pad2   AIN3=pad21  AIN4=pad3   AIN5=pad22  AIN6=pad4   AIN7=pad23
+#   AIN10=pad6  AIN11=pad25 AIN12=pad7  AIN13=pad26 AIN14=pad8  AIN15=pad27
+#
+# PT reading (psig) = counts / 4096 * pt_range_psig + pt_bias_psig
+#   Omega PX319-xKG5V (0-5 V out, needs 9-30 V excitation): pt_range_psig = rated psi
+#   PX319-3KG5V: 3000   PX319-2KG5V: 2000   PX319-1KG5V: 1000
+#   Zero: vent to atmosphere, average ~5 s of the reading, set new pt_bias_psig = old pt_bias_psig - average.
+#   Zero with the final table loaded (neighbouring channels can shift a reading). Per sensor, per pin.
+
+# Bench wiring 2026-10-15: PTs on pad 4 (AIN6) and pad 23 (AIN7). Names/ranges follow the May 26 Atlas config
+# (see s_vehicle_pts.textproto.template); confirm the part number on each PT body matches the range.
+configs { channel: 6  assignment: PT103  pt_range_psig: 1000  pt_bias_psig: 0 }
+configs { channel: 7  assignment: PT203  pt_range_psig: 3000  pt_bias_psig: 0 }
