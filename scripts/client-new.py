@@ -118,17 +118,23 @@ _graph_history: deque = deque(maxlen=_GRAPH_MAXLEN)
 _graph_lock = threading.Lock()
 
 
-def _make_tcp_socket() -> socket.socket:
+def _make_tcp_socket(timeout_init=2.0) -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
+    s.settimeout(timeout_init)  # never block forever on a dead board
     s.connect((ZEPHYR_IP, ZEPHYR_PORT))
     return s
 
 
 sock = _make_tcp_socket()
+
+_sock_lock = threading.Lock()
+_HEARTBEAT_TIME_S = 1.0
+_resubscribe_on_reconnect = False
+
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 
@@ -445,26 +451,6 @@ def _write_csv_on_exit():
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
-
-_STREAM_TIMEOUT = 5.0  # seconds without a packet before we re-subscribe
-
-
-def _reconnect_and_resubscribe():
-    """Reconnect the TCP socket and re-issue a subscribe request."""
-    global sock
-    try:
-        sock.close()
-    except Exception:
-        pass
-    try:
-        sock = _make_tcp_socket()
-        cmd_subscribe_data_stream()
-        console.print(
-            f'  [{THEME["warning"]}]Reconnected and re-subscribed to data stream.[/{THEME["warning"]}]'
-        )
-    except Exception as e:
-        console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
-
 
 _USEFUL_SENSORS: dict[str, str] = {
     'pt004': 'PT-004',
@@ -1179,7 +1165,7 @@ def _build_status_renderable():
         table.add_column('Sensor', style='bold white', no_wrap=True)
         table.add_column('Reading', style='white', justify='right', no_wrap=True)
         table.add_column('Unit', style=t['muted'], no_wrap=True)
-        
+
         for sensor, reading in MessageToDict(pkt.analog_sensors).items():
             if sensor[:2] == 'pt':
                 unit = 'psig'
@@ -1208,7 +1194,7 @@ def _build_status_renderable():
         )
         table.add_column('Valve', style='bold white', no_wrap=True)
         table.add_column('State', style='white', justify='right', no_wrap=True)
-        
+
         for valve, state in MessageToDict(pkt.valve_states).items():
             table.add_row(valve.upper(), state)
 
@@ -1219,7 +1205,7 @@ def _build_status_renderable():
                 border_style=t['panel_border'],
             ),
         )
-        
+
     if fcm.row_count != 0:
         bottom_columns.append(Panel(
             fcm,
@@ -1353,49 +1339,93 @@ def _recv_response() -> clover_pb2.Response:
     return resp
 
 
-def send_request(req: clover_pb2.Request, label: str) -> bool:
-    global sock
-    """Serialize and send a Request over TCP, then read and display the Response."""
-    raw = req.SerializeToString()
-    payload = _VarintBytes(len(raw)) + raw
-    for attempt in range(2):
-        try:
-            sock.sendall(payload)
-            break
-        except Exception as e:
-            if attempt == 0:
-                console.print(
-                    f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]Connection lost, reconnecting...[/{THEME["warning"]}]'
-                )
-                try:
-                    sock = _make_tcp_socket()
-                except Exception as re:
-                    console.print(
-                        f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Reconnect failed: {re}[/{THEME["danger"]}]\n'
-                    )
-                    return False
-            else:
-                console.print(
-                    f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Failed to send {label}: {e}[/{THEME["danger"]}]\n'
-                )
-                return False
+def _transact(req: clover_pb2.Request) -> clover_pb2.Response:
+    """Send one request and read its response. Caller must hold _sock_lock.
 
+    On any error the socket is dropped, so a late response can never be read as the reply to a later request.
+    """
+    global sock
+    if sock is None:
+        raise ConnectionError('not connected (reconnecting in background)')
+    raw = req.SerializeToString()
     try:
-        resp = _recv_response()
-        if resp.HasField('err'):
-            console.print(
-                f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]{label} rejected: {resp.err}[/{THEME["danger"]}]\n'
-            )
-            return False
-        console.print(
-            f'\n  {THEME["icon_ok"]} [{THEME["success"]}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME["success"]}]\n'
-        )
-        return True
+        sock.sendall(_VarintBytes(len(raw)) + raw)
+        return _recv_response()
+    except Exception:
+        sock.close()
+        sock = None
+        raise
+
+
+def send_request(req: clover_pb2.Request, label: str) -> bool:
+    """Serialize and send a Request over TCP, then read and display the Response.
+
+    Never retried: if the link drops the command fails and must be re-issued, so nothing stale runs after a reconnect.
+    """
+    try:
+        with _sock_lock:
+            resp = _transact(req)
     except Exception as e:
         console.print(
-            f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]{label} sent but no response: {e}[/{THEME["warning"]}]\n'
+            f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Failed to send {label}: {e}[/{THEME["danger"]}]\n'
         )
-        return True
+        return False
+
+    if resp.HasField('err'):
+        console.print(
+            f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]{label} rejected: {resp.err}[/{THEME["danger"]}]\n'
+        )
+        return False
+    console.print(
+        f'\n  {THEME["icon_ok"]} [{THEME["success"]}]Sent {label} → {ZEPHYR_IP}:{ZEPHYR_PORT}[/{THEME["success"]}]\n'
+    )
+    return True
+
+
+def _heartbeat_loop(timeout_limit=2.0, timeout_behavior=None):
+    """Send a heartbeat every _HEARTBEAT_TIME_S and reconnect when the link drops.
+
+    If no heartbeat has succeeded for `timeout_limit` seconds, `timeout_behavior(down_for_s)` is called once per
+    outage. It runs on this thread, outside _sock_lock, so it must be quick and non-interactive.
+    """
+    global sock
+    heartbeat = clover_pb2.Request()
+    heartbeat.identify_client.client = clover_pb2.GNC
+
+    subscribe = clover_pb2.Request()
+    subscribe.subscribe_data_stream.SetInParent()
+
+    last_ok = time.monotonic()
+    fired = False
+    while True:
+
+        time.sleep(_HEARTBEAT_TIME_S)
+        with _sock_lock:
+            try:
+                if sock is None:
+                    sock = _make_tcp_socket()
+                    if _resubscribe_on_reconnect:
+                        _transact(subscribe)
+                    console.print(f'\n  [{THEME["warning"]}]Reconnected to {ZEPHYR_IP}:{ZEPHYR_PORT}.[/{THEME["warning"]}]')
+                _transact(heartbeat)
+                last_ok = time.monotonic()
+                fired = False  # re-arm for the next outage
+            except Exception as e:
+                sock = None
+                console.print(
+                    f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Connection lost ({e}), reconnecting...[/{THEME["danger"]}]'
+                )
+
+        # Outside the lock so the behavior may call send_request without deadlocking.
+        down_for = time.monotonic() - last_ok
+        if timeout_behavior is not None and not fired and down_for >= timeout_limit:
+            fired = True
+            try:
+                timeout_behavior()
+            except Exception as e:
+                console.print(
+                    f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Heartbeat timeout behavior failed: {e}[/{THEME["danger"]}]'
+                )
 
 
 # comment out to test in terminal without real data
@@ -1409,41 +1439,41 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test     (assigns channels 0-21)')
     console.print('      [3] Test 2   (assigns channels 22-31)')
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(22):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
         for chan in range(10):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan + 22
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
-    
+
     else:
         raise ValueError(f'Unknown profile of `{profile}`')
 
@@ -1454,7 +1484,7 @@ def cmd_configure_analog_sensors():
 
 def cmd_configure_valves():
     """Configure valves."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test    (assigns channel 0-12)')
@@ -1462,39 +1492,39 @@ def cmd_configure_valves():
     console.print('      [4] Test 3  (assigns channel 26-31)')
 
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(13):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
-                
-            configs.append(cfg)
-        
-    elif profile == '3':
-        configs = []
-        
-        for chan in range(13):
-            cfg = clover_pb2.ValveConfig()
-            cfg.channel = chan + 13
-            cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 13
+            cfg.assignment = chan + 1
+
+            configs.append(cfg)
+
+    elif profile == '3':
+        configs = []
+
         for chan in range(6):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan + 26
             cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     else:
@@ -1554,13 +1584,13 @@ def cmd_actuate_valve():
         console.print(f'    [{i}] {clover_pb2.Valve.Name(i)}')
     choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
     valve = int(choice)
-    
+
     console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
     for i in range(1, 5):
         console.print(f'    [{i}] {clover_pb2.ValveState.Name(i)}')
     choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
     state = int(choice)
-    
+
     req = clover_pb2.Request()
     req.actuate_valve.valve = valve
     req.actuate_valve.state = state
@@ -2413,8 +2443,20 @@ def route_command(cmd: str) -> bool:
     return True
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+def _on_heartbeat_timeout(down_for_s: float):
+    """Default heartbeat timeout behavior: warn the operator. Local only, the link is down so nothing can be sent."""
+    console.print(
+        f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]No heartbeat from {ZEPHYR_IP}:{ZEPHYR_PORT} for '
+        f'{down_for_s:.1f}s.[/{THEME["danger"]}]'
+    )
 
+
+# Heartbeat timeout: after TIMEOUT_LIMIT seconds without a successful heartbeat, TIMEOUT_BEHAVIOR(down_for_s) is
+# called once per outage from the heartbeat thread. Set TIMEOUT_BEHAVIOR to None to disable.
+TIMEOUT_LIMIT = 2.0
+TIMEOUT_BEHAVIOR = _on_heartbeat_timeout
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
     global data_sock
@@ -2427,6 +2469,13 @@ def main():
         help='Skip binding the UDP telemetry port (for second instances)',
     )
     args = parser.parse_args()
+
+
+    global _resubscribe_on_reconnect
+    _resubscribe_on_reconnect = not args.no_data
+    threading.Thread(target=_heartbeat_loop,
+                     args=(TIMEOUT_LIMIT, TIMEOUT_BEHAVIOR),
+                     daemon=True).start()
 
     telemetry_info = f'Listen port: {DATA_PORT}' if not args.no_data else 'Telemetry: disabled'
     console.print(
