@@ -10,6 +10,8 @@ from rich.text import Text
 
 import clover_pb2
 import named_sequences
+from sequence_countdown import countdown
+from valve_status import valve_table
 
 
 class ValveSequenceMode:
@@ -26,7 +28,8 @@ class ValveSequenceMode:
     def show_status(self, info, force=False):
         """Called under lock, keeping command replies and progress in order."""
         # Poll frequently but print only transitions unless status was explicitly requested.
-        signature = (info.state, info.name, info.step, info.total_steps, info.comment, info.error)
+        signature = (info.state, info.name, info.step, info.total_steps, info.comment, info.error,
+                     info.powered_channels, info.known_channels)
         if signature == self.last_status and not force:
             return
         previous = self.last_status
@@ -40,6 +43,7 @@ class ValveSequenceMode:
         if info.error:
             line.append(f'  |  GPIO error {info.error}; reset required', style='bold red')
         self.console.print(line)
+        self.console.print(valve_table(info))
         if info.comment and (force or previous is None or signature[1:5] != previous[1:5]):
             # Text prevents comments containing [] or terminal escapes becoming formatting.
             self.console.print(Text('    ' + info.comment))
@@ -98,7 +102,7 @@ class ValveSequenceMode:
         session = session or PromptSession()
         self.console.print(Panel(
             Text('list           Show stored sequences\n'
-                 'run <name>     Start a sequence\n'
+                 'run <name>     Start after a 10s countdown (Space/Q cancels)\n'
                  'status         Show current state, step and comment\n'
                  'abort          Abort sequence and request outputs off\n'
                  'back / exit    Return to CMD (does not stop the board)\n\n'
@@ -124,6 +128,10 @@ class ValveSequenceMode:
                     if command.lower() in ('help', '?', 'h'):
                         self.console.print('list | run <name> | status | abort | back')
                     elif command:
+                        words = command.split()
+                        if (len(words) == 2 and words[0].lower() == 'run'
+                                and not countdown(self.console, words[1])):
+                            continue
                         self.execute(command)
             finally:
                 # Join before returning so the main CLI regains exclusive socket ownership.

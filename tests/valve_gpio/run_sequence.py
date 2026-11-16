@@ -8,6 +8,8 @@ import secrets
 import time
 
 
+TICKS_PER_SECOND = 10000  # Must match prj.conf CONFIG_SYS_CLOCK_TICKS_PER_SEC.
+
 DEFAULT_VALVE_MAP = Path(__file__).with_name("valve_map.json")
 
 
@@ -46,16 +48,16 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
         raise ValueError("sequence must be a nonempty JSON array")
     for index, step in enumerate(steps, 1):
         if (not isinstance(step, dict) or
-                "duration_ms" not in step or
+                "duration_ticks" not in step or
                 ("channels" in step) == ("valves" in step) or
-                set(step) - {"duration_ms", "channels", "valves", "comment"}):
-            raise ValueError(f"step {index}: expected duration_ms, either channels or valves, and optional comment")
+                set(step) - {"duration_ticks", "channels", "valves", "comment"}):
+            raise ValueError(f"step {index}: expected duration_ticks, either channels or valves, and optional comment")
         comment = step.get("comment", "")
         if (not isinstance(comment, str) or
                 any(not char.isprintable() for char in comment) or
                 len(comment.encode("utf-8")) > 100):
             raise ValueError(f"step {index}: comment must be printable text of at most 100 UTF-8 bytes")
-        duration = step["duration_ms"]
+        duration = step["duration_ticks"]
         entries = step.get("valves", step.get("channels"))
         if not isinstance(entries, list):
             raise ValueError(f"step {index}: channels/valves must be a list")
@@ -74,8 +76,9 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
                 channels.append(entry)
             else:
                 raise ValueError(f"step {index}: valves must contain valve names, not channel numbers")
-        if type(duration) is not int or not 1 <= duration <= 10000:
-            raise ValueError(f"step {index}: duration_ms must be 1..10000")
+        # Keep tick durations positive and within the supported signed range.
+        if type(duration) is not int or not 1 <= duration <= 2147483647:
+            raise ValueError(f"step {index}: duration_ticks must be 1..2147483647")
         if (not isinstance(channels, list) or
                 any(type(c) is not int or not 0 <= c <= 31 for c in channels) or
                 len(set(channels)) != len(channels)):
@@ -88,11 +91,13 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
 
 def pulse(connection, token, step):
     channels = " ".join(map(str, step["channels"]))
-    command = f"valve group {token} {step['duration_ms']} {channels}\r"
+    # Legacy USB group commands still accept milliseconds; round up sub-ms ticks.
+    duration_ms = (step['duration_ticks'] * 1000 + TICKS_PER_SECOND - 1) // TICKS_PER_SECOND
+    command = f"valve group {token} {duration_ms} {channels}\r"
     connection.write(command.encode("ascii"))
     connection.flush()
     # Completion is emitted after firmware cleanup; match this token, not stale output.
-    deadline = time.monotonic() + step["duration_ms"] / 1000 + 5
+    deadline = time.monotonic() + step["duration_ticks"] / TICKS_PER_SECOND + 5
     pattern = re.compile(rb"VALVE_DONE " + str(token).encode() + rb" (-?\d+)\r?\n")
     received = b""
     while time.monotonic() < deadline:
@@ -117,7 +122,7 @@ def main():
         steps = load_sequence(args.sequence, args.valve_map)
         if args.dry_run:
             for index, step in enumerate(steps, 1):
-                print(f"{index}: {step['duration_ms']} ms, channels {step['channels']}")
+                print(f"{index}: {step['duration_ticks']} ticks, channels {step['channels']}")
                 if step.get("comment"):
                     print(f"  NEXT: {step['comment']}")
             return
@@ -138,7 +143,7 @@ def main():
                     pulse(connection, secrets.randbelow(2147483647), step)
                 else:
                     # An empty group is a host-side delay; no GPIO command is needed.
-                    time.sleep(step["duration_ms"] / 1000)
+                    time.sleep(step["duration_ticks"] / TICKS_PER_SECOND)
         print("Sequence complete; all requested deactivation writes succeeded.")
     except (ValueError, OSError, RuntimeError, ImportError) as exc:
         parser.exit(1, f"Error: {exc}\n")

@@ -13,6 +13,8 @@ struct sequence_snapshot {
     uint32_t total_steps;
     int error;
     uint32_t manual_powered_channels;
+    uint32_t powered_channels;
+    uint32_t known_channels;
 };
 
 size_t sequence_count(void);

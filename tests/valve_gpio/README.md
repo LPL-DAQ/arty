@@ -1,7 +1,15 @@
 # Ranger valve GPIO bench test
 
-For a test that runs automatically without serial commands, follow
-[AUTOMATIC_TEST.md](AUTOMATIC_TEST.md).
+The default `prj.conf` builds named sequences and TCP manual valve control.
+No extra configuration file is required:
+
+```sh
+west build -p always -s tests/valve_gpio -b ranger_1/mimxrt1062 \
+  -d tests/valve_gpio/build-sequence
+west flash -d tests/valve_gpio/build-sequence
+```
+
+Use a pristine build when switching from an older build directory.
 
 Standalone firmware: no flight controller, network server, or valve assignment
 configuration is needed. Channel numbers are zero-based indices into
@@ -11,8 +19,7 @@ not Clover's valve assignment or command protocol.
 ## Tracing execution in the source
 
 `CMakeLists.txt` selects one firmware entry point: `src/main.c` for USB
-`valve pulse/group` commands, `src/automatic.c` for a boot-time single-channel
-pulse, or `src/embedded_sequence.c` for named sequences. The latter also builds
+`valve pulse/group` commands or `src/embedded_sequence.c` for named sequences. The latter also builds
 `src/sequence_server.c` and `src/sequence_protocol.c` for TCP control.
 
 For named sequences, follow these paths:
@@ -48,10 +55,11 @@ GPIO. `test/test_ethernet.py` compiles the engine, protocol and server with
 protobuf bindings, JSON examples and captured logs are data artifacts; edit
 `api/clover.proto` and `api/clover.options` to change the wire schema.
 
-Build and flash from the repository root in the development container:
+For the legacy USB `valve pulse/group` commands below, explicitly disable the
+default named-sequence engine and build from the repository root:
 
 ```sh
-west build -s tests/valve_gpio -b ranger_1/mimxrt1062 -d tests/valve_gpio/build
+west build -p always -s tests/valve_gpio -b ranger_1/mimxrt1062 -d tests/valve_gpio/build -- -DCONFIG_VALVE_TEST_EMBEDDED_SEQUENCE=n
 west flash -d tests/valve_gpio/build
 ```
 
@@ -67,7 +75,7 @@ valve pulse 17 5000
 ```
 
 `list` shows each expander device, pin, polarity, and digital readback. `pulse`
-activates one channel for 1 second by default (maximum 10 seconds), then turns
+activates one channel for 1 second by default (maximum 2147483647 ms, about 24.9 days), then turns
 it off. It prints before, active, and after readings. All channels are configured
 inactive at startup. An unavailable expander or GPIO configuration error disables
 pulse commands. A failed read is reported as an error, never as a voltage.
@@ -142,8 +150,8 @@ Sequence steps can now use names:
 
 ```json
 [
-  {"duration_ms": 1000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101"},
-  {"duration_ms": 1000, "valves": [], "comment": "All outputs off"}
+  {"duration_ticks": 10000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101"},
+  {"duration_ticks": 10000, "valves": [], "comment": "All outputs off"}
 ]
 ```
 
@@ -180,7 +188,7 @@ commands and timing behavior are unchanged.
 ## Run a sequence file
 
 `run_sequence.py` reads a JSON array of steps; see `sequence.example.json`.
-Each step supplies `duration_ms` (1–10000) and a list of GPIO `channels` (0–31).
+Each step supplies `duration_ticks` (1–2147483647 ticks, about 2.49 days maximum) and a list of GPIO `channels` (0–31).
 An empty list waits with outputs inactive. Each nonempty step activates its
 channels together, holds them for the duration, and deactivates them before
 acknowledging completion. Consecutive steps have an off interval and host/USB
@@ -188,11 +196,11 @@ latency between them; this is not a precise timestamp scheduler. Group activatio
 uses consecutive GPIO writes, so rising edges have I2C skew. Channels describe
 energized outputs, not necessarily mechanically open valves.
 
-Flash updated manual firmware first (the automatic firmware cannot run this):
+Flash the USB manual firmware first:
 
 ```sh
 west build -p always -s tests/valve_gpio -b ranger_1/mimxrt1062 \
-  -d tests/valve_gpio/build-manual -- -DCONFIG_VALVE_TEST_AUTOMATIC=n
+  -d tests/valve_gpio/build-manual -- -DCONFIG_VALVE_TEST_EMBEDDED_SEQUENCE=n
 west flash -d tests/valve_gpio/build-manual
 ```
 
@@ -237,7 +245,7 @@ Build and flash from the repository root:
 
 ```sh
 west build -p always -s tests/valve_gpio -b ranger_1/mimxrt1062 \
-  -d tests/valve_gpio/build-sequence -- -DEXTRA_CONF_FILE=sequence.conf
+  -d tests/valve_gpio/build-sequence
 west flash -d tests/valve_gpio/build-sequence
 ```
 
@@ -313,8 +321,8 @@ Each step energizes its channels, waits, then commands every output inactive.
 An empty channel list waits with outputs inactive. Group edges use sequential
 I2C writes, not hardware synchronization. Comments and logs add timing overhead.
 The build rejects invalid steps, names, and channels absent from the board.
-Keep `automatic.conf` for the separate old automatic single-channel test;
-`sequence.conf` now selects named sequences with manual start. Verify first with
+The base `prj.conf` selects named sequences with manual start. The separate
+mode configuration files are no longer needed. Verify first with
 loads disconnected and restore normal Clover firmware after testing.
 
 Host validation and mocked firmware behavior tests (no board required):
@@ -349,7 +357,7 @@ In the USB shell, `net iface` and `net ipv4` show interface and IPv4 state.
 Networking initialization does not wait for a cable before starting the USB
 shell. Valve sequences still require an explicit USB command.
 
-The named-sequence build (`sequence.conf`) also runs a TCP command server on
+The default named-sequence build (`prj.conf`) also runs a TCP command server on
 port **19690**, with Clover's length-prefixed protobuf Request/Response framing.
 It accepts named-sequence requests and the existing `AbortRequest`; ordinary Clover control and
 telemetry requests return an explicit unsupported-command error. USB and TCP
@@ -428,7 +436,7 @@ be printable text, at most 100 UTF-8 bytes, with no newlines or control characte
 Steps without comments still work. Rebuild and flash after editing comments.
 The host runner also accepts comments and includes them in its terminal output.
 
-Named-sequence and automatic single-channel firmware enable USB CDC and emit
+Named-sequence firmware enables USB CDC and emits
 Zephyr INFO logs to the USB shell. Connect a serial terminal on the Mac's actual
 `/dev/cu.usbmodem...` port at 115200 baud. Named sequences wait for an explicit
 run command. Early startup logs may be missed if the monitor connects after boot.
@@ -444,3 +452,27 @@ movement. `trace` can be run again while execution is in progress. Trace history
 is lost on power loss/reset. Logs add execution overhead and group timing skew.
 A container still needs serial forwarding to receive these logs; flashing through
 flasherd alone does not provide a serial terminal.
+
+Interactive `vlvseq` → `run <name>` and `sequence run <name>` commands log a
+ten-second client countdown before sending RUN. Press Space or Q (without
+Enter) to cancel and return to the prompt with the connection open. Ctrl+C
+also cancels during the countdown. Once RUN is sent, use `abort` to stop the
+board. Redirected/nonterminal input skips the countdown for automation. The
+countdown appears in client output, not board logs; direct USB commands are
+unchanged.
+
+The client `status` dashboard retains telemetry and polls valve readback alongside
+it. `sequence status` and `vlvseq` also show every valve in `valve_map.json` with
+ON/OFF logical GPIO readback, UNKNOWN for unavailable readings or older firmware,
+and UNASSIGNED for null mappings. Readback does not confirm mechanical position.
+Rebuild/flash embedded sequence firmware and restart the client for this protocol
+extension.
+
+Sequence JSON uses `duration_ticks`, not milliseconds. The base configuration
+sets `CONFIG_SYS_CLOCK_TICKS_PER_SEC=10000`: 10000 ticks = 1 second. For example,
+`"duration_ticks": 50000` waits 5 seconds. Existing sequence files were converted
+to preserve their timing; custom files must rename `duration_ms` and multiply
+values by 10. Old keys are rejected. Embedded sequences use `K_TICKS` directly.
+The legacy USB runner converts ticks to milliseconds, rounding up; direct
+`valve pulse/group` shell commands still take milliseconds. If changing the
+firmware tick rate, also update the host runner's `TICKS_PER_SECOND`.

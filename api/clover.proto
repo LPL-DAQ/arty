@@ -119,6 +119,9 @@ message NamedSequenceInfo {
   optional sint32 error = 7;
   // Manual outputs commanded ON; valid when idle and not faulted.
   optional uint32 manual_powered_channels = 8;
+  // Logical GPIO readback; known mask excludes unavailable/failed reads.
+  optional uint32 powered_channels = 9;
+  optional uint32 known_channels = 10;
 }
 
 // Subscribe client IP to data stream.

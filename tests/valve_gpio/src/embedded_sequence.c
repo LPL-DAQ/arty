@@ -98,6 +98,19 @@ struct sequence_snapshot sequence_status(void)
         .error = last_error,
         .manual_powered_channels = manual_outputs,
     };
+    /* Read logical GPIO state for manual and sequence outputs alike. */
+    for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
+        if (state == INITIALIZING || !gpio_is_ready_dt(&valves[i])) {
+            continue;
+        }
+        int raw = gpio_pin_get_raw(valves[i].port, valves[i].pin);
+        if (raw >= 0) {
+            out.known_channels |= BIT(i);
+            if (!!raw ^ !!(valves[i].dt_flags & GPIO_ACTIVE_LOW)) {
+                out.powered_channels |= BIT(i);
+            }
+        }
+    }
     k_mutex_unlock(&state_lock);
     return out;
 }
@@ -145,10 +158,10 @@ static int run_sequence(const struct valve_sequence *sequence)
         if (sequence->steps[step].comment[0]) {
             trace_event("NEXT: %s", sequence->steps[step].comment);
         }
-        trace_event("STEP %u/%u mask=0x%08x duration=%u ms",
+        trace_event("STEP %u/%u mask=0x%08x duration=%u ticks",
                     (unsigned)step + 1, (unsigned)sequence->count,
                     (unsigned)sequence->steps[step].mask,
-                    (unsigned)sequence->steps[step].duration_ms);
+                    (unsigned)sequence->steps[step].duration_ticks);
         int err = 0;
         for (size_t channel = 0; channel < ARRAY_SIZE(valves); ++channel) {
             if (sequence->steps[step].mask & BIT(channel)) {
@@ -164,7 +177,7 @@ static int run_sequence(const struct valve_sequence *sequence)
         k_mutex_unlock(&state_lock);
         if (!err) {
             /* ABORT wakes this wait; timing and cleanup remain owned by this thread. */
-            k_sem_take(&abort_wakeup, K_MSEC(sequence->steps[step].duration_ms));
+            k_sem_take(&abort_wakeup, K_TICKS(sequence->steps[step].duration_ticks));
         }
         /* Every step ends with all outputs inactive, including empty-mask delays. */
         int off_err = all_off();

@@ -36,6 +36,8 @@ from rich.columns import Columns
 from rich import box
 import clover_pb2
 import named_sequences
+from sequence_countdown import countdown
+from valve_status import valve_table
 from valve_sequence_cli import ValveSequenceMode
 from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
@@ -1259,11 +1261,29 @@ def cmd_live_status():
     )
     threading.Thread(target=_wait_for_enter, daemon=True).start()
 
+    def render():
+        info = None
+        if sock is not None:
+            previous_timeout = sock.gettimeout()
+            try:
+                sock.settimeout(1)
+                info = named_sequences.exchange(sock, named_sequences.make_request('sequence status'))
+            except named_sequences.RequestRejected:
+                pass  # Other firmware may not support valve readback.
+            except Exception as exc:
+                # Do not keep polling a connection with uncertain framing.
+                console.print(f'Valve status unavailable: {exc}. Restart the client to reconnect.', markup=False)
+                sock.close()
+                stop.set()
+            finally:
+                if not stop.is_set():
+                    sock.settimeout(previous_timeout)
+        return Group(_build_status_renderable(), valve_table(info))
+
     try:
-        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
-            while not stop.is_set():
-                time.sleep(0.2)
-                live.update(_build_status_renderable())
+        with Live(render(), refresh_per_second=5, screen=False) as live:
+            while not stop.wait(0.2):
+                live.update(render())
     except KeyboardInterrupt:
         pass
 
@@ -1574,10 +1594,25 @@ def cmd_actuate_valve():
         return
     for i, (name, channel) in enumerate(valves, 1):
         console.print(f'    [{i}] {name} (channel {channel})', markup=False)
-    choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, len(valves) + 1)])
-    name, channel = valves[int(choice) - 1]
-    console.print('    [1] Power ON (energize output)\n    [2] Power OFF (de-energize output)')
-    powered = Prompt.ask('  Set power', choices=['1', '2']) == '1'
+    console.print('    Type q, back or exit at either prompt to return to CMD.')
+    cancel_choices = ['q', 'back', 'exit']
+    try:
+        choice = Prompt.ask('  Select valve',
+                            choices=[str(i) for i in range(1, len(valves) + 1)] + cancel_choices)
+        if choice in cancel_choices:
+            console.print('Returned to CMD. No valve command sent.')
+            return
+        name, channel = valves[int(choice) - 1]
+        console.print(f'  Selected valve: {name} (channel {channel})', markup=False)
+        console.print('    [1] Power ON (energize output)\n    [2] Power OFF (de-energize output)')
+        power_choice = Prompt.ask('  Set power', choices=['1', '2'] + cancel_choices)
+        if power_choice in cancel_choices:
+            console.print('Returned to CMD. No valve command sent.')
+            return
+    except (KeyboardInterrupt, EOFError):
+        console.print('Returned to CMD. No valve command sent.')
+        return
+    powered = power_choice == '1'
     console.print('  Power persists after disconnect. Turn it OFF here or use abort to turn all outputs OFF.')
     req = clover_pb2.Request()
     req.manual_valve.channel = channel
@@ -2429,6 +2464,10 @@ def cmd_named_sequence(command):
     """Send a single sequence command for either the prompt or --command mode."""
     try:
         request = named_sequences.make_request(command)
+        if (not request.HasField('abort')
+                and request.named_sequence.operation == clover_pb2.NamedSequenceRequest.RUN
+                and not countdown(console, request.named_sequence.name)):
+            return True
         previous_timeout = sock.gettimeout()
         try:
             sock.settimeout(5)
@@ -2441,6 +2480,7 @@ def cmd_named_sequence(command):
                       f"step={info.step}/{info.total_steps}; error={info.error}", markup=False)
         if info.comment:
             console.print(info.comment, markup=False)
+        console.print(valve_table(info))
         if request.HasField('abort'):
             console.print("Abort requested; use sequence status to confirm aborted or faulted.")
         return True

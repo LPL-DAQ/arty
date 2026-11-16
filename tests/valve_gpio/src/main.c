@@ -2,6 +2,7 @@
  * Select embedded-sequence firmware for independently running named sequences. */
 #include <errno.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
@@ -59,8 +60,8 @@ static int cmd_pulse(const struct shell *sh, size_t argc, char **argv)
         return -ENODEV;
     }
     if (number(argv[1], ARRAY_SIZE(valves) - 1, &channel) ||
-        (argc == 3 && number(argv[2], 10000, &duration)) || duration == 0) {
-        shell_error(sh, "Use valve pulse <channel 0..%u> [duration 1..10000 ms]",
+        (argc == 3 && number(argv[2], INT32_MAX, &duration)) || duration == 0) {
+        shell_error(sh, "Use valve pulse <channel 0..%u> [duration 1..2147483647 ms]",
                     (unsigned int)ARRAY_SIZE(valves) - 1);
         return -EINVAL;
     }
@@ -95,7 +96,7 @@ static int cmd_group(const struct shell *sh, size_t argc, char **argv)
         err = -ENODEV;
         goto done;
     }
-    if (number(argv[2], 10000, &duration) || duration == 0 ||
+    if (number(argv[2], INT32_MAX, &duration) || duration == 0 ||
         argc - 3 > ARRAY_SIZE(valves)) {
         err = -EINVAL;
         goto done;

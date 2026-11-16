@@ -25,25 +25,43 @@ class SequencesTest(unittest.TestCase):
             header = directory / 'valve_sequence.h'
             self.generate(inputs, header, False)
             path = inputs / 'valid.json'
-            step = {'duration_ms': 1, 'channels': [31], 'comment': 'Valve "A" \\ 123 café %'}
+            step = {'duration_ticks': 1, 'channels': [31], 'comment': 'Valve "A" \\ 123 café %'}
             path.write_text(json.dumps([step]))
             self.generate(inputs, header)
             self.assertIn('0x80000000U', header.read_text())
             self.assertIn('SEQUENCE_REQUIRED_CHANNELS 32', header.read_text())
             # Single-file builds and optional comments remain supported.
             self.generate(path, header)
-            for change in [{'channels': [0, 0]}, {'channels': [32]}, {'duration_ms': 0},
+            for change in [{'channels': [0, 0]}, {'channels': [32]}, {'duration_ticks': 0},
                            {'comment': '\n'}, {'comment': 'x' * 101}, {'comment': 42},
                            {'unexpected': True}]:
                 path.write_text(json.dumps([dict(step, **change)]))
                 self.generate(inputs, header, False)
             path.unlink()
-            (inputs / 'bad name.json').write_text('[{"duration_ms":1,"channels":[]}]')
+            (inputs / 'bad name.json').write_text('[{"duration_ticks":1,"channels":[]}]')
             self.generate(inputs, header, False)
             (inputs / 'bad name.json').unlink()
             for index in range(17):
-                (inputs / f'sequence_{index}.json').write_text('[{"duration_ms":1,"channels":[]}]')
+                (inputs / f'sequence_{index}.json').write_text('[{"duration_ticks":1,"channels":[]}]')
             self.generate(inputs, header, False)
+
+    def test_millisecond_key_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'sequence.json'
+            source.write_text('[{"duration_ms": 5000, "channels": []}]')
+            self.generate(source, Path(directory) / 'sequence.h', False)
+
+    def test_duration_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'sequence.json'
+            header = Path(directory) / 'sequence.h'
+            for duration in [1, 100001, 600000, 2147483647]:
+                source.write_text(json.dumps([{'duration_ticks': duration, 'channels': [0]}]))
+                self.generate(source, header)
+                self.assertIn(f'{{{duration}U,', header.read_text())
+            for duration in [0, -1, 2147483648, True, 1.5, '60000']:
+                source.write_text(json.dumps([{'duration_ticks': duration, 'channels': [0]}]))
+                self.generate(source, header, False)
 
     def test_valve_name_resolution_and_mapping_validation(self):
         sys.path.insert(0, str(ROOT))
@@ -55,8 +73,8 @@ class SequencesTest(unittest.TestCase):
             header = directory / 'sequence.h'
             mapping.write_text(json.dumps({'SV001': 0, 'PBV101': 8}))
             source.write_text(json.dumps([
-                {'duration_ms': 5, 'valves': ['SV001', 'PBV101']},
-                {'duration_ms': 10, 'valves': []}]))
+                {'duration_ticks': 5, 'valves': ['SV001', 'PBV101']},
+                {'duration_ticks': 10, 'valves': []}]))
             steps = load_sequence(source, mapping)
             self.assertEqual([step['channels'] for step in steps], [[0, 8], []])
             command = [sys.executable, str(ROOT / 'generate_sequence.py'), str(source), str(header),
@@ -67,14 +85,14 @@ class SequencesTest(unittest.TestCase):
             mapping.write_text(json.dumps({'SV001': 7, 'PBV101': 8}))
             subprocess.run(command, check=True)
             self.assertIn('0x00000180U', header.read_text())
-            source.write_text('[{"duration_ms":5,"channels":["SV001","PBV101"]}]')
+            source.write_text('[{"duration_ticks":5,"channels":["SV001","PBV101"]}]')
             self.assertEqual(load_sequence(source, mapping)[0]['channels'], [7, 8])
             for step in [
-                {'duration_ms': 5, 'valves': ['MISSING']},
-                {'duration_ms': 5, 'valves': ['SV001', 'SV001']},
-                {'duration_ms': 5, 'valves': [0]},
-                {'duration_ms': 5, 'channels': [7, 'SV001']},
-                {'duration_ms': 5, 'valves': [], 'channels': []},
+                {'duration_ticks': 5, 'valves': ['MISSING']},
+                {'duration_ticks': 5, 'valves': ['SV001', 'SV001']},
+                {'duration_ticks': 5, 'valves': [0]},
+                {'duration_ticks': 5, 'channels': [7, 'SV001']},
+                {'duration_ticks': 5, 'valves': [], 'channels': []},
             ]:
                 source.write_text(json.dumps([step]))
                 with self.assertRaises(ValueError):
@@ -90,7 +108,7 @@ class SequencesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'duplicate valve name'):
                 load_valve_map(mapping)
             mapping.write_text('{"SV001":null}')
-            source.write_text('[{"duration_ms":5,"valves":["SV001"]}]')
+            source.write_text('[{"duration_ticks":5,"valves":["SV001"]}]')
             with self.assertRaisesRegex(ValueError, 'no channel assigned'):
                 load_sequence(source, mapping)
 
@@ -101,11 +119,11 @@ class SequencesTest(unittest.TestCase):
             inputs = directory / 'inputs'
             inputs.mkdir()
             (inputs / 'a.json').write_text(json.dumps([
-                {'duration_ms': 10, 'channels': [0, 1], 'comment': 'Before "on" café %'},
-                {'duration_ms': 5, 'channels': []},
-                {'duration_ms': 20, 'channels': [2]},
+                {'duration_ticks': 10, 'channels': [0, 1], 'comment': 'Before "on" café %'},
+                {'duration_ticks': 5, 'channels': []},
+                {'duration_ticks': 20, 'channels': [2]},
             ]))
-            (inputs / 'b.json').write_text('[{"duration_ms":7,"channels":[1]}]')
+            (inputs / 'b.json').write_text('[{"duration_ticks":7,"channels":[1]}]')
             self.generate(inputs, directory / 'valve_sequence.h')
             firmware = (ROOT / 'src/embedded_sequence.c').read_text()
             firmware = re.sub(r'#include <zephyr/[^>]+>\n|#include "test_trace.h"\n', '', firmware)
@@ -135,6 +153,7 @@ MOCKS = r'''
 #define GPIO_OUTPUT_INACTIVE 0
 #define K_FOREVER 0
 #define K_MSEC(ms) (ms)
+#define K_TICKS(ticks) (ticks)
 #define K_MUTEX_DEFINE(n) static int n
 #define K_SEM_DEFINE(n, a, b) static int n
 #define k_mutex_lock(a, b) ((void)(a), (void)(b))

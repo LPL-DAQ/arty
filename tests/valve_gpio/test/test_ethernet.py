@@ -35,9 +35,9 @@ class EthernetTest(unittest.TestCase):
         sequences = directory / 'sequences'
         sequences.mkdir()
         (sequences / 'alpha.json').write_text(json.dumps([
-            {'duration_ms': 1000, 'channels': [0, 1], 'comment': 'Alpha "test" café %'},
-            {'duration_ms': 10, 'channels': []}]))
-        (sequences / 'MixedCase.json').write_text('[{"duration_ms":10,"channels":[2]}]')
+            {'duration_ticks': 10000, 'channels': [0, 1], 'comment': 'Alpha "test" café %'},
+            {'duration_ticks': 100, 'channels': []}]))
+        (sequences / 'MixedCase.json').write_text('[{"duration_ticks":100,"channels":[2]}]')
         subprocess.run([sys.executable, str(ROOT / 'generate_sequence.py'), str(sequences),
                         str(directory / 'valve_sequence.h')], check=True)
         subprocess.run([sys.executable, str(cls.nanopb / 'generator/nanopb_generator.py'),
@@ -203,11 +203,14 @@ int main(int argc, char **argv) {
                 self.assertLess(time.monotonic(), deadline, 'Step did not start')
                 info = self.request(connection, 'sequence status')
             self.assertEqual(info.comment, 'Alpha "test" café %')
+            self.assertEqual(info.known_channels & 7, 7)
+            self.assertEqual(info.powered_channels & 7, 3)
             with self.assertRaisesRegex(ValueError, 'rejected'):
                 self.request(connection, 'sequence run MixedCase')
             with socket.create_connection(('127.0.0.1', port), timeout=1) as second:
                 self.request(second, 'sequence abort')
-            self.wait_state(connection, 'aborted')
+            stopped = self.wait_state(connection, 'aborted')
+            self.assertEqual(stopped.powered_channels, 0)
             self.request(connection, 'sequence run MixedCase')
             self.wait_state(connection, 'complete')
             # The production client routes its actual command via the same TCP server.

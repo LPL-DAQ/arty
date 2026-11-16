@@ -56,6 +56,9 @@ void sequence_handle_request(const Request *request, Response *response)
     info->step = status.step;
     info->total_steps = status.total_steps;
     info->error = status.error;
+    info->has_powered_channels = info->has_known_channels = true;
+    info->powered_channels = status.powered_channels;
+    info->known_channels = status.known_channels;
     if (strcmp(status.state, "running") && strcmp(status.state, "aborting") &&
         strcmp(status.state, "initializing") && strcmp(status.state, "faulted")) {
         info->has_manual_powered_channels = true;
