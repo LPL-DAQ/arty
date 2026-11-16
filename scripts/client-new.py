@@ -118,13 +118,13 @@ _graph_history: deque = deque(maxlen=_GRAPH_MAXLEN)
 _graph_lock = threading.Lock()
 
 
-def _make_tcp_socket() -> socket.socket:
+def _make_tcp_socket(timeout_init=2.0) -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
-    s.settimeout(2.0)  # never block forever on a dead board
+    s.settimeout(timeout_init)  # never block forever on a dead board
     s.connect((ZEPHYR_IP, ZEPHYR_PORT))
     return s
 
@@ -1165,7 +1165,7 @@ def _build_status_renderable():
         table.add_column('Sensor', style='bold white', no_wrap=True)
         table.add_column('Reading', style='white', justify='right', no_wrap=True)
         table.add_column('Unit', style=t['muted'], no_wrap=True)
-        
+
         for sensor, reading in MessageToDict(pkt.analog_sensors).items():
             if sensor[:2] == 'pt':
                 unit = 'psig'
@@ -1194,7 +1194,7 @@ def _build_status_renderable():
         )
         table.add_column('Valve', style='bold white', no_wrap=True)
         table.add_column('State', style='white', justify='right', no_wrap=True)
-        
+
         for valve, state in MessageToDict(pkt.valve_states).items():
             table.add_row(valve.upper(), state)
 
@@ -1205,7 +1205,7 @@ def _build_status_renderable():
                 border_style=t['panel_border'],
             ),
         )
-        
+
     if fcm.row_count != 0:
         bottom_columns.append(Panel(
             fcm,
@@ -1382,18 +1382,25 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
     return True
 
 
-def _heartbeat_loop():
+def _heartbeat_loop(timeout_limit=2.0, timeout_behavior=None):
+    """Send a heartbeat every _HEARTBEAT_TIME_S and reconnect when the link drops.
+
+    If no heartbeat has succeeded for `timeout_limit` seconds, `timeout_behavior(down_for_s)` is called once per
+    outage. It runs on this thread, outside _sock_lock, so it must be quick and non-interactive.
+    """
     global sock
     heartbeat = clover_pb2.Request()
     heartbeat.identify_client.client = clover_pb2.GNC
 
     subscribe = clover_pb2.Request()
     subscribe.subscribe_data_stream.SetInParent()
+
+    last_ok = time.monotonic()
+    fired = False
     while True:
-        
+
         time.sleep(_HEARTBEAT_TIME_S)
         with _sock_lock:
-            was_connected = sock is not None
             try:
                 if sock is None:
                     sock = _make_tcp_socket()
@@ -1401,10 +1408,23 @@ def _heartbeat_loop():
                         _transact(subscribe)
                     console.print(f'\n  [{THEME["warning"]}]Reconnected to {ZEPHYR_IP}:{ZEPHYR_PORT}.[/{THEME["warning"]}]')
                 _transact(heartbeat)
+                last_ok = time.monotonic()
+                fired = False  # re-arm for the next outage
             except Exception as e:
                 sock = None
                 console.print(
                     f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Connection lost ({e}), reconnecting...[/{THEME["danger"]}]'
+                )
+
+        # Outside the lock so the behavior may call send_request without deadlocking.
+        down_for = time.monotonic() - last_ok
+        if timeout_behavior is not None and not fired and down_for >= timeout_limit:
+            fired = True
+            try:
+                timeout_behavior()
+            except Exception as e:
+                console.print(
+                    f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]Heartbeat timeout behavior failed: {e}[/{THEME["danger"]}]'
                 )
 
 
@@ -1419,41 +1439,41 @@ def _heartbeat_loop():
 
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test     (assigns channels 0-21)')
     console.print('      [3] Test 2   (assigns channels 22-31)')
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(22):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
         for chan in range(10):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan + 22
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
-    
+
     else:
         raise ValueError(f'Unknown profile of `{profile}`')
 
@@ -1464,7 +1484,7 @@ def cmd_configure_analog_sensors():
 
 def cmd_configure_valves():
     """Configure valves."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test    (assigns channel 0-12)')
@@ -1472,39 +1492,39 @@ def cmd_configure_valves():
     console.print('      [4] Test 3  (assigns channel 26-31)')
 
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(13):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
-                
-            configs.append(cfg)
-        
-    elif profile == '3':
-        configs = []
-        
-        for chan in range(13):
-            cfg = clover_pb2.ValveConfig()
-            cfg.channel = chan + 13
-            cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 13
+            cfg.assignment = chan + 1
+
+            configs.append(cfg)
+
+    elif profile == '3':
+        configs = []
+
         for chan in range(6):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan + 26
             cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     else:
@@ -1564,13 +1584,13 @@ def cmd_actuate_valve():
         console.print(f'    [{i}] {clover_pb2.Valve.Name(i)}')
     choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
     valve = int(choice)
-    
+
     console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
     for i in range(1, 5):
         console.print(f'    [{i}] {clover_pb2.ValveState.Name(i)}')
     choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
     state = int(choice)
-    
+
     req = clover_pb2.Request()
     req.actuate_valve.valve = valve
     req.actuate_valve.state = state
@@ -2423,8 +2443,20 @@ def route_command(cmd: str) -> bool:
     return True
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+def _on_heartbeat_timeout(down_for_s: float):
+    """Default heartbeat timeout behavior: warn the operator. Local only, the link is down so nothing can be sent."""
+    console.print(
+        f'\n  {THEME["icon_warn"]} [{THEME["danger"]}]No heartbeat from {ZEPHYR_IP}:{ZEPHYR_PORT} for '
+        f'{down_for_s:.1f}s.[/{THEME["danger"]}]'
+    )
 
+
+# Heartbeat timeout: after TIMEOUT_LIMIT seconds without a successful heartbeat, TIMEOUT_BEHAVIOR(down_for_s) is
+# called once per outage from the heartbeat thread. Set TIMEOUT_BEHAVIOR to None to disable.
+TIMEOUT_LIMIT = 2.0
+TIMEOUT_BEHAVIOR = _on_heartbeat_timeout
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
     global data_sock
@@ -2441,7 +2473,9 @@ def main():
 
     global _resubscribe_on_reconnect
     _resubscribe_on_reconnect = not args.no_data
-    threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    threading.Thread(target=_heartbeat_loop,
+                     args=(TIMEOUT_LIMIT, TIMEOUT_BEHAVIOR),
+                     daemon=True).start()
 
     telemetry_info = f'Listen port: {DATA_PORT}' if not args.no_data else 'Telemetry: disabled'
     console.print(
