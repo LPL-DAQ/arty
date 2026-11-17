@@ -1,28 +1,23 @@
 [
   {
-    "duration_ticks": 50000,
-    "comment": "All valves off; waiting 5 seconds",
-    "valves": []
-  },
-  {
-    "duration_ticks": 100000,
-    "comment": "Energizing SV001 and SV002 for 10 seconds",
+    "duration_ticks": 20000,
+    "comment": "Energizing SV001 and SV002 for 20 seconds",
     "valves": [
       "SV001",
       "SV002"
     ]
   },
   {
-    "duration_ticks": 50000,
+    "duration_ticks": 5000,
     "comment": "All valves off; waiting 5 seconds",
     "valves": []
   },
   {
-    "duration_ticks": 100000,
-    "comment": "Energizing SV002 and SV003 for 10 seconds",
+    "duration_ticks": 15000,
+    "comment": "Energizing PBV001 and PBV002 for 15 seconds",
     "valves": [
-      "SV002",
-      "SV003"
+      "PBV001",
+      "PBV002"
     ]
   }
 ]

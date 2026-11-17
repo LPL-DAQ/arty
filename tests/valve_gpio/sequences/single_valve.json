@@ -1,50 +1,45 @@
 [
   {
-    "duration_ticks": 50000,
-    "comment": "All valves off; waiting 5 seconds",
-    "valves": []
-  },
-  {
-    "duration_ticks": 50000,
+    "duration_ticks": 5000,
     "comment": "Energizing SV001 for 5 seconds",
     "valves": [
       "SV001"
     ]
   },
   {
-    "duration_ticks": 50000,
+    "duration_ticks": 5000,
     "comment": "All valves off; waiting 5 seconds",
     "valves": []
   },
   {
-    "duration_ticks": 50000,
+    "duration_ticks": 5000,
     "comment": "Energizing SV002 for 5 seconds",
     "valves": [
       "SV002"
     ]
   },
   {
-    "duration_ticks": 50000,
+    "duration_ticks": 5000,
     "comment": "All valves off; waiting 5 seconds",
     "valves": []
   },
   {
-    "duration_ticks": 50000,
-    "comment": "Energizing SV003 for 5 seconds",
+    "duration_ticks": 5000,
+    "comment": "Energizing PBV001 for 5 seconds",
     "valves": [
-      "SV003"
+      "PBV001"
     ]
   },
   {
-    "duration_ticks": 50000,
+    "duration_ticks": 5000,
     "comment": "All valves off; waiting 5 seconds",
     "valves": []
   },
   {
-    "duration_ticks": 50000,
-    "comment": "Energizing SV004 for 5 seconds",
+    "duration_ticks": 5000,
+    "comment": "Energizing PBV002 for 5 seconds",
     "valves": [
-      "SV004"
+      "PBV002"
     ]
   }
 ]

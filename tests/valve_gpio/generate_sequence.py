@@ -27,7 +27,11 @@ def main():
         for path in files:
             if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,47}", path.stem):
                 raise ValueError(f"{path}: name must be 1..48 letters, digits, underscores, dots or hyphens")
-            sequences.append((path.stem, load_sequence(path, args.valve_map)))
+            try:
+                steps = load_sequence(path, args.valve_map)
+            except ValueError as exc:
+                raise ValueError(f"{path}: {exc}") from exc
+            sequences.append((path.stem, steps))
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
     # Firmware checks this highest channel against its devicetree at compile time.
@@ -35,7 +39,7 @@ def main():
     lines = ["/* Generated from JSON; do not edit. */", "#pragma once",
              "#include <stdint.h>", "#include <stddef.h>",
              f"#define SEQUENCE_REQUIRED_CHANNELS {max(used, default=-1) + 1}",
-             "struct sequence_step { uint32_t duration_ticks; uint32_t mask; const char *comment; };",
+             "struct sequence_step { uint32_t duration_ms; uint32_t mask; const char *comment; };",
              "struct valve_sequence { const char *name; const struct sequence_step *steps; size_t count; };"]
     # One mask bit per channel lets firmware energize each step without parsing JSON.
     for index, (_, steps) in enumerate(sequences):
@@ -43,7 +47,7 @@ def main():
         for step in steps:
             mask = sum(1 << channel for channel in step["channels"])
             comment = c_string(step.get("comment", ""))
-            lines.append(f"    {{{step['duration_ticks']}U, 0x{mask:08x}U, {comment}}},")
+            lines.append(f"    {{{step['duration_ms']}U, 0x{mask:08x}U, {comment}}},")
         lines.append("};")
     lines.append("static const struct valve_sequence sequences[] = {")
     for index, (name, steps) in enumerate(sequences):

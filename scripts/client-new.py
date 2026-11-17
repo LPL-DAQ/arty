@@ -37,7 +37,8 @@ from rich import box
 import clover_pb2
 import named_sequences
 from sequence_countdown import countdown
-from valve_status import valve_table
+from valve_status import ClientValveCommands, valve_table
+
 from valve_sequence_cli import ValveSequenceMode
 from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
@@ -142,6 +143,7 @@ def _make_tcp_socket() -> socket.socket:
 
 # Connect in main after parsing host/port, allowing imports without contacting hardware.
 sock = None
+client_valve_commands = ClientValveCommands()
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 
@@ -1278,7 +1280,7 @@ def cmd_live_status():
             finally:
                 if not stop.is_set():
                     sock.settimeout(previous_timeout)
-        return Group(_build_status_renderable(), valve_table(info))
+        return Group(_build_status_renderable(), valve_table(info, client_valve_commands.for_connection(sock)))
 
     try:
         with Live(render(), refresh_per_second=5, screen=False) as live:
@@ -1575,66 +1577,6 @@ def cmd_reset_valve_position():
     req.throttle_reset_valve_position.valve = valve
     req.throttle_reset_valve_position.new_pos_deg = pos
     send_request(req, f'RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)')
-
-
-def cmd_actuate_valve():
-    """Persistent manual GPIO power control using the standalone bench mapping."""
-    mapping_path = pathlib.Path(__file__).resolve().parents[1] / 'tests/valve_gpio/valve_map.json'
-    try:
-        mapping = json.loads(mapping_path.read_text())
-        if not isinstance(mapping, dict) or not mapping:
-            raise ValueError('Expected a nonempty valve mapping')
-        # Null assignments represent unwired valves and must not become selectable.
-        valves = [(name, channel) for name, channel in mapping.items() if channel is not None]
-        if not valves or any(type(channel) is not int or not 0 <= channel <= 31
-                             for _, channel in valves):
-            raise ValueError('Mapped channels must be integers from 0 to 31')
-    except (OSError, ValueError) as exc:
-        console.print(f'Cannot load valve map: {exc}', markup=False)
-        return
-    for i, (name, channel) in enumerate(valves, 1):
-        console.print(f'    [{i}] {name} (channel {channel})', markup=False)
-    console.print('    Type q, back or exit at either prompt to return to CMD.')
-    cancel_choices = ['q', 'back', 'exit']
-    try:
-        choice = Prompt.ask('  Select valve',
-                            choices=[str(i) for i in range(1, len(valves) + 1)] + cancel_choices)
-        if choice in cancel_choices:
-            console.print('Returned to CMD. No valve command sent.')
-            return
-        name, channel = valves[int(choice) - 1]
-        console.print(f'  Selected valve: {name} (channel {channel})', markup=False)
-        console.print('    [1] Power ON (energize output)\n    [2] Power OFF (de-energize output)')
-        power_choice = Prompt.ask('  Set power', choices=['1', '2'] + cancel_choices)
-        if power_choice in cancel_choices:
-            console.print('Returned to CMD. No valve command sent.')
-            return
-    except (KeyboardInterrupt, EOFError):
-        console.print('Returned to CMD. No valve command sent.')
-        return
-    powered = power_choice == '1'
-    console.print('  Power persists after disconnect. Turn it OFF here or use abort to turn all outputs OFF.')
-    req = clover_pb2.Request()
-    req.manual_valve.channel = channel
-    req.manual_valve.powered = powered
-    # A lost acknowledgement leaves output state uncertain, so send only once.
-    previous_timeout = sock.gettimeout()
-    try:
-        sock.settimeout(5)
-        info = named_sequences.exchange(sock, req)
-        console.print(f'{name} (channel {channel}): power {"ON" if powered else "OFF"}', markup=False)
-        if info.HasField('manual_powered_channels'):
-            names_by_channel = {channel: name for name, channel in valves}
-            active = [f'{names_by_channel.get(index, "Unmapped valve")} (channel {index})'
-                      for index in range(32) if info.manual_powered_channels & (1 << index)]
-            console.print('Active valves (powered outputs): ' + (', '.join(active) or 'none'), markup=False)
-        else:
-            console.print('Active valves unavailable; update firmware to report powered outputs.')
-    except Exception as exc:
-        console.print(f'Manual command failed: {exc}. No automatic retry. '
-                      'If acknowledgement was lost, output state is unknown; reconnect and use abort.', markup=False)
-    finally:
-        sock.settimeout(previous_timeout)
 
 
 def cmd_power_on_valve():
@@ -2312,17 +2254,16 @@ def cmd_start_flight_sequence():
 
 def cmd_valve_sequences():
     # This mode owns command/reply traffic until its background watcher has stopped.
-    ValveSequenceMode(sock, console).run()
+    ValveSequenceMode(sock, console, client_commands=client_valve_commands.for_connection(sock)).run()
 
 
 MENU_ITEMS = [
-    ('vlvseq', 'vlvseq', 'Enter named valve sequence mode', cmd_valve_sequences),
+    ('vlvseq', 'vlvseq', 'Manual valve control and autonomous sequences', cmd_valve_sequences),
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
     ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
     ('cfgv', 'cfgv', 'Configure regular valves', cmd_configure_valves),
-    ('v', 'v', 'Manual valve power ON/OFF (standalone firmware)', cmd_actuate_valve),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
     ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),
@@ -2480,7 +2421,7 @@ def cmd_named_sequence(command):
                       f"step={info.step}/{info.total_steps}; error={info.error}", markup=False)
         if info.comment:
             console.print(info.comment, markup=False)
-        console.print(valve_table(info))
+        console.print(valve_table(info, client_valve_commands.for_connection(sock)))
         if request.HasField('abort'):
             console.print("Abort requested; use sequence status to confirm aborted or faulted.")
         return True

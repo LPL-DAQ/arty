@@ -1,5 +1,5 @@
 [
-  {"duration_ticks": 50000, "valves": [], "comment": "All outputs off; waiting 5 seconds"},
-  {"duration_ticks": 50000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101 for 5 seconds"},
-  {"duration_ticks": 50000, "valves": [], "comment": "All outputs off; waiting 5 seconds"}
+  {"duration_ticks": 5000, "valves": [], "comment": "All outputs off; waiting 5 seconds"},
+  {"duration_ticks": 5000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101 for 5 seconds"},
+  {"duration_ticks": 5000, "valves": [], "comment": "All outputs off; waiting 5 seconds"}
 ]

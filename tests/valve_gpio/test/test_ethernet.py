@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from rich.console import Console
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,9 +35,9 @@ class EthernetTest(unittest.TestCase):
         sequences = directory / 'sequences'
         sequences.mkdir()
         (sequences / 'alpha.json').write_text(json.dumps([
-            {'duration_ticks': 10000, 'channels': [0, 1], 'comment': 'Alpha "test" café %'},
-            {'duration_ticks': 100, 'channels': []}]))
-        (sequences / 'MixedCase.json').write_text('[{"duration_ticks":100,"channels":[2]}]')
+            {'duration_ticks': 1000, 'channels': [0, 1], 'comment': 'Alpha "test" café %'},
+            {'duration_ticks': 10, 'channels': []}]))
+        (sequences / 'MixedCase.json').write_text('[{"duration_ticks":10,"channels":[2]}]')
         subprocess.run([sys.executable, str(ROOT / 'generate_sequence.py'), str(sequences),
                         str(directory / 'valve_sequence.h')], check=True)
         subprocess.run([sys.executable, str(cls.nanopb / 'generator/nanopb_generator.py'),
@@ -113,37 +113,49 @@ int main(int argc, char **argv) {
                 self.fail(f'Expected {expected}, got {info}')
             time.sleep(.01)
 
-    def test_manual_power_persistence_busy_abort_and_fault(self):
-        def manual(connection, channel, powered):
+    def test_manual_sequence_overrides_release_and_abort(self):
+        def manual(connection, channel, powered=False, release=False):
             request = clover_pb2.Request()
             request.manual_valve.channel = channel
             request.manual_valve.powered = powered
+            request.manual_valve.release = release
             return named_sequences.exchange(connection, request)
 
         with self.server() as (connection, port, logs):
-            manual(connection, 0, True)
-            # A second connection cannot start a sequence over a held manual output.
+            manual(connection, 2, True)
+            # A sequence starts while a manual output is held by another connection.
             with socket.create_connection(('127.0.0.1', port), timeout=1) as second:
-                with self.assertRaisesRegex(ValueError, 'rejected'):
-                    self.request(second, 'sequence run alpha')
-                manual(second, 0, False)
-                with self.assertRaisesRegex(ValueError, 'rejected'):
-                    manual(second, 32, True)
                 self.request(second, 'sequence run alpha')
-                self.wait_state(second, 'running')
+                deadline = time.monotonic() + 2
+                while True:
+                    info = self.request(second, 'sequence status')
+                    if info.sequence_requested_channels == 3:
+                        break
+                    self.assertLess(time.monotonic(), deadline)
+                self.assertEqual(info.powered_channels & 7, 7)
+                # Manual OFF overrides an active sequence; release resumes it.
+                info = manual(second, 0, False)
+                self.assertEqual(info.manual_override_channels & 5, 5)
+                self.assertEqual(info.powered_channels & 7, 6)
+                info = manual(second, 0, release=True)
+                self.assertEqual(info.powered_channels & 7, 7)
+                self.assertEqual(info.manual_override_channels, 4)
                 with self.assertRaisesRegex(ValueError, 'rejected'):
-                    manual(second, 0, False)
-                self.request(second, 'sequence abort')
-                self.wait_state(second, 'aborted')
-                manual(second, 0, True)
-            # Disconnect does not release power; abort does.
-            with self.assertRaisesRegex(ValueError, 'rejected'):
-                self.request(connection, 'sequence run alpha')
+                    manual(second, 32)
+            # Disconnect and sequence completion both preserve manual ON.
+            info = self.wait_state(connection, 'complete')
+            self.assertEqual(info.powered_channels & 7, 4)
+            self.assertEqual(info.manual_override_channels, 4)
+            self.request(connection, 'sequence run alpha')
+            self.wait_state(connection, 'running')
             self.request(connection, 'sequence abort')
-            self.request(connection, 'sequence run MixedCase')
-            self.wait_state(connection, 'complete')
-            logs.seek(0)
-            self.assertIn('MANUAL channel=0 power=ON result=0', logs.read())
+            info = self.wait_state(connection, 'aborted')
+            self.assertEqual(info.powered_channels, 0)
+            self.assertEqual(info.manual_override_channels, 0)
+            # Manual control is available again after abort.
+            self.assertEqual(manual(connection, 0, True).powered_channels & 1, 1)
+            self.request(connection, 'sequence abort')
+            self.assertEqual(manual(connection, 0, release=True).manual_override_channels, 0)
 
         with self.server(fault=True) as (connection, port, logs):
             with self.assertRaisesRegex(ValueError, 'rejected'):
@@ -154,38 +166,23 @@ int main(int argc, char **argv) {
             self.request(connection, 'sequence abort')
             self.assertEqual(self.request(connection, 'sequence status').state, 'faulted')
 
-    def test_client_v_uses_bench_mapping(self):
-        spec = importlib.util.spec_from_file_location('bench_client', REPO / 'scripts/client-new.py')
-        client = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(client)
+    def test_unified_manual_mode_stays_open_and_tracks_session(self):
         with self.server() as (connection, port, logs):
-            client.sock = connection
             output = io.StringIO()
-            client.console = Console(file=output, force_terminal=False)
-            # Another client's held output must appear too, even after disconnect.
-            with socket.create_connection(('127.0.0.1', port), timeout=1) as second:
-                request = clover_pb2.Request()
-                request.manual_valve.channel = 1
-                request.manual_valve.powered = True
-                named_sequences.exchange(second, request)
-            with patch.object(client.Prompt, 'ask', side_effect=['1', '1']):
-                client.cmd_actuate_valve()
-            self.assertIn('SV001 (channel 0): power ON', output.getvalue())
-            self.assertIn('Active valves (powered outputs): SV001 (channel 0), SV002 (channel 1)', output.getvalue())
-            with self.assertRaisesRegex(ValueError, 'rejected'):
-                self.request(connection, 'sequence run alpha')
-            with patch.object(client.Prompt, 'ask', side_effect=['1', '2']):
-                client.cmd_actuate_valve()
-            self.assertIn('SV001 (channel 0): power OFF', output.getvalue())
-            self.assertIn('Active valves (powered outputs): SV002 (channel 1)', output.getvalue())
-            self.request(connection, 'sequence abort')
-            output.seek(0)
-            output.truncate()
-            with patch.object(client.Prompt, 'ask', side_effect=['1', '2']):
-                client.cmd_actuate_valve()
-            self.assertIn('Active valves (powered outputs): none', output.getvalue())
-            self.request(connection, 'sequence run MixedCase')
-            self.wait_state(connection, 'complete')
+            commands = {}
+            mode = ValveSequenceMode(connection, Console(file=output), client_commands=commands)
+            session = Mock()
+            session.prompt.side_effect = ['v', '1', '1', 'v', '1', '2', 'r', '1', 'status', 'back']
+            mode.run(session)
+            self.assertFalse(mode.broken)
+            self.assertEqual(commands, {})
+            text = output.getvalue()
+            self.assertIn('SELECTED VALVE', text)
+            self.assertIn('Manual command accepted: channel 0 ON', text)
+            self.assertIn('Manual command accepted: channel 0 OFF', text)
+            self.assertIn('Manual command accepted: channel 0 released', text)
+            self.assertEqual(session.prompt.call_count, 10)
+            self.assertEqual(self.request(connection, 'sequence status').manual_override_channels, 0)
 
     def test_named_runs_busy_stop_disconnect_and_client_cli(self):
         with self.server() as (connection, port, logs):
@@ -225,7 +222,7 @@ int main(int argc, char **argv) {
             self.wait_state(connection, 'complete')
             logs.seek(0)
             text = logs.read()
-            self.assertLess(text.index('READY:'), text.index('ON channel='))
+            self.assertLess(text.index('READY:'), text.index('GPIO channel='))
             self.assertIn('ABORTED:', text)
             self.assertIn('raw_readback=', text)
 

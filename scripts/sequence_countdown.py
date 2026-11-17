@@ -1,4 +1,5 @@
 """Cancellable client countdown before a named sequence RUN is sent."""
+from contextlib import closing
 import math
 import select
 import sys
@@ -16,7 +17,7 @@ def countdown(console, name, seconds=10, terminal_input=None):
     if terminal_input is None:
         if not sys.stdin.isatty():
             return True
-        with create_input() as source:
+        with closing(create_input()) as source:
             return countdown(console, name, seconds, source)
     console.print(f'Starting {name}: press Space or Q to cancel (no Enter needed).', markup=False)
     deadline = time.monotonic() + seconds

@@ -8,8 +8,6 @@ import secrets
 import time
 
 
-TICKS_PER_SECOND = 10000  # Must match prj.conf CONFIG_SYS_CLOCK_TICKS_PER_SEC.
-
 DEFAULT_VALVE_MAP = Path(__file__).with_name("valve_map.json")
 
 
@@ -76,7 +74,6 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
                 channels.append(entry)
             else:
                 raise ValueError(f"step {index}: valves must contain valve names, not channel numbers")
-        # Keep tick durations positive and within the supported signed range.
         if type(duration) is not int or not 1 <= duration <= 2147483647:
             raise ValueError(f"step {index}: duration_ticks must be 1..2147483647")
         if (not isinstance(channels, list) or
@@ -84,6 +81,8 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
                 len(set(channels)) != len(channels)):
             raise ValueError(f"step {index}: resolved channels must be unique integers 0..31")
         # Both the host runner and embedded generator use this validated GPIO list.
+        # JSON field name is historical; values still represent milliseconds.
+        step["duration_ms"] = step.pop("duration_ticks")
         step["channels"] = channels
         step.pop("valves", None)
     return steps
@@ -91,13 +90,11 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
 
 def pulse(connection, token, step):
     channels = " ".join(map(str, step["channels"]))
-    # Legacy USB group commands still accept milliseconds; round up sub-ms ticks.
-    duration_ms = (step['duration_ticks'] * 1000 + TICKS_PER_SECOND - 1) // TICKS_PER_SECOND
-    command = f"valve group {token} {duration_ms} {channels}\r"
+    command = f"valve group {token} {step['duration_ms']} {channels}\r"
     connection.write(command.encode("ascii"))
     connection.flush()
     # Completion is emitted after firmware cleanup; match this token, not stale output.
-    deadline = time.monotonic() + step["duration_ticks"] / TICKS_PER_SECOND + 5
+    deadline = time.monotonic() + step["duration_ms"] / 1000 + 5
     pattern = re.compile(rb"VALVE_DONE " + str(token).encode() + rb" (-?\d+)\r?\n")
     received = b""
     while time.monotonic() < deadline:
@@ -122,7 +119,7 @@ def main():
         steps = load_sequence(args.sequence, args.valve_map)
         if args.dry_run:
             for index, step in enumerate(steps, 1):
-                print(f"{index}: {step['duration_ticks']} ticks, channels {step['channels']}")
+                print(f"{index}: {step['duration_ms']} ms, channels {step['channels']}")
                 if step.get("comment"):
                     print(f"  NEXT: {step['comment']}")
             return
@@ -143,7 +140,7 @@ def main():
                     pulse(connection, secrets.randbelow(2147483647), step)
                 else:
                     # An empty group is a host-side delay; no GPIO command is needed.
-                    time.sleep(step["duration_ticks"] / TICKS_PER_SECOND)
+                    time.sleep(step["duration_ms"] / 1000)
         print("Sequence complete; all requested deactivation writes succeeded.")
     except (ValueError, OSError, RuntimeError, ImportError) as exc:
         parser.exit(1, f"Error: {exc}\n")

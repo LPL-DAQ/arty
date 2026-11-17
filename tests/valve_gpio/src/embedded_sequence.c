@@ -54,31 +54,64 @@ static uint32_t current_step;
 static int last_error;
 static uint32_t manual_outputs;
 
-int sequence_manual_valve(uint32_t channel, bool powered)
+static uint32_t manual_overrides;
+static uint32_t sequence_outputs;
+
+/* Caller holds state_lock. A manual OFF is an override too. */
+static int apply_outputs(void)
 {
-    if (channel >= ARRAY_SIZE(valves)) {
-        return -EINVAL;
+    uint32_t effective = (sequence_outputs & ~manual_overrides) |
+                         (manual_outputs & manual_overrides);
+    for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
+        int err = gpio_pin_set_dt(&valves[i], !!(effective & BIT(i)));
+        if ((effective & BIT(i)) || err) {
+            trace_event("GPIO channel=%u requested=%u result=%d raw_readback=%d",
+                        (unsigned)i, (unsigned)!!(effective & BIT(i)), err,
+                        gpio_pin_get_raw(valves[i].port, valves[i].pin));
+        }
+        if (err) {
+            sequence_outputs = manual_overrides = manual_outputs = 0;
+            int off_err = all_off();
+            trace_event("FAULT cleanup OFF result=%d", off_err);
+            last_error = err;
+            state = FAULTED;
+            return err;
+        }
     }
+    trace_event("OUTPUT sequence=0x%08x overrides=0x%08x manual=0x%08x effective=0x%08x",
+                (unsigned)sequence_outputs, (unsigned)manual_overrides,
+                (unsigned)manual_outputs, (unsigned)effective);
+    return 0;
+}
+
+int sequence_manual_control(uint32_t channel, bool powered, bool release)
+{
+    if (channel >= ARRAY_SIZE(valves)) return -EINVAL;
     k_mutex_lock(&state_lock, K_FOREVER);
-    if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
+    if (state == INITIALIZING || state == FAULTED || (aborting && state == RUNNING)) {
         k_mutex_unlock(&state_lock);
         return -EBUSY;
     }
-    /* Manual power persists until explicitly cleared; active runs own all outputs. */
-    int err = gpio_pin_set_dt(&valves[channel], powered ? 1 : 0);
-    if (err) {
-        all_off();
-        last_error = err;
-        state = FAULTED;
-    } else if (powered) {
-        manual_outputs |= BIT(channel);
-    } else {
+    if (release) {
+        manual_overrides &= ~BIT(channel);
         manual_outputs &= ~BIT(channel);
+    } else {
+        manual_overrides |= BIT(channel);
+        if (powered) manual_outputs |= BIT(channel);
+        else manual_outputs &= ~BIT(channel);
     }
-    trace_event("MANUAL channel=%u power=%s result=%d", (unsigned)channel,
-                powered ? "ON" : "OFF", err);
+    bool running = state == RUNNING;
+    int err = apply_outputs();
+    if (err && running) k_sem_give(&abort_wakeup);
+    trace_event("MANUAL channel=%u power=%s release=%u result=%d", (unsigned)channel,
+                powered ? "ON" : "OFF", (unsigned)release, err);
     k_mutex_unlock(&state_lock);
     return err;
+}
+
+int sequence_manual_valve(uint32_t channel, bool powered)
+{
+    return sequence_manual_control(channel, powered, false);
 }
 
 size_t sequence_count(void) { return ARRAY_SIZE(sequences); }
@@ -97,6 +130,8 @@ struct sequence_snapshot sequence_status(void)
         .total_steps = selected ? selected->count : 0,
         .error = last_error,
         .manual_powered_channels = manual_outputs,
+        .manual_override_channels = manual_overrides,
+        .sequence_requested_channels = sequence_outputs,
     };
     /* Read logical GPIO state for manual and sequence outputs alike. */
     for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
@@ -121,22 +156,19 @@ int sequence_abort(void)
     int err = 0;
     if (state == INITIALIZING) {
         err = -EBUSY;
-    } else if (state == RUNNING) {
-        /* Acknowledge the request now; main publishes ABORTED after cleanup. */
-        aborting = true;
-        k_sem_give(&abort_wakeup);
     } else {
-        /* An idle/faulted abort also attempts to de-energize every output.
-         * Never clear a latched GPIO fault as a side effect of abort. */
+        bool running = state == RUNNING;
+        sequence_outputs = manual_overrides = manual_outputs = 0;
         err = all_off();
-        if (!err) {
-            manual_outputs = 0;
-        }
         if (err) {
             last_error = err;
             state = FAULTED;
-        } else if (state != FAULTED) {
+        } else if (!running && state != FAULTED) {
             state = ABORTED;
+        }
+        if (running) {
+            aborting = true;
+            k_sem_give(&abort_wakeup);
         }
     }
     k_mutex_unlock(&state_lock);
@@ -148,53 +180,39 @@ static int run_sequence(const struct valve_sequence *sequence)
     trace_event("START sequence=%s", sequence->name);
     for (size_t step = 0; step < sequence->count; ++step) {
         k_mutex_lock(&state_lock, K_FOREVER);
-        if (aborting) {
+        if (aborting || state == FAULTED) {
+            int err = last_error;
             k_mutex_unlock(&state_lock);
-            int off_err = all_off();
-            return off_err;
+            return err;
         }
         /* Expose one-based progress before energizing this step; zero means queued. */
         current_step = step + 1;
         if (sequence->steps[step].comment[0]) {
             trace_event("NEXT: %s", sequence->steps[step].comment);
         }
-        trace_event("STEP %u/%u mask=0x%08x duration=%u ticks",
+        trace_event("STEP %u/%u mask=0x%08x duration=%u ms",
                     (unsigned)step + 1, (unsigned)sequence->count,
                     (unsigned)sequence->steps[step].mask,
-                    (unsigned)sequence->steps[step].duration_ticks);
-        int err = 0;
-        for (size_t channel = 0; channel < ARRAY_SIZE(valves); ++channel) {
-            if (sequence->steps[step].mask & BIT(channel)) {
-                err = gpio_pin_set_dt(&valves[channel], 1);
-                trace_event("ON channel=%u result=%d raw_readback=%d",
-                            (unsigned)channel, err,
-                            gpio_pin_get_raw(valves[channel].port, valves[channel].pin));
-                if (err) {
-                    break;
-                }
-            }
-        }
+                    (unsigned)sequence->steps[step].duration_ms);
+        sequence_outputs = sequence->steps[step].mask;
+        int err = apply_outputs();
         k_mutex_unlock(&state_lock);
         if (!err) {
-            /* ABORT wakes this wait; timing and cleanup remain owned by this thread. */
-            k_sem_take(&abort_wakeup, K_TICKS(sequence->steps[step].duration_ticks));
-        }
-        /* Every step ends with all outputs inactive, including empty-mask delays. */
-        int off_err = all_off();
-        trace_event("STEP %u OFF result=%d", (unsigned)step + 1, off_err);
-        if (err || off_err) {
-            trace_event("STOP: activation=%d deactivation=%d", err, off_err);
-            return err ? err : off_err;
+            k_sem_take(&abort_wakeup, K_MSEC(sequence->steps[step].duration_ms));
         }
         k_mutex_lock(&state_lock, K_FOREVER);
+        sequence_outputs = 0;
+        int off_err = state == FAULTED ? last_error : apply_outputs();
         bool cancelled = aborting;
         k_mutex_unlock(&state_lock);
+        trace_event("STEP %u OFF result=%d", (unsigned)step + 1, off_err);
+        if (err || off_err) return err ? err : off_err;
         if (cancelled) {
             trace_event("ABORTED: all outputs commanded inactive");
             return 0;
         }
     }
-    trace_event("COMPLETE: all outputs commanded inactive");
+    trace_event("COMPLETE: sequence outputs cleared; manual overrides retained");
     return 0;
 }
 
@@ -232,8 +250,8 @@ int sequence_start(const char *name)
         return -ENOENT;
     }
     k_mutex_lock(&state_lock, K_FOREVER);
-    /* Do not overlap runs with manual power or recover a latched fault implicitly. */
-    if (state == INITIALIZING || state == RUNNING || state == FAULTED || manual_outputs) {
+    /* Only one sequence at a time; manual overrides remain independent. */
+    if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
         k_mutex_unlock(&state_lock);
         return -EBUSY;
     }
@@ -319,6 +337,7 @@ int main(void)
         /* RUNNING prevents USB/TCP commands from changing selected during a run. */
         int err = run_sequence(selected);
         k_mutex_lock(&state_lock, K_FOREVER);
+        if (state == FAULTED && !err) err = last_error;
         last_error = err;
         /* Faults take precedence over abort/completion and block subsequent starts. */
         state = last_error ? FAULTED : (aborting ? ABORTED : COMPLETE);

@@ -23,7 +23,6 @@
 #define ARG_UNUSED(a) (void)(a)
 #define K_FOREVER (-1)
 #define K_MSEC(ms) (ms)
-#define K_TICKS(ticks) (((ticks) + 9) / 10)
 #define K_MUTEX_DEFINE(n) pthread_mutex_t n = PTHREAD_MUTEX_INITIALIZER
 #define k_mutex_lock(m, t) pthread_mutex_lock(m)
 #define k_mutex_unlock(m) pthread_mutex_unlock(m)

@@ -20,8 +20,9 @@ void sequence_handle_request(const Request *request, Response *response)
     const NamedSequenceRequest *command = &request->payload.named_sequence;
     int err = 0;
     if (manual) {
-        err = sequence_manual_valve(request->payload.manual_valve.channel,
-                                    request->payload.manual_valve.powered);
+        err = sequence_manual_control(request->payload.manual_valve.channel,
+                                      request->payload.manual_valve.powered,
+                                      request->payload.manual_valve.release);
     } else if (abort) {
         err = sequence_abort();
     } else switch (command->operation) {
@@ -59,11 +60,12 @@ void sequence_handle_request(const Request *request, Response *response)
     info->has_powered_channels = info->has_known_channels = true;
     info->powered_channels = status.powered_channels;
     info->known_channels = status.known_channels;
-    if (strcmp(status.state, "running") && strcmp(status.state, "aborting") &&
-        strcmp(status.state, "initializing") && strcmp(status.state, "faulted")) {
-        info->has_manual_powered_channels = true;
-        info->manual_powered_channels = status.manual_powered_channels;
-    }
+    info->has_manual_powered_channels = true;
+    info->manual_powered_channels = status.manual_powered_channels;
+    info->has_manual_override_channels = true;
+    info->manual_override_channels = status.manual_override_channels;
+    info->has_sequence_requested_channels = true;
+    info->sequence_requested_channels = status.sequence_requested_channels;
     if (!abort && !manual && command->operation == NamedSequenceRequest_Operation_LIST) {
         for (size_t i = 0; i < sequence_count(); ++i) {
             snprintf(info->names[info->names_count++], sizeof(info->names[0]), "%s", sequence_name(i));

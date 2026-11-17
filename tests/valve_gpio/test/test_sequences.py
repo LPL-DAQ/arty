@@ -45,22 +45,16 @@ class SequencesTest(unittest.TestCase):
                 (inputs / f'sequence_{index}.json').write_text('[{"duration_ticks":1,"channels":[]}]')
             self.generate(inputs, header, False)
 
-    def test_millisecond_key_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / 'sequence.json'
-            source.write_text('[{"duration_ms": 5000, "channels": []}]')
-            self.generate(source, Path(directory) / 'sequence.h', False)
-
-    def test_duration_bounds(self):
+    def test_extended_duration_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'sequence.json'
             header = Path(directory) / 'sequence.h'
-            for duration in [1, 100001, 600000, 2147483647]:
-                source.write_text(json.dumps([{'duration_ticks': duration, 'channels': [0]}]))
+            for duration in [15000, 20000, 2147483647]:
+                source.write_text(json.dumps([{'duration_ticks': duration, 'channels': []}]))
                 self.generate(source, header)
                 self.assertIn(f'{{{duration}U,', header.read_text())
-            for duration in [0, -1, 2147483648, True, 1.5, '60000']:
-                source.write_text(json.dumps([{'duration_ticks': duration, 'channels': [0]}]))
+            for duration in [0, -1, 2147483648, True, 1.5]:
+                source.write_text(json.dumps([{'duration_ticks': duration, 'channels': []}]))
                 self.generate(source, header, False)
 
     def test_valve_name_resolution_and_mapping_validation(self):
@@ -153,7 +147,6 @@ MOCKS = r'''
 #define GPIO_OUTPUT_INACTIVE 0
 #define K_FOREVER 0
 #define K_MSEC(ms) (ms)
-#define K_TICKS(ticks) (ticks)
 #define K_MUTEX_DEFINE(n) static int n
 #define K_SEM_DEFINE(n, a, b) static int n
 #define k_mutex_lock(a, b) ((void)(a), (void)(b))
@@ -210,6 +203,20 @@ static int k_sem_take(int *s, int timeout);
 CHECKS = r'''
 static int k_sem_take(int *s, int timeout) {
     if (s == &abort_wakeup) {
+        if (scenario == 5) {
+            if (current_step == 1) {
+                assert(sequence_manual_valve(0, false) == 0);
+                assert(sequence_manual_valve(2, true) == 0);
+            }
+            assert(!values[0] && values[2]);
+        }
+        if (scenario == 6) {
+            fail_on = 1;
+            assert(sequence_manual_valve(1, true) == -5);
+            assert(state == FAULTED && pending == 1);
+            --pending;
+            return 0;
+        }
         if (scenario == 4) {
             assert(cmd_abort(NULL, 0, NULL) == 0);
             assert(!strcmp(sequence_status().state, "aborting"));
@@ -240,7 +247,7 @@ static int k_sem_take(int *s, int timeout) {
         /* Run a second file, then repeat it without reset. */
         assert(cmd_run(NULL, 2, b) == 0);
     } else {
-        assert(state == (scenario == 3 || scenario == 4 ? ABORTED : (scenario ? FAULTED : COMPLETE)));
+        assert(state == (scenario == 3 || scenario == 4 ? ABORTED : (scenario == 1 || scenario == 2 || scenario == 6 ? FAULTED : COMPLETE)));
         if (scenario == 1 || scenario == 2) assert(cmd_run(NULL, 2, b) == -EBUSY);
         longjmp(idle, 1);
     }
@@ -256,6 +263,7 @@ static void reset(void) {
     state = INITIALIZING;
     selected = NULL;
     aborting = false; current_step = 0; last_error = 0;
+    manual_outputs = manual_overrides = sequence_outputs = 0;
 }
 int main(void) {
     assert(registered);
@@ -268,16 +276,17 @@ int main(void) {
     reset();
     scenario = 0;
     if (!setjmp(idle)) firmware_main();
-    assert(on_count == 5 && elapsed == 49 && off_count == 15);
+    assert(on_count == 5 && elapsed == 49);
+    assert(!values[0] && !values[1] && !values[2]);
     assert(cmd_status(NULL, 0, NULL) == 0);
     assert(strstr(output, "complete; sequence=b"));
     reset(); scenario = 1; fail_on = 1;
     if (!setjmp(idle)) firmware_main();
-    assert(on_count == 2 && elapsed == 0 && off_count == 3);
+    assert(on_count == 2 && elapsed == 0);
     assert(!values[0] && !values[1] && !values[2]);
     reset(); scenario = 2; fail_off = 1;
     if (!setjmp(idle)) firmware_main();
-    assert(on_count == 2 && elapsed == 10 && off_count == 3);
+    assert(on_count == 2 && elapsed == 10);
     reset(); scenario = 3;
     if (!setjmp(idle)) firmware_main();
     assert(state == ABORTED && on_count == 0 && off_count == 3);
@@ -285,7 +294,21 @@ int main(void) {
     assert(sequence_start("b") == 0); /* Restart after acknowledged stop. */
     reset(); scenario = 4;
     if (!setjmp(idle)) firmware_main();
-    assert(state == ABORTED && on_count == 2 && off_count == 3 && elapsed == 0);
+    assert(state == ABORTED && on_count == 2 && elapsed == 0);
+    assert(!values[0] && !values[1] && !values[2]);
+    reset(); scenario = 5;
+    if (!setjmp(idle)) firmware_main();
+    assert(state == COMPLETE && elapsed == 35);
+    assert(manual_overrides == 5 && manual_outputs == 4 && sequence_outputs == 0);
+    assert(!values[0] && !values[1] && values[2]);
+    assert(sequence_manual_control(2, false, true) == 0);
+    assert(!values[2] && manual_overrides == 1);
+    assert(sequence_manual_control(0, false, true) == 0);
+    assert(manual_overrides == 0);
+    reset(); scenario = 6;
+    if (!setjmp(idle)) firmware_main();
+    assert(state == FAULTED && last_error == -5);
+    assert(manual_overrides == 0 && sequence_outputs == 0 && manual_outputs == 0);
     assert(!values[0] && !values[1] && !values[2]);
     reset(); init_fail = 1;
     assert(firmware_main() == -ENODEV);

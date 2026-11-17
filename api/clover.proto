@@ -91,10 +91,12 @@ message Request {
 }
 
 // Successful if err is missing.
-// Channel is a zero-based devicetree index; power persists until OFF or abort.
+// Channel is a zero-based devicetree index. ON and OFF override sequences;
+// release resumes sequence control. Overrides persist until release or abort.
 message ManualValveRequest {
   required uint32 channel = 1;
   required bool powered = 2;
+  optional bool release = 3 [default = false]; // Resume sequence control of this channel.
 }
 
 message Response {
@@ -117,11 +119,13 @@ message NamedSequenceInfo {
   optional uint32 total_steps = 5;
   optional string comment = 6;
   optional sint32 error = 7;
-  // Manual outputs commanded ON; valid when idle and not faulted.
+  // Manual override outputs commanded ON.
   optional uint32 manual_powered_channels = 8;
   // Logical GPIO readback; known mask excludes unavailable/failed reads.
   optional uint32 powered_channels = 9;
   optional uint32 known_channels = 10;
+  optional uint32 manual_override_channels = 11;
+  optional uint32 sequence_requested_channels = 12;
 }
 
 // Subscribe client IP to data stream.
