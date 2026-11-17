@@ -72,7 +72,7 @@ TODO:
     };
 
     chosen {
-        zephyr,console = &lpuart6;
+        zephyr,console = &cdc_acm_uart0;
         zephyr,canbus = &flexcan3;
     };
 };

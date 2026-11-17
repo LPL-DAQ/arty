@@ -101,7 +101,7 @@ tick(float position) {
 
     if (result) {
         LOG_INF("rx: pos=%d mrot  vel=%d mrot/s  torq=%d mNm  mode=%d",
-            (int)(result->values.position * 1000),
+            (int)(result->values.position),
             (int)(result->values.velocity * 1000),
             (int)(result->values.torque   * 1000),
             (int)result->values.mode);

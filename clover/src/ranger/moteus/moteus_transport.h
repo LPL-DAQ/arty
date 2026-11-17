@@ -199,6 +199,14 @@ class ZephyrCanTransport : public Transport {
     zf.dlc = can_bytes_to_dlc(frame.size);
     memcpy(zf.data, frame.data, frame.size);
 
+    // CAN-FD only allows certain lengths (e.g. 43 bytes rounds up to 48).
+    // moteus requires the extra bytes to be 0x50 (NOP); zero padding parses
+    // as a truncated write subframe and the motor drops the reply.
+    const uint8_t padded_size = can_dlc_to_bytes(zf.dlc);
+    if (padded_size > frame.size) {
+      memset(zf.data + frame.size, 0x50, padded_size - frame.size);
+    }
+
     int ret = can_send(opts_.can_dev, &zf, K_MSEC(opts_.send_timeout_ms),
                        nullptr, nullptr);
     if (ret != 0) {

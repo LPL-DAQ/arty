@@ -1,3 +1,4 @@
+#include <zephyr/drivers/can.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -26,14 +27,14 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 int main(void)
 {
-    // Motor init first — before USB wait — so the watchdog never fires on boot.
-    RangerTvc::reset();
-
     // Serial over USB setup
     if (usb_enable(nullptr)) {
         LOG_ERR("USB is not enabled.");
         while (1) {}
     }
+
+    // Motor init first — before USB wait — so the watchdog never fires on boot.
+    RangerTvc::reset();
 
     // Try connecting to serial over usb for 3 seconds.
     const device* usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
@@ -55,8 +56,8 @@ int main(void)
     float target_pos = max_pos;
     int ticks = 0;
 
-    // 5 seconds at 50 Hz
-    constexpr int hold_ticks = 50;
+    // 1 seconds at 8 Hz
+    constexpr int hold_ticks = 8;
 
     // auto result = RangerTvc::tick(target_pos);
 
@@ -65,6 +66,8 @@ int main(void)
     // }
 
     // k_sleep(K_MSEC(20));
+
+    LOG_INF("Starting silly movement");
 
     while (1) {
         auto result = RangerTvc::tick(target_pos);
@@ -76,6 +79,15 @@ int main(void)
         k_sleep(K_MSEC(20));
 
         if (++ticks >= hold_ticks) {
+
+            const device* can_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_canbus));
+            can_state state;
+            can_bus_err_cnt err_cnt{};
+            int ret = can_get_state(can_dev, &state, &err_cnt);
+
+            LOG_INF("can_get_state ret=%d state=%d tx_err=%u rx_err=%u",
+                    ret, (int)state, err_cnt.tx_err_cnt, err_cnt.rx_err_cnt);
+
             target_pos = (target_pos == max_pos) ? min_pos : max_pos;
             ticks = 0;
         }
