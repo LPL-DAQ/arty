@@ -100,8 +100,8 @@ tick(float position) {
     auto result = s_motor->SetPosition(cmd);
 
     if (result) {
-        LOG_INF("rx: pos=%d mrot  vel=%d mrot/s  torq=%d mNm  mode=%d",
-            (int)(result->values.position),
+        LOG_INF("rx: pos=%.3f mrot  vel=%d mrot/s  torq=%d mNm  mode=%d",
+            result->values.position,
             (int)(result->values.velocity * 1000),
             (int)(result->values.torque   * 1000),
             (int)result->values.mode);

@@ -102,23 +102,42 @@ class ZephyrCanTransport : public Transport {
                 sizeof(struct can_frame),
                 kRxQueueDepth);
 
-    struct can_filter f = {};
-    f.flags = CAN_FILTER_IDE;
-    f.id    = 0;
-    f.mask  = 0;
-    rx_filter_id_ = can_add_rx_filter_msgq(opts_.can_dev, &rx_queue_, &f);
-    if (rx_filter_id_ < 0) {
+    //Catch-all for EXTENDED (29-bits) IDs
+    struct can_filter ext_filter = {};
+    ext_filter.flags = CAN_FILTER_IDE;
+    ext_filter.id    = 0;
+    ext_filter.mask  = 0;
+    rx_filter_ext_id_ = can_add_rx_filter_msgq(opts_.can_dev, &rx_queue_, &ext_filter);
+    if (rx_filter_ext_id_ < 0) {
       printk("[transport] ERROR: can_add_rx_filter_msgq failed (%d)\n",
-             rx_filter_id_);
+             rx_filter_ext_id_);
     } else {
       printk("[transport] persistent catch-all filter installed (id=%d)\n",
-             rx_filter_id_);
+             rx_filter_ext_id_);
+    }
+
+    //Catch-all for STANDARD (11-bits) IDs
+    struct can_filter std_filter = {};
+    std_filter.flags = 0;   // no CAN_FILTER_IDE -> standard IDs
+    std_filter.id    = 0;
+    std_filter.mask  = 0;
+    rx_filter_std_id_ = can_add_rx_filter_msgq(opts_.can_dev, &rx_queue_, &std_filter);
+
+    if (rx_filter_ext_id_ < 0 || rx_filter_std_id_ < 0) {
+      printk("[transport] ERROR: can_add_rx_filter_msgq failed (ext=%d std=%d)\n",
+             rx_filter_ext_id_, rx_filter_std_id_);
+    } else {
+      printk("[transport] catch-all filters installed (ext=%d std=%d)\n",
+             rx_filter_ext_id_, rx_filter_std_id_);
     }
   }
 
   ~ZephyrCanTransport() {
-    if (rx_filter_id_ >= 0) {
-      can_remove_rx_filter(opts_.can_dev, rx_filter_id_);
+    if (rx_filter_ext_id_ >= 0) {
+      can_remove_rx_filter(opts_.can_dev, rx_filter_ext_id_);
+    }
+    if (rx_filter_std_id_ >= 0) {
+      can_remove_rx_filter(opts_.can_dev, rx_filter_std_id_);
     }
   }
 
@@ -216,7 +235,8 @@ class ZephyrCanTransport : public Transport {
   }
 
   Options opts_;
-  int rx_filter_id_ = -1;
+  int rx_filter_ext_id_ = -1;
+  int rx_filter_std_id_ = -1;
 
   // Queue buffer — allocated here so it has static lifetime (required by
   // k_msgq_init when not using K_MSGQ_DEFINE).
