@@ -50,22 +50,23 @@ int main(void)
 
     LOG_INF("USB Connected. Bypassing flight hardware for TVC standalone test.");
 
-    float max_pos = 5.0f;
-    float min_pos = 0.0f;
+    // Find both hard stops, zero on the negative one, and set moteus soft limits.
+    std::expected<RangerTvc::TravelRange, Error> homed = RangerTvc::home();
+    if (!homed) {
+        LOG_ERR("TVC homing failed: %s", homed.error().build_message().c_str());
+        while (1) {
+            k_sleep(K_FOREVER);
+        }
+    }
+
+    float max_pos = homed->max_rev;
+    float min_pos = homed->min_rev;
 
     float target_pos = max_pos;
     int ticks = 0;
 
     // 7 seconds at 80 Hz
     constexpr int hold_ticks = 80;
-
-    // auto result = RangerTvc::tick(target_pos);
-
-    // if (!result) {
-    //     LOG_ERR("tick failed: %s", result.error().build_message().c_str());
-    // }
-
-    // k_sleep(K_MSEC(20));
 
     LOG_INF("Starting silly movement");
 
