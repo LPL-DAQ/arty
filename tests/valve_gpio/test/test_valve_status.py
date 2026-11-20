@@ -38,11 +38,11 @@ class ClientValveCommandsTest(unittest.TestCase):
             path.read_text.return_value = '{"EXTERNAL": 0, "CLIENT": 1, "OFF": 2, "UNWIRED": null}'
             table = valve_table(info, {1: True, 2: False})
         self.assertEqual(table.columns[2]._cells, ['ON', 'OFF', 'OFF', 'UNASSIGNED'])
-        self.assertEqual(table.columns[5]._cells,
-                         ['—', 'Requested ON', 'Requested OFF', '—'])
+        self.assertEqual(table.columns[3]._cells,
+                         ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', '—'])
 
 
-    def test_sequence_and_manual_override_columns(self):
+    def test_manual_control_source(self):
         from unittest.mock import patch
         from valve_status import valve_table
         info = clover_pb2.NamedSequenceInfo(state='running', powered_channels=2,
@@ -52,5 +52,36 @@ class ClientValveCommandsTest(unittest.TestCase):
             path.read_text.return_value = '{"MANUAL_OFF": 0, "MANUAL_ON": 1}'
             table = valve_table(info, {0: False, 1: True})
         self.assertEqual(table.columns[2]._cells, ['OFF', 'ON'])
-        self.assertEqual(table.columns[3]._cells, ['ON', 'OFF'])
-        self.assertEqual(table.columns[4]._cells, ['OFF', 'ON'])
+        self.assertEqual(table.columns[3]._cells, ['MANUAL', 'MANUAL'])
+
+    def test_control_source_comes_from_board_requests(self):
+        from unittest.mock import patch
+        from valve_status import valve_table
+        info = clover_pb2.NamedSequenceInfo(state='running', powered_channels=3, known_channels=7,
+                                            sequence_requested_channels=1, manual_override_channels=2,
+                                            manual_powered_channels=2)
+        with patch('valve_status.MAP_PATH') as path:
+            path.read_text.return_value = '{"SEQ": 0, "MANUAL": 1, "IDLE": 2}'
+            table = valve_table(info, {0: True})
+        self.assertEqual(table.columns[3].header, 'Control source')
+        self.assertEqual(table.columns[3]._cells, ['SEQUENCE', 'MANUAL', '—'])
+
+
+class SequenceDisplayTest(unittest.TestCase):
+    def test_vlvseq_status_shows_progress_without_table(self):
+        import io
+        from unittest.mock import Mock, patch
+        from rich.console import Console
+        from valve_sequence_cli import ValveSequenceMode
+
+        output = io.StringIO()
+        mode = ValveSequenceMode(Mock(), Console(file=output, width=120))
+        info = clover_pb2.NamedSequenceInfo(state='running', name='demo', step=1,
+                                            total_steps=2, comment='First step')
+        info.manual_override_channels = 0
+        with patch('valve_sequence_cli.named_sequences.exchange', return_value=info):
+            self.assertTrue(mode.execute('status', quiet=True))
+            self.assertTrue(mode.execute('status'))
+        self.assertIn('RUNNING', output.getvalue())
+        self.assertIn('First step', output.getvalue())
+        self.assertNotIn('GPIO readback', output.getvalue())

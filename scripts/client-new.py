@@ -2421,7 +2421,6 @@ def cmd_named_sequence(command):
                       f"step={info.step}/{info.total_steps}; error={info.error}", markup=False)
         if info.comment:
             console.print(info.comment, markup=False)
-        console.print(valve_table(info, client_valve_commands.for_connection(sock)))
         if request.HasField('abort'):
             console.print("Abort requested; use sequence status to confirm aborted or faulted.")
         return True

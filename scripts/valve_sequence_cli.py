@@ -16,7 +16,7 @@ from rich.text import Text
 
 import clover_pb2
 import named_sequences
-from valve_status import MAP_PATH, valve_table
+from valve_status import MAP_PATH
 
 
 class ValveSequenceMode:
@@ -57,7 +57,6 @@ class ValveSequenceMode:
         if info.error:
             line.append(f'  |  GPIO error {info.error}; reset required', style='bold red')
         self.console.print(line)
-        self.console.print(valve_table(info, self.client_commands))
         if info.comment and (force or previous is None or signature[1:5] != previous[1:5]):
             # Text prevents comments containing [] or terminal escapes becoming formatting.
             self.console.print(Text('    ' + info.comment))
@@ -75,7 +74,7 @@ class ValveSequenceMode:
                 return
             self.pending_run = (name, time.monotonic() + seconds)
             self.countdown_last = None
-            self.console.print(Text(f'Starting {name} in {seconds}s. Manual commands remain available; '
+            self.console.print(Text(f'Starting {name} in {seconds}s. Manual control is blocked; '
                                     'press Space or Q at an empty prompt to cancel.'))
 
     def advance_countdown(self):
@@ -91,7 +90,21 @@ class ValveSequenceMode:
                 self.countdown_last = remaining
                 self.console.print(Text(f'Starting {name} in {remaining}...'))
 
+    def manual_blocked(self):
+        with self.lock:
+            if self.pending_run is not None:
+                reason = 'A sequence countdown is active. Cancel it or wait for the run to finish.'
+            elif self.latest_info is not None and self.latest_info.state in ('running', 'aborting'):
+                reason = 'A sequence is running. Wait for completion or abort it.'
+            else:
+                return False
+            self.console.print(Panel(Text(reason, style='bold white'), title='MANUAL CONTROL BLOCKED',
+                                     border_style='bold red'))
+            return True
+
     def manual_prompt(self, session):
+        if self.manual_blocked():
+            return
         try:
             mapping = json.loads(MAP_PATH.read_text())
             valves = [(name, channel) for name, channel in mapping.items() if channel is not None]
@@ -120,64 +133,14 @@ class ValveSequenceMode:
         except (OSError, ValueError) as exc:
             self.console.print(Text(str(exc), style='yellow'))
 
-    def release_prompt(self, session):
-        try:
-            mapping = json.loads(MAP_PATH.read_text())
-            valves = [(name, channel) for name, channel in mapping.items() if channel is not None]
-            for index, (name, channel) in enumerate(valves, 1):
-                self.console.print(Text(f'[{index}] {name} (channel {channel})'))
-            self.console.print('[all] Release all manual overrides', markup=False)
-            choice = session.prompt('Release valve (number / all / q to cancel): ').strip().lower()
-            if choice in ('q', 'back', 'exit'):
-                return
-            if choice == 'all':
-                self.console.print(Panel('ALL MANUAL OVERRIDES', title='RELEASE',
-                                         box=box.DOUBLE, border_style='bright_cyan', padding=(1, 4)))
-                self.execute('release all')
-                return
-            index = int(choice) - 1
-            if not 0 <= index < len(valves):
-                raise ValueError('Invalid valve selection')
-            name, channel = valves[index]
-            self.console.print(Panel(Text(f'{name}\nGPIO channel {channel}', justify='center', style='bold bright_cyan'),
-                                     title='RELEASE VALVE', box=box.DOUBLE,
-                                     border_style='bright_cyan', padding=(1, 4), width=60))
-            self.execute('release ' + name)
-        except (KeyboardInterrupt, EOFError):
-            self.console.print('Release selection cancelled.')
-        except (OSError, ValueError) as exc:
-            self.console.print(Text(str(exc), style='yellow'))
-
-    def release_all(self):
-        # Use the board's override mask, including channels absent from the local map.
-        # Serialize the batch with this client's polling; never replay a lost ACK.
-        with self.lock:
-            if not self.execute('status', quiet=True):
-                return False
-            if not self.override_supported:
-                self.console.print('Firmware lacks manual override support.', style='yellow')
-                return False
-            mask = self.latest_info.manual_override_channels
-            for channel in range(32):
-                if mask & (1 << channel):
-                    request = clover_pb2.Request()
-                    request.manual_valve.channel = channel
-                    request.manual_valve.powered = False
-                    request.manual_valve.release = True
-                    if not self.execute(request):
-                        self.console.print('Release all stopped before completion. Check status before continuing.', style='yellow')
-                        return False
-            self.console.print('All overrides reported at the start of this request released; valves follow sequence control.')
-            return True
-
     def execute(self, command, quiet=False):
-        if isinstance(command, str) and command.lower().strip() == 'release all':
-            return self.release_all()
         try:
             words = command.split() if isinstance(command, str) else []
             if isinstance(command, clover_pb2.Request):
                 request = command
-            elif len(words) == 2 and words[0].lower() in ('on', 'off', 'release'):
+                if request.HasField('manual_valve') and request.manual_valve.release:
+                    raise ValueError('Release is not available in vlvseq')
+            elif len(words) == 2 and words[0].lower() in ('on', 'off'):
                 mapping = json.loads(MAP_PATH.read_text())
                 channel = mapping.get(words[1].upper())
                 if type(channel) is not int or not 0 <= channel < 32:
@@ -185,11 +148,10 @@ class ValveSequenceMode:
                 request = clover_pb2.Request()
                 request.manual_valve.channel = channel
                 request.manual_valve.powered = words[0].lower() == 'on'
-                request.manual_valve.release = words[0].lower() == 'release'
             else:
                 request = named_sequences.make_request('sequence ' + command)
         except (ValueError, OSError) as exc:
-            self.console.print(Text(f'{exc}. Use list | run <name> | v | r | status | abort | back', style='yellow'))
+            self.console.print(Text(f'{exc}. Use list | run <name> | v | status | abort | back', style='yellow'))
             return False
         with self.lock:
             if self.broken:
@@ -197,6 +159,8 @@ class ValveSequenceMode:
                     self.console.print('Connection unavailable. Use back and restart the client.', style='red')
                 return False
             if request.HasField('manual_valve'):
+                if self.manual_blocked():
+                    return False
                 if self.override_supported is None and not self.execute('status', quiet=True):
                     return False
                 if not self.override_supported:
@@ -207,7 +171,10 @@ class ValveSequenceMode:
                 self.connection.settimeout(3)
                 info = named_sequences.exchange(self.connection, request)
             except named_sequences.RequestRejected as exc:
-                self.console.print(Text(f'Rejected: {exc}', style='red'))
+                if 'MANUAL CONTROL BLOCKED' in str(exc):
+                    self.console.print(Panel(Text(str(exc), style='bold white'), title='MANUAL CONTROL BLOCKED', border_style='bold red'))
+                else:
+                    self.console.print(Text(f'Rejected: {exc}', style='red'))
                 return False
             except Exception as exc:
                 # After a framing/transport failure, a later reply could belong to this request.
@@ -225,12 +192,9 @@ class ValveSequenceMode:
             manual = request.HasField('manual_valve')
             if manual:
                 command = request.manual_valve
-                if command.release:
-                    self.client_commands.pop(command.channel, None)
-                else:
-                    self.client_commands[command.channel] = command.powered
+                self.client_commands[command.channel] = command.powered
                 self.console.print(Text(f'Manual command accepted: channel {command.channel} '
-                                        + ('released' if command.release else 'ON' if command.powered else 'OFF')))
+                                        + ('ON' if command.powered else 'OFF')))
             operation = None if request.HasField('abort') or manual else request.named_sequence.operation
             if operation == clover_pb2.NamedSequenceRequest.LIST:
                 table = Table(title='Stored valve sequences', show_header=True, min_width=30)
@@ -242,7 +206,8 @@ class ValveSequenceMode:
                 self.console.print(Text(f'Run accepted: {request.named_sequence.name}', style='green'))
             elif request.HasField('abort'):
                 self.console.print('Abort requested; waiting for aborted or faulted status.', style='yellow')
-            self.show_status(info, force=manual or (operation == clover_pb2.NamedSequenceRequest.STATUS and not quiet))
+            explicit_status = operation == clover_pb2.NamedSequenceRequest.STATUS and not quiet
+            self.show_status(info, force=manual or explicit_status)
             return True
 
     def watch(self):
@@ -267,17 +232,16 @@ class ValveSequenceMode:
         session = session or PromptSession(key_bindings=bindings)
         self.console.print(Panel(
             Text('list           Show stored sequences\n'
-                 'run <name>     Start after a 10s countdown; manual stays available\n'
+                 'run <name>     Start after a 10s countdown; manual locks immediately\n'
                  'v              Select a valve and ON/OFF\n'
-                 'r              Select a valve, or type all to release overrides\n'
-                 'status         Show GPIO, sequence and manual state\n'
+                 'status         Show sequence state and progress\n'
                  'abort          Abort sequence and request outputs off\n'
                  'back / exit    Return to CMD (does not stop the board)\n\n'
                  'Progress updates appear automatically while this mode is open.'),
             title='Valve control — vlvseq', border_style='cyan'))
         # Redraw the prompt after background output instead of mixing logs with input.
         with patch_stdout(raw=True):
-            if not self.execute('status'):
+            if not self.execute('status', quiet=True):
                 return
             watcher = threading.Thread(target=self.watch, daemon=True, name='valve-sequence-status')
             watcher.start()
@@ -294,15 +258,13 @@ class ValveSequenceMode:
                     if command.lower() in ('back', 'exit', 'quit', 'q'):
                         break
                     if command.lower() in ('help', '?', 'h'):
-                        self.console.print('list | run <name> | v | r | status | abort | back')
+                        self.console.print('list | run <name> | v | status | abort | back')
                     elif command:
                         words = command.split()
                         if command.lower() == 'v':
                             self.manual_prompt(session)
-                        elif command.lower() == 'r':
-                            self.release_prompt(session)
                         elif words[0].lower() not in ('list', 'run', 'status', 'abort'):
-                            self.console.print('Use list | run <name> | v | r | status | abort | back', style='yellow')
+                            self.console.print('Use list | run <name> | v | status | abort | back', style='yellow')
                         elif len(words) == 2 and words[0].lower() == 'run' and sys.stdin.isatty():
                             self.schedule_run(words[1])
                         else:

@@ -88,7 +88,11 @@ int sequence_manual_control(uint32_t channel, bool powered, bool release)
 {
     if (channel >= ARRAY_SIZE(valves)) return -EINVAL;
     k_mutex_lock(&state_lock, K_FOREVER);
-    if (state == INITIALIZING || state == FAULTED || (aborting && state == RUNNING)) {
+    if (state == RUNNING) {
+        k_mutex_unlock(&state_lock);
+        return -EACCES;
+    }
+    if (state == INITIALIZING || state == FAULTED) {
         k_mutex_unlock(&state_lock);
         return -EBUSY;
     }
@@ -194,6 +198,9 @@ static int run_sequence(const struct valve_sequence *sequence)
                     (unsigned)step + 1, (unsigned)sequence->count,
                     (unsigned)sequence->steps[step].mask,
                     (unsigned)sequence->steps[step].duration_ms);
+        uint32_t controlled = sequence->steps[step].mask | sequence->steps[step].off_mask;
+        manual_overrides &= ~controlled;
+        manual_outputs &= ~controlled;
         sequence_outputs = sequence->steps[step].mask;
         int err = apply_outputs();
         k_mutex_unlock(&state_lock);
@@ -201,7 +208,9 @@ static int run_sequence(const struct valve_sequence *sequence)
             k_sem_take(&abort_wakeup, K_MSEC(sequence->steps[step].duration_ms));
         }
         k_mutex_lock(&state_lock, K_FOREVER);
-        sequence_outputs = 0;
+        /* Keep continuously requested valves on across adjacent steps. */
+        sequence_outputs &= step + 1 < sequence->count && !aborting
+                            ? sequence->steps[step + 1].mask : 0;
         int off_err = state == FAULTED ? last_error : apply_outputs();
         bool cancelled = aborting;
         k_mutex_unlock(&state_lock);
@@ -250,7 +259,7 @@ int sequence_start(const char *name)
         return -ENOENT;
     }
     k_mutex_lock(&state_lock, K_FOREVER);
-    /* Only one sequence at a time; manual overrides remain independent. */
+    /* Lock out manual commands as soon as the run is accepted. */
     if (state == INITIALIZING || state == RUNNING || state == FAULTED) {
         k_mutex_unlock(&state_lock);
         return -EBUSY;

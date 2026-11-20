@@ -106,6 +106,17 @@ class SequencesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'no channel assigned'):
                 load_sequence(source, mapping)
 
+    def test_explicit_off_actions_are_validated_and_generated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            source = directory / 'sequence.json'
+            header = directory / 'sequence.h'
+            source.write_text(json.dumps([{'duration_ticks': 10, 'channels': [0], 'off_channels': [2]}]))
+            self.generate(source, header)
+            self.assertIn('0x00000001U, 0x00000004U', header.read_text())
+            source.write_text(json.dumps([{'duration_ticks': 10, 'channels': [0], 'off_channels': [0]}]))
+            self.generate(source, header, False)
+
     def test_firmware_with_mock_gpio(self):
         """Execute actual firmware control flow with mocked GPIO, clock and shell."""
         with tempfile.TemporaryDirectory() as directory:
@@ -185,7 +196,7 @@ static int gpio_pin_set_dt(const struct gpio_dt_spec *p, int value) {
     if (value) {
         ++on_count;
         if (fail_on && p->pin == 1) return -5;
-        if (on_count == 1) assert(strstr(output, "NEXT: Before \"on\" café %"));
+        if (on_count == 1 && scenario != 5) assert(strstr(output, "NEXT: Before \"on\" café %"));
     } else {
         ++off_count;
         if (fail_off && p->pin == 1) return -5;
@@ -204,17 +215,12 @@ CHECKS = r'''
 static int k_sem_take(int *s, int timeout) {
     if (s == &abort_wakeup) {
         if (scenario == 5) {
-            if (current_step == 1) {
-                assert(sequence_manual_valve(0, false) == 0);
-                assert(sequence_manual_valve(2, true) == 0);
-            }
-            assert(!values[0] && values[2]);
+            assert(sequence_manual_valve(0, false) == -EACCES);
+            assert(sequence_manual_valve(2, true) == -EACCES);
+            assert(values[2]);
         }
         if (scenario == 6) {
-            fail_on = 1;
-            assert(sequence_manual_valve(1, true) == -5);
-            assert(state == FAULTED && pending == 1);
-            --pending;
+            fail_off = 1;
             return 0;
         }
         if (scenario == 4) {
@@ -233,6 +239,10 @@ static int k_sem_take(int *s, int timeout) {
     if (take_count++ == 0) {
         assert(state == READY);
         assert(on_count == 0 && elapsed == 0); /* No boot actuation. */
+        if (scenario == 5) {
+            assert(sequence_manual_valve(0, true) == 0);
+            assert(sequence_manual_valve(2, true) == 0);
+        }
         assert(cmd_run(NULL, 2, a) == 0);
         assert(state == RUNNING && selected == &sequences[0]);
         assert(cmd_run(NULL, 2, b) == -EBUSY);
@@ -299,17 +309,17 @@ int main(void) {
     reset(); scenario = 5;
     if (!setjmp(idle)) firmware_main();
     assert(state == COMPLETE && elapsed == 35);
-    assert(manual_overrides == 5 && manual_outputs == 4 && sequence_outputs == 0);
-    assert(!values[0] && !values[1] && values[2]);
+    assert(manual_overrides == 0 && manual_outputs == 0 && sequence_outputs == 0);
+    assert(!values[0] && !values[1] && !values[2]);
     assert(sequence_manual_control(2, false, true) == 0);
-    assert(!values[2] && manual_overrides == 1);
+    assert(!values[2] && manual_overrides == 0);
     assert(sequence_manual_control(0, false, true) == 0);
     assert(manual_overrides == 0);
     reset(); scenario = 6;
     if (!setjmp(idle)) firmware_main();
     assert(state == FAULTED && last_error == -5);
     assert(manual_overrides == 0 && sequence_outputs == 0 && manual_outputs == 0);
-    assert(!values[0] && !values[1] && !values[2]);
+    assert(!values[0] && values[1] && !values[2]); /* Failed OFF is visible. */
     reset(); init_fail = 1;
     assert(firmware_main() == -ENODEV);
     assert(state == FAULTED && on_count == 0 && off_count == 3);

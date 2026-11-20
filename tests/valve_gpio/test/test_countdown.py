@@ -60,7 +60,7 @@ class CountdownTest(unittest.TestCase):
 
 
 class ConcurrentCountdownTest(unittest.TestCase):
-    def test_manual_command_during_countdown_and_single_start(self):
+    def test_manual_command_blocked_during_countdown_and_single_start(self):
         import clover_pb2
         connection = Mock()
         mode = ValveSequenceMode(connection, Console(file=io.StringIO()))
@@ -68,8 +68,9 @@ class ConcurrentCountdownTest(unittest.TestCase):
         with patch('valve_sequence_cli.time.monotonic', return_value=100), \
                 patch('valve_sequence_cli.named_sequences.exchange', return_value=info) as exchange:
             mode.schedule_run('alpha')
-            self.assertTrue(mode.execute('on SV001'))
-            self.assertEqual(mode.client_commands, {0: True})
+            self.assertFalse(mode.execute('on SV001'))
+            self.assertEqual(mode.client_commands, {})
+            exchange.assert_not_called()
             self.assertEqual(mode.pending_run[0], 'alpha')
             mode.advance_countdown()
             self.assertFalse(any(call.args[1].HasField('named_sequence') and
@@ -83,14 +84,27 @@ class ConcurrentCountdownTest(unittest.TestCase):
             self.assertEqual(runs[0].args[1].named_sequence.name, 'alpha')
             self.assertIsNone(mode.pending_run)
 
-    def test_release_is_not_sent_to_older_firmware(self):
+    def test_valve_menu_blocked_during_countdown_and_available_after_cancel(self):
+        output = io.StringIO()
+        mode = ValveSequenceMode(Mock(), Console(file=output))
+        session = Mock()
+        mode.schedule_run('alpha')
+        mode.manual_prompt(session)
+        session.prompt.assert_not_called()
+        self.assertIn('MANUAL CONTROL BLOCKED', output.getvalue())
+        self.assertIn('countdown', output.getvalue())
+        mode.cancel_pending()
+        session.prompt.return_value = 'q'
+        mode.manual_prompt(session)
+        session.prompt.assert_called_once()
+
+    def test_release_is_not_sent(self):
         import clover_pb2
         mode = ValveSequenceMode(Mock(), Console(file=io.StringIO()))
         info = clover_pb2.NamedSequenceInfo(state='ready')
         with patch('valve_sequence_cli.named_sequences.exchange', return_value=info) as exchange:
             self.assertFalse(mode.execute('release SV001'))
-            self.assertEqual(exchange.call_count, 1)
-            self.assertTrue(exchange.call_args.args[1].HasField('named_sequence'))
+            exchange.assert_not_called()
 
     def test_failed_manual_command_does_not_record_or_retry(self):
         mode = ValveSequenceMode(Mock(), Console(file=io.StringIO()))

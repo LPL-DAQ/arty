@@ -38,11 +38,11 @@ For named sequences, follow these paths:
 4. `embedded_sequence.c:sequence_start` checks state and queues work. Its `main`
    loop wakes and calls `run_sequence`, which energizes each mask, waits for the
    duration or abort wakeup, and clears the sequence request after each step.
-   Manual overrides are applied independently. Command
+   Each step takes control of its named valves; other manual outputs remain unchanged. Command
    acceptance is asynchronous; use status to observe completion or faults.
 5. `sequence_status` copies progress under the state mutex. `test_trace.h`
    retains recent events for the USB `trace` command and also sends them to
-   Zephyr logging. GPIO faults latch until restart. Manual overrides persist across sequence transitions and client disconnects.
+   Zephyr logging. GPIO faults latch until restart. Manual outputs not claimed by a sequence persist across transitions and client disconnects.
 
 The alternative host USB runner, `run_sequence.py`, sends one `valve group`
 command at a time to `src/main.c` and waits for its matching `VALVE_DONE` token.
@@ -151,7 +151,7 @@ Sequence steps can now use names:
 ```json
 [
   {"duration_ticks": 1000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101"},
-  {"duration_ticks": 1000, "valves": [], "comment": "All outputs off"}
+  {"duration_ticks": 1000, "valves": [], "off_valves": ["SV001"], "comment": "Hold SV001 off"}
 ]
 ```
 
@@ -253,14 +253,14 @@ west flash -d tests/valve_gpio/build-sequence
 
 With the updated standalone sequence firmware flashed, enter `vlvseq` in
 `scripts/client-new.py`, then `v` for the valve selector and ON/OFF
-prompt. Use `r` to release overrides. The selected valve appears in a bordered box. Both selectors use the same valve mapping. Every
+prompt. The selected valve appears in a bordered box. Every
 action returns to `VLVSEQ>`; only `back` or `exit` leaves this mode.
 
-Manual overrides take priority over sequence requests, including manual OFF.
-Sequences may start with overrides present, and manual commands work during a
-running sequence. `r` removes the selected override and immediately follows
-the current sequence request (OFF when idle). Sequence completion and disconnect
-do not clear overrides. Only one sequence may run at a time.
+Sequences may start with manual outputs active. Each step takes control of its
+listed valves, clearing their previous manual settings; unlisted valves retain
+their manual state. Manual ON and OFF commands are rejected from run
+acceptance until completion or abort. Only
+one sequence may run at a time.
 
 `abort` cancels a pending client countdown, clears all sequence requests and manual
 overrides, and attempts to deactivate every output. GPIO faults also clear control
@@ -269,10 +269,8 @@ never replayed automatically after a lost acknowledgement. Rebuild and flash the
 firmware for override support; the client refuses manual override commands on
 older firmware. Keep the client mapping consistent with the firmware build.
 
-Status tables show GPIO readback, sequence requests, global manual overrides and
-this client's last accepted ON/OFF commands independently. `release` clears the
-session indicator for that channel. Neither a command nor GPIO readback proves
-mechanical valve position.
+The status table shows GPIO readback and the current control source.
+Neither a command nor GPIO readback proves mechanical valve position.
 
 If reusing a build configured with the old `VALVE_SEQUENCE_FILE` setting, clear
 that override by adding `-UVALVE_SEQUENCE_FILE` after `--`, or use a fresh build
@@ -322,9 +320,12 @@ For a single-file build, the explicit `-DVALVE_SEQUENCE_FILE=/absolute/path/test
 override is still supported; its command name is `test`. Clear it with
 `-UVALVE_SEQUENCE_FILE` to return to directory mode.
 
-Each step requests its channels ON, waits, then clears its sequence requests.
-Manual overrides take priority throughout. An empty step leaves only manual
-overrides active. Group edges use sequential
+Each step requests its `valves` or `channels` ON for its duration. Optionally,
+`off_valves` or `off_channels` explicitly holds other valves OFF for the same
+duration. Names and channel numbers must be disjoint across ON and OFF lists.
+A valve claimed by a step remains OFF afterward unless the next step requests
+it ON; an unlisted manual valve retains its state. An empty step is a delay.
+Explicit OFF actions require embedded sequence firmware. Group edges use sequential
 I2C writes, not hardware synchronization. Comments and logs add timing overhead.
 The build rejects invalid steps, names, and channels absent from the board.
 The base `prj.conf` selects named sequences with manual start. The separate
@@ -459,8 +460,9 @@ is lost on power loss/reset. Logs add execution overhead and group timing skew.
 A container still needs serial forwarding to receive these logs; flashing through
 flasherd alone does not provide a serial terminal.
 
-Interactive `vlvseq` → `run <name>` schedules a ten-second countdown while the
-prompt remains available for manual commands. Space or Q at an empty prompt cancels the pending start.
+Interactive `vlvseq` → `run <name>` schedules a ten-second countdown. Manual
+control is blocked until the countdown is canceled or the run completes. Space
+or Q at an empty prompt cancels the pending start.
 `sequence run <name>` at the top-level prompt retains its blocking countdown. Press Space or Q (without
 Enter, at an empty prompt) to cancel with the connection open. Ctrl+C
 also cancels during the countdown. Once RUN is sent, use `abort` to stop the
@@ -469,7 +471,7 @@ countdown appears in client output, not board logs; direct USB commands are
 unchanged.
 
 The client `status` dashboard retains telemetry and polls valve readback alongside
-it. `sequence status` and `vlvseq` also show every valve in `valve_map.json` with
+it. The main client `status` command shows every valve in `valve_map.json` with
 ON/OFF logical GPIO readback, UNKNOWN for unavailable readings or older firmware,
 and UNASSIGNED for null mappings. Readback does not confirm mechanical position.
 Rebuild/flash embedded sequence firmware and restart the client for this protocol
@@ -480,19 +482,8 @@ milliseconds (1–2147483647 per step): `5000` means 5 seconds. This is a field 
 only; it does not use scheduler tick units. Embedded
 sequences use `K_MSEC`; the USB runner also accepts milliseconds.
 
-The valve tables also show “This client: last accepted command” for manual GPIO
-commands acknowledged during the current connection. Requested ON/OFF is kept
-separate from GPIO readback, including when they disagree. Valves powered by
-other means remain visible without a client command indicator. This history
-resets on reconnect and does not establish ownership or mechanical position.
-
-Inside `vlvseq`, `r` opens a numbered valve selector with a highlighted
-selection box. Choose `all` to release every override reported by the board,
-including unmapped channels. Release
-returns valves to the current sequence request, or OFF when idle, and stays in
-`vlvseq`. The all operation sends one command per overridden channel; it stops
-on failure without retrying. Overrides added by other clients during the batch
-may remain; use status to inspect the result.
-
-To release all from the selector, enter `r` at `VLVSEQ>`, then type `all` at
-the release selection prompt. You remain in `vlvseq` afterward.
+The valve table's “Control source” column shows SEQUENCE for an active sequence
+request and MANUAL for a manual override, including manual OFF. It uses board
+state, so it includes commands from other clients. A dash means neither request
+is active; UNKNOWN means the firmware did not provide enough information. Power
+is shown separately as GPIO readback, which does not establish mechanical position.

@@ -48,7 +48,7 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
         if (not isinstance(step, dict) or
                 "duration_ticks" not in step or
                 ("channels" in step) == ("valves" in step) or
-                set(step) - {"duration_ticks", "channels", "valves", "comment"}):
+                set(step) - {"duration_ticks", "channels", "valves", "off_channels", "off_valves", "comment"}):
             raise ValueError(f"step {index}: expected duration_ticks, either channels or valves, and optional comment")
         comment = step.get("comment", "")
         if (not isinstance(comment, str) or
@@ -80,6 +80,26 @@ def load_sequence(path, valve_map=DEFAULT_VALVE_MAP):
                 any(type(c) is not int or not 0 <= c <= 31 for c in channels) or
                 len(set(channels)) != len(channels)):
             raise ValueError(f"step {index}: resolved channels must be unique integers 0..31")
+        off_entries = step.get("off_valves", step.get("off_channels", []))
+        if "off_valves" in step and "off_channels" in step or not isinstance(off_entries, list):
+            raise ValueError(f"step {index}: use one list of off_valves or off_channels")
+        off_channels = []
+        for entry in off_entries:
+            if "off_valves" in step:
+                if not isinstance(entry, str):
+                    raise ValueError(f"step {index}: off_valves must contain valve names")
+                if mapping is None:
+                    mapping = load_valve_map(valve_map)
+                if entry not in mapping or mapping[entry] is None:
+                    raise ValueError(f"step {index}: unknown or unassigned valve {entry!r}")
+                entry = mapping[entry]
+            if type(entry) is not int or not 0 <= entry <= 31:
+                raise ValueError(f"step {index}: off channels must be integers 0..31")
+            off_channels.append(entry)
+        if len(set(off_channels)) != len(off_channels) or set(channels) & set(off_channels):
+            raise ValueError(f"step {index}: on and off channels must be unique and disjoint")
+        step["off_channels"] = off_channels
+        step.pop("off_valves", None)
         # Both the host runner and embedded generator use this validated GPIO list.
         # JSON field name is historical; values still represent milliseconds.
         step["duration_ms"] = step.pop("duration_ticks")
@@ -117,6 +137,8 @@ def main():
     args = parser.parse_args()
     try:
         steps = load_sequence(args.sequence, args.valve_map)
+        if not args.dry_run and any(step["off_channels"] for step in steps):
+            raise ValueError("explicit off actions require embedded sequence firmware")
         if args.dry_run:
             for index, step in enumerate(steps, 1):
                 print(f"{index}: {step['duration_ms']} ms, channels {step['channels']}")

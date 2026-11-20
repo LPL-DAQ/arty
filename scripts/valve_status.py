@@ -42,24 +42,21 @@ def valve_table(info, client_commands=None):
     table.add_column('Valve')
     table.add_column('Channel')
     table.add_column('Power')
-    table.add_column('Sequence')
-    table.add_column('Override')
-    table.add_column('This client')
-    table.caption = ('Override takes priority over Sequence. This client shows last accepted commands. '
+    table.add_column('Control source')
+    table.caption = ('Control source reflects board requests, including commands from other clients. '
                      'GPIO readback is not mechanical position.')
     try:
         for name, channel, state in valve_rows(info):
-            command = (client_commands or {}).get(int(channel)) if channel != '—' else None
-            indicator = 'Requested ON' if command is True else 'Requested OFF' if command is False else '—'
             bit = 1 << int(channel) if channel != '—' else 0
-            sequence = override = '—'
+            indicator = 'UNKNOWN' if bit else '—'
             if bit and info is not None:
-                if info.HasField('sequence_requested_channels'):
-                    sequence = 'ON' if info.sequence_requested_channels & bit else 'OFF'
-                if (info.HasField('manual_override_channels')
-                        and info.manual_override_channels & bit):
-                    override = 'ON' if info.manual_powered_channels & bit else 'OFF'
-            table.add_row(name, channel, state, sequence, override, indicator, style={'ON': 'green', 'OFF': 'dim'}.get(state, 'yellow'))
+                if info.HasField('manual_override_channels') and info.manual_override_channels & bit:
+                    indicator = 'MANUAL'
+                elif info.HasField('sequence_requested_channels') and info.sequence_requested_channels & bit:
+                    indicator = 'SEQUENCE'
+                elif info.HasField('manual_override_channels') and info.HasField('sequence_requested_channels'):
+                    indicator = '—'
+            table.add_row(name, channel, state, indicator, style={'ON': 'green', 'OFF': 'dim'}.get(state, 'yellow'))
     except (OSError, ValueError):
-        table.add_row('Valve map unavailable', '—', 'UNKNOWN', '—', '—', '—')
+        table.add_row('Valve map unavailable', '—', 'UNKNOWN', '—')
     return table

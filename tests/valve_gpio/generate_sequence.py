@@ -35,19 +35,20 @@ def main():
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
     # Firmware checks this highest channel against its devicetree at compile time.
-    used = {channel for _, steps in sequences for step in steps for channel in step["channels"]}
+    used = {channel for _, steps in sequences for step in steps for channel in step["channels"] + step["off_channels"]}
     lines = ["/* Generated from JSON; do not edit. */", "#pragma once",
              "#include <stdint.h>", "#include <stddef.h>",
              f"#define SEQUENCE_REQUIRED_CHANNELS {max(used, default=-1) + 1}",
-             "struct sequence_step { uint32_t duration_ms; uint32_t mask; const char *comment; };",
+             "struct sequence_step { uint32_t duration_ms; uint32_t mask; uint32_t off_mask; const char *comment; };",
              "struct valve_sequence { const char *name; const struct sequence_step *steps; size_t count; };"]
     # One mask bit per channel lets firmware energize each step without parsing JSON.
     for index, (_, steps) in enumerate(sequences):
         lines.append(f"static const struct sequence_step sequence_steps_{index}[] = {{")
         for step in steps:
             mask = sum(1 << channel for channel in step["channels"])
+            off_mask = sum(1 << channel for channel in step["off_channels"])
             comment = c_string(step.get("comment", ""))
-            lines.append(f"    {{{step['duration_ms']}U, 0x{mask:08x}U, {comment}}},")
+            lines.append(f"    {{{step['duration_ms']}U, 0x{mask:08x}U, 0x{off_mask:08x}U, {comment}}},")
         lines.append("};")
     lines.append("static const struct valve_sequence sequences[] = {")
     for index, (name, steps) in enumerate(sequences):

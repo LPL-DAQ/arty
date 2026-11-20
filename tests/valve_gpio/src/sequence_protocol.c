@@ -41,8 +41,13 @@ void sequence_handle_request(const Request *request, Response *response)
     }
     if (err) {
         response->has_err = true;
-        snprintf(response->err, sizeof(response->err),
-                 "Valve/sequence request rejected (%d): check channel, name and status; faults require reset", err);
+        if (manual && err == -EACCES) {
+            snprintf(response->err, sizeof(response->err),
+                     "MANUAL CONTROL BLOCKED: sequence running; wait or abort");
+        } else {
+            snprintf(response->err, sizeof(response->err),
+                     "Valve/sequence request rejected (%d): check channel, name and status; faults require reset", err);
+        }
     }
     /* Report a coherent engine snapshot after command acceptance, not run completion. */
     struct sequence_snapshot status = sequence_status();

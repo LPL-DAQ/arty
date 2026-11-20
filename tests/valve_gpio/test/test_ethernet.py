@@ -133,11 +133,12 @@ int main(int argc, char **argv) {
                         break
                     self.assertLess(time.monotonic(), deadline)
                 self.assertEqual(info.powered_channels & 7, 7)
-                # Manual OFF overrides an active sequence; release resumes it.
-                info = manual(second, 0, False)
-                self.assertEqual(info.manual_override_channels & 5, 5)
-                self.assertEqual(info.powered_channels & 7, 6)
-                info = manual(second, 0, release=True)
+                # Manual commands are rejected while the sequence runs.
+                with self.assertRaisesRegex(ValueError, 'MANUAL CONTROL BLOCKED'):
+                    manual(second, 0, False)
+                with self.assertRaisesRegex(ValueError, 'MANUAL CONTROL BLOCKED'):
+                    manual(second, 0, release=True)
+                info = self.request(second, 'sequence status')
                 self.assertEqual(info.powered_channels & 7, 7)
                 self.assertEqual(info.manual_override_channels, 4)
                 with self.assertRaisesRegex(ValueError, 'rejected'):
@@ -172,17 +173,16 @@ int main(int argc, char **argv) {
             commands = {}
             mode = ValveSequenceMode(connection, Console(file=output), client_commands=commands)
             session = Mock()
-            session.prompt.side_effect = ['v', '1', '1', 'v', '1', '2', 'r', '1', 'status', 'back']
+            session.prompt.side_effect = ['v', '1', '1', 'v', '1', '2', 'status', 'back']
             mode.run(session)
             self.assertFalse(mode.broken)
-            self.assertEqual(commands, {})
+            self.assertEqual(commands, {0: False})
             text = output.getvalue()
             self.assertIn('SELECTED VALVE', text)
             self.assertIn('Manual command accepted: channel 0 ON', text)
             self.assertIn('Manual command accepted: channel 0 OFF', text)
-            self.assertIn('Manual command accepted: channel 0 released', text)
-            self.assertEqual(session.prompt.call_count, 10)
-            self.assertEqual(self.request(connection, 'sequence status').manual_override_channels, 0)
+            self.assertEqual(session.prompt.call_count, 8)
+            self.assertEqual(self.request(connection, 'sequence status').manual_override_channels, 1)
 
     def test_named_runs_busy_stop_disconnect_and_client_cli(self):
         with self.server() as (connection, port, logs):
