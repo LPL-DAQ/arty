@@ -79,6 +79,7 @@ RCS_VALVE_SEQ_DIR = pathlib.Path('sequences/rcs_valve')
 RCS_SEQ_DIR = pathlib.Path('sequences/rcs')
 STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
 FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
+SENSOR_CONFIG_DIR = pathlib.Path('sensor_configs')
 
 # Network
 ZEPHYR_IP = '169.254.99.99'  # real board
@@ -115,6 +116,9 @@ _csv_fh = None  # open file handle
 _csv_writer = None  # csv.DictWriter bound to _csv_fh
 _csv_rows_written: int = 0
 _seq_recording: bool = False
+_manual_recording: bool = False  # `rec` toggles it: record while IDLE (sensor cal)
+_csv_file_lock = threading.Lock()  # serializes the flush thread and the exit path over the _csv_* file state
+_csv_exiting: bool = False  # set by _write_csv_on_exit; the flush thread stops instead of reopening a file
 
 _last_packet_time: float = 0.0
 _last_packet_lock = threading.Lock()
@@ -177,7 +181,7 @@ def listen_for_telemetry():
                     elif lock is _csv_store_lock:
                         if clover_pb2.SystemState.Name(packet.state) != 'STATE_IDLE' and 'PRIMED' not in clover_pb2.SystemState.Name(packet.state):
                             _seq_recording = True
-                        if _seq_recording:
+                        if _seq_recording or _manual_recording:
                             _csv_store.append((recv_time, packet))
                     else:
                         _graph_history.append(packet)
@@ -254,28 +258,28 @@ def _packet_to_row(recv_time: float, pkt: clover_pb2.DataPacket) -> dict:
     # Common analog/estimate data.
     row.update(
         {
-            #'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
-            #'pt001': _opt(pkt.analog_sensors, 'pt001'),
-            #'pt002': _opt(pkt.analog_sensors, 'pt002'),
-            #'pt003': _opt(pkt.analog_sensors, 'pt003'),
+            'battery_voltage': _opt(pkt.analog_sensors, 'battery_voltage'),
+            'pt001': _opt(pkt.analog_sensors, 'pt001'),
+            'pt002': _opt(pkt.analog_sensors, 'pt002'),
+            'pt003': _opt(pkt.analog_sensors, 'pt003'),
             'pt004': _opt(pkt.analog_sensors, 'pt004'),
             'pt005': _opt(pkt.analog_sensors, 'pt005'),
             'pt006': _opt(pkt.analog_sensors, 'pt006'),
             'pt103': _opt(pkt.analog_sensors, 'pt103'),
             'pt203': _opt(pkt.analog_sensors, 'pt203'),
-            #'pt301': _opt(pkt.analog_sensors, 'pt301'),
+            'pt301': _opt(pkt.analog_sensors, 'pt301'),
             'ptf401': _opt(pkt.analog_sensors, 'ptf401'),
             'pto401': _opt(pkt.analog_sensors, 'pto401'),
             'ptc401': _opt(pkt.analog_sensors, 'ptc401'),
             'ptc402': _opt(pkt.analog_sensors, 'ptc402'),
-            #'tc002': _opt(pkt.analog_sensors, 'tc002'),
-            #'tc102': _opt(pkt.analog_sensors, 'tc102'),
-            #'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
-            #'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
-            #'tco401': _opt(pkt.analog_sensors, 'tco401'),
-            #'ptg001': _opt(pkt.analog_sensors, 'ptg001'),
-            #'ptg002': _opt(pkt.analog_sensors, 'ptg002'),
-            #'ptg101': _opt(pkt.analog_sensors, 'ptg101'),
+            'tc002': _opt(pkt.analog_sensors, 'tc002'),
+            'tc102': _opt(pkt.analog_sensors, 'tc102'),
+            'tc102_5': _opt(pkt.analog_sensors, 'tc102_5'),
+            'tcf401': _opt(pkt.analog_sensors, 'tcf401'),
+            'tco401': _opt(pkt.analog_sensors, 'tco401'),
+            'ptg001': _opt(pkt.analog_sensors, 'ptg001'),
+            'ptg002': _opt(pkt.analog_sensors, 'ptg002'),
+            'ptg101': _opt(pkt.analog_sensors, 'ptg101'),
             #'est_pos_x_m': float(pkt.estimated_state.position.x),
             #'est_pos_y_m': float(pkt.estimated_state.position.y),
             #'est_pos_z_m': float(pkt.estimated_state.position.z),
@@ -431,32 +435,36 @@ def _packet_to_csv_rows(recv_time: float, pkt: clover_pb2.DataPacket) -> list[di
 
 def _write_csv_on_exit():
     """Flush any remaining buffered packets to the CSV file and close it."""
-    global _csv_fh, _csv_writer, _csv_path, _csv_rows_written
+    global _csv_fh, _csv_writer, _csv_path, _csv_rows_written, _csv_exiting
 
-    with _csv_store_lock:
-        remaining = list(_csv_store)
-        _csv_store.clear()
+    # The flush thread must neither write while the file is being closed nor open a second file afterwards (rec still on, or a sequence still running)
+    with _csv_file_lock:
+        _csv_exiting = True
 
-    # Sequence started but flush_loop never ran — create the file now
-    if remaining and _csv_fh is None:
-        _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
-        _csv_path.parent.mkdir(exist_ok=True)
-        _csv_fh = open(_csv_path, 'w', newline='')
-        _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
-        _csv_writer.writeheader()
+        with _csv_store_lock:
+            remaining = list(_csv_store)
+            _csv_store.clear()
 
-    if _csv_fh is None:
-        return
+        # Sequence started but flush_loop never ran — create the file now
+        if remaining and _csv_fh is None:
+            _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
+            _csv_path.parent.mkdir(exist_ok=True)
+            _csv_fh = open(_csv_path, 'w', newline='')
+            _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+            _csv_writer.writeheader()
 
-    for recv_time, pkt in remaining:
-        try:
-            for row in _packet_to_csv_rows(recv_time, pkt):
-                _csv_writer.writerow(row)
-                _csv_rows_written += 1
-        except Exception as e:
-            console.print(f'  [bold red]CSV row error:[/bold red] {e}')
+        if _csv_fh is None:
+            return
 
-    _close_csv()
+        for recv_time, pkt in remaining:
+            try:
+                for row in _packet_to_csv_rows(recv_time, pkt):
+                    _csv_writer.writerow(row)
+                    _csv_rows_written += 1
+            except Exception as e:
+                console.print(f'  [bold red]CSV row error:[/bold red] {e}')
+
+        _close_csv()
 
 
 # ── ClickHouse flush ─────────────────────────────────────────────────────────
@@ -481,17 +489,35 @@ def _reconnect_and_resubscribe():
         console.print(f'  [{THEME["danger"]}]Reconnect failed: {e}[/{THEME["danger"]}]')
 
 
-_USEFUL_SENSORS: dict[str, str] = {
-    'pt004': 'PT-004',
-    'pt005': 'PT-005',
-    'pt006': 'PT-006',
-    'pt103': 'PT-103',
-    'pt203': 'PT-203',
-    'ptf401': 'PTF-401',
-    'pto401': 'PTO-401',
-    'ptc401': 'PTC-401',
-    'ptc402': 'PTC-402',
-}
+# One subplot per unit, so psi, °C and V don't share a y axis
+_SENSOR_PLOTS: list[tuple[str, dict[str, str]]] = [
+    ('Pressures (psi)', {
+        'pt001': 'PT-001',
+        'pt002': 'PT-002',
+        'pt003': 'PT-003',
+        'pt004': 'PT-004',
+        'pt005': 'PT-005',
+        'pt006': 'PT-006',
+        'pt103': 'PT-103',
+        'pt203': 'PT-203',
+        'pt301': 'PT-301',
+        'ptf401': 'PTF-401',
+        'pto401': 'PTO-401',
+        'ptc401': 'PTC-401',
+        'ptc402': 'PTC-402',
+        'ptg001': 'PTG-001',
+        'ptg002': 'PTG-002',
+        'ptg101': 'PTG-101',
+    }),
+    ('Temperatures (°C)', {
+        'tc002': 'TC-002',
+        'tc102': 'TC-102',
+        'tc102_5': 'TC-102.5',
+        'tcf401': 'TCF-401',
+        'tco401': 'TCO-401',
+    }),
+    ('Voltage (V)', {'battery_voltage': 'Battery voltage'}),
+]
 
 _MOTOR_SENSORS: dict[str, str] = {
     'gnc_fuel_target_deg': 'Fuel Desired',
@@ -587,17 +613,16 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
         has_throttle_metrics = any(
             series.get(sensor) for sensor, _ in _THROTTLE_METRIC_PLOTS[0][1]
         )
+        # Only units that have data get a subplot; keep at least one so the layout below holds
+        sensor_plots = [(t, s) for t, s in _SENSOR_PLOTS if any(series.get(k) for k in s)] or _SENSOR_PLOTS[:1]
+        n_sensor_rows = len(sensor_plots)
 
-        if has_throttle_metrics:
-            n_rows = 2 + len(_THROTTLE_METRIC_PLOTS)
-            subplot_titles = (
-                'All Sensors',
-                'Motor Traces — Desired vs Actual',
-                *(title for title, _ in _THROTTLE_METRIC_PLOTS),
-            )
-        else:
-            n_rows = 2
-            subplot_titles = ('All Sensors', 'Motor Traces — Desired vs Actual')
+        subplot_titles = (
+            *(title for title, _ in sensor_plots),
+            'Motor Traces — Desired vs Actual',
+            *(title for title, _ in (_THROTTLE_METRIC_PLOTS if has_throttle_metrics else [])),
+        )
+        n_rows = len(subplot_titles)
 
         fig = make_subplots(
             rows=n_rows,
@@ -607,16 +632,18 @@ def _generate_plots(csv_path: pathlib.Path) -> None:
             vertical_spacing=0.06,
         )
 
-        _add_traces(fig, series, _USEFUL_SENSORS.items(), t0, tups, row=1, go=go)
-        _add_traces(fig, series, _MOTOR_SENSORS.items(), t0, tups, row=2, go=go)
+        for i, (title, sensors) in enumerate(sensor_plots):
+            _add_traces(fig, series, sensors.items(), t0, tups, row=1 + i, go=go)
+            fig.update_yaxes(title_text=title, row=1 + i, col=1)
+        motor_row = n_sensor_rows + 1
+        _add_traces(fig, series, _MOTOR_SENSORS.items(), t0, tups, row=motor_row, go=go)
 
         if has_throttle_metrics:
             for i, (_, sensor_label_pairs) in enumerate(_THROTTLE_METRIC_PLOTS):
-                _add_traces(fig, series, sensor_label_pairs, t0, tups, row=3 + i, go=go)
+                _add_traces(fig, series, sensor_label_pairs, t0, tups, row=motor_row + 1 + i, go=go)
 
         fig.update_xaxes(title_text='Time (s)', row=n_rows, col=1)
-        fig.update_yaxes(title_text='Value', row=1, col=1)
-        fig.update_yaxes(title_text='Position (°)', row=2, col=1)
+        fig.update_yaxes(title_text='Position (°)', row=motor_row, col=1)
         fig.update_layout(hovermode='x unified', height=400 * n_rows)
 
         plots_dir = csv_path.parent / 'plots'
@@ -656,39 +683,45 @@ def _flush_loop():
     while True:
         time.sleep(1)
 
-        # ── CSV incremental flush ────────────────────────────────────────────
-        with _csv_store_lock:
-            if _csv_store:
-                csv_batch = list(_csv_store)
-                _csv_store.clear()
-            else:
-                csv_batch = []
+        with _csv_file_lock:
+            if _csv_exiting:
+                return
 
-        if csv_batch:
-            global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
-            if _csv_fh is None and _seq_recording:
-                _csv_path = (
-                    pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
-                )
-                _csv_path.parent.mkdir(exist_ok=True)
-                _csv_fh = open(_csv_path, 'w', newline='')
-                _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
-                _csv_writer.writeheader()
-            if _csv_fh is not None:
-                try:
-                    for recv_time, pkt in csv_batch:
-                        for row in _packet_to_csv_rows(recv_time, pkt):
-                            _csv_writer.writerow(row)
-                            _csv_rows_written += 1
-                    _csv_fh.flush()
-                except Exception as e:
-                    console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+            # ── CSV incremental flush ────────────────────────────────────────────
+            # Lock is taken before the batch is pulled, so the exit path never finds rows this thread already claimed and then drops
+            with _csv_store_lock:
+                if _csv_store:
+                    csv_batch = list(_csv_store)
+                    _csv_store.clear()
+                else:
+                    csv_batch = []
 
-        # ── Detect sequence end (after flush so last data lands in current file)
-        pkt = latest_packet
-        if _seq_recording and pkt is not None:
-            if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
-                _seq_recording = False
+            if csv_batch:
+                global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
+                if _csv_fh is None and (_seq_recording or _manual_recording):
+                    _csv_path = (
+                        pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
+                    )
+                    _csv_path.parent.mkdir(exist_ok=True)
+                    _csv_fh = open(_csv_path, 'w', newline='')
+                    _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
+                    _csv_writer.writeheader()
+                if _csv_fh is not None:
+                    try:
+                        for recv_time, pkt in csv_batch:
+                            for row in _packet_to_csv_rows(recv_time, pkt):
+                                _csv_writer.writerow(row)
+                                _csv_rows_written += 1
+                        _csv_fh.flush()
+                    except Exception as e:
+                        console.print(f'  [bold red]CSV write error:[/bold red] {e}')
+
+            # ── Detect sequence end (after flush so last data lands in current file)
+            pkt = latest_packet
+            if _seq_recording and pkt is not None:
+                if clover_pb2.SystemState.Name(pkt.state) == 'STATE_IDLE':
+                    _seq_recording = False
+            if _csv_fh is not None and not (_seq_recording or _manual_recording):
                 _close_csv()
 
 
@@ -1202,7 +1235,7 @@ def _build_status_renderable():
                 unit = '°C'
             else:
                 unit = 'V'
-            table.add_row(sensor.upper(), f'{reading:.2f}', unit)
+            table.add_row(sensor.upper(), f'{reading:.3f}' if unit == 'V' else f'{reading:.2f}', unit)
 
         bottom_columns.append(
             Panel(
@@ -1428,7 +1461,8 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
         console.print(
             f'\n  {THEME["icon_warn"]} [{THEME["warning"]}]{label} sent but no response: {e}[/{THEME["warning"]}]\n'
         )
-        return True
+        # The board did not confirm, so callers that record a success must not treat this as accepted.
+        return False
 
 
 # comment out to test in terminal without real data
@@ -1440,20 +1474,134 @@ def send_request(req: clover_pb2.Request, label: str) -> bool:
 # ── Command implementations ──────────────────────────────────────────────────
 
 
+def _j5_pad(ain: int) -> int:
+    """Ranger 1 J5 (DB-37) pad for an AIN number. Even AINs run along the top row, odd along the bottom."""
+    return ain // 2 + 1 if ain % 2 == 0 else ain // 2 + 20
+
+
+def _parse_pins(text: str) -> list[int]:
+    """'4, 6-7' -> [4, 6, 7]. Raises ValueError on anything else."""
+    pins = []
+    for part in text.replace(' ', '').split(','):
+        lo, _, hi = part.partition('-')
+        lo, hi = int(lo), int(hi or lo)
+        if hi < lo:
+            raise ValueError(text)
+        pins.extend(range(lo, hi + 1))
+    if not pins or len(set(pins)) != len(pins) or not all(0 <= p <= 31 for p in pins):
+        raise ValueError(text)
+    return pins
+
+
+def _print_sensor_configs(configs):
+    """Show what is about to be sent, so a wrong channel or range is caught before it reaches the board."""
+    table = Table(box=box.SIMPLE_HEAD, header_style=THEME['primary'], border_style=THEME['panel_border'], padding=(0, 2))
+    for col in ('Channel', 'J5 pad', 'Sensor', 'Type', 'Range', 'Bias'):
+        table.add_column(col)
+    for c in configs:
+        if c.HasField('pt_range_psig'):
+            kind, rng, bias = 'PT (psig)', c.pt_range_psig, c.pt_bias_psig
+        elif c.HasField('raw_range_v'):
+            kind, rng, bias = 'raw (V)', c.raw_range_v, c.raw_bias_v
+        else:
+            kind, rng, bias = f'TC {clover_pb2.TCType.Name(c.tc_type)} (°C)', '-', c.tc_bias_deg_c
+        table.add_row(f'AIN{c.channel}', str(_j5_pad(c.channel)), clover_pb2.AnalogSensor.Name(c.assignment), kind, str(rng), str(bias))
+    console.print(table)
+
+
+# TODO: test on hardware. So far only run with the board stubbed out. Bench check: two PTs on AIN6/AIN7, unplug one, only its value should drop.
+def _pick_pins():
+    """Ask which AIN pins to read and what is on each. Returns the configs, or None if cancelled."""
+    console.print(f'  [{THEME["muted"]}]Ranger 1 J5 pads: ' + '  '.join(f'AIN{a}={_j5_pad(a)}' for a in range(32)) + f'[/{THEME["muted"]}]')
+    console.print(f'  [{THEME["muted"]}]Only the pins listed here are read. After a reboot, [1] Saved table -> last_picked resends the last table sent.[/{THEME["muted"]}]')
+    while True:
+        try:
+            pins = _parse_pins(Prompt.ask('  AIN pins to read (e.g. 4,6-7)'))
+            break
+        except ValueError:
+            console.print(f'  [{THEME["danger"]}]Use AIN numbers 0-31, comma separated, ranges like 6-7, no repeats.[/{THEME["danger"]}]')
+
+    sensors = [v.name for v in clover_pb2.AnalogSensor.DESCRIPTOR.values if v.name != 'UNKNOWN_ANALOG_SENSOR']
+    console.print(f'  [{THEME["muted"]}]Sensors: {" ".join(sensors)}[/{THEME["muted"]}]')
+    if len(pins) > len(sensors):
+        console.print(f'  [{THEME["danger"]}]{len(pins)} pins but only {len(sensors)} sensor names, nothing sent. Pick fewer pins.[/{THEME["danger"]}]')
+        return None
+    configs, used = [], set()
+    for pin in pins:
+        cfg = clover_pb2.AnalogSensorConfig(channel=pin)
+        while True:
+            name = Prompt.ask(f'  AIN{pin} (pad {_j5_pad(pin)}) sensor (blank to cancel)').strip().upper()
+            if not name:
+                console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+                return None
+            if name in used:
+                console.print(f'  [{THEME["danger"]}]{name} is already on another pin.[/{THEME["danger"]}]')
+            elif name in sensors:
+                break
+            else:
+                console.print(f'  [{THEME["danger"]}]Not a sensor name. Pick one from the list above.[/{THEME["danger"]}]')
+        used.add(name)
+        cfg.assignment = clover_pb2.AnalogSensor.Value(name)
+        kind = Prompt.ask(f'  AIN{pin} type', choices=['pt', 'tc', 'raw'], default='pt')
+        if kind == 'pt':
+            cfg.pt_range_psig = FloatPrompt.ask(f'  AIN{pin} range psig (PT rated psi, e.g. 1000)')
+            cfg.pt_bias_psig = FloatPrompt.ask(f'  AIN{pin} bias psig', default=0.0)
+        elif kind == 'tc':
+            cfg.tc_type = clover_pb2.TCType.Value(Prompt.ask(f'  AIN{pin} TC type', choices=['K_TYPE', 'T_TYPE'], default='K_TYPE'))
+            cfg.tc_bias_deg_c = FloatPrompt.ask(f'  AIN{pin} bias deg C', default=0.0)
+        else:
+            cfg.raw_range_v = FloatPrompt.ask(f'  AIN{pin} range V', default=5.0)
+            cfg.raw_bias_v = FloatPrompt.ask(f'  AIN{pin} bias V', default=0.0)
+        configs.append(cfg)
+
+    _print_sensor_configs(configs)
+    if not Confirm.ask('  Send this table?', default=True):
+        console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+        return None
+    return configs
+
+
+# The last table sent (from Pick pins or a saved table) goes here; the saved-table list shows it first
+_LAST_PICKED = SENSOR_CONFIG_DIR / 'last_picked.textproto'
+
+
+# TODO: standardize with valves and other inputs, which are each set a different way today. Ideally all of them are set from the client without reflashing, unless a blocker makes that impossible.
 def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
     console.print('    Profile:')
-    console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test     (assigns channels 0-21)')
-    console.print('      [3] Test 2   (assigns channels 22-31)')
-    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
+    console.print(f'      [1] Saved table  (from {SENSOR_CONFIG_DIR}/, last_picked at top = last table sent)')
+    console.print('      [2] Pick pins    (choose AIN pins and what is on each)')
+    console.print('      [3] Test         (assigns channels 0-21)')
+    console.print('      [4] Test 2       (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1' if _list_saved_configs(SENSOR_CONFIG_DIR) else '2')
 
     if profile == '1':
-        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
-        configs = []
+        if not _list_saved_configs(SENSOR_CONFIG_DIR):
+            console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
+            return
+        # A bad table file must not crash the client (and stop logging) mid-test
+        try:
+            table = _pick_and_load_config(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
+        except (OSError, ValueError, text_format.ParseError) as e:
+            console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
+            return
+        # channel and assignment are required; a row missing one parses fine but fails to serialize
+        if missing := table.FindInitializationErrors():
+            console.print(f'  [{THEME["danger"]}]Sensor table is missing {", ".join(missing)}, nothing sent[/{THEME["danger"]}]')
+            return
+        configs = list(table.configs)
+        _print_sensor_configs(configs)
+        if not Confirm.ask('  Send this table?', default=True):
+            console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+            return
 
     elif profile == '2':
+        configs = _pick_pins()
+        if configs is None:
+            return
+
+    elif profile == '3':
         configs = []
 
         for chan in range(22):
@@ -1465,7 +1613,7 @@ def cmd_configure_analog_sensors():
 
             configs.append(cfg)
 
-    elif profile == '3':
+    elif profile == '4':
         configs = []
 
         for chan in range(10):
@@ -1482,7 +1630,10 @@ def cmd_configure_analog_sensors():
 
     req = clover_pb2.Request()
     req.configure_analog_sensors.configs.extend(configs)
-    send_request(req, 'CONFIGURE_ANALOG_SENSORS')
+    if send_request(req, 'CONFIGURE_ANALOG_SENSORS') and profile in ('1', '2'):
+        _LAST_PICKED.parent.mkdir(parents=True, exist_ok=True)
+        _LAST_PICKED.write_text(text_format.MessageToString(req.configure_analog_sensors))
+        console.print(f'  [{THEME["muted"]}]Saved as last_picked in {SENSOR_CONFIG_DIR}/. To keep it (e.g. for hotfire), copy it to a new name there and commit it.[/{THEME["muted"]}]')
 
 
 def cmd_configure_valves():
@@ -1674,15 +1825,15 @@ def cmd_calibrate_throttle_valve():
     send_request(req, f'CALIBRATE_THROTTLE_VALVE ({valve_name})')
 
 
-def _list_saved_sequences(subdir: pathlib.Path) -> list[pathlib.Path]:
+def _list_saved_configs(subdir: pathlib.Path) -> list[pathlib.Path]:
     if not subdir.exists():
         return []
-    return sorted(subdir.glob('*.textproto'))
+    return sorted(subdir.glob('*.textproto'), key=lambda f: (f.stem != 'last_picked', f.name))  # last sent sensor table first
 
 
-def _pick_and_load_sequence(subdir: pathlib.Path, msg_class):
-    """Display saved sequences, prompt user to pick one, return parsed proto."""
-    files = _list_saved_sequences(subdir)
+def _pick_and_load_config(subdir: pathlib.Path, msg_class):
+    """Display saved textproto files (sensor tables, sequences), prompt user to pick one, return parsed proto."""
+    files = _list_saved_configs(subdir)
     t = THEME
     table = Table(
         box=box.SIMPLE_HEAD,
@@ -1815,9 +1966,9 @@ def cmd_load_throttle_valve_sequence():
         f'\n  {t["icon_seq"]} [{t["primary"]}]Load Throttle Valve Sequence[/{t["primary"]}]'
     )
 
-    saved = _list_saved_sequences(VALVE_SEQ_DIR)
+    saved = _list_saved_configs(VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(VALVE_SEQ_DIR, clover_pb2.LoadThrottleValveSequenceRequest)
+        loaded = _pick_and_load_config(VALVE_SEQ_DIR, clover_pb2.LoadThrottleValveSequenceRequest)
         req = clover_pb2.Request()
         req.load_throttle_valve_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_THROTTLE_VALVE_SEQUENCE')
@@ -1873,9 +2024,9 @@ def cmd_load_throttle_sequence():
     t = THEME
     console.print(f'\n  {t["icon_loop"]} [{t["primary"]}]Load Throttle Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(THRUST_SEQ_DIR)
+    saved = _list_saved_configs(THRUST_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(THRUST_SEQ_DIR, clover_pb2.LoadThrottleSequenceRequest)
+        loaded = _pick_and_load_config(THRUST_SEQ_DIR, clover_pb2.LoadThrottleSequenceRequest)
         req = clover_pb2.Request()
         req.load_throttle_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_THROTTLE_SEQUENCE')
@@ -2005,6 +2156,17 @@ def cmd_configure_flight_controller_gains():
         console.print(f'  [{t["muted"]}]No gains configured.[/{t["muted"]}]')
 
 
+def cmd_toggle_recording():
+    """Start/stop CSV recording regardless of state, e.g. to log sensor cal points while IDLE."""
+    global _manual_recording
+    _manual_recording = not _manual_recording
+    t = THEME
+    if _manual_recording:
+        console.print(f'  [{t["success"]}]Recording to data/raw_sensors_*.csv. `rec` again to stop.[/{t["success"]}]')
+    else:
+        console.print(f'  [{t["muted"]}]Recording stopped, file closes within ~1 s.[/{t["muted"]}]')
+
+
 # TODO: is this all that's needed?
 def cmd_calibrate_tvc():
     """Enter TVC calibration mode (IDLE → CALIBRATE_TVC)."""
@@ -2027,9 +2189,9 @@ def cmd_load_tvc_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load TVC Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(TVC_SEQ_DIR)
+    saved = _list_saved_configs(TVC_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(TVC_SEQ_DIR, clover_pb2.LoadTvcSequenceRequest)
+        loaded = _pick_and_load_config(TVC_SEQ_DIR, clover_pb2.LoadTvcSequenceRequest)
         req = clover_pb2.Request()
         req.load_tvc_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_TVC_SEQUENCE')
@@ -2071,9 +2233,9 @@ def cmd_load_rcs_valve_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Valve Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(RCS_VALVE_SEQ_DIR)
+    saved = _list_saved_configs(RCS_VALVE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(RCS_VALVE_SEQ_DIR, clover_pb2.LoadRcsValveSequenceRequest)
+        loaded = _pick_and_load_config(RCS_VALVE_SEQ_DIR, clover_pb2.LoadRcsValveSequenceRequest)
         req = clover_pb2.Request()
         req.load_rcs_valve_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_RCS_VALVE_SEQUENCE')
@@ -2114,9 +2276,9 @@ def cmd_load_rcs_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load RCS Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(RCS_SEQ_DIR)
+    saved = _list_saved_configs(RCS_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(RCS_SEQ_DIR, clover_pb2.LoadRcsSequenceRequest)
+        loaded = _pick_and_load_config(RCS_SEQ_DIR, clover_pb2.LoadRcsSequenceRequest)
         req = clover_pb2.Request()
         req.load_rcs_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_RCS_SEQUENCE')
@@ -2153,9 +2315,9 @@ def cmd_load_static_fire_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Static Fire Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(STATIC_FIRE_SEQ_DIR)
+    saved = _list_saved_configs(STATIC_FIRE_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(
+        loaded = _pick_and_load_config(
             STATIC_FIRE_SEQ_DIR, clover_pb2.LoadStaticFireSequenceRequest
         )
         req = clover_pb2.Request()
@@ -2204,9 +2366,9 @@ def cmd_load_flight_sequence():
     t = THEME
     console.print(f'\n  {t["icon_seq"]} [{t["primary"]}]Load Flight Sequence[/{t["primary"]}]')
 
-    saved = _list_saved_sequences(FLIGHT_SEQ_DIR)
+    saved = _list_saved_configs(FLIGHT_SEQ_DIR)
     if saved and Confirm.ask('  Load a saved sequence?', default=True):
-        loaded = _pick_and_load_sequence(FLIGHT_SEQ_DIR, clover_pb2.LoadFlightSequenceRequest)
+        loaded = _pick_and_load_config(FLIGHT_SEQ_DIR, clover_pb2.LoadFlightSequenceRequest)
         req = clover_pb2.Request()
         req.load_flight_sequence.CopyFrom(loaded)
         send_request(req, 'LOAD_FLIGHT_SEQUENCE')
@@ -2263,6 +2425,7 @@ MENU_ITEMS = [
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
     ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
+    ('rec', 'record', 'Start/stop CSV recording (works while IDLE)', cmd_toggle_recording),
     ('cfgv', 'cfgv', 'Configure regular valves', cmd_configure_valves),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
