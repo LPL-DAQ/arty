@@ -13,6 +13,7 @@
 # changes made AFTER .proto file updates
 
 import argparse
+import json
 import math
 import struct
 import socket
@@ -34,6 +35,11 @@ from rich.rule import Rule
 from rich.columns import Columns
 from rich import box
 import clover_pb2
+import named_sequences
+from sequence_countdown import countdown
+from valve_status import ClientValveCommands, valve_table
+
+from valve_sequence_cli import ValveSequenceMode
 from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
 from prompt_toolkit import PromptSession
@@ -128,11 +134,20 @@ def _make_tcp_socket() -> socket.socket:
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
-    s.connect((ZEPHYR_IP, ZEPHYR_PORT))
+    # Bound connection setup; interactive operations choose their own reply timeout.
+    s.settimeout(5)
+    try:
+        s.connect((ZEPHYR_IP, ZEPHYR_PORT))
+    except OSError:
+        s.close()
+        raise
+    s.settimeout(None)
     return s
 
 
-sock = _make_tcp_socket()
+# Connect in main after parsing host/port, allowing imports without contacting hardware.
+sock = None
+client_valve_commands = ClientValveCommands()
 # ── Telemetry listener ───────────────────────────────────────────────────────
 
 
@@ -1212,7 +1227,7 @@ def _build_status_renderable():
         table.add_column('Sensor', style='bold white', no_wrap=True)
         table.add_column('Reading', style='white', justify='right', no_wrap=True)
         table.add_column('Unit', style=t['muted'], no_wrap=True)
-        
+
         for sensor, reading in MessageToDict(pkt.analog_sensors).items():
             if sensor[:2] == 'pt':
                 unit = 'psig'
@@ -1241,7 +1256,7 @@ def _build_status_renderable():
         )
         table.add_column('Valve', style='bold white', no_wrap=True)
         table.add_column('State', style='white', justify='right', no_wrap=True)
-        
+
         for valve, state in MessageToDict(pkt.valve_states).items():
             table.add_row(valve.upper(), state)
 
@@ -1252,7 +1267,7 @@ def _build_status_renderable():
                 border_style=t['panel_border'],
             ),
         )
-        
+
     if fcm.row_count != 0:
         bottom_columns.append(Panel(
             fcm,
@@ -1281,11 +1296,29 @@ def cmd_live_status():
     )
     threading.Thread(target=_wait_for_enter, daemon=True).start()
 
+    def render():
+        info = None
+        if sock is not None:
+            previous_timeout = sock.gettimeout()
+            try:
+                sock.settimeout(1)
+                info = named_sequences.exchange(sock, named_sequences.make_request('sequence status'))
+            except named_sequences.RequestRejected:
+                pass  # Other firmware may not support valve readback.
+            except Exception as exc:
+                # Do not keep polling a connection with uncertain framing.
+                console.print(f'Valve status unavailable: {exc}. Restart the client to reconnect.', markup=False)
+                sock.close()
+                stop.set()
+            finally:
+                if not stop.is_set():
+                    sock.settimeout(previous_timeout)
+        return Group(_build_status_renderable(), valve_table(info, client_valve_commands.for_connection(sock)))
+
     try:
-        with Live(_build_status_renderable(), refresh_per_second=5, screen=False) as live:
-            while not stop.is_set():
-                time.sleep(0.2)
-                live.update(_build_status_renderable())
+        with Live(render(), refresh_per_second=5, screen=False) as live:
+            while not stop.wait(0.2):
+                live.update(render())
     except KeyboardInterrupt:
         pass
 
@@ -1570,14 +1603,14 @@ def cmd_configure_analog_sensors():
 
     elif profile == '3':
         configs = []
-        
+
         for chan in range(22):
             cfg = clover_pb2.AnalogSensorConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
 
     elif profile == '4':
@@ -1589,9 +1622,9 @@ def cmd_configure_analog_sensors():
             cfg.assignment = chan + 1
             cfg.raw_range_v = 5
             cfg.raw_bias_v = 0
-                
+
             configs.append(cfg)
-    
+
     else:
         raise ValueError(f'Unknown profile of `{profile}`')
 
@@ -1605,7 +1638,7 @@ def cmd_configure_analog_sensors():
 
 def cmd_configure_valves():
     """Configure valves."""
-    
+
     console.print('    Profile:')
     console.print('      [1] Default  (actual vehicle)')
     console.print('      [2] Test    (assigns channel 0-12)')
@@ -1613,39 +1646,39 @@ def cmd_configure_valves():
     console.print('      [4] Test 3  (assigns channel 26-31)')
 
     profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1')
-    
+
     if profile == '1':
         print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
         configs = []
-        
+
     elif profile == '2':
         configs = []
-        
+
         for chan in range(13):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan
             cfg.assignment = chan + 1
-                
-            configs.append(cfg)
-        
-    elif profile == '3':
-        configs = []
-        
-        for chan in range(13):
-            cfg = clover_pb2.ValveConfig()
-            cfg.channel = chan + 13
-            cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     elif profile == '3':
         configs = []
-        
+
+        for chan in range(13):
+            cfg = clover_pb2.ValveConfig()
+            cfg.channel = chan + 13
+            cfg.assignment = chan + 1
+
+            configs.append(cfg)
+
+    elif profile == '3':
+        configs = []
+
         for chan in range(6):
             cfg = clover_pb2.ValveConfig()
             cfg.channel = chan + 26
             cfg.assignment = chan + 1
-                
+
             configs.append(cfg)
 
     else:
@@ -1695,27 +1728,6 @@ def cmd_reset_valve_position():
     req.throttle_reset_valve_position.valve = valve
     req.throttle_reset_valve_position.new_pos_deg = pos
     send_request(req, f'RESET_VALVE_POSITION ({valve_name} → {pos:.2f}°)')
-
-
-def cmd_actuate_valve():
-    t = THEME
-    console.print(f'\n  [{t["primary"]}]Which valve[/{t["primary"]}]')
-    MAX_VALVE = 13
-    for i in range(1, MAX_VALVE + 1):
-        console.print(f'    [{i}] {clover_pb2.Valve.Name(i)}')
-    choice = Prompt.ask('  Select valve', choices=[str(i) for i in range(1, MAX_VALVE + 1)])
-    valve = int(choice)
-    
-    console.print(f'\n  [{t["primary"]}]What state[/{t["primary"]}]')
-    for i in range(1, 5):
-        console.print(f'    [{i}] {clover_pb2.ValveState.Name(i)}')
-    choice = Prompt.ask('  Select state', choices=['1', '2', '3', '4'])
-    state = int(choice)
-    
-    req = clover_pb2.Request()
-    req.actuate_valve.valve = valve
-    req.actuate_valve.state = state
-    send_request(req, 'ACTUATE_VALVE')
 
 
 def cmd_power_on_valve():
@@ -2402,14 +2414,19 @@ def cmd_start_flight_sequence():
 
 # ── Menu ─────────────────────────────────────────────────────────────────────
 
+def cmd_valve_sequences():
+    # This mode owns command/reply traffic until its background watcher has stopped.
+    ValveSequenceMode(sock, console, client_commands=client_valve_commands.for_connection(sock)).run()
+
+
 MENU_ITEMS = [
+    ('vlvseq', 'vlvseq', 'Manual valve control and autonomous sequences', cmd_valve_sequences),
     ('sub', 'subscribe', 'Subscribe to data stream', cmd_subscribe_data_stream),
     ('id', 'identify', 'Identify this client (GNC)', cmd_identify_client),
     ('check', 'check', 'Check system is not aborted', cmd_is_not_aborted),
     ('cfgana', 'cfgana', 'Configure analog sensors', cmd_configure_analog_sensors),
     ('rec', 'record', 'Start/stop CSV recording (works while IDLE)', cmd_toggle_recording),
     ('cfgv', 'cfgv', 'Configure regular valves', cmd_configure_valves),
-    ('v', 'v', 'Actuate valve', cmd_actuate_valve),
     ('reset', 'reset', 'Reset throttle valve position', cmd_reset_valve_position),
     ('pon', 'poweron', 'Power ON stepper motor', cmd_power_on_valve),
     ('poff', 'poweroff', 'Power OFF stepper motor', cmd_power_off_valve),
@@ -2547,9 +2564,43 @@ def print_menu():
     console.print(table)
 
 
+def cmd_named_sequence(command):
+    """Send a single sequence command for either the prompt or --command mode."""
+    try:
+        request = named_sequences.make_request(command)
+        if (not request.HasField('abort')
+                and request.named_sequence.operation == clover_pb2.NamedSequenceRequest.RUN
+                and not countdown(console, request.named_sequence.name)):
+            return True
+        previous_timeout = sock.gettimeout()
+        try:
+            sock.settimeout(5)
+            info = named_sequences.exchange(sock, request)
+        finally:
+            sock.settimeout(previous_timeout)
+        if not request.HasField('abort') and request.named_sequence.operation == clover_pb2.NamedSequenceRequest.LIST:
+            console.print("Stored sequences: " + ", ".join(info.names), markup=False)
+        console.print(f"{info.state}; sequence={info.name or 'none'}; "
+                      f"step={info.step}/{info.total_steps}; error={info.error}", markup=False)
+        if info.comment:
+            console.print(info.comment, markup=False)
+        if request.HasField('abort'):
+            console.print("Abort requested; use sequence status to confirm aborted or faulted.")
+        return True
+    except Exception as exc:
+        console.print(f"Sequence request failed: {exc}. No automatic retry. "
+                      "Reconnect and check sequence status before running again.", markup=False)
+        return False
+
+
 def route_command(cmd: str) -> bool:
     """Route a typed command. Returns False if user wants to quit."""
-    cmd = cmd.strip().lower()
+    cmd = cmd.strip()
+    # Route before lowercasing the whole line: stored sequence names are case sensitive.
+    if cmd.split() and cmd.split()[0].lower() == 'sequence':
+        cmd_named_sequence(cmd)
+        return True
+    cmd = cmd.lower()
 
     if cmd in ('quit', 'exit', 'q'):
         console.print(
@@ -2580,7 +2631,7 @@ def route_command(cmd: str) -> bool:
 
 
 def main():
-    global data_sock
+    global data_sock, sock, ZEPHYR_IP, ZEPHYR_PORT
     t = THEME
 
     parser = argparse.ArgumentParser(description='Clover ground station CLI')
@@ -2589,7 +2640,27 @@ def main():
         action='store_true',
         help='Skip binding the UDP telemetry port (for second instances)',
     )
+    parser.add_argument('--host', default=ZEPHYR_IP, help='Board IPv4 address')
+    parser.add_argument('--port', type=int, default=ZEPHYR_PORT, help='TCP command port')
+    parser.add_argument('--command', help='Run one named-sequence command and exit')
     args = parser.parse_args()
+    ZEPHYR_IP, ZEPHYR_PORT = args.host, args.port
+    # Reject malformed one-shot commands before opening a hardware connection.
+    if args.command:
+        try:
+            named_sequences.make_request(args.command)
+        except ValueError as exc:
+            parser.error(str(exc))
+    try:
+        sock = _make_tcp_socket()
+    except OSError as exc:
+        parser.exit(1, f'Cannot connect to {ZEPHYR_IP}:{ZEPHYR_PORT}: {exc}\n')
+    if args.command:
+        try:
+            success = cmd_named_sequence(args.command)
+        finally:
+            sock.close()
+        raise SystemExit(0 if success else 1)
 
     telemetry_info = f'Listen port: {DATA_PORT}' if not args.no_data else 'Telemetry: disabled'
     console.print(
