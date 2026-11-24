@@ -1247,21 +1247,44 @@ def _build_status_renderable():
     return Group(header_panel, top, bottom)
 
 
+def _build_live_status_renderable(info):
+    """Keep GPIO readback visible even when telemetry exceeds terminal height."""
+    t = THEME
+    valves = Panel(
+        valve_table(info, client_valve_commands.for_connection(sock), theme=t),
+        title=f'[{t["primary"]}]Valve GPIO Readback[/{t["primary"]}]',
+        subtitle=f'[{t["muted"]}]GPIO power, not mechanical position[/{t["muted"]}]',
+        border_style=t['panel_border'],
+    )
+    return Group(valves, _build_status_renderable())
+
+
 def cmd_live_status():
     """Stream full telemetry panel at 5 Hz (200 ms). Press Enter to return to menu."""
     stop = threading.Event()
+    view_lock = threading.Lock()
+    view = 'valves'
 
-    def _wait_for_enter():
-        try:
-            sys.stdin.readline()
-        except Exception:
-            pass
-        stop.set()
+    def _read_live_commands():
+        nonlocal view
+        while not stop.is_set():
+            try:
+                line = sys.stdin.readline()
+            except Exception:
+                stop.set()
+                return
+            if not line or not line.strip():
+                stop.set()
+                return
+            choice = line.strip().lower()
+            if choice in ('v', 't'):
+                with view_lock:
+                    view = 'valves' if choice == 'v' else 'telemetry'
 
     console.print(
-        f'  [{THEME["muted"]}]Live view — press Enter to return to menu[/{THEME["muted"]}]'
+        f'  [{THEME["muted"]}]Live view — Enter: exit | t + Enter: telemetry | v + Enter: valves[/{THEME["muted"]}]'
     )
-    threading.Thread(target=_wait_for_enter, daemon=True).start()
+    threading.Thread(target=_read_live_commands, daemon=True).start()
 
     def render():
         info = None
@@ -1280,7 +1303,11 @@ def cmd_live_status():
             finally:
                 if not stop.is_set():
                     sock.settimeout(previous_timeout)
-        return Group(_build_status_renderable(), valve_table(info, client_valve_commands.for_connection(sock)))
+        with view_lock:
+            current_view = view
+        if current_view == 'telemetry':
+            return _build_status_renderable()
+        return _build_live_status_renderable(info)
 
     try:
         with Live(render(), refresh_per_second=5, screen=False) as live:

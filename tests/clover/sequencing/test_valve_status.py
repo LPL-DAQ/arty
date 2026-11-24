@@ -63,8 +63,40 @@ class ClientValveCommandsTest(unittest.TestCase):
         with patch('valve_status.MAP_PATH') as path:
             path.read_text.return_value = '{"SEQ": 0, "MANUAL": 1, "IDLE": 2}'
             table = valve_table(info, {0: True})
-        self.assertEqual(table.columns[3].header, 'Control source')
+        self.assertEqual(table.columns[3].header, 'Control')
         self.assertEqual(table.columns[3]._cells, ['SEQUENCE', 'MANUAL', '—'])
+
+
+class LiveValveLayoutTest(unittest.TestCase):
+    def test_complete_valve_panel_fits_a_normal_terminal(self):
+        import importlib.util
+        import io
+        from rich.console import Console
+        from rich.live_render import LiveRender
+
+        script = Path(__file__).resolve().parents[3] / 'scripts/client-new.py'
+        spec = importlib.util.spec_from_file_location('client_new_layout_test', script)
+        client = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(client)
+        client.latest_packet = clover_pb2.DataPacket()
+        info = clover_pb2.NamedSequenceInfo(state='ready', known_channels=0xffffffff,
+                                            powered_channels=1, manual_override_channels=1,
+                                            sequence_requested_channels=0)
+        for width, height in [(80, 24), (60, 16), (40, 16)]:
+            with self.subTest(width=width, height=height):
+                output = io.StringIO()
+                terminal = Console(file=output, width=width, height=height, color_system=None)
+                terminal.print(LiveRender(client._build_live_status_renderable(info),
+                                          vertical_overflow='ellipsis'))
+                rendered = output.getvalue()
+                for name in ('SV001', 'SV002', 'PBV001', 'PBV002', 'SV003', 'SV004',
+                             'SV201', 'SV301', 'PBV101'):
+                    self.assertIn(name, rendered)
+                self.assertIn('Valve GPIO Readback', rendered)
+                self.assertIn('MANUAL', rendered)
+                self.assertIn('GPIO power, not mechanical position', rendered)
+                self.assertIn('Channel', rendered)
+                self.assertIn('Power', rendered)
 
 
 class SequenceDisplayTest(unittest.TestCase):

@@ -1,4 +1,4 @@
-"""Host checks: python -m unittest discover -s tests/valve_gpio/test -v."""
+"""Host checks: python -m unittest discover -s tests/clover/sequencing -v."""
 import json
 from pathlib import Path
 import re
@@ -7,13 +7,14 @@ import sys
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
+SEQUENCING = Path(__file__).resolve().parents[3] / 'clover/src/sequencing'
 
 
 class SequencesTest(unittest.TestCase):
     def generate(self, source, output, success=True):
         """Exercise the build-time CLI, including its validation exit status."""
-        result = subprocess.run([sys.executable, str(ROOT / 'generate_sequence.py'),
+        result = subprocess.run([sys.executable, str(SEQUENCING / 'generate_sequence.py'),
                                  str(source), str(output)], capture_output=True, text=True)
         self.assertEqual(result.returncode == 0, success, result.stderr)
 
@@ -58,7 +59,7 @@ class SequencesTest(unittest.TestCase):
                 self.generate(source, header, False)
 
     def test_valve_name_resolution_and_mapping_validation(self):
-        sys.path.insert(0, str(ROOT))
+        sys.path.insert(0, str(SEQUENCING))
         from run_sequence import load_sequence, load_valve_map
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
@@ -71,7 +72,7 @@ class SequencesTest(unittest.TestCase):
                 {'duration_ticks': 10, 'valves': []}]))
             steps = load_sequence(source, mapping)
             self.assertEqual([step['channels'] for step in steps], [[0, 8], []])
-            command = [sys.executable, str(ROOT / 'generate_sequence.py'), str(source), str(header),
+            command = [sys.executable, str(SEQUENCING / 'generate_sequence.py'), str(source), str(header),
                        '--valve-map', str(mapping)]
             subprocess.run(command, check=True)
             self.assertIn('0x00000101U', header.read_text())
@@ -117,6 +118,52 @@ class SequencesTest(unittest.TestCase):
             source.write_text(json.dumps([{'duration_ticks': 10, 'channels': [0], 'off_channels': [0]}]))
             self.generate(source, header, False)
 
+    def test_integrated_cached_readback_avoids_gpio_in_controller(self):
+        """Cached telemetry must not perform I2C or take the engine mutex."""
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            source = directory / 'a.json'
+            source.write_text('[{"duration_ticks":10,"channels":[0]}]')
+            self.generate(source, directory / 'valve_sequence.h')
+            firmware = (SEQUENCING / 'embedded_sequence.c').read_text()
+            firmware = re.sub(r'#include <zephyr/[^>]+>\n|#include "sequence_trace.h"\n', '', firmware)
+            mocks = MOCKS.replace('static int values[3],', 'static int raw_reads;\nstatic int values[3],')
+            mocks = mocks.replace('(void)d; return values[pin];', '(void)d; ++raw_reads; return values[pin];')
+            integrated = r"""
+#define CLOVER_SEQUENCE_INTEGRATION
+#define K_THREAD_DEFINE(...)
+typedef int atomic_t;
+static int atomic_get(const atomic_t *v) { return *v; }
+static void atomic_set(atomic_t *v, int n) { *v = n; }
+"""
+            checks = r"""
+static int k_sem_take(int *s, int timeout) { (void)s; (void)timeout; return 0; }
+int main(void) {
+    uint32_t known, powered;
+    scenario = 5;
+    assert(sequence_init() == 0);
+    sequence_cached_readback(&known, &powered);
+    assert(known == 7 && powered == 0);
+    assert(sequence_manual_valve(1, true) == 0);
+    int count = raw_reads;
+    for (int i = 0; i < 100; ++i) {
+        sequence_cached_readback(&known, &powered);
+        assert(known == 7 && powered == 2);
+    }
+    assert(raw_reads == count);
+    assert(sequence_abort() == 0);
+    sequence_cached_readback(&known, &powered);
+    assert(known == 7 && powered == 0);
+    return 0;
+}
+"""
+            harness = directory / 'integrated.c'
+            harness.write_text(mocks + integrated + firmware + checks)
+            binary = directory / 'integrated'
+            subprocess.run(['cc', '-std=c11', str(harness), '-I', str(SEQUENCING),
+                            '-I', str(directory), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_firmware_with_mock_gpio(self):
         """Execute actual firmware control flow with mocked GPIO, clock and shell."""
         with tempfile.TemporaryDirectory() as directory:
@@ -130,14 +177,14 @@ class SequencesTest(unittest.TestCase):
             ]))
             (inputs / 'b.json').write_text('[{"duration_ticks":7,"channels":[1]}]')
             self.generate(inputs, directory / 'valve_sequence.h')
-            firmware = (ROOT / 'src/embedded_sequence.c').read_text()
-            firmware = re.sub(r'#include <zephyr/[^>]+>\n|#include "test_trace.h"\n', '', firmware)
+            firmware = (SEQUENCING / 'embedded_sequence.c').read_text()
+            firmware = re.sub(r'#include <zephyr/[^>]+>\n|#include "sequence_trace.h"\n', '', firmware)
             firmware = firmware.replace('int main(void)', 'int firmware_main(void)')
             harness = directory / 'test.c'
             harness.write_text(MOCKS + firmware + CHECKS)
             binary = directory / 'test'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(harness),
-                            '-I', str(ROOT / 'src'), '-o', str(binary)], check=True)
+                            '-I', str(SEQUENCING), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 
 

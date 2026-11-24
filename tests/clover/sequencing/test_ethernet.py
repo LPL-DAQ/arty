@@ -14,8 +14,9 @@ import unittest
 from unittest.mock import Mock, patch
 from rich.console import Console
 
-ROOT = Path(__file__).resolve().parents[1]
-REPO = ROOT.parents[1]
+ROOT = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parents[3]
+SEQUENCING = REPO / 'clover/src/sequencing'
 sys.path.insert(0, str(REPO / 'scripts'))
 import clover_pb2
 import named_sequences
@@ -38,7 +39,7 @@ class EthernetTest(unittest.TestCase):
             {'duration_ticks': 1000, 'channels': [0, 1], 'comment': 'Alpha "test" café %'},
             {'duration_ticks': 10, 'channels': []}]))
         (sequences / 'MixedCase.json').write_text('[{"duration_ticks":10,"channels":[2]}]')
-        subprocess.run([sys.executable, str(ROOT / 'generate_sequence.py'), str(sequences),
+        subprocess.run([sys.executable, str(SEQUENCING / 'generate_sequence.py'), str(sequences),
                         str(directory / 'valve_sequence.h')], check=True)
         subprocess.run([sys.executable, str(cls.nanopb / 'generator/nanopb_generator.py'),
                         '-I', str(REPO / 'api'), '-D', str(directory),
@@ -49,9 +50,9 @@ class EthernetTest(unittest.TestCase):
             path.write_text('#include "host_zephyr.h"\n')
         # Compile actual engine/server sources against host adapters; only entry point,
         # trace backend and listening port change for the isolated test process.
-        engine = (ROOT / 'src/embedded_sequence.c').read_text().replace('#include "test_trace.h"', '')
+        engine = (SEQUENCING / 'embedded_sequence.c').read_text().replace('#include "sequence_trace.h"', '')
         engine = engine.replace('int main(void)', 'int firmware_main(void)')
-        server = (ROOT / 'src/sequence_server.c').read_text().replace('htons(19690)', 'htons(host_port)')
+        server = (ROOT / 'harness/sequence_server.c').read_text().replace('htons(19690)', 'htons(host_port)')
         harness = directory / 'host.c'
         harness.write_text('#include "host_zephyr.h"\n' + engine + '\n' + server + r'''
 static void *engine_thread(void *unused) { (void)unused; firmware_main(); return NULL; }
@@ -64,8 +65,8 @@ int main(int argc, char **argv) {
 ''')
         cls.binary = directory / 'server'
         subprocess.run(['cc', '-std=c11', '-pthread', '-I', str(directory),
-                        '-I', str(ROOT / 'src'), '-I', str(ROOT / 'test'), '-I', str(cls.nanopb),
-                        str(harness), str(ROOT / 'src/sequence_protocol.c'), str(directory / 'clover.pb.c'),
+                        '-I', str(SEQUENCING), '-I', str(ROOT), '-I', str(cls.nanopb),
+                        str(harness), str(SEQUENCING / 'sequence_protocol.c'), str(directory / 'clover.pb.c'),
                         *[str(cls.nanopb / file) for file in ['pb_common.c', 'pb_decode.c', 'pb_encode.c']],
                         '-o', str(cls.binary)], check=True)
 

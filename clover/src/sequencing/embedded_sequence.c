@@ -5,9 +5,12 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+#include <zephyr/sys/atomic.h>
+#endif
 #include "valve_sequence.h"
 #include "sequence_engine.h"
-#include "test_trace.h"
+#include "sequence_trace.h"
 
 /* Array indices are the channel numbers used by JSON masks and wire requests. */
 static const struct gpio_dt_spec valves[] = {
@@ -19,10 +22,42 @@ BUILD_ASSERT(SEQUENCE_REQUIRED_CHANNELS <= ARRAY_SIZE(valves),
              "Sequence uses a valve channel absent from this board");
 BUILD_ASSERT(ARRAY_SIZE(valves) <= 32, "Sequence masks support at most 32 channels");
 
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+/* Controller ticks must never wait for I2C or a low-priority engine mutex. */
+static atomic_t cached_known_channels;
+static atomic_t cached_powered_channels;
+
+static void refresh_readback_cache(void)
+{
+    uint32_t known = 0;
+    uint32_t powered = 0;
+    atomic_set(&cached_known_channels, 0);
+    for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
+        if (!gpio_is_ready_dt(&valves[i])) continue;
+        int raw = gpio_pin_get_raw(valves[i].port, valves[i].pin);
+        if (raw >= 0) {
+            known |= BIT(i);
+            if (!!raw ^ !!(valves[i].dt_flags & GPIO_ACTIVE_LOW)) powered |= BIT(i);
+        }
+    }
+    atomic_set(&cached_powered_channels, powered);
+    atomic_set(&cached_known_channels, known);
+}
+
+void sequence_cached_readback(uint32_t *known, uint32_t *powered)
+{
+    *known = (uint32_t)atomic_get(&cached_known_channels);
+    *powered = (uint32_t)atomic_get(&cached_powered_channels) & *known;
+}
+#endif
+
 /* Keep trying every output, even if one write fails. */
 static int all_off(void)
 {
     int first_error = 0;
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    atomic_set(&cached_known_channels, 0);
+#endif
     for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
         if (!gpio_is_ready_dt(&valves[i])) {
             if (!first_error) {
@@ -38,6 +73,9 @@ static int all_off(void)
             first_error = err;
         }
     }
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    refresh_readback_cache();
+#endif
     return first_error;
 }
 
@@ -62,6 +100,9 @@ static int apply_outputs(void)
 {
     uint32_t effective = (sequence_outputs & ~manual_overrides) |
                          (manual_outputs & manual_overrides);
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    atomic_set(&cached_known_channels, 0);
+#endif
     for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
         int err = gpio_pin_set_dt(&valves[i], !!(effective & BIT(i)));
         if ((effective & BIT(i)) || err) {
@@ -78,6 +119,9 @@ static int apply_outputs(void)
             return err;
         }
     }
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    refresh_readback_cache();
+#endif
     trace_event("OUTPUT sequence=0x%08x overrides=0x%08x manual=0x%08x effective=0x%08x",
                 (unsigned)sequence_outputs, (unsigned)manual_overrides,
                 (unsigned)manual_outputs, (unsigned)effective);
@@ -150,6 +194,10 @@ struct sequence_snapshot sequence_status(void)
             }
         }
     }
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    atomic_set(&cached_powered_channels, out.powered_channels);
+    atomic_set(&cached_known_channels, out.known_channels);
+#endif
     k_mutex_unlock(&state_lock);
     return out;
 }
@@ -311,9 +359,15 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sequence_commands,
 );
 SHELL_CMD_REGISTER(sequence, &sequence_commands, "Embedded valve sequences", NULL);
 
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+int sequence_init(void)
+#else
 int main(void)
+#endif
 {
+#ifndef CLOVER_SEQUENCE_INTEGRATION
     trace_start("named embedded sequences (manual start)");
+#endif
     trace_event("Initializing %u GPIO channels", (unsigned)ARRAY_SIZE(valves));
     bool ready = true;
     for (size_t i = 0; i < ARRAY_SIZE(valves); ++i) {
@@ -339,8 +393,19 @@ int main(void)
 
     k_mutex_lock(&state_lock, K_FOREVER);
     state = READY;
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    refresh_readback_cache();
+#endif
     k_mutex_unlock(&state_lock);
     trace_event("READY: use sequence list, then sequence run <name>");
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    return 0;
+}
+
+static void sequence_worker(void *a, void *b, void *c)
+{
+    ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
+#endif
     for (;;) {
         k_sem_take(&run_requested, K_FOREVER);
         /* RUNNING prevents USB/TCP commands from changing selected during a run. */
@@ -354,3 +419,7 @@ int main(void)
         trace_event("State=%s", sequence_status().state);
     }
 }
+
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+K_THREAD_DEFINE(sequence_thread, 4096, sequence_worker, NULL, NULL, NULL, 5, 0, 0);
+#endif

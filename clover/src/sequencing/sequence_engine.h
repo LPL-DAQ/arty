@@ -3,6 +3,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int sequence_init(void);
+
 /* Snapshot strings refer to static storage; step is one-based, or zero before start.
  * The manual mask records successful commands, not electrical feedback. */
 struct sequence_snapshot {
@@ -29,3 +35,9 @@ int sequence_abort(void);
 int sequence_manual_control(uint32_t channel, bool powered, bool release);
 int sequence_manual_valve(uint32_t channel, bool powered);
 struct sequence_snapshot sequence_status(void);
+/* Last observed GPIO readback; no I2C or mutex acquisition. */
+void sequence_cached_readback(uint32_t *known, uint32_t *powered);
+
+#ifdef __cplusplus
+}
+#endif

@@ -8,6 +8,7 @@ struct daq_client_status {
     int64_t last_pinged_ms;
 };
 
+void start_command_server();
 void serve_connections();
 daq_client_status get_daq_client_status();
 

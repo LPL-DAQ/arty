@@ -10,7 +10,11 @@
 LOG_MODULE_REGISTER(valve_test, LOG_LEVEL_INF);
 
 /* Keep recent events so connecting after boot does not lose the diagnosis. */
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+#define TRACE_COUNT 32
+#else
 #define TRACE_COUNT 128
+#endif
 static char trace_lines[TRACE_COUNT][160];
 static unsigned int trace_total;
 K_MUTEX_DEFINE(trace_lock);
@@ -46,8 +50,10 @@ static int cmd_trace(const struct shell *sh, size_t argc, char **argv)
 }
 SHELL_CMD_REGISTER(trace, NULL, "Show retained valve execution trace", cmd_trace);
 
+#ifndef CLOVER_SEQUENCE_INTEGRATION
 static void trace_start(const char *mode)
 {
     int err = usb_enable(NULL);
     trace_event("Mode=%s; USB enable result=%d", mode, err);
 }
+#endif
