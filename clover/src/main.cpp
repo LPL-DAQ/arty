@@ -50,39 +50,41 @@ int main(void)
 
     LOG_INF("USB Connected. Bypassing flight hardware for TVC standalone test.");
 
-    float max_pos = 5.0f;
-    float min_pos = 0.0f;
+    RangerTvc::home();
 
-    float target_pos = max_pos;
-    int ticks = 0;
+    // float max_pos = 5.0f;
+    // float min_pos = 0.0f;
 
-    // 7 seconds at 80 Hz
-    constexpr int hold_ticks = 80;
+    // float target_pos = max_pos;
+    // int ticks = 0;
 
-    // auto result = RangerTvc::tick(target_pos);
+    // // 7 seconds at 80 Hz
+    // constexpr int hold_ticks = 80;
 
-    // if (!result) {
-    //     LOG_ERR("tick failed: %s", result.error().build_message().c_str());
+    // // auto result = RangerTvc::tick(target_pos);
+
+    // // if (!result) {
+    // //     LOG_ERR("tick failed: %s", result.error().build_message().c_str());
+    // // }
+
+    // // k_sleep(K_MSEC(20));
+
+    // LOG_INF("Starting silly movement");
+
+    // while (1) {
+    //     auto result = RangerTvc::tick(target_pos);
+
+    //     if (!result) {
+    //         LOG_ERR("tick failed: %s", result.error().build_message().c_str());
+    //     }
+
+    //     k_sleep(K_MSEC(20));
+
+    //     if (++ticks >= hold_ticks) {
+    //         target_pos = (target_pos == max_pos) ? min_pos : max_pos;
+    //         ticks = 0;
+    //     }
     // }
-
-    // k_sleep(K_MSEC(20));
-
-    LOG_INF("Starting silly movement");
-
-    while (1) {
-        auto result = RangerTvc::tick(target_pos);
-
-        if (!result) {
-            LOG_ERR("tick failed: %s", result.error().build_message().c_str());
-        }
-
-        k_sleep(K_MSEC(20));
-
-        if (++ticks >= hold_ticks) {
-            target_pos = (target_pos == max_pos) ? min_pos : max_pos;
-            ticks = 0;
-        }
-    }
 
     return 0;
 }
