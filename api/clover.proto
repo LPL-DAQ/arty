@@ -12,12 +12,17 @@ syntax = "proto2";
 
 // Every request sent to the server is an instance of this parent Request. The server then examines the payload to
 // determine the exact command specified.
-// next tag: 40
+// next tag: 42
 message Request {
   oneof payload {
     SubscribeDataStreamRequest subscribe_data_stream = 1;
     IdentifyClientRequest identify_client = 6;
     IsNotAbortedRequest is_not_aborted_request = 26;
+
+    // Named GPIO bench sequences (supported by standalone valve test firmware).
+    NamedSequenceRequest named_sequence = 40;
+    // Direct GPIO power control for standalone valve bench firmware.
+    ManualValveRequest manual_valve = 41;
 
     // Sensors
     ConfigureAnalogSensorsRequest configure_analog_sensors = 25;
@@ -86,8 +91,41 @@ message Request {
 }
 
 // Successful if err is missing.
+// Channel is a zero-based devicetree index. ON and OFF override sequences;
+// release resumes sequence control. Overrides persist until release or abort.
+message ManualValveRequest {
+  required uint32 channel = 1;
+  required bool powered = 2;
+  optional bool release = 3 [default = false]; // Resume sequence control of this channel.
+}
+
 message Response {
   optional string err = 1;
+  optional NamedSequenceInfo named_sequence = 2;
+}
+
+// Additive protocol extension; existing Clover requests and field numbers are unchanged.
+message NamedSequenceRequest {
+  enum Operation { LIST = 0; RUN = 1; STATUS = 2; STOP = 3; }
+  required Operation operation = 1;
+  optional string name = 2;
+}
+// RUN/abort replies acknowledge acceptance; poll state to observe completion.
+message NamedSequenceInfo {
+  repeated string names = 1;
+  required string state = 2;
+  optional string name = 3;
+  optional uint32 step = 4; // One-based; zero means no step started.
+  optional uint32 total_steps = 5;
+  optional string comment = 6;
+  optional sint32 error = 7;
+  // Manual override outputs commanded ON.
+  optional uint32 manual_powered_channels = 8;
+  // Logical GPIO readback; known mask excludes unavailable/failed reads.
+  optional uint32 powered_channels = 9;
+  optional uint32 known_channels = 10;
+  optional uint32 manual_override_channels = 11;
+  optional uint32 sequence_requested_channels = 12;
 }
 
 // Subscribe client IP to data stream.
@@ -107,13 +145,14 @@ enum ClientType {
   DAQ = 3;
 }
 
-// Configure analog inputs as PTs or TCs. Should be called early in
+// Configure analog inputs as PTs, TCs or raw volts. Should be called early in
 // program lifetime to ensure analog sensor readings get populated.
+// Only the channels listed here are read; every other ADC channel is skipped until the next configure.
 message ConfigureAnalogSensorsRequest {
   repeated AnalogSensorConfig configs = 1;
 }
 
-// Either all pt_* fields must be set, or all tc_* fields must be set, or all raw_* fields must be set.
+// Set exactly one group: all pt_* fields, or tc_type (tc_bias_deg_c optional), or all raw_* fields.
 message AnalogSensorConfig {
   // Sensor input number, corresponds to an ADC and its channel. Set in devicetree.
   required uint32 channel = 1;
@@ -123,6 +162,8 @@ message AnalogSensorConfig {
   optional float pt_bias_psig = 4;
 
   optional TCType tc_type = 5;
+  // Added to the TC reading after conversion, for per-sensor calibration. Requires tc_type.
+  optional float tc_bias_deg_c = 8;
 
   optional float raw_range_v = 6;
   optional float raw_bias_v = 7;
@@ -806,4 +847,3 @@ message GnssReadings {
 
   required float sense_time_ns = 16;
 }
-

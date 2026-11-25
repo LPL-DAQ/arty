@@ -1,0 +1,10 @@
+/ {
+    chosen {
+        zephyr,shell-uart = &cdc_acm_uart0;
+    };
+};
+
+&enet_mac {
+    /delete-property/ local-mac-address;
+    nxp,unique-mac;
+};

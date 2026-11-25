@@ -11,6 +11,7 @@
 #include <zephyr/net/socket.h>
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/sys/errno_private.h>
+#include <zephyr/sys/atomic.h>
 
 #include "Controller.h"
 #include "Error.h"
@@ -22,6 +23,9 @@
 #include "flight/FlightController.h"
 #include "server.h"
 #include "util.h"
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+#include "sequence_protocol.h"
+#endif
 
 LOG_MODULE_REGISTER(Server, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -54,9 +58,12 @@ static std::array<socklen_t, MAX_DATA_CLIENTS> data_client_addr_lens;
 static std::array<int, MAX_DATA_CLIENTS> data_client_slot_indexes;
 K_MUTEX_DEFINE(data_client_info_lock);
 
-/// Synchronizes command/data server threads to ensure they only start accepting connections after startup is fully
-/// done (i.e., when serve_connections() is called).
-K_SEM_DEFINE(allow_serve_connections_sem, 0, 2);
+/// Start command and telemetry servers independently as their dependencies become ready.
+K_SEM_DEFINE(allow_command_server_sem, 0, 1);
+K_SEM_DEFINE(allow_data_server_sem, 0, 1);
+static atomic_t controller_ready;
+K_MUTEX_DEFINE(controller_startup_lock);
+static bool startup_abort_pending;
 
 /// Internal callback for pb_istream, used to read from socket to internal buffer and manage count.
 bool pb_socket_write_callback(pb_ostream_t* stream, const uint8_t* buf, size_t count)
@@ -182,7 +189,16 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
     while (true) {
         Request request = Request_init_default;
-        bool valid = pb_decode_ex(&pb_input, Request_fields, &request, PB_DECODE_DELIMITED);
+        LOG_INF("Waiting for protobuf request");
+
+        bool valid = pb_decode_ex(
+            &pb_input,
+            Request_fields,
+            &request,
+            PB_DECODE_DELIMITED
+        );
+
+        LOG_INF("Protobuf decode returned: %d", valid);
         if (!valid) {
             LOG_ERR("Failed to decode next message: errno=%d pb_err='%s'", errno, PB_GET_ERROR(&pb_input));
             break;
@@ -191,8 +207,28 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         std::expected<void, Error> cmd_result = {};
 
-        // Handle request
-        switch (request.which_payload) {
+        Response response = Response_init_default;
+
+        // The valve engine is available before the rest of Clover. Do not let
+        // clients use controller-dependent handlers before initialization.
+        const bool ready = atomic_get(&controller_ready) != 0;
+        const bool early_request = request.which_payload == Request_named_sequence_tag ||
+                                   request.which_payload == Request_manual_valve_tag ||
+                                   request.which_payload == Request_abort_tag ||
+                                   request.which_payload == Request_identify_client_tag ||
+                                   request.which_payload == Request_subscribe_data_stream_tag;
+        if (!ready && !early_request) {
+            cmd_result = std::unexpected(Error::from_cause("Clover controller is not initialized"));
+        } else switch (request.which_payload) {
+        case Request_named_sequence_tag:
+        case Request_manual_valve_tag: {
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+            sequence_handle_request(&request, &response);
+#else
+            cmd_result = std::unexpected(Error::from_cause("Named GPIO sequences are unavailable on this board"));
+#endif
+            break;
+        }
         case Request_subscribe_data_stream_tag: {
             LOG_INF("Subscribe data stream");
             cmd_result = handle_subscribe_data_stream(request.payload.subscribe_data_stream, thread_index, client_socket);
@@ -244,7 +280,17 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
 
         case Request_abort_tag: {
             LOG_INF("abort command");
-            cmd_result = Controller::handle_abort(request.payload.abort);
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+            sequence_handle_request(&request, &response);
+#endif
+            {
+                MutexGuard startup_guard{&controller_startup_lock};
+                if (atomic_get(&controller_ready)) {
+                    cmd_result = Controller::handle_abort(request.payload.abort);
+                } else {
+                    startup_abort_pending = true;
+                }
+            }
             break;
         }
 
@@ -373,8 +419,6 @@ static void handle_client(void* p1_thread_index, void* p2_client_socket, void*)
         }
         }
 
-        Response response = Response_init_default;
-
         // Populate error message in response if required.
         if (!cmd_result.has_value()) {
             response.has_err = true;
@@ -468,7 +512,7 @@ K_THREAD_DEFINE(server_reaper, 1024, reap_dead_connections, nullptr, nullptr, nu
 /// blocks indefinitely.
 void serve_command_connections()
 {
-    k_sem_take(&allow_serve_connections_sem, K_FOREVER);
+    k_sem_take(&allow_command_server_sem, K_FOREVER);
 
     LOG_INF("Opening command server socket");
     int server_socket = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -558,7 +602,7 @@ K_THREAD_DEFINE(command_server, 8192, serve_command_connections, nullptr, nullpt
 /// Broadcasts UDP data packets using a multicast IP.
 void serve_data_connections()
 {
-    k_sem_take(&allow_serve_connections_sem, K_FOREVER);
+    k_sem_take(&allow_data_server_sem, K_FOREVER);
 
     LOG_INF("Opening data server socket");
     int server_socket = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -610,12 +654,31 @@ void serve_data_connections()
 
 K_THREAD_DEFINE(data_server, 8192, serve_data_connections, nullptr, nullptr, nullptr, 3, 0, 0);
 
-/// Called at the end of startup, allowing the command and data server threads to initialize their respective sockets
-/// and serve connections.
-void serve_connections()
+// Initialize client slots before allowing either server to access them.
+void start_command_server()
 {
     data_client_slot_indexes.fill(-1);
     data_client_addr_lens.fill(sizeof(sockaddr));
-    k_sem_give(&allow_serve_connections_sem);
-    k_sem_give(&allow_serve_connections_sem);
+    k_sem_give(&allow_command_server_sem);
+}
+
+// Publish controller readiness before admitting controller commands and telemetry.
+void serve_connections()
+{
+    {
+        MutexGuard startup_guard{&controller_startup_lock};
+        if (startup_abort_pending) {
+            AbortRequest request = AbortRequest_init_default;
+            if (auto result = Controller::handle_abort(request); !result) {
+                LOG_ERR("Failed to apply startup abort");
+                return;
+            }
+            startup_abort_pending = false;
+        }
+        atomic_set(&controller_ready, 1);
+    }
+#ifndef CLOVER_SEQUENCE_INTEGRATION
+    start_command_server();
+#endif
+    k_sem_give(&allow_data_server_sem);
 }

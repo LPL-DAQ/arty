@@ -1,7 +1,11 @@
 #include "Valves.h"
 #include "clover.pb.h"
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+#include "sequence_engine.h"
+#endif
 #include <MutexGuard.h>
 #include <optional>
+#include <cstring>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -23,6 +27,7 @@ std::expected<void, Error> Valves::init()
     MutexGuard valves_guard{&valves_lock};
 
     LOG_INF("Configuring valve GPIOs (%d in total)", NUM_VALVE_GPIOS);
+#ifndef CLOVER_SEQUENCE_INTEGRATION
     for (int i = 0; i < NUM_VALVE_GPIOS; ++i) {
         const auto& gpio_cfg = VALVE_GPIOS[i];
         if (int err = gpio_pin_configure_dt(&gpio_cfg, GPIO_OUTPUT_ACTIVE); err) {
@@ -35,6 +40,7 @@ std::expected<void, Error> Valves::init()
         }
     }
 
+#endif
     valve_configs.fill(std::nullopt);
     valve_states.fill(ValveState_UNKNOWN_VALVE_STATE);
 
@@ -47,11 +53,23 @@ std::expected<ValveStates, Error> Valves::get_valve_states()
 {
     MutexGuard valves_guard{&valves_lock};
 
-    ValveStates out;
+    ValveStates out{};
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    uint32_t known_channels, powered_channels;
+    sequence_cached_readback(&known_channels, &powered_channels);
+#endif
 
     for (int i = 0; i < _Valve_ARRAYSIZE; ++i) {
         const auto& valve_config = valve_configs[i];
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+        const bool known = valve_config && (known_channels & (1U << valve_config->channel));
+        const bool powered = valve_config && (powered_channels & (1U << valve_config->channel));
+        const auto valve_state = !known ? ValveState_UNKNOWN_VALVE_STATE :
+            (valve_config->normally_closed ? (powered ? ValveState_POWERED_OPEN : ValveState_UNPOWERED_CLOSED) :
+                                             (powered ? ValveState_POWERED_CLOSED : ValveState_UNPOWERED_OPEN));
+#else
         const auto& valve_state = valve_states[i];
+#endif
 
         if (!valve_config) {
             continue;
@@ -149,6 +167,13 @@ std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValves
 {
     MutexGuard valves_guard{&valves_lock};
 
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    const auto snapshot = sequence_status();
+    if (strcmp(snapshot.state, "running") == 0 || strcmp(snapshot.state, "aborting") == 0 ||
+        strcmp(snapshot.state, "initializing") == 0 || strcmp(snapshot.state, "faulted") == 0) {
+        return std::unexpected(Error::from_cause("cannot configure valves while sequence engine is busy or faulted"));
+    }
+#else
     // Enforce that all valves are in their normal states before we allow valve reconfiguration.
     for (int i = 0; i < _Valve_ARRAYSIZE; ++i) {
         const auto& config = valve_configs[i];
@@ -169,6 +194,7 @@ std::expected<void, Error> Valves::handle_configure_valves(const ConfigureValves
         }
     }
 
+#endif
     // Sanity check -- all GPIOs should be powered off now.
     for (int i = 0; i < NUM_VALVE_GPIOS; ++i) {
         int ret = gpio_pin_get_dt(&VALVE_GPIOS[i]);
@@ -247,9 +273,11 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
     }
 
     // Check if we even need to do any work
+#ifndef CLOVER_SEQUENCE_INTEGRATION
     if (valve_state == req.state) {
         return {};
     }
+#endif
 
     // We in fact must actuate this valve.
     int target_state;
@@ -263,7 +291,11 @@ std::expected<void, Error> Valves::handle_actuate_valve(const ActuateValveReques
         return std::unexpected(Error::from_cause("bad valve logic"));
     }
 
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    if (int err = sequence_manual_valve(config->channel, target_state); err) {
+#else
     if (int err = gpio_pin_set_dt(&VALVE_GPIOS[config->channel], target_state); err) {
+#endif
         return std::unexpected(
             Error::from_code(err).context("failed to set gpio %s (channel %d) as %d", VALVE_GPIOS[config->channel].port->name, config->channel, target_state));
     }
