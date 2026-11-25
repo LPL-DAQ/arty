@@ -22,6 +22,8 @@ import sys
 import time
 import csv
 import pathlib
+import os
+import select
 import webbrowser
 from google.protobuf import text_format
 from rich.console import Console
@@ -42,6 +44,7 @@ from valve_status import ClientValveCommands, valve_table
 from valve_sequence_cli import ValveSequenceMode
 from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
+from rich.segment import Segment
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from collections import deque
@@ -1280,21 +1283,116 @@ def _build_status_renderable():
     return Group(header_panel, top, bottom)
 
 
-def cmd_live_status():
-    """Stream full telemetry panel at 5 Hz (200 ms). Press Enter to return to menu."""
-    stop = threading.Event()
-
-    def _wait_for_enter():
-        try:
-            sys.stdin.readline()
-        except Exception:
-            pass
-        stop.set()
-
-    console.print(
-        f'  [{THEME["muted"]}]Live view — press Enter to return to menu[/{THEME["muted"]}]'
+def _build_live_status_renderable(info):
+    """Keep GPIO readback visible even when telemetry exceeds terminal height."""
+    t = THEME
+    valves = Panel(
+        valve_table(info, client_valve_commands.for_connection(sock), theme=t),
+        title=f'[{t["primary"]}]Valve GPIO Readback[/{t["primary"]}]',
+        subtitle=f'[{t["muted"]}]GPIO power, not mechanical position[/{t["muted"]}]',
+        border_style=t['panel_border'],
     )
-    threading.Thread(target=_wait_for_enter, daemon=True).start()
+    return Group(valves, _build_status_renderable())
+
+
+class _StatusViewport:
+    """Render the visible lines of a full telemetry snapshot."""
+    def __init__(self, content, offset):
+        self.content = content
+        self.offset = offset
+
+    def __rich_console__(self, console, options):
+        lines = console.render_lines(self.content, options.update(height=None), pad=False)
+        height = max(1, console.height - 2)
+        start = min(max(0, self.offset), max(0, len(lines) - height))
+        yield from console.render(Text(
+            f'↑↓/j k scroll | t telemetry | v valves | q exit  '
+            f'{start + 1}-{min(start + height, len(lines))}/{len(lines)}',
+            style=THEME['muted']), options)
+        yield Segment.line()
+        for line in lines[start:start + height]:
+            yield from line
+            yield Segment.line()
+
+
+def cmd_live_status():
+    """Stream telemetry in a scrollable live view."""
+    stop = threading.Event()
+    view_lock = threading.Lock()
+    view = 'valves'
+    offset = 0
+
+    def _read_live_commands():
+        nonlocal view, offset
+        if not sys.stdin.isatty():
+            stop.set()
+            return
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        original = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            pending = ''
+            while not stop.is_set():
+                if not select.select([fd], [], [], 0.1)[0]:
+                    continue
+                data = os.read(fd, 32).decode(errors='ignore')
+                if not data:
+                    stop.set()
+                    break
+                pending += data
+                while pending:
+                    if pending.startswith('\x1b'):
+                        if len(pending) < 3:
+                            break
+                        choice, pending = pending[:3], pending[3:]
+                    else:
+                        choice, pending = pending[0].lower(), pending[1:]
+                    with view_lock:
+                        if choice in ('q', '\r', '\n', '\x03'):
+                            stop.set()
+                        elif choice in ('v', 't'):
+                            view = 'valves' if choice == 'v' else 'telemetry'
+                            offset = 0
+                        elif choice in ('j', '\x1b[B'):
+                            offset += 3
+                        elif choice in ('k', '\x1b[A'):
+                            offset = max(0, offset - 3)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, original)
+
+    reader = threading.Thread(target=_read_live_commands, daemon=True)
+    reader.start()
+
+    def render():
+        nonlocal offset
+        info = None
+        if sock is not None:
+            previous_timeout = sock.gettimeout()
+            try:
+                sock.settimeout(1)
+                info = named_sequences.exchange(sock, named_sequences.make_request('sequence status'))
+            except named_sequences.RequestRejected:
+                pass  # Other firmware may not support valve readback.
+            except Exception as exc:
+                # Do not keep polling a connection with uncertain framing.
+                console.print(f'Valve status unavailable: {exc}. Restart the client to reconnect.', markup=False)
+                sock.close()
+                stop.set()
+            finally:
+                if not stop.is_set():
+                    sock.settimeout(previous_timeout)
+        with view_lock:
+            current_view = view
+            current_offset = offset
+        content = _build_status_renderable() if current_view == 'telemetry' else _build_live_status_renderable(info)
+        lines = console.render_lines(content, console.options.update(height=None), pad=False)
+        with view_lock:
+            offset = min(offset, max(0, len(lines) - max(1, console.height - 2)))
+            current_offset = offset
+        return _StatusViewport(content, current_offset)
 
     def render():
         info = None
@@ -1316,11 +1414,16 @@ def cmd_live_status():
         return Group(_build_status_renderable(), valve_table(info, client_valve_commands.for_connection(sock)))
 
     try:
-        with Live(render(), refresh_per_second=5, screen=False) as live:
+        # Share the console with background messages so Rich can coordinate redraws.
+        # The alternate screen keeps each refresh within the terminal viewport.
+        with Live(render(), console=console, screen=True, auto_refresh=False) as live:
             while not stop.wait(0.2):
-                live.update(render())
+                live.update(render(), refresh=True)
     except KeyboardInterrupt:
         pass
+    finally:
+        stop.set()
+        reader.join()
 
 
 _TOOLBAR_STATE_TAGS = {
@@ -1570,31 +1673,14 @@ def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
     console.print('    Profile:')
-    console.print(f'      [1] Saved table  (from {SENSOR_CONFIG_DIR}/, last_picked at top = last table sent)')
-    console.print('      [2] Pick pins    (choose AIN pins and what is on each)')
-    console.print('      [3] Test         (assigns channels 0-21)')
-    console.print('      [4] Test 2       (assigns channels 22-31)')
-    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1' if _list_saved_configs(SENSOR_CONFIG_DIR) else '2')
+    console.print('      [1] Default  (actual vehicle)')
+    console.print('      [2] Test     (assigns channels 0-21)')
+    console.print('      [3] Test 2   (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
 
     if profile == '1':
-        if not _list_saved_configs(SENSOR_CONFIG_DIR):
-            console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
-            return
-        # A bad table file must not crash the client (and stop logging) mid-test
-        try:
-            table = _pick_and_load_config(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
-        except (OSError, ValueError, text_format.ParseError) as e:
-            console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
-            return
-        # channel and assignment are required; a row missing one parses fine but fails to serialize
-        if missing := table.FindInitializationErrors():
-            console.print(f'  [{THEME["danger"]}]Sensor table is missing {", ".join(missing)}, nothing sent[/{THEME["danger"]}]')
-            return
-        configs = list(table.configs)
-        _print_sensor_configs(configs)
-        if not Confirm.ask('  Send this table?', default=True):
-            console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
-            return
+        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
+        configs = []
 
     elif profile == '2':
         configs = _pick_pins()

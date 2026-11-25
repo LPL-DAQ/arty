@@ -16,6 +16,9 @@
 #include "sensors/Lidar.h"
 #include "sensors/VectornavIMU.h"
 #include "server.h"
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+#include "sequence_engine.h"
+#endif
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -23,21 +26,24 @@ int main(void)
 {
 #ifdef CONFIG_USB_LOGGING
     // Serial over USB setup
-    if (usb_enable(nullptr)) {
-        LOG_ERR("USB is not enabled.");
+    int usb_err = usb_enable(nullptr);
+    if (usb_err) {
+        LOG_ERR("USB is not enabled: %d", usb_err);
+#ifndef CLOVER_SEQUENCE_INTEGRATION
         while (1) {
         }
+#endif
     }
 
     // Try connecting to serial over usb for 3 seconds.
     const device* usb_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-    for (int i = 0; i < 30; ++i) {
+    for (int i = 0; !usb_err && i < 30; ++i) {
         k_sleep(K_MSEC(100));
 
         uint32_t dtr = 0;
         uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
         if (dtr) {
-            LOG_INF("Starting server");
+            LOG_INF("USB serial connected");
             break;
         }
     }
@@ -48,6 +54,15 @@ int main(void)
     }
 #else
 #warning "No logging backend set -- should use either CONFIG_USB_LOGGING or CONFIG_UART_LOGGING"
+#endif
+
+#ifdef CLOVER_SEQUENCE_INTEGRATION
+    if (int err = sequence_init(); err) {
+        LOG_ERR("Failed to initialize valve sequence engine: %d", err);
+    }
+    // Keep valve status and fault reporting reachable even if another Clover
+    // subsystem fails to initialize. The server gates controller commands.
+    start_command_server();
 #endif
 
 #ifdef CONFIG_BLINK_LED
@@ -125,6 +140,6 @@ int main(void)
     }
 
     k_sleep(K_MSEC(500));
-    LOG_INF("Starting server");
+    LOG_INF("Clover controller initialized; enabling telemetry");
     serve_connections();
 }

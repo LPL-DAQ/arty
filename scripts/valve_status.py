@@ -2,8 +2,9 @@
 import json
 from pathlib import Path
 from rich.table import Table
+from rich import box
 
-MAP_PATH = Path(__file__).resolve().parents[1] / 'tests/valve_gpio/valve_map.json'
+MAP_PATH = Path(__file__).resolve().parents[1] / 'clover/src/sequencing/valve_map.json'
 
 
 class ClientValveCommands:
@@ -37,14 +38,20 @@ def valve_rows(info, mapping=None):
         yield name, str(channel) if channel is not None else '—', state
 
 
-def valve_table(info, client_commands=None):
-    table = Table(title='Valve GPIO readback (not mechanical position)')
-    table.add_column('Valve')
-    table.add_column('Channel')
-    table.add_column('Power')
-    table.add_column('Control source')
-    table.caption = ('Control source reflects board requests, including commands from other clients. '
-                     'GPIO readback is not mechanical position.')
+def valve_table(info, client_commands=None, theme=None):
+    theme = theme or {'primary': 'bold gold1', 'panel_border': 'dark_red', 'muted': 'dim white'}
+    table = Table(
+        box=box.SIMPLE_HEAD,
+        show_header=True,
+        header_style=theme['primary'],
+        border_style=theme['panel_border'],
+        padding=(0, 1),
+        pad_edge=False,
+    )
+    table.add_column('Valve', style='bold white', no_wrap=True)
+    table.add_column('Channel', style=theme['muted'], justify='right', no_wrap=True)
+    table.add_column('Power', style='white', justify='right', no_wrap=True)
+    table.add_column('Control', style='white', no_wrap=True)
     try:
         for name, channel, state in valve_rows(info):
             bit = 1 << int(channel) if channel != '—' else 0
