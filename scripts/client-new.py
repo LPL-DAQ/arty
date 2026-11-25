@@ -22,6 +22,8 @@ import sys
 import time
 import csv
 import pathlib
+import os
+import select
 import webbrowser
 from google.protobuf import text_format
 from rich.console import Console
@@ -42,6 +44,7 @@ from valve_status import ClientValveCommands, valve_table
 from valve_sequence_cli import ValveSequenceMode
 from google.protobuf.internal.encoder import _VarintBytes
 from rich.console import Group
+from rich.segment import Segment
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from collections import deque
@@ -1235,13 +1238,6 @@ def _build_status_renderable():
             ),
         )
 
-    if fcm.row_count != 0:
-        bottom_columns.append(Panel(
-            fcm,
-            title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),)
-
     bottom = Columns(bottom_columns)
 
     return Group(header_panel, top, bottom)
@@ -1259,34 +1255,79 @@ def _build_live_status_renderable(info):
     return Group(valves, _build_status_renderable())
 
 
+class _StatusViewport:
+    """Render the visible lines of a full telemetry snapshot."""
+    def __init__(self, content, offset):
+        self.content = content
+        self.offset = offset
+
+    def __rich_console__(self, console, options):
+        lines = console.render_lines(self.content, options.update(height=None), pad=False)
+        height = max(1, console.height - 2)
+        start = min(max(0, self.offset), max(0, len(lines) - height))
+        yield from console.render(Text(
+            f'↑↓/j k scroll | t telemetry | v valves | q exit  '
+            f'{start + 1}-{min(start + height, len(lines))}/{len(lines)}',
+            style=THEME['muted']), options)
+        yield Segment.line()
+        for line in lines[start:start + height]:
+            yield from line
+            yield Segment.line()
+
+
 def cmd_live_status():
-    """Stream full telemetry panel at 5 Hz (200 ms). Press Enter to return to menu."""
+    """Stream telemetry in a scrollable live view."""
     stop = threading.Event()
     view_lock = threading.Lock()
     view = 'valves'
+    offset = 0
 
     def _read_live_commands():
-        nonlocal view
-        while not stop.is_set():
-            try:
-                line = sys.stdin.readline()
-            except Exception:
-                stop.set()
-                return
-            if not line or not line.strip():
-                stop.set()
-                return
-            choice = line.strip().lower()
-            if choice in ('v', 't'):
-                with view_lock:
-                    view = 'valves' if choice == 'v' else 'telemetry'
+        nonlocal view, offset
+        if not sys.stdin.isatty():
+            stop.set()
+            return
+        import termios
+        import tty
 
-    console.print(
-        f'  [{THEME["muted"]}]Live view — Enter: exit | t + Enter: telemetry | v + Enter: valves[/{THEME["muted"]}]'
-    )
-    threading.Thread(target=_read_live_commands, daemon=True).start()
+        fd = sys.stdin.fileno()
+        original = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            pending = ''
+            while not stop.is_set():
+                if not select.select([fd], [], [], 0.1)[0]:
+                    continue
+                data = os.read(fd, 32).decode(errors='ignore')
+                if not data:
+                    stop.set()
+                    break
+                pending += data
+                while pending:
+                    if pending.startswith('\x1b'):
+                        if len(pending) < 3:
+                            break
+                        choice, pending = pending[:3], pending[3:]
+                    else:
+                        choice, pending = pending[0].lower(), pending[1:]
+                    with view_lock:
+                        if choice in ('q', '\r', '\n', '\x03'):
+                            stop.set()
+                        elif choice in ('v', 't'):
+                            view = 'valves' if choice == 'v' else 'telemetry'
+                            offset = 0
+                        elif choice in ('j', '\x1b[B'):
+                            offset += 3
+                        elif choice in ('k', '\x1b[A'):
+                            offset = max(0, offset - 3)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, original)
+
+    reader = threading.Thread(target=_read_live_commands, daemon=True)
+    reader.start()
 
     def render():
+        nonlocal offset
         info = None
         if sock is not None:
             previous_timeout = sock.gettimeout()
@@ -1305,16 +1346,25 @@ def cmd_live_status():
                     sock.settimeout(previous_timeout)
         with view_lock:
             current_view = view
-        if current_view == 'telemetry':
-            return _build_status_renderable()
-        return _build_live_status_renderable(info)
+            current_offset = offset
+        content = _build_status_renderable() if current_view == 'telemetry' else _build_live_status_renderable(info)
+        lines = console.render_lines(content, console.options.update(height=None), pad=False)
+        with view_lock:
+            offset = min(offset, max(0, len(lines) - max(1, console.height - 2)))
+            current_offset = offset
+        return _StatusViewport(content, current_offset)
 
     try:
-        with Live(render(), refresh_per_second=5, screen=False) as live:
+        # Share the console with background messages so Rich can coordinate redraws.
+        # The alternate screen keeps each refresh within the terminal viewport.
+        with Live(render(), console=console, screen=True, auto_refresh=False) as live:
             while not stop.wait(0.2):
-                live.update(render())
+                live.update(render(), refresh=True)
     except KeyboardInterrupt:
         pass
+    finally:
+        stop.set()
+        reader.join()
 
 
 _TOOLBAR_STATE_TAGS = {

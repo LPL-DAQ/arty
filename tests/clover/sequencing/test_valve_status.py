@@ -68,6 +68,23 @@ class ClientValveCommandsTest(unittest.TestCase):
 
 
 class LiveValveLayoutTest(unittest.TestCase):
+    def test_status_viewport_reaches_bottom_and_clamps_offset(self):
+        import importlib.util
+        import io
+        from rich.console import Console, Group
+        from rich.text import Text
+
+        script = Path(__file__).resolve().parents[3] / 'scripts/client-new.py'
+        spec = importlib.util.spec_from_file_location('client_new_viewport_test', script)
+        client = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(client)
+        content = Group(*(Text(f'row {i}') for i in range(30)))
+        output = io.StringIO()
+        terminal = Console(file=output, width=80, height=10, color_system=None)
+        terminal.print(client._StatusViewport(content, 999))
+        self.assertIn('row 29', output.getvalue())
+        self.assertNotIn('row 0\n', output.getvalue())
+
     def test_complete_valve_panel_fits_a_normal_terminal(self):
         import importlib.util
         import io
