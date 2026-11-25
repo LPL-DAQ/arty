@@ -63,7 +63,7 @@ public:
         float deriv_raw = 0.0f;
         if (!std::isnan(prev_meas_))
         {
-            deriv_raw = -measurement_d / std::max(dt, 1e-9f); // negative sign: d(error)/dt = -d(meas)/dt
+            deriv_raw = -measurement_d; // negative sign: d(error)/dt = -d(meas)/dt
         }
         prev_meas_ = measurement;
 
@@ -99,7 +99,7 @@ public:
         float dmeas = 0.0f;
         if (!std::isnan(prev_meas_))
         {
-            dmeas = measurement - prev_meas_;
+            dmeas = (measurement - prev_meas_) / std::max(dt, 1e-9f);
         }
 
         return calculate(setpoint, measurement, dmeas, dt);

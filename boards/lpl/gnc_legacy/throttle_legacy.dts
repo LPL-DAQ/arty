@@ -5,7 +5,7 @@ To find the devicetree equivalent of a teensy GPIO pin:
     1) Find the SOC pin mapped to the teensy pin using the schematic: https://www.pjrc.com/teensy/schematic.html. For
        example, teensy pin 12 -> B0_01
     2) Examine the devicetree for the teensy SOC and find the gpio bank + index corresopnding to the SOC pin:
-       https://sourcegraph.com/github.com/zephyrproject-rtos/zephyr/-/blob/dts/arm/nxp/nxp_rt1060.dtsi?L90-94.
+    https://sourcegraph.com/r/github.com/zephyrproject-rtos/zephyr/-/blob/dts/arm/nxp/imxrt/imxrt10xx/nxp_rt1060.dtsi
        For example:
        B0_01 ->
        ...
