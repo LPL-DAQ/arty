@@ -1,10 +1,9 @@
 """Shared valve readback display for the dashboard and named-sequence views."""
 import json
-from pathlib import Path
 from rich.table import Table
 from rich import box
 
-MAP_PATH = Path(__file__).resolve().parents[1] / 'clover/src/sequencing/valve_map.json'
+from app_paths import VALVE_MAP_PATH as MAP_PATH
 
 
 class ClientValveCommands:

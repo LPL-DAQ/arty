@@ -65,7 +65,7 @@ python clover/src/sequencing/run_sequence.py clover/src/sequencing/sequences/mul
 
 ## Control and status
 
-Connect to port 19690 with `python scripts/client-new.py --no-data --host
+Connect to port 19690 with `python client/client-new.py --no-data --host
 169.254.99.99`. Enter `vlvseq` for `list`, `run NAME`, manual valve controls,
 `status`, and `abort`. The interactive run uses a countdown; once a run is sent,
 use `abort` to stop it. A RUN acknowledgement means queued, not complete. Do not

@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.input import create_pipe_input
 from rich.console import Console
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'client'))
 from sequence_countdown import countdown
 from valve_sequence_cli import ValveSequenceMode
 

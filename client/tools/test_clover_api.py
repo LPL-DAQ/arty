@@ -1,10 +1,16 @@
 import base64
 import socket
 import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
 from google.protobuf.internal.encoder import _VarintBytes
+
+CLIENT_DIR = Path(__file__).resolve().parents[1]  # clover_pb2 lives in client/
+REPO_DIR = CLIENT_DIR.parent
+sys.path.insert(0, str(CLIENT_DIR))
 
 try:
     import clover_pb2 as clover_api
@@ -13,8 +19,8 @@ except ImportError as e:
     print(f'Failed to import clover protobuf bindings: {e}')
     print('Attempting rebuild...')
     subprocess.run(
-        ['protoc', '--python_out=scripts', 'api/clover.proto', '--proto_path=api'],
-        cwd='/home/lpl/arty',
+        ['protoc', '--python_out=client', 'api/clover.proto', '--proto_path=api'],
+        cwd=REPO_DIR,
     )
 
     import clover_pb2 as clover_api

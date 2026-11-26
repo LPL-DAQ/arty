@@ -27,9 +27,9 @@ For named sequences, follow these paths:
 1. At build time, `generate_sequence.py` calls `run_sequence.py:load_sequence`
    to validate JSON and resolve names through `valve_map.json`. It emits
    `valve_sequence.h`, containing immutable step masks, durations and comments.
-2. On the host, `scripts/client-new.py` routes `sequence ...` commands to
-   `scripts/named_sequences.py`. The `vlvseq` menu uses
-   `scripts/valve_sequence_cli.py`, which serializes prompt commands and status
+2. On the host, `client/client-new.py` routes `sequence ...` commands to
+   `client/named_sequences.py`. The `vlvseq` menu uses
+   `client/valve_sequence_cli.py`, which serializes prompt commands and status
    polling and manual commands over the same socket inside `vlvseq`.
 3. On the board, `sequence_server.c:serve` assembles each length-prefixed TCP
    frame, decodes the shared Clover protobuf, and calls
@@ -256,7 +256,7 @@ west flash -d tests/valve_gpio/build-sequence
 ### Persistent manual control over Ethernet
 
 With the updated standalone sequence firmware flashed, enter `vlvseq` in
-`scripts/client-new.py`, then `v` for the valve selector and ON/OFF
+`client/client-new.py`, then `v` for the valve selector and ON/OFF
 prompt. The selected valve appears in a bordered box. Every
 action returns to `VLVSEQ>`; only `back` or `exit` leaves this mode.
 
@@ -378,7 +378,7 @@ TCP clients can connect at once. A disconnected client does not cancel a run.
 Flash the named-sequence build, then from the repository root run:
 
 ```sh
-python scripts/client-new.py --no-data --host 169.254.99.99
+python client/client-new.py --no-data --host 169.254.99.99
 ```
 
 At `CMD>` enter:
@@ -402,10 +402,10 @@ The combined mode requires the updated firmware and client.
 Or send a single command and exit, without subscribing to telemetry:
 
 ```sh
-python scripts/client-new.py --host 169.254.99.99 --command "sequence list"
-python scripts/client-new.py --host 169.254.99.99 --command "sequence run single_valve"
-python scripts/client-new.py --host 169.254.99.99 --command "sequence status"
-python scripts/client-new.py --host 169.254.99.99 --command "sequence abort"
+python client/client-new.py --host 169.254.99.99 --command "sequence list"
+python client/client-new.py --host 169.254.99.99 --command "sequence run single_valve"
+python client/client-new.py --host 169.254.99.99 --command "sequence status"
+python client/client-new.py --host 169.254.99.99 --command "sequence abort"
 ```
 
 RUN acknowledges queuing, not sequence completion. The `vlvseq` mode automatically

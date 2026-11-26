@@ -27,16 +27,19 @@ Commands handled:
   unprime                          → STATE_IDLE
 
 Usage:
-    python fake_telemetry.py
+    python client/tools/fake_telemetry.py
 """
 
 import math
 import random
 import socket
+import sys
 import threading
 import time
+from pathlib import Path
 
-import clover_pb2
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # clover_pb2 lives in client/
+import clover_pb2  # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TCP_PORT    = 19690

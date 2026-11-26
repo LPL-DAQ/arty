@@ -32,7 +32,7 @@ valve control. It embeds all JSON files in `clover/src/sequencing/sequences/` us
 The mapping follows the Ranger harness table (channel = GPIO_N − 1); see
 `clover/src/sequencing/README.md`. The normal
 Clover server accepts `vlvseq` commands on port 19690 alongside its existing
-commands. Start `python scripts/client-new.py --no-data --host 169.254.99.99`
+commands. Start `python client/client-new.py --no-data --host 169.254.99.99`
 and enter `vlvseq`. In the client’s `status` live view, use the arrow keys
 or `j`/`k` to scroll, `t` for telemetry, and `v` for valve readback.
 Press `q` or Enter to exit.

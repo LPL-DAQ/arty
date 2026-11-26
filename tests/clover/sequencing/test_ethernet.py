@@ -17,7 +17,7 @@ from rich.console import Console
 ROOT = Path(__file__).resolve().parent
 REPO = Path(__file__).resolve().parents[3]
 SEQUENCING = REPO / 'clover/src/sequencing'
-sys.path.insert(0, str(REPO / 'scripts'))
+sys.path.insert(0, str(REPO / 'client'))
 import clover_pb2
 import named_sequences
 from valve_sequence_cli import ValveSequenceMode
@@ -212,7 +212,7 @@ int main(int argc, char **argv) {
             self.request(connection, 'sequence run MixedCase')
             self.wait_state(connection, 'complete')
             # The production client routes its actual command via the same TCP server.
-            cli = subprocess.run([sys.executable, str(REPO / 'scripts/client-new.py'),
+            cli = subprocess.run([sys.executable, str(REPO / 'client/client-new.py'),
                                   '--host', '127.0.0.1', '--port', str(port),
                                   '--command', 'sequence run MixedCase'], capture_output=True, text=True, timeout=10)
             self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
@@ -317,7 +317,7 @@ int main(int argc, char **argv) {
             self.assertEqual(self.request(connection, 'sequence status').state, 'complete')
 
     def test_vlvseq_routing(self):
-        spec = importlib.util.spec_from_file_location('client_new_test', REPO / 'scripts/client-new.py')
+        spec = importlib.util.spec_from_file_location('client_new_test', REPO / 'client/client-new.py')
         client = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(client)
         with patch.object(client.ValveSequenceMode, 'run') as run:

@@ -37,6 +37,7 @@ from rich.rule import Rule
 from rich.columns import Columns
 from rich import box
 import clover_pb2
+from app_paths import DATA_DIR, SENSOR_CONFIG_DIR, SEQUENCES_DIR
 import named_sequences
 from sequence_countdown import countdown
 from valve_status import ClientValveCommands, valve_table
@@ -75,14 +76,14 @@ THEME = {
     'icon_quit': '❌',
 }
 
-VALVE_SEQ_DIR = pathlib.Path('sequences/valve')
-THRUST_SEQ_DIR = pathlib.Path('sequences/thrust')
-TVC_SEQ_DIR = pathlib.Path('sequences/tvc')
-RCS_VALVE_SEQ_DIR = pathlib.Path('sequences/rcs_valve')
-RCS_SEQ_DIR = pathlib.Path('sequences/rcs')
-STATIC_FIRE_SEQ_DIR = pathlib.Path('sequences/static_fire')
-FLIGHT_SEQ_DIR = pathlib.Path('sequences/flight')
-SENSOR_CONFIG_DIR = pathlib.Path('sensor_configs')
+# Paths are relative to the client (see app_paths.py), not the directory it was started from.
+VALVE_SEQ_DIR = SEQUENCES_DIR / 'valve'
+THRUST_SEQ_DIR = SEQUENCES_DIR / 'thrust'
+TVC_SEQ_DIR = SEQUENCES_DIR / 'tvc'
+RCS_VALVE_SEQ_DIR = SEQUENCES_DIR / 'rcs_valve'
+RCS_SEQ_DIR = SEQUENCES_DIR / 'rcs'
+STATIC_FIRE_SEQ_DIR = SEQUENCES_DIR / 'static_fire'
+FLIGHT_SEQ_DIR = SEQUENCES_DIR / 'flight'
 
 # Network
 ZEPHYR_IP = '169.254.99.99'  # real board
@@ -92,8 +93,8 @@ ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
 
-# TEMP: the status view shows only Analog Sensors and Valve States (plus the valve-by-name readback table).
-# Set to False to bring back the Vehicle State, Commands, Timing, Fuel Valve and LOx Valve panels.
+# TEMP: the status view shows only Timing, Analog Sensors and Valve States (plus the valve-by-name readback table).
+# Set to False to bring back the Vehicle State, Commands, Fuel Valve and LOx Valve panels.
 STATUS_SENSORS_AND_VALVES_ONLY = True
 
 # CSV columns mirror the unpivoted ClickHouse raw_sensors schema exactly:
@@ -459,8 +460,8 @@ def _write_csv_on_exit():
 
         # Sequence started but flush_loop never ran — create the file now
         if remaining and _csv_fh is None:
-            _csv_path = pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
-            _csv_path.parent.mkdir(exist_ok=True)
+            _csv_path = DATA_DIR / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
+            _csv_path.parent.mkdir(parents=True, exist_ok=True)
             _csv_fh = open(_csv_path, 'w', newline='')
             _csv_writer = csv.DictWriter(_csv_fh, fieldnames=CSV_COLUMNS)
             _csv_writer.writeheader()
@@ -712,7 +713,7 @@ def _flush_loop():
                 global _csv_path, _csv_fh, _csv_writer, _csv_rows_written
                 if _csv_fh is None and (_seq_recording or _manual_recording):
                     _csv_path = (
-                        pathlib.Path('data') / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
+                        DATA_DIR / f'raw_sensors_{time.strftime("%Y%m%d_%H%M%S")}.csv'
                     )
                     _csv_path.parent.mkdir(exist_ok=True)
                     _csv_fh = open(_csv_path, 'w', newline='')
@@ -984,7 +985,10 @@ def _build_status_renderable():
 
     if pkt is None:
         return Panel(
-            f'[{t["muted"]}]Waiting for telemetry...[/{t["muted"]}]',
+            f'[{t["muted"]}]Waiting for telemetry... (none received yet). Timing and sensors need it. If this persists: '
+            f'another client may hold the board\'s only telemetry slot (look for "SUBSCRIBE_DATA_STREAM rejected" '
+            f'at startup), this client was started with --no-data, or UDP {DATA_PORT} can\'t reach this machine '
+            f'(e.g. inside the dev container).[/{t["muted"]}]',
             title=f'[{t["primary"]}]{t["icon_live"]} LIVE STATUS[/{t["primary"]}]',
             border_style=t['panel_border'],
         )
@@ -1119,13 +1123,12 @@ def _build_status_renderable():
             ),
         ]
     )
-    bottom_columns = [
-        Panel(
-            timing,
-            title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
-            border_style=t['panel_border'],
-        ),
-    ]
+    timing_panel = Panel(
+        timing,
+        title=f'[{t["primary"]}]Timing[/{t["primary"]}]',
+        border_style=t['panel_border'],
+    )
+    bottom_columns = [timing_panel]
 
     if _has(pkt, 'fuel_valve_command'):
         table = Table(
@@ -1292,7 +1295,7 @@ def _build_status_renderable():
         ),)
 
     if STATUS_SENSORS_AND_VALVES_ONLY:
-        return Group(header_panel, Columns([p for p in (analog_panel, valve_panel) if p is not None]))
+        return Group(header_panel, Columns([p for p in (timing_panel, analog_panel, valve_panel) if p is not None]))
 
     bottom = Columns(bottom_columns)
 

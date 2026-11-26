@@ -1,0 +1,17 @@
+[project]
+name = "clover-client"
+version = "0.1.0"
+description = "Ground-station CLI for the Clover flight computer: valves, sequences, sensors and telemetry"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "plotext>=5.3.2,<6",  # 6.x compiles a C++ part at install time; 5.x is pure Python and runs anywhere
+    "plotly>=6.4.0",
+    "prompt-toolkit>=3.0.52",
+    "protobuf>=6.33.2",
+    "rich>=14.2.0",
+]
+
+[tool.uv]
+# The client is a folder of scripts, not an installable package.
+package = false

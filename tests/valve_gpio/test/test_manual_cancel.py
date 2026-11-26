@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 from rich.console import Console
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'client'))
 from valve_sequence_cli import ValveSequenceMode
 
 

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'client'))
 import clover_pb2
 from valve_status import MAP_PATH, valve_rows
 
@@ -75,7 +75,7 @@ class LiveValveLayoutTest(unittest.TestCase):
         from rich.console import Console, Group
         from rich.text import Text
 
-        script = Path(__file__).resolve().parents[3] / 'scripts/client-new.py'
+        script = Path(__file__).resolve().parents[3] / 'client/client-new.py'
         spec = importlib.util.spec_from_file_location('client_new_viewport_test', script)
         client = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(client)
@@ -92,7 +92,7 @@ class LiveValveLayoutTest(unittest.TestCase):
         from rich.console import Console
         from rich.live_render import LiveRender
 
-        script = Path(__file__).resolve().parents[3] / 'scripts/client-new.py'
+        script = Path(__file__).resolve().parents[3] / 'client/client-new.py'
         spec = importlib.util.spec_from_file_location('client_new_layout_test', script)
         client = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(client)

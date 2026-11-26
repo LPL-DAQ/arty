@@ -11,11 +11,11 @@ __pycache__/
 /modules
 /bin
 /target
-/scripts/sequences*
+/client/sequences*
 /data*
 
 out.log
 
 credentials
 /settings.py
-/scripts/sensor_configs/last_picked.textproto
+/client/sensor_configs/last_picked.textproto
