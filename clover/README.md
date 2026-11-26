@@ -29,7 +29,8 @@ once with `--pristine always` so Zephyr discovers them.
 On Ranger 1, this build also includes named GPIO sequences and persistent manual
 valve control. It embeds all JSON files in `clover/src/sequencing/sequences/` using
 `clover/src/sequencing/valve_map.json`; rebuild and flash after changing either.
-The mapping is provisional and must be checked against the wiring. The normal
+The mapping follows the Ranger harness table (channel = GPIO_N − 1); see
+`clover/src/sequencing/README.md`. The normal
 Clover server accepts `vlvseq` commands on port 19690 alongside its existing
 commands. Start `python scripts/client-new.py --no-data --host 169.254.99.99`
 and enter `vlvseq`. In the client’s `status` live view, use the arrow keys

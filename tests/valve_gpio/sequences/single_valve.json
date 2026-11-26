@@ -25,21 +25,9 @@
   },
   {
     "duration_ticks": 5000,
-    "comment": "Energizing PBV001 for 5 seconds",
+    "comment": "Energizing PBV003 for 5 seconds",
     "valves": [
-      "PBV001"
-    ]
-  },
-  {
-    "duration_ticks": 5000,
-    "comment": "All valves off; waiting 5 seconds",
-    "valves": []
-  },
-  {
-    "duration_ticks": 5000,
-    "comment": "Energizing PBV002 for 5 seconds",
-    "valves": [
-      "PBV002"
+      "PBV003"
     ]
   }
 ]

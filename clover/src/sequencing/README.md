@@ -7,10 +7,23 @@ starts with valve outputs inactive and waits for an explicit command.
 ## Mapping and sequences
 
 `valve_map.json` maps case-sensitive valve names to zero-based indices in
-`zephyr,user/valve-gpios` in the board DTS. The assignments are provisional:
-verify them against the actual wiring before connecting loads. Set an unknown
-assignment to `null` to prevent its use. The client and firmware must use the
-same mapping.
+`zephyr,user/valve-gpios` in the board DTS. The assignments follow the Ranger
+harness table: channel = GPIO_N − 1, where GPIO_N is the table's "GPIO Expander
+Channel" (PCB net). All named valves are on U4, expander 1:
+
+| Valve | Channel | PCB net | U4 pin | Expander pin | Supply |
+| --- | --- | --- | --- | --- | --- |
+| SV003 | 0 | GPIO_1 | U4.1 | 8 / GPB0 | 24 V |
+| SV301 | 2 | GPIO_3 | U4.3 | 10 / GPB2 | 24 V |
+| SV201 | 4 | GPIO_5 | U4.5 | 12 / GPB4 | 24 V |
+| SV001 | 12 | GPIO_13 | U4.25 | 4 / GPA4 | 12 V |
+| SV002 | 10 | GPIO_11 | U4.23 | 2 / GPA2 | 12 V |
+| PBV003 | 8 | GPIO_9 | U4.21 | 0 / GPA0 | 12 V |
+
+Connector pins and the unnamed outputs are listed in
+`tests/valve_gpio/README.md`. Set an unknown assignment to `null` to prevent its
+use. The client reads this file, and `tests/valve_gpio/valve_map.json` must stay
+identical to it.
 
 Put named sequence JSON files directly in `sequences/`. The filename without
 `.json` is the command name. Each file contains an array of steps, for example:

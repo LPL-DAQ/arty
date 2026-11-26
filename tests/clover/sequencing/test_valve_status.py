@@ -1,10 +1,11 @@
 """All mapped valves remain visible, including unavailable channels."""
+import json
 from pathlib import Path
 import sys
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
 import clover_pb2
-from valve_status import valve_rows
+from valve_status import MAP_PATH, valve_rows
 
 
 class ValveStatusTest(unittest.TestCase):
@@ -106,8 +107,7 @@ class LiveValveLayoutTest(unittest.TestCase):
                 terminal.print(LiveRender(client._build_live_status_renderable(info),
                                           vertical_overflow='ellipsis'))
                 rendered = output.getvalue()
-                for name in ('SV001', 'SV002', 'PBV001', 'PBV002', 'SV003', 'SV004',
-                             'SV201', 'SV301', 'PBV101'):
+                for name in json.loads(MAP_PATH.read_text()):
                     self.assertIn(name, rendered)
                 self.assertIn('Valve GPIO Readback', rendered)
                 self.assertIn('MANUAL', rendered)

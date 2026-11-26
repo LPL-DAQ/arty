@@ -92,6 +92,10 @@ ZEPHYR_PORT = 19690
 DATA_IP = '0.0.0.0'  # Listen to UDP from anybody
 DATA_PORT = 19691
 
+# TEMP: the status view shows only Analog Sensors and Valve States (plus the valve-by-name readback table).
+# Set to False to bring back the Vehicle State, Commands, Timing, Fuel Valve and LOx Valve panels.
+STATUS_SENSORS_AND_VALVES_ONLY = True
+
 # CSV columns mirror the unpivoted ClickHouse raw_sensors schema exactly:
 #   time   — nanosecond-epoch Int64  (ClickHouse 'time')
 #   sensor — field name string       (ClickHouse 'sensor')
@@ -1218,6 +1222,8 @@ def _build_status_renderable():
             border_style=t['panel_border'],
         ),)
 
+    analog_panel = valve_panel = None
+
     # Analog sensors
     if _has(pkt, 'analog_sensors'):
         table = Table(
@@ -1239,14 +1245,15 @@ def _build_status_renderable():
             else:
                 unit = 'V'
             table.add_row(sensor.upper(), f'{reading:.3f}' if unit == 'V' else f'{reading:.2f}', unit)
+        if table.row_count == 0:
+            table.add_row(Text('none — send cfgana', style=t['muted']), '', '')
 
-        bottom_columns.append(
-            Panel(
-                table,
-                title=f'[{t["primary"]}]Analog Sensors[/{t["primary"]}]',
-                border_style=t['panel_border'],
-            ),
+        analog_panel = Panel(
+            table,
+            title=f'[{t["primary"]}]Analog Sensors[/{t["primary"]}]',
+            border_style=t['panel_border'],
         )
+        bottom_columns.append(analog_panel)
 
     # Valve states
     if _has(pkt, 'valve_states'):
@@ -1262,14 +1269,15 @@ def _build_status_renderable():
 
         for valve, state in MessageToDict(pkt.valve_states).items():
             table.add_row(valve.upper(), state)
+        if table.row_count == 0:
+            table.add_row(Text('none — send cfgv', style=t['muted']), '')
 
-        bottom_columns.append(
-            Panel(
-                table,
-                title=f'[{t["primary"]}]Valve States[/{t["primary"]}]',
-                border_style=t['panel_border'],
-            ),
+        valve_panel = Panel(
+            table,
+            title=f'[{t["primary"]}]Valve States[/{t["primary"]}]',
+            border_style=t['panel_border'],
         )
+        bottom_columns.append(valve_panel)
 
     if fcm.row_count != 0:
         bottom_columns.append(Panel(
@@ -1277,6 +1285,9 @@ def _build_status_renderable():
             title=f'[{t["primary"]}]Controller[/{t["primary"]}]',
             border_style=t['panel_border'],
         ),)
+
+    if STATUS_SENSORS_AND_VALVES_ONLY:
+        return Group(header_panel, Columns([p for p in (analog_panel, valve_panel) if p is not None]))
 
     bottom = Columns(bottom_columns)
 

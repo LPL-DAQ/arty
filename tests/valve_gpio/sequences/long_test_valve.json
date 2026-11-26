@@ -1,11 +1,11 @@
 [
   {
     "duration_ticks": 100000,
-    "comment": "Energizing SV001, SV002, and PBV001 for 100 seconds",
+    "comment": "Energizing SV001, SV002, and PBV003 for 100 seconds",
     "valves": [
       "SV001",
       "SV002",
-      "PBV001"
+      "PBV003"
     ]
   }
 ]

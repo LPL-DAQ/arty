@@ -1,0 +1,26 @@
+# Vehicle PT table from the Ranger harness table (Sensors: Sensor Name -> ADC Channel). Pick it with `cfgana`.
+# Only channels listed here are read by the ADC. Each send replaces the whole config, and the board forgets it on
+# reboot - resend after every power cycle.
+#
+# channel = AIN number (NOT the J5 pad). U7 = AIN0-15. Harness path for each PT is AVI C4 -> HPB J4 -> Teensy J5:
+#   PT001  AIN0 = U7.28  J5.1   (C4.37, J4.1)
+#   PT002  AIN1 = U7.27  J5.20  (C4.34, J4.21)
+#   PT003  AIN2 = U7.26  J5.2   (C4.31, J4.4)
+#   PT301  AIN3 = U7.25  J5.21  (C4.28, J4.24)
+#   PTF401 AIN4 = U7.24  J5.3   (C4.25, J4.7)
+# AIN5-15 are wired (J5.22, J5.4, J5.23, J5.5, J5.24, J5.6, J5.25, J5.7, J5.26, J5.8, J5.27) but have no sensor.
+#
+# WARNING: the bench notes (s_bench_pts.textproto) say AIN0 read 0 on the bench board. Check PT001 reads a sane
+# value; if AIN0 is still dead, move PT001 to a spare AIN and change its channel here.
+#
+# PT reading (psig) = counts / 4096 * pt_range_psig + pt_bias_psig. Ranges are from s_vehicle_pts.textproto.template
+# (May 26 Atlas config, by firmware enum name); confirm each against the part number on the PT body (PX319-xKG5V:
+# 3KG5V = 3000, 2KG5V = 2000, 1KG5V = 1000).
+# Zero: vent to atmosphere, average ~5 s of the reading, set new pt_bias_psig = old pt_bias_psig - average.
+# Zero with this table loaded (neighbouring channels can shift a reading). Per sensor, per pin.
+
+configs { channel: 0  assignment: PT001   pt_range_psig: 3000  pt_bias_psig: 0 }
+configs { channel: 1  assignment: PT002   pt_range_psig: 3000  pt_bias_psig: 0 }
+configs { channel: 2  assignment: PT003   pt_range_psig: 2000  pt_bias_psig: 0 }
+configs { channel: 3  assignment: PT301   pt_range_psig: 3000  pt_bias_psig: 0 }
+configs { channel: 4  assignment: PTF401  pt_range_psig: 1000  pt_bias_psig: 0 }

@@ -14,10 +14,9 @@
   },
   {
     "duration_ticks": 15000,
-    "comment": "Energizing PBV001 and PBV002 for 15 seconds",
+    "comment": "Energizing PBV003 for 15 seconds",
     "valves": [
-      "PBV001",
-      "PBV002"
+      "PBV003"
     ]
   }
 ]

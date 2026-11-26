@@ -82,21 +82,23 @@ pulse commands. A failed read is reported as an error, never as a voltage.
 
 For the current Ranger mapping:
 
-| Channels | Expander | Pins |
-| --- | --- | --- |
-| 0–7 | mcp23017_1 | 8–15 (GPB0–GPB7) |
-| 8–15 | mcp23017_1 | 0–7 (GPA0–GPA7) |
-| 16–23 | mcp23017_2 | 8–15 (GPB0–GPB7) |
-| 24–31 | mcp23017_2 | 0–7 (GPA0–GPA7) |
+| Channels | Expander | Pins | PCB nets |
+| --- | --- | --- | --- |
+| 0–7 | mcp23017_1 (U4) | 8–15 (GPB0–GPB7), chip pins 1–8 | GPIO_1–GPIO_8 |
+| 8–15 | mcp23017_1 (U4) | 0–7 (GPA0–GPA7), chip pins 21–28 | GPIO_9–GPIO_16 |
+| 16–23 | mcp23017_2 (U6) | 8–15 (GPB0–GPB7), chip pins 1–8 | GPIO_17–GPIO_24 |
+| 24–31 | mcp23017_2 (U6) | 0–7 (GPA0–GPA7), chip pins 21–28 | GPIO_25–GPIO_32 |
 
-These are expander pins, not Teensy header pin numbers. Both expanders have I2C
-address 0x20 but are on different buses.
+Channel N is PCB net GPIO_(N+1), the harness table's "GPIO Expander Channel".
+U4 and U6 are MCP23017-E/SP (28-pin DIP), so chip pins 1–8 are GPB0–GPB7 and
+21–28 are GPA0–GPA7. These are expander pins, not Teensy header pin numbers.
+Both expanders have I2C address 0x20 but are on different buses.
 
 ## Measure the electrical output
 
 Start with valve loads disconnected. Connect a multimeter's reference lead to
 board ground and probe the selected expander output. For example, use
-`valve pulse 0 5000` while probing expander 1 GPB0. Ranger declares these signals
+`valve pulse 0 5000` while probing expander 1 GPB0 (U4 pin 1, net GPIO_1). Ranger declares these signals
 **active-high**, so expect LOW → HIGH → LOW at the expander control pin. The
 actual HIGH voltage depends on the board's GPIO supply. If you expect voltage to
 increase, probe the corresponding valve driver output using the board schematic
@@ -116,46 +118,48 @@ Restore the normal Clover firmware after testing.
 ## Valve-name mapping
 
 `valve_map.json` maps valve names to zero-based channels in
-`ranger_1.dts`'s `valve-gpios` list. **These are provisional sequential
-assignments requested for setup, not verified physical wiring.**
-
-**12 V valves**
-
-| Valve | Channel | Expander | GPIO pin |
-| --- | --- | --- | --- |
-| SV001 | 0 | mcp23017_1 | 8 / GPB0 |
-| SV002 | 1 | mcp23017_1 | 9 / GPB1 |
-| PBV002 | 5 | mcp23017_1 | 13 / GPB5 |
-| PBV001 | 4 | mcp23017_1 | 12 / GPB4 |
+`ranger_1.dts`'s `valve-gpios` list. The channels come from the Ranger harness
+table: channel = GPIO_N − 1, where GPIO_N is the table's "GPIO Expander Channel".
+All named valves are on U4 (expander 1). This file and
+`clover/src/sequencing/valve_map.json` must stay identical.
 
 **24 V valves**
 
-| Valve | Channel | Expander | GPIO pin |
-| --- | --- | --- | --- |
-| SV003 | 2 | mcp23017_1 | 10 / GPB2 |
-| SV004 | 3 | mcp23017_1 | 11 / GPB3 |
-| SV201 | 6 | mcp23017_1 | 14 / GPB6 |
-| SV301 | 7 | mcp23017_1 | 15 / GPB7 |
-| PBV101 | 8 | mcp23017_1 | 0 / GPA0 |
+| Valve | Channel | PCB net | U4 pin | Expander pin | Teensy pin | AVI pins |
+| --- | --- | --- | --- | --- | --- | --- |
+| SV003 | 0 | GPIO_1 | U4.1 | 8 / GPB0 | J6.1 | C2.A, C2.B |
+| SV301 | 2 | GPIO_3 | U4.3 | 10 / GPB2 | J6.2 | C2.C, C2.D |
+| SV201 | 4 | GPIO_5 | U4.5 | 12 / GPB4 | J6.3 | C2.E, C2.G |
 
-The mapping file lists the 12 V group first, then the 24 V group, separated
-by a blank line. Channel assignments are unchanged. These voltage labels
-describe the valve supplies; GPIO commands do not select the supply voltage.
+**12 V valves**
 
-Edit the channel numbers in this one file when the wiring is confirmed. The
-mapping is specific to standalone valve tests; it does not configure Clover's
-valve-assignment API or require its valve enum names.
+| Valve | Channel | PCB net | U4 pin | Expander pin | Teensy pin | AVI pins |
+| --- | --- | --- | --- | --- | --- | --- |
+| SV001 | 12 | GPIO_13 | U4.25 | 4 / GPA4 | J6.7 | C2.M, C2.N |
+| SV002 | 10 | GPIO_11 | U4.23 | 2 / GPA2 | J6.6 | C2.P, C2.R |
+| PBV003 | 8 | GPIO_9 | U4.21 | 0 / GPA0 | J6.5 | C2.S, C2.T |
+
+The mapping file lists the valves in the harness table's order: the 24 V group,
+then the 12 V group, separated by a blank line. These voltage labels describe the
+valve supplies; GPIO commands do not select the supply voltage.
+
+The table also wires seven unnamed outputs, which are not in the map: channels 1,
+3 (24 V; GPIO_2, GPIO_4) and 5, 6, 7, 9, 11 (12 V; GPIO_6, GPIO_7, GPIO_8,
+GPIO_10, GPIO_12). Add a name here once one is assigned.
+
+The mapping only gives channels; it does not configure Clover's valve-assignment
+API (`cfgv`) or require its valve enum names.
 
 Sequence steps can now use names:
 
 ```json
 [
-  {"duration_ticks": 1000, "valves": ["SV001", "PBV101"], "comment": "Energizing SV001 and PBV101"},
+  {"duration_ticks": 1000, "valves": ["SV001", "SV003"], "comment": "Energizing SV001 and SV003"},
   {"duration_ticks": 1000, "valves": [], "off_valves": ["SV001"], "comment": "Hold SV001 off"}
 ]
 ```
 
-`"channels": ["SV001", "PBV101"]` also accepts names. Existing numeric channels
+`"channels": ["SV001", "SV003"]` also accepts names. Existing numeric channels
 still work. Use either `valves` or `channels` per step. `valves` accepts only
 names; an empty list waits with all outputs inactive. Names are case sensitive.
 The loader validates every referenced name and resolves it to a GPIO channel
@@ -164,8 +168,8 @@ resolved channels, invalid channel numbers and duplicate mapping assignments
 are rejected. Set an unknown assignment to `null` to prevent its use.
 
 The included `sequences/single_valve.json` and `sequences/multi_valve.json` use
-names now, with their existing durations and provisional channel selections
-preserved. `sequence.named.example.json` is another example outside the compiled
+names now and exercise the 12 V valves (SV001, SV002, PBV003) with their
+existing durations. `sequence.named.example.json` is another example outside the compiled
 sequence directory. The host runner supports names through the same loader:
 
 ```sh
