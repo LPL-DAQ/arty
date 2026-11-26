@@ -138,9 +138,14 @@ _graph_lock = threading.Lock()
 def _make_tcp_socket() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)  # start probes after 5s idle
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
+    # macOS calls the idle-time option TCP_KEEPALIVE; Linux and Windows call it TCP_KEEPIDLE.
+    keepidle = getattr(socket, 'TCP_KEEPIDLE', getattr(socket, 'TCP_KEEPALIVE', None))
+    if keepidle is not None:
+        s.setsockopt(socket.IPPROTO_TCP, keepidle, 5)  # start probes after 5s idle
+    if hasattr(socket, 'TCP_KEEPINTVL'):
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 2)  # probe every 2s
+    if hasattr(socket, 'TCP_KEEPCNT'):
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # drop after 3 missed probes
     # Bound connection setup; interactive operations choose their own reply timeout.
     s.settimeout(5)
     try:
