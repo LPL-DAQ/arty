@@ -1692,14 +1692,31 @@ def cmd_configure_analog_sensors():
     """Configure analog sensors."""
 
     console.print('    Profile:')
-    console.print('      [1] Default  (actual vehicle)')
-    console.print('      [2] Test     (assigns channels 0-21)')
-    console.print('      [3] Test 2   (assigns channels 22-31)')
-    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(3)], default='1')
+    console.print(f'      [1] Saved table  (from {SENSOR_CONFIG_DIR}/, last_picked at top = last table sent)')
+    console.print('      [2] Pick pins    (choose AIN pins and what is on each)')
+    console.print('      [3] Test         (assigns channels 0-21)')
+    console.print('      [4] Test 2       (assigns channels 22-31)')
+    profile = Prompt.ask('    Choose', choices=[str(i + 1) for i in range(4)], default='1' if _list_saved_configs(SENSOR_CONFIG_DIR) else '2')
 
     if profile == '1':
-        print('NO DEFAULT PROFILE, PLEASE EDIT THE CLIENT!')
-        configs = []
+        if not _list_saved_configs(SENSOR_CONFIG_DIR):
+            console.print(f'  [{THEME["danger"]}]No sensor tables in {SENSOR_CONFIG_DIR}/[/{THEME["danger"]}]')
+            return
+        # A bad table file must not crash the client (and stop logging) mid-test
+        try:
+            table = _pick_and_load_config(SENSOR_CONFIG_DIR, clover_pb2.ConfigureAnalogSensorsRequest)
+        except (OSError, ValueError, text_format.ParseError) as e:
+            console.print(f'  [{THEME["danger"]}]Sensor table has an error, nothing sent: {e}[/{THEME["danger"]}]')
+            return
+        # channel and assignment are required; a row missing one parses fine but fails to serialize
+        if missing := table.FindInitializationErrors():
+            console.print(f'  [{THEME["danger"]}]Sensor table is missing {", ".join(missing)}, nothing sent[/{THEME["danger"]}]')
+            return
+        configs = list(table.configs)
+        _print_sensor_configs(configs)
+        if not Confirm.ask('  Send this table?', default=True):
+            console.print(f'  [{THEME["muted"]}]Cancelled, nothing sent.[/{THEME["muted"]}]')
+            return
 
     elif profile == '2':
         configs = _pick_pins()

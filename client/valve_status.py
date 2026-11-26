@@ -65,4 +65,5 @@ def valve_table(info, client_commands=None, theme=None):
             table.add_row(name, channel, state, indicator, style={'ON': 'green', 'OFF': 'dim'}.get(state, 'yellow'))
     except (OSError, ValueError):
         table.add_row('Valve map unavailable', '—', 'UNKNOWN', '—')
+        table.caption = f'Looked for {MAP_PATH}'
     return table

@@ -30,6 +30,9 @@ The client finds these files relative to itself, so it doesn't matter which fold
 uv installs a suitable Python and the five libraries the client needs on the first run; no compiler
 is required. To update, `git pull` (or download the ZIP again).
 
+Copying only the `client` folder to a laptop also works: copy `clover/src/sequencing/valve_map.json`
+into it, next to `client-new.py`, or the valve table shows "Valve map unavailable".
+
 Without uv: with Python 3.12+, `pip install "plotext<6" plotly prompt-toolkit protobuf rich`, then
 `python client-new.py`.
 
